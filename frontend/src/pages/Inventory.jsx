@@ -35,8 +35,17 @@ export default function Inventory() {
           is_web_active: is_web_active ? 1 : 0
         })
       })
-      if(res.ok) alert("Guardado correctamente (ML + Web)")
-      else alert("Error al guardar")
+      if(res.ok) {
+        const data = await res.json()
+        if (data.warning) {
+          alert(data.warning)
+        } else {
+          alert("Guardado correctamente (ML + Web)")
+        }
+        fetchProducts()
+      } else {
+        alert("Error al guardar")
+      }
     } catch(e) {
       alert("Error: " + e.message)
     }
