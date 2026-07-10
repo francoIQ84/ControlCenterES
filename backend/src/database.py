@@ -134,6 +134,30 @@ def save_products(products_list):
                 ''', (p['ml_id'], p['title'], p['price'], p['available_quantity'], cost_price, 
                       p.get('permalink'), p.get('thumbnail'), p.get('status'), now, price_web, images, description, is_web_active))
 
+def create_product(product_data):
+    now = datetime.now().isoformat()
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute('''
+                INSERT INTO products_cache 
+                (ml_id, title, price, available_quantity, cost_price, permalink, thumbnail, status, last_sync, price_web, images, description, is_web_active)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ''', (
+                product_data['ml_id'],
+                product_data['title'],
+                product_data['price'],
+                product_data['available_quantity'],
+                product_data.get('cost_price', 0.0),
+                product_data.get('permalink', ''),
+                product_data.get('thumbnail', ''),
+                product_data.get('status', 'active'),
+                now,
+                product_data.get('price_web', 0.0),
+                product_data.get('images', ''),
+                product_data.get('description', ''),
+                product_data.get('is_web_active', 1)
+            ))
+
 def update_product_cost(ml_id, cost_price):
     with get_connection() as conn:
         with conn.cursor() as cursor:

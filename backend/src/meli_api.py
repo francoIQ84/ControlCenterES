@@ -24,6 +24,20 @@ MOCK_TITLES = [
     "Silla de Escritorio Ergonómica Regulable Mesh Pro"
 ]
 
+MOCK_THUMBNAILS = [
+    "https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=200&q=80",  # Headphones
+    "https://images.unsplash.com/photo-1593305841991-05c297ba4575?w=200&q=80",  # TV
+    "https://images.unsplash.com/photo-1511707171634-5f897ff02aa9?w=200&q=80",  # Phone
+    "https://images.unsplash.com/photo-1542291026-7eec264c27ff?w=200&q=80",  # Shoes
+    "https://images.unsplash.com/photo-1517701604599-bb29b565090c?w=200&q=80",  # Coffee maker
+    "https://images.unsplash.com/photo-1618384887929-16ec33fab9ef?w=200&q=80",  # Keyboard
+    "https://images.unsplash.com/photo-1615663245857-ac93bb7c39e7?w=200&q=80",  # Mouse
+    "https://images.unsplash.com/photo-1553062407-98eeb64c6a62?w=200&q=80",  # Backpack
+    "https://images.unsplash.com/photo-1577937927133-66ef06acdf18?w=200&q=80",  # Bottle/Thermos
+    "https://images.unsplash.com/photo-1505797149-43b0069ec26b?w=200&q=80"   # Chair
+]
+
+
 MOCK_BUYERS = [
     {"id": 10020304, "nickname": "JUAN_PEREZ88", "name": "Juan Pérez", "email": "juan.perez@example.com", "phone": "11-3456-7890", "document_type": "DNI", "document_number": "34890123"},
     {"id": 10050607, "nickname": "MARIA_GOMEZ_92", "name": "María Gómez", "email": "maria.gomez@example.com", "phone": "11-9876-5432", "document_type": "DNI", "document_number": "36450912"},
@@ -194,7 +208,7 @@ def sync_products():
                 'price': price,
                 'available_quantity': qty,
                 'permalink': f"https://articulo.mercadolibre.com.ar/{ml_id.replace('MLA', 'MLA-')}-articulo-demo",
-                'thumbnail': "https://http2.mlstatic.com/D_NQ_NP_900015-MLA45678912345_032021-O.webp",
+                'thumbnail': MOCK_THUMBNAILS[i % len(MOCK_THUMBNAILS)],
                 'status': 'active' if qty > 0 else 'paused'
             })
         database.save_products(products)
