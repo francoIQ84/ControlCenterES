@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { Outlet, NavLink } from 'react-router-dom'
-import { LayoutDashboard, Package, Receipt, Users, Settings, Sun, Moon, RefreshCw, Zap } from 'lucide-react'
+import { LayoutDashboard, Package, Receipt, Users, Settings, Sun, Moon, RefreshCw, Zap, Image } from 'lucide-react'
 
 export default function Layout() {
   const [lightMode, setLightMode] = useState(true)
@@ -51,6 +51,9 @@ export default function Layout() {
           </NavLink>
           <NavLink to="/customers" className={({isActive}) => `nav-link ${isActive ? 'active' : ''}`}>
             <Users size={20} /> Clientes
+          </NavLink>
+          <NavLink to="/media" className={({isActive}) => `nav-link ${isActive ? 'active' : ''}`}>
+            <Image size={20} /> Imágenes
           </NavLink>
           <NavLink to="/settings" className={({isActive}) => `nav-link ${isActive ? 'active' : ''}`}>
             <Settings size={20} /> Configuración

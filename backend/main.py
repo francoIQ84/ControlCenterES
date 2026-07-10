@@ -11,8 +11,9 @@ from src.utils.ssl_gen import ensure_ssl_certs
 # Initialize database
 database.init_db()
 
-# Create invoices directory
+# Create invoices and uploads directory
 os.makedirs('invoices', exist_ok=True)
+os.makedirs('uploads', exist_ok=True)
 
 # Create FastAPI app
 app = FastAPI(title="ControlCenterES - API")
@@ -40,8 +41,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Mount static files for invoices
+# Mount static files for invoices and uploads
 app.mount("/invoices", StaticFiles(directory="invoices"), name="invoices")
+app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 
 # Include API routes
 app.include_router(api_router, prefix="/api")

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { Package, CloudOff, Cloud, RefreshCw, Save } from 'lucide-react'
+import MediaBrowser from '../components/MediaBrowser'
 
 export default function Inventory() {
   const [products, setProducts] = useState([])
@@ -20,6 +21,13 @@ export default function Inventory() {
   }
   const [newProduct, setNewProduct] = useState(initialNewProduct)
   const [showAddModal, setShowAddModal] = useState(false)
+  const [galleryOpen, setGalleryOpen] = useState(false)
+  const [galleryCallback, setGalleryCallback] = useState(null)
+
+  const openGallery = (callback) => {
+    setGalleryCallback(() => callback)
+    setGalleryOpen(true)
+  }
 
   const fetchProducts = () => {
     setLoading(true)
@@ -204,8 +212,14 @@ export default function Inventory() {
                 </label>
               </div>
 
-              <label style={{fontSize: '0.85rem'}}>URL de Imagen (Opcional)
-                <input type="text" value={newProduct.images} onChange={e => setNewProduct({...newProduct, images: e.target.value})} placeholder="https://ejemplo.com/foto.jpg" style={{width: '100%', marginTop: 5}}/>
+              <label style={{fontSize: '0.85rem'}}>
+                <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 5}}>
+                  <span>URL de Imagen (Opcional)</span>
+                  <button type="button" className="btn" style={{padding: '3px 8px', fontSize: '0.75rem'}} onClick={() => openGallery((url) => setNewProduct(prev => ({...prev, images: url})))}>
+                    Seleccionar de Galería
+                  </button>
+                </div>
+                <input type="text" value={newProduct.images} onChange={e => setNewProduct({...newProduct, images: e.target.value})} placeholder="https://ejemplo.com/foto.jpg" style={{width: '100%'}}/>
               </label>
 
               <label style={{fontSize: '0.85rem'}}>Descripción Web
@@ -263,17 +277,63 @@ export default function Inventory() {
             </thead>
             <tbody>
               {sortedProducts.map(p => (
-                <ProductRow key={p.ml_id} p={p} onSave={handleUpdate} />
+                <ProductRow key={p.ml_id} p={p} onSave={handleUpdate} onOpenGallery={openGallery} />
               ))}
             </tbody>
           </table>
         )}
       </div>
+
+      {galleryOpen && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0,0,0,0.7)',
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          zIndex: 1100
+        }}>
+          <div className="card" style={{
+            width: 800,
+            maxWidth: '95%',
+            maxHeight: '85vh',
+            overflowY: 'auto',
+            padding: 20,
+            backgroundColor: 'var(--bg-card)',
+            border: '1px solid var(--border-color)',
+            borderRadius: 12
+          }}>
+            <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15}}>
+              <h3 style={{margin: 0}}>Seleccionar Imagen</h3>
+              <button 
+                className="btn" 
+                style={{
+                  padding: '4px 10px', 
+                  backgroundColor: 'transparent', 
+                  border: '1px solid var(--border-color)', 
+                  color: 'var(--text-primary)'
+                }} 
+                onClick={() => setGalleryOpen(false)}
+              >
+                Cerrar
+              </button>
+            </div>
+            <MediaBrowser onSelectImage={(url) => {
+              if (galleryCallback) galleryCallback(url)
+              setGalleryOpen(false)
+            }} />
+          </div>
+        </div>
+      )}
     </div>
   )
 }
 
-function ProductRow({ p, onSave }) {
+function ProductRow({ p, onSave, onOpenGallery }) {
   const [qty, setQty] = useState(p.available_quantity)
   const [price, setPrice] = useState(p.price)
   const [cost, setCost] = useState(p.cost_price)
@@ -415,13 +475,18 @@ function ProductRow({ p, onSave }) {
                 </div>
 
                 {!useMeliImage && (
-                  <input 
-                    type="text" 
-                    value={customMainUrl} 
-                    onChange={e => setCustomMainUrl(e.target.value)} 
-                    placeholder="https://ejemplo.com/foto.jpg"
-                    style={{width: '100%', fontSize: '0.8rem', padding: 5, backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)', border: '1px solid var(--border-color)', borderRadius: 4}}
-                  />
+                  <div style={{display: 'flex', gap: 5}}>
+                    <input 
+                      type="text" 
+                      value={customMainUrl} 
+                      onChange={e => setCustomMainUrl(e.target.value)} 
+                      placeholder="https://ejemplo.com/foto.jpg"
+                      style={{flex: 1, fontSize: '0.8rem', padding: 5, backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)', border: '1px solid var(--border-color)', borderRadius: 4}}
+                    />
+                    <button type="button" className="btn" style={{padding: '4px 8px', fontSize: '0.75rem', flexShrink: 0}} onClick={() => onOpenGallery((url) => setCustomMainUrl(url))}>
+                      Seleccionar
+                    </button>
+                  </div>
                 )}
               </div>
 

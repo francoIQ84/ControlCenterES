@@ -6,6 +6,7 @@ import Inventory from './pages/Inventory'
 import Sales from './pages/Sales'
 import Customers from './pages/Customers'
 import Settings from './pages/Settings'
+import MediaManager from './pages/MediaManager'
 
 function App() {
   return (
@@ -17,6 +18,7 @@ function App() {
           <Route path="sales" element={<Sales />} />
           <Route path="customers" element={<Customers />} />
           <Route path="settings" element={<Settings />} />
+          <Route path="media" element={<MediaManager />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
       </Routes>
