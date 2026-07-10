@@ -1,69 +1,45 @@
 import os
-from nicegui import ui, app
+from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
+from fastapi.middleware.cors import CORSMiddleware
+import uvicorn
+
+from src import database
+from src.api import api_router
+from src.utils.ssl_gen import ensure_ssl_certs
 
 # Initialize database
-from src import database, meli_api
-
 database.init_db()
 
-# Create invoices directory and mount static files route
+# Create invoices directory
 os.makedirs('invoices', exist_ok=True)
-app.add_static_files('/invoices', 'invoices')
 
-# Seed mock data if database is empty and demo mode is enabled
-if database.get_setting('demo_mode', '1') == '1':
-    # Check if we already have products
-    products = database.get_all_products()
-    if not products:
-        print("Seeding initial demo products and sales orders...")
-        meli_api.sync_products()
-        meli_api.sync_orders()
+# Create FastAPI app
+app = FastAPI(title="ControlCenterES - API")
 
-# Import page builders
-from src.ui.theme import page_frame
-from src.ui.dashboard import create_dashboard_page
-from src.ui.inventory import create_inventory_page
-from src.ui.sales import create_sales_page
-from src.ui.customers import create_customers_page
-from src.ui.settings import create_settings_page
+# Setup CORS
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
-# Define page routes
-@ui.page('/')
-def page_dashboard():
-    with page_frame('Dashboard'):
-        create_dashboard_page()
+# Mount static files for invoices
+app.mount("/invoices", StaticFiles(directory="invoices"), name="invoices")
 
-@ui.page('/inventory')
-def page_inventory():
-    with page_frame('Inventario'):
-        create_inventory_page()
+# Include API routes
+app.include_router(api_router, prefix="/api")
 
-@ui.page('/sales')
-def page_sales():
-    with page_frame('Ventas'):
-        create_sales_page()
-
-@ui.page('/customers')
-def page_customers():
-    with page_frame('Clientes'):
-        create_customers_page()
-
-@ui.page('/settings')
-def page_settings():
-    with page_frame('Configuración'):
-        create_settings_page()
-
-# Start application
-if __name__ in {"__main__", "__mp_main__"}:
-    # In Windows, multi-processing can cause __mp_main__ imports, 
-    # check standard __main__ to avoid multiple starts.
-    from src.utils.ssl_gen import ensure_ssl_certs
+if __name__ == "__main__":
     cert_path, key_path = ensure_ssl_certs()
     
-    ui.run(
+    uvicorn.run(
+        "main:app",
+        host="0.0.0.0",
         port=8088,
-        title="ControlCenterES - Gestor Mercado Libre",
-        favicon="📊",
+        ssl_keyfile=key_path,
         ssl_certfile=cert_path,
-        ssl_keyfile=key_path
+        reload=True
     )
