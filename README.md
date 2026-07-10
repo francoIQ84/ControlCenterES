@@ -106,3 +106,15 @@ Se ha implementado el botón "+ Agregar Producto" en la sección de Inventario p
   - **En Modo Demo:** Simula la publicación inmediata creando un identificador ficticio `MLAxxx` con enlace demo en Mercado Libre.
   - **En Modo Real:** La aplicación despliega un aviso recomendando crear el artículo de forma nativa en Mercado Libre para garantizar la categorización apropiada y posterior sincronización.
 
+### 4. Seguridad de Acceso y Gestión de Usuarios (Login)
+Para restringir el acceso al panel administrativo en un entorno público (como un VPS), la plataforma implementa una pantalla de inicio de sesión protegida y un sistema de control de usuarios.
+
+- **Credenciales Iniciales por Defecto:**
+  - **Usuario:** `admin`
+  - **Contraseña:** `admin123`
+  - *(Se recomienda cambiar la clave o crear un nuevo usuario y borrar este desde el panel una vez montado en el VPS)*
+- **Criptografía Segura:** Las contraseñas de los usuarios son encriptadas en la base de datos utilizando el estándar criptográfico **PBKDF2-HMAC-SHA256** con una sal aleatoria única de 32 caracteres por usuario y 100,000 iteraciones, previniendo ataques de diccionario.
+- **Panel CRUD Integrado:** En la sección **Configuración > Gestión de Usuarios**, los administradores pueden crear nuevos accesos, modificar claves (lo cual invalida sesiones activas para esa cuenta) o eliminar usuarios (evitando la auto-eliminación).
+- **Historial de Auditoría con Geolocalización:** En **Configuración > Seguridad & Accesos** se registra el historial de accesos fallidos y exitosos, capturando la dirección IP del visitante y resolviendo su ubicación geográfica (País, Región y Ciudad) utilizando el servicio de `ip-api.com`. Las conexiones locales se detectan de forma segura y se registran como "Red Local".
+
+
