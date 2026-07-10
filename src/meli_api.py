@@ -1,0 +1,378 @@
+import time
+import requests
+import json
+from datetime import datetime, timedelta
+import random
+
+from src import config
+from src import database
+
+API_BASE_URL = "https://api.mercadolibre.com"
+
+# --- Demo/Mock Data Generator ---
+
+MOCK_TITLES = [
+    "Auriculares Bluetooth Inalámbricos Cancelación de Ruido Pro",
+    "Smart TV 55 Pulgadas 4K UHD Slim Design HDR10",
+    "Smartphone Android 128GB 8GB RAM Cámara 64MP",
+    "Zapatillas Deportivas Running Ultralight Confort",
+    "Cafetera Espresso Automática 15 Bares Acero Inoxidable",
+    "Teclado Mecánico RGB Gamer Switch Red Español",
+    "Mouse Inalámbrico Ergonómico Recargable Silent",
+    "Mochila Antirrobo Impermeable Puerto USB Integrado",
+    "Termo Acero Inoxidable 1 Litro Conserva Frío/Calor",
+    "Silla de Escritorio Ergonómica Regulable Mesh Pro"
+]
+
+MOCK_BUYERS = [
+    {"id": 10020304, "nickname": "JUAN_PEREZ88", "name": "Juan Pérez", "email": "juan.perez@example.com", "phone": "11-3456-7890", "document_type": "DNI", "document_number": "34890123"},
+    {"id": 10050607, "nickname": "MARIA_GOMEZ_92", "name": "María Gómez", "email": "maria.gomez@example.com", "phone": "11-9876-5432", "document_type": "DNI", "document_number": "36450912"},
+    {"id": 10080910, "nickname": "CARLOS_RODRIGUEZ", "name": "Carlos Rodríguez", "email": "carlos.r@example.com", "phone": "341-555-8888", "document_type": "DNI", "document_number": "32112345"},
+    {"id": 10111213, "nickname": "ANA_MARTINEZ_SHOP", "name": "Ana Martínez", "email": "ana.martinez@example.com", "phone": "261-444-1111", "document_type": "DNI", "document_number": "29876543"},
+    {"id": 10141516, "nickname": "LUCAS_SILVA", "name": "Lucas Silva", "email": "lucas.silva@example.com", "phone": "351-777-9999", "document_type": "DNI", "document_number": "40123456"}
+]
+
+def is_demo_mode():
+    """Returns True if the app is configured in Demo Mode or lacks API keys."""
+    demo_setting = database.get_setting('demo_mode', '1')
+    return demo_setting == '1' or not config.is_configured()
+
+# --- Authentication and OAuth ---
+
+def get_auth_url():
+    """Generates the OAuth authentication URL for Mercado Libre."""
+    client_id = config.get_client_id()
+    redirect_uri = config.get_redirect_uri()
+    country_code = config.get_country()
+    
+    country_info = config.COUNTRIES.get(country_code, config.COUNTRIES['AR'])
+    auth_base = country_info['auth_url']
+    
+    return f"{auth_base}/authorization?response_type=code&client_id={client_id}&redirect_uri={redirect_uri}"
+
+def authenticate_with_code(code):
+    """Exchanges the authorization code for access and refresh tokens."""
+    if is_demo_mode():
+        # Setup fake auth in demo mode
+        config.set_access_token("mock_access_token_12345")
+        config.set_refresh_token("mock_refresh_token_67890")
+        config.set_token_expiry(time.time() + 21600)  # 6 hours
+        config.set_user_id("987654321")
+        return True, "Autenticado en modo DEMO"
+
+    client_id = config.get_client_id()
+    client_secret = config.get_client_secret()
+    redirect_uri = config.get_redirect_uri()
+
+    url = f"{API_BASE_URL}/oauth/token"
+    headers = {
+        'Accept': 'application/json',
+        'Content-Type': 'application/x-www-form-urlencoded'
+    }
+    data = {
+        'grant_type': 'authorization_code',
+        'client_id': client_id,
+        'client_secret': client_secret,
+        'code': code,
+        'redirect_uri': redirect_uri
+    }
+
+    try:
+        response = requests.post(url, headers=headers, data=data)
+        if response.status_code == 200:
+            res_data = response.json()
+            config.set_access_token(res_data['access_token'])
+            config.set_refresh_token(res_data['refresh_token'])
+            config.set_token_expiry(time.time() + res_data['expires_in'])
+            config.set_user_id(str(res_data['user_id']))
+            return True, "Autenticación exitosa"
+        else:
+            return False, f"Error Meli API: {response.text}"
+    except Exception as e:
+        return False, f"Excepción de conexión: {str(e)}"
+
+def refresh_access_token():
+    """Refreshes the access token using the refresh token."""
+    if is_demo_mode():
+        config.set_token_expiry(time.time() + 21600)
+        return True
+
+    client_id = config.get_client_id()
+    client_secret = config.get_client_secret()
+    refresh_token = config.get_refresh_token()
+
+    if not refresh_token:
+        return False
+
+    url = f"{API_BASE_URL}/oauth/token"
+    headers = {
+        'Accept': 'application/json',
+        'Content-Type': 'application/x-www-form-urlencoded'
+    }
+    data = {
+        'grant_type': 'refresh_token',
+        'client_id': client_id,
+        'client_secret': client_secret,
+        'refresh_token': refresh_token
+    }
+
+    try:
+        response = requests.post(url, headers=headers, data=data)
+        if response.status_code == 200:
+            res_data = response.json()
+            config.set_access_token(res_data['access_token'])
+            config.set_refresh_token(res_data['refresh_token'])
+            config.set_token_expiry(time.time() + res_data['expires_in'])
+            return True
+        else:
+            return False
+    except Exception:
+        return False
+
+def check_and_refresh_token():
+    """Checks if the token is close to expiry and refreshes if needed."""
+    expiry = config.get_token_expiry()
+    # Refresh if token expires in less than 5 minutes
+    if expiry - time.time() < 300:
+        return refresh_access_token()
+    return True
+
+# --- API Request Wrapper ---
+
+def api_request(method, path, headers=None, params=None, json_data=None):
+    """Safely executes an authorized request to Mercado Libre API."""
+    if is_demo_mode():
+        return None  # Should use mock path instead
+        
+    check_and_refresh_token()
+    
+    url = f"{API_BASE_URL}{path}"
+    req_headers = {
+        'Authorization': f"Bearer {config.get_access_token()}",
+        'Accept': 'application/json'
+    }
+    if headers:
+        req_headers.update(headers)
+        
+    try:
+        response = requests.request(method, url, headers=req_headers, params=params, json=json_data)
+        return response
+    except Exception as e:
+        raise ConnectionError(f"Error al conectar con la API de Mercado Libre: {str(e)}")
+
+# --- Sync Data Functions ---
+
+def sync_products():
+    """Schedules or triggers synchronization of products from Meli to SQLite Cache."""
+    if is_demo_mode():
+        # Generate beautiful mock items
+        products = []
+        for i, title in enumerate(MOCK_TITLES):
+            ml_id = f"MLA{987654321 + i}"
+            # Standard prices in local currency
+            price = float(random.randint(1500, 85000))
+            qty = random.randint(0, 25)
+            products.append({
+                'ml_id': ml_id,
+                'title': title,
+                'price': price,
+                'available_quantity': qty,
+                'permalink': f"https://articulo.mercadolibre.com.ar/{ml_id.replace('MLA', 'MLA-')}-articulo-demo",
+                'thumbnail': "https://http2.mlstatic.com/D_NQ_NP_900015-MLA45678912345_032021-O.webp",
+                'status': 'active' if qty > 0 else 'paused'
+            })
+        database.save_products(products)
+        return True, len(products)
+
+    # Real Mercado Libre API flow
+    user_id = config.get_user_id()
+    if not user_id:
+        return False, "Usuario no autenticado"
+
+    try:
+        # Search all active and paused items
+        # Limit to 50 for simplicity of this control panel
+        search_path = f"/users/{user_id}/items/search"
+        params = {'limit': 50}
+        response = api_request("GET", search_path, params=params)
+        
+        if response.status_code != 200:
+            return False, f"No se pudieron buscar publicaciones: {response.text}"
+            
+        item_ids = response.json().get('results', [])
+        if not item_ids:
+            return True, 0
+            
+        # Get details in chunks of 20 (multi-get limit)
+        products = []
+        for i in range(0, len(item_ids), 20):
+            chunk = item_ids[i:i+20]
+            ids_str = ",".join(chunk)
+            details_response = api_request("GET", "/items", params={'ids': ids_str})
+            
+            if details_response.status_code == 200:
+                results = details_response.json()
+                for item_wrapper in results:
+                    item = item_wrapper.get('body', {})
+                    if item.get('id'):
+                        products.append({
+                            'ml_id': item['id'],
+                            'title': item['title'],
+                            'price': float(item['price']),
+                            'available_quantity': int(item['available_quantity']),
+                            'permalink': item.get('permalink'),
+                            'thumbnail': item.get('thumbnail'),
+                            'status': item.get('status')
+                        })
+                        
+        database.save_products(products)
+        return True, len(products)
+    except Exception as e:
+        return False, f"Excepción en sincronización: {str(e)}"
+
+def sync_orders():
+    """Synchronizes sales orders from Meli to SQLite cache."""
+    if is_demo_mode():
+        # Generate mock orders and customers
+        orders = []
+        now = datetime.now()
+        for i in range(15):
+            order_id = 2000000000 + i
+            buyer = random.choice(MOCK_BUYERS)
+            item_count = random.randint(1, 2)
+            items = []
+            total_amount = 0.0
+            
+            # Fetch products from db cache to match items
+            db_products = database.get_all_products()
+            if not db_products:
+                sync_products()
+                db_products = database.get_all_products()
+                
+            for _ in range(item_count):
+                prod = random.choice(db_products) if db_products else {
+                    'ml_id': 'MLA12345', 'title': 'Producto Demo', 'price': 1000.0
+                }
+                qty = random.randint(1, 3)
+                price = prod['price']
+                items.append({
+                    'id': prod['ml_id'],
+                    'title': prod['title'],
+                    'price': price,
+                    'quantity': qty
+                })
+                total_amount += price * qty
+                
+            # Date offset to spread orders across the past 30 days
+            order_date = now - timedelta(days=random.randint(0, 30), hours=random.randint(0, 23))
+            
+            orders.append({
+                'order_id': order_id,
+                'date_created': order_date.isoformat(),
+                'buyer': buyer,
+                'total_amount': total_amount,
+                'currency_id': 'ARS',
+                'status': 'paid' if i < 12 else 'cancelled',
+                'payment_status': 'approved' if i < 12 else 'rejected',
+                'shipping_status': 'delivered' if i < 8 else ('shipped' if i < 11 else 'pending'),
+                'items': items
+            })
+        database.save_orders_and_customers(orders)
+        return True, len(orders)
+
+    # Real Mercado Libre API flow
+    user_id = config.get_user_id()
+    if not user_id:
+        return False, "Usuario no autenticado"
+
+    try:
+        # Get recent seller orders
+        search_path = f"/orders/search"
+        params = {
+            'seller': user_id,
+            'limit': 50
+        }
+        response = api_request("GET", search_path, params=params)
+        
+        if response.status_code != 200:
+            return False, f"No se pudieron buscar órdenes: {response.text}"
+            
+        results = response.json().get('results', [])
+        orders = []
+        
+        for o in results:
+            items = []
+            for item_wrapper in o.get('order_items', []):
+                item_details = item_wrapper.get('item', {})
+                items.append({
+                    'id': item_details.get('id'),
+                    'title': item_details.get('title'),
+                    'price': float(item_wrapper.get('unit_price', 0.0)),
+                    'quantity': int(item_wrapper.get('quantity', 1))
+                })
+                
+            buyer_info = o.get('buyer', {})
+            # Document details mapping
+            doc_type = None
+            doc_num = None
+            billing_info = buyer_info.get('billing_info', {})
+            if billing_info.get('doc_type'):
+                doc_type = billing_info['doc_type']
+                doc_num = billing_info.get('doc_number')
+            
+            buyer = {
+                'id': buyer_info.get('id'),
+                'nickname': buyer_info.get('nickname', 'Anónimo'),
+                'name': f"{buyer_info.get('first_name', '')} {buyer_info.get('last_name', '')}".strip() or buyer_info.get('nickname', 'Comprador Meli'),
+                'email': buyer_info.get('email'),
+                'phone': buyer_info.get('phone', {}).get('number'),
+                'document_type': doc_type,
+                'document_number': doc_num
+            }
+            
+            # Shipping and Payment statuses
+            shipping_status = o.get('shipping', {}).get('status', 'pending')
+            payment_status = 'pending'
+            payments = o.get('payments', [])
+            if payments:
+                payment_status = payments[0].get('status', 'pending')
+                
+            orders.append({
+                'order_id': o['id'],
+                'date_created': o['date_created'],
+                'buyer': buyer,
+                'total_amount': float(o['total_amount']),
+                'currency_id': o.get('currency_id', 'ARS'),
+                'status': o['status'],
+                'payment_status': payment_status,
+                'shipping_status': shipping_status,
+                'items': items
+            })
+            
+        database.save_orders_and_customers(orders)
+        return True, len(orders)
+    except Exception as e:
+        return False, f"Excepción en sincronización de órdenes: {str(e)}"
+
+def update_stock_and_price(ml_id, quantity, price):
+    """Updates the stock quantity and price on Mercado Libre."""
+    if is_demo_mode():
+        # Update local db cache directly
+        database.update_product_stock_price(ml_id, quantity, price)
+        return True, "Actualizado en modo Demo exitosamente"
+        
+    path = f"/items/{ml_id}"
+    data = {
+        "price": float(price),
+        "available_quantity": int(quantity)
+    }
+    
+    try:
+        response = api_request("PUT", path, json_data=data)
+        if response.status_code == 200:
+            database.update_product_stock_price(ml_id, quantity, price)
+            return True, "Sincronizado con Mercado Libre"
+        else:
+            return False, f"Error de API Mercado Libre: {response.text}"
+    except Exception as e:
+        return False, f"Excepción de red: {str(e)}"

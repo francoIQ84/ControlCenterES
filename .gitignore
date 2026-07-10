@@ -14,3 +14,18 @@ db.lck
 
 # Log files
 *.log
+
+# Python virtual environment
+venv/
+.venv/
+env/
+
+# Python cache files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Local Database & Invoices
+data/
+invoices/
