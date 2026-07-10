@@ -4,12 +4,15 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 
-from src import database
+from src import database, scheduler
 from src.api import api_router
 from src.utils.ssl_gen import ensure_ssl_certs
 
 # Initialize database
 database.init_db()
+
+# Start background scheduler
+scheduler.start_scheduler()
 
 # Create invoices and uploads directory
 os.makedirs('invoices', exist_ok=True)

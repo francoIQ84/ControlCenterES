@@ -56,7 +56,7 @@ Activa el entorno virtual, entra a la carpeta `backend` y ejecuta el servidor de
 cd backend
 python main.py
 ```
-*(El backend API se levantará en `https://localhost:8088`)*
+*(El backend API se levantará en `http://localhost:8090`)*
 
 ### Terminal 2: Frontend Administrativo
 Entra a la carpeta `frontend` y ejecuta el entorno de Vite:
@@ -75,8 +75,34 @@ npm run dev
 *(La tienda pública se levantará típicamente en `http://localhost:3000`)*
 
 ## Funcionalidades
-- Sincronización automática de publicaciones activas/pausadas.
-- Sincronización del historial de ventas y métricas (18 meses).
+- Sincronización en segundo plano de publicaciones activas/pausadas y órdenes de ventas.
 - Cálculo real de márgenes de ganancia mediante carga de costos locales.
 - Gestión avanzada y métricas del cliente (historial de facturación).
 - Tema de interfaz Daylight Premium personalizable y responsivo.
+- Gestor de imágenes integrado por carpetas y selector de galería en inventario.
+- Creación de productos exclusivos para la Tienda Web (locales) o para simular en Mercado Libre.
+
+## Documentación de Nuevas Características
+
+### 1. Gestor de Medios (Imágenes)
+El proyecto cuenta con un gestor de imágenes unificado accesible desde la barra lateral ("Imágenes").
+- **Almacenamiento:** Las imágenes subidas se guardan físicamente en la carpeta `backend/uploads/`.
+- **Organización:** Soporta la creación de subcarpetas jerárquicas e indica el tamaño y la fecha exacta de subida (ordenando por fecha descendente).
+- **Ruta Estática:** FastAPI expone de forma recursiva y segura este directorio en la ruta web `/uploads`. Cualquier imagen cargada es accesible públicamente mediante URLs absolutas (ej. `http://localhost:8090/uploads/carpeta/imagen.jpg`).
+- **Prevención de Traversal:** Cuenta con una función de validación de rutas `get_safe_path` en `backend/src/api/media.py` que bloquea peticiones maliciosas que busquen navegar fuera del directorio de subidas.
+
+### 2. Sincronización en Segundo Plano (Background Scheduler)
+Al arrancar el servidor backend, se levanta de manera automática un hilo demonio (`scheduler.py`) que ejecuta sincronizaciones periódicas con Mercado Libre sin bloquear el servidor web.
+- **Intervalo:** Se ejecuta cada **15 minutos**.
+- **Acciones:**
+  - Si el sistema está conectado en Modo Real, descarga e indexa las últimas 100 ventas/órdenes y actualiza los precios y stock del inventario.
+  - Si está en Modo Demo, recarga las órdenes ficticias y las publicaciones simuladas de demostración para mantener el entorno activo.
+- **Configuración:** Para ajustar el intervalo de sincronización, podés modificar el parámetro `time.sleep(900)` al final del bucle en `backend/src/scheduler.py`.
+
+### 3. Creación de Productos (Locales vs. Mercado Libre)
+Se ha implementado el botón "+ Agregar Producto" en la sección de Inventario para dar de alta artículos directamente:
+- **Productos Locales (Solo Web):** Generan un identificador con prefijo `LOCAL-` y estado `local`. Estos productos no se sincronizan a la API de Mercado Libre al modificarlos y sirven para ventas exclusivas en el Storefront.
+- **Publicaciones Mercado Libre:**
+  - **En Modo Demo:** Simula la publicación inmediata creando un identificador ficticio `MLAxxx` con enlace demo en Mercado Libre.
+  - **En Modo Real:** La aplicación despliega un aviso recomendando crear el artículo de forma nativa en Mercado Libre para garantizar la categorización apropiada y posterior sincronización.
+
