@@ -2,7 +2,7 @@ import Image from "next/image";
 import Link from "next/link";
 
 async function getProducts() {
-  const res = await fetch("http://localhost:8088/api/storefront/products", { next: { revalidate: 60 } });
+  const res = await fetch("http://localhost:8090/api/storefront/products", { next: { revalidate: 60 } });
   if (!res.ok) return [];
   return res.json();
 }

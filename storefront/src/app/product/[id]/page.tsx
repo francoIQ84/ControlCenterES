@@ -4,7 +4,7 @@ import { ChevronLeft } from 'lucide-react';
 import AddToCartButton from "../../../components/AddToCartButton";
 
 async function getProduct(id: string) {
-  const res = await fetch("http://localhost:8088/api/storefront/products", { next: { revalidate: 60 } });
+  const res = await fetch("http://localhost:8090/api/storefront/products", { next: { revalidate: 60 } });
   if (!res.ok) return null;
   const products = await res.json();
   return products.find((p: any) => p.id === id);
