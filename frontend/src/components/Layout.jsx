@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { Outlet, NavLink } from 'react-router-dom'
-import { LayoutDashboard, Package, Receipt, Users, Settings, Sun, Moon, RefreshCw, Zap, Image } from 'lucide-react'
+import { LayoutDashboard, Package, Receipt, Users, Settings, Sun, Moon, RefreshCw, Zap, Image, LogOut } from 'lucide-react'
 
 export default function Layout() {
   const [lightMode, setLightMode] = useState(true)
@@ -30,6 +30,14 @@ export default function Layout() {
     } finally {
       setSyncing(false)
     }
+  }
+
+  const handleLogout = async () => {
+    try {
+      await fetch('/api/auth/logout', { method: 'POST' })
+    } catch(e) {}
+    localStorage.removeItem('adminToken')
+    window.location.href = '/login'
   }
 
   return (
@@ -68,6 +76,9 @@ export default function Layout() {
             </button>
             <button className="btn-icon" onClick={() => setLightMode(!lightMode)}>
               {lightMode ? <Moon size={20} /> : <Sun size={20} />}
+            </button>
+            <button className="btn-icon" onClick={handleLogout} title="Cerrar sesión">
+              <LogOut size={20} />
             </button>
           </div>
         </header>

@@ -1,4 +1,4 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from .inventory import router as inventory_router
 from .sales import router as sales_router
 from .customers import router as customers_router
@@ -6,13 +6,18 @@ from .dashboard import router as dashboard_router
 from .settings import router as settings_router
 from .storefront import router as storefront_router
 from .media import router as media_router
+from .auth import router as auth_router, verify_session
 
 api_router = APIRouter()
 
-api_router.include_router(inventory_router, prefix="/inventory", tags=["inventory"])
-api_router.include_router(sales_router, prefix="/sales", tags=["sales"])
-api_router.include_router(customers_router, prefix="/customers", tags=["customers"])
-api_router.include_router(dashboard_router, prefix="/dashboard", tags=["dashboard"])
-api_router.include_router(settings_router, prefix="/settings", tags=["settings"])
+# Public storefront and auth endpoints
 api_router.include_router(storefront_router, prefix="/storefront", tags=["storefront"])
-api_router.include_router(media_router, prefix="/media", tags=["media"])
+api_router.include_router(auth_router, prefix="/auth", tags=["auth"])
+
+# Protected admin panel endpoints
+api_router.include_router(inventory_router, prefix="/inventory", tags=["inventory"], dependencies=[Depends(verify_session)])
+api_router.include_router(sales_router, prefix="/sales", tags=["sales"], dependencies=[Depends(verify_session)])
+api_router.include_router(customers_router, prefix="/customers", tags=["customers"], dependencies=[Depends(verify_session)])
+api_router.include_router(dashboard_router, prefix="/dashboard", tags=["dashboard"], dependencies=[Depends(verify_session)])
+api_router.include_router(settings_router, prefix="/settings", tags=["settings"], dependencies=[Depends(verify_session)])
+api_router.include_router(media_router, prefix="/media", tags=["media"], dependencies=[Depends(verify_session)])

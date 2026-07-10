@@ -1,6 +1,8 @@
 import os
 import json
 from datetime import datetime
+import hashlib
+import secrets
 import psycopg2
 from psycopg2.extras import RealDictCursor
 from dotenv import load_dotenv
@@ -78,6 +80,53 @@ def init_db():
                     source_platform TEXT DEFAULT 'MERCADOLIBRE'
                 )
             ''')
+
+            # Users table
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS users (
+                    id SERIAL PRIMARY KEY,
+                    username VARCHAR(100) UNIQUE NOT NULL,
+                    password_hash VARCHAR(255) NOT NULL,
+                    full_name VARCHAR(100),
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+
+            # Active Sessions table
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS active_sessions (
+                    token VARCHAR(255) PRIMARY KEY,
+                    user_id INTEGER,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    expires_at TIMESTAMP
+                )
+            ''')
+            cursor.execute('ALTER TABLE active_sessions ADD COLUMN IF NOT EXISTS user_id INTEGER;')
+
+            # Login History table
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS login_history (
+                    id SERIAL PRIMARY KEY,
+                    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    username VARCHAR(100),
+                    ip_address VARCHAR(50),
+                    country VARCHAR(100),
+                    region VARCHAR(100),
+                    city VARCHAR(100),
+                    status VARCHAR(20),
+                    user_agent TEXT
+                )
+            ''')
+            cursor.execute('ALTER TABLE login_history ADD COLUMN IF NOT EXISTS username VARCHAR(100);')
+
+            # Seed default admin user if no users exist
+            cursor.execute("SELECT COUNT(*) as count FROM users")
+            if cursor.fetchone()['count'] == 0:
+                admin_pw_hash = hash_password("admin123")
+                cursor.execute('''
+                    INSERT INTO users (username, password_hash, full_name)
+                    VALUES (%s, %s, %s)
+                ''', ("admin", admin_pw_hash, "Administrador"))
 
 # --- Settings Operations ---
 
@@ -355,3 +404,140 @@ def clear_all_caches():
             cursor.execute("DELETE FROM products_cache")
             cursor.execute("DELETE FROM orders_cache")
             cursor.execute("DELETE FROM customers")
+
+# --- Authentication & Session Security Operations ---
+
+def hash_password(password: str) -> str:
+    """Generates a secure PBKDF2 hash of a password using standard hashlib."""
+    salt = secrets.token_hex(16)
+    key = hashlib.pbkdf2_hmac('sha256', password.encode('utf-8'), salt.encode('utf-8'), 100000)
+    return f"pbkdf2_sha256$100000${salt}${key.hex()}"
+
+def verify_password(password: str, hashed_password: str) -> bool:
+    """Safely verifies a password against a PBKDF2 hash using compare_digest."""
+    try:
+        parts = hashed_password.split('$')
+        if len(parts) != 4 or parts[0] != 'pbkdf2_sha256':
+            return False
+        iterations = int(parts[1])
+        salt = parts[2]
+        original_key = parts[3]
+        key = hashlib.pbkdf2_hmac('sha256', password.encode('utf-8'), salt.encode('utf-8'), iterations)
+        return secrets.compare_digest(key.hex(), original_key)
+    except Exception:
+        return False
+
+def create_session(token, user_id, expires_at):
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute('''
+                INSERT INTO active_sessions (token, user_id, expires_at)
+                VALUES (%s, %s, %s)
+            ''', (token, user_id, expires_at))
+
+def validate_session(token):
+    try:
+        with get_connection() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute('''
+                    SELECT token FROM active_sessions
+                    WHERE token = %s AND expires_at > %s
+                ''', (token, datetime.now()))
+                row = cursor.fetchone()
+                return row is not None
+    except Exception:
+        return False
+
+def delete_session(token):
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute("DELETE FROM active_sessions WHERE token = %s", (token,))
+
+def add_login_history_entry(username, ip_address, country, region, city, status, user_agent):
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute('''
+                INSERT INTO login_history (username, ip_address, country, region, city, status, user_agent)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+            ''', (username, ip_address, country, region, city, status, user_agent))
+
+def get_login_history(limit=100):
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute('''
+                SELECT id, timestamp, username, ip_address, country, region, city, status, user_agent
+                FROM login_history
+                ORDER BY timestamp DESC
+                LIMIT %s
+            ''', (limit,))
+            rows = cursor.fetchall()
+            for r in rows:
+                if r['timestamp']:
+                    if isinstance(r['timestamp'], datetime):
+                        r['timestamp'] = r['timestamp'].isoformat()
+                    else:
+                        r['timestamp'] = str(r['timestamp'])
+            return rows
+
+# --- User Management Operations ---
+
+def get_user_by_username(username: str):
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute("SELECT id, username, password_hash, full_name FROM users WHERE username = %s", (username,))
+            return cursor.fetchone()
+
+def get_user_by_token(token: str):
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute('''
+                SELECT u.id, u.username, u.full_name
+                FROM users u
+                JOIN active_sessions s ON u.id = s.user_id
+                WHERE s.token = %s AND s.expires_at > %s
+            ''', (token, datetime.now()))
+            return cursor.fetchone()
+
+def get_all_users():
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute("SELECT id, username, full_name, created_at FROM users ORDER BY username ASC")
+            rows = cursor.fetchall()
+            for r in rows:
+                if r['created_at']:
+                    if isinstance(r['created_at'], datetime):
+                        r['created_at'] = r['created_at'].isoformat()
+                    else:
+                        r['created_at'] = str(r['created_at'])
+            return rows
+
+def create_user(username, password, full_name):
+    pw_hash = hash_password(password)
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute('''
+                INSERT INTO users (username, password_hash, full_name)
+                VALUES (%s, %s, %s)
+                RETURNING id
+            ''', (username, pw_hash, full_name))
+            return cursor.fetchone()['id']
+
+def delete_user(user_id):
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            # Delete active sessions for this user first
+            cursor.execute("DELETE FROM active_sessions WHERE user_id = %s", (user_id,))
+            cursor.execute("DELETE FROM users WHERE id = %s", (user_id,))
+
+def update_user_password(user_id, new_password):
+    pw_hash = hash_password(new_password)
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute("UPDATE users SET password_hash = %s WHERE id = %s", (pw_hash, user_id))
+            # Invalidate all active sessions for this user to force re-login
+            cursor.execute("DELETE FROM active_sessions WHERE user_id = %s", (user_id,))
+
+def update_user_info(user_id, full_name):
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute("UPDATE users SET full_name = %s WHERE id = %s", (full_name, user_id))
