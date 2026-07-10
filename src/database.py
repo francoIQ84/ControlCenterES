@@ -327,3 +327,13 @@ def get_dashboard_metrics():
         'profit_margin': profit_margin,
         'low_stock_count': low_stock_count
     }
+
+def clear_all_caches():
+    """Clears cached products, orders, and customers from the database."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM products_cache")
+    cursor.execute("DELETE FROM orders_cache")
+    cursor.execute("DELETE FROM customers")
+    conn.commit()
+    conn.close()

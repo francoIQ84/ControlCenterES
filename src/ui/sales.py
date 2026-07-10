@@ -10,35 +10,44 @@ def create_sales_page():
     # Search query state
     search_query = {'val': ''}
 
+    def on_search(e):
+        search_query['val'] = e.value.lower() if e.value else ''
+        refresh_sales()
+
     # Control Bar
     with ui.card().classes('w-full q-pa-md glass-card mb-6'):
         with ui.row().classes('w-full items-center justify-between gap-4'):
-            search_input = ui.input(placeholder='Buscar por comprador, ID o producto...').classes('w-80').props('outlined dense dark')
+            search_input = ui.input(placeholder='Buscar por comprador, ID o producto...', on_change=on_search).classes('w-80').props('outlined dense dark')
             
-            async def sync_sales():
-                n = ui.notification('Buscando ventas recientes...', type='ongoing', spinner=True)
-                ok, count = meli_api.sync_orders()
-                if ok:
-                    n.message = f"Ventas actualizadas. {count} órdenes procesadas."
-                    n.spinner = False
-                    n.icon = 'done'
-                    n.type = 'positive'
-                    refresh_sales()
-                else:
-                    n.message = f"Error al actualizar ventas: {count}"
-                    n.spinner = False
-                    n.icon = 'error'
-                    n.type = 'negative'
+            with ui.row().classes('items-center gap-4'):
+                date_from_input = ui.input('Desde (YYYY-MM-DD)').classes('w-40').props('outlined dense')
+                date_to_input = ui.input('Hasta (YYYY-MM-DD)').classes('w-40').props('outlined dense')
+                limit_input = ui.number(label='Cantidad', value=2000, min=1, max=5000, format='%.0f').classes('w-24').props('outlined dense')
+                
+                async def sync_sales():
+                    n = ui.notification('Buscando ventas recientes...', type='ongoing', spinner=True)
+                    limit_val = int(limit_input.value or 2000)
                     
-            ui.button('Actualizar Ventas', icon='sync_alt', on_click=sync_sales).classes('bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 rounded-lg')
+                    # Formateo básico de fecha a ISO8601 exigido por ML si el input tiene valor
+                    d_from = f"{date_from_input.value}T00:00:00.000-00:00" if date_from_input.value else None
+                    d_to = f"{date_to_input.value}T23:59:59.000-00:00" if date_to_input.value else None
+                    
+                    ok, count = meli_api.sync_orders(limit=limit_val, date_from=d_from, date_to=d_to)
+                    if ok:
+                        n.message = f"Ventas actualizadas. {count} órdenes procesadas."
+                        n.spinner = False
+                        n.icon = 'done'
+                        n.type = 'positive'
+                        refresh_sales()
+                    else:
+                        n.message = f"Error al actualizar ventas: {count}"
+                        n.spinner = False
+                        n.icon = 'error'
+                        n.type = 'negative'
+                        
+                ui.button('Actualizar Ventas', icon='sync_alt', on_click=sync_sales).classes('bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 rounded-lg')
 
     sales_container = ui.column().classes('w-full gap-4')
-
-    def on_search(e):
-        search_query['val'] = e.value.lower()
-        refresh_sales()
-        
-    search_input.on('update:model-value', on_search)
 
     def refresh_sales():
         sales_container.clear()

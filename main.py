@@ -57,8 +57,13 @@ def page_settings():
 if __name__ in {"__main__", "__mp_main__"}:
     # In Windows, multi-processing can cause __mp_main__ imports, 
     # check standard __main__ to avoid multiple starts.
+    from src.utils.ssl_gen import ensure_ssl_certs
+    cert_path, key_path = ensure_ssl_certs()
+    
     ui.run(
         port=8088,
         title="ControlCenterES - Gestor Mercado Libre",
-        favicon="📊"
+        favicon="📊",
+        ssl_certfile=cert_path,
+        ssl_keyfile=key_path
     )

@@ -12,21 +12,18 @@ def create_inventory_page():
     with ui.card().classes('w-full q-pa-md glass-card mb-6'):
         with ui.row().classes('w-full items-center justify-between gap-4'):
             # Search input
-            search_input = ui.input(placeholder='Buscar por título o ID...').classes('w-64').props('outlined dense dark')
-            search_input.on('update:model-value', lambda e: update_search(e.value))
-            
-            # Status Filter select
-            status_select = ui.select({
-                'all': 'Todos los estados',
-                'active': 'Activos',
-                'paused': 'Pausados'
-            }, value='all').classes('w-48').props('outlined dense dark')
+            search_input = ui.input(placeholder='Buscar por título o ID...', on_change=lambda e: update_search(e.value)).classes('w-64').props('outlined dense dark')
             
             def on_status_change(e):
                 search_state['status'] = None if e.value == 'all' else e.value
                 refresh_list()
                 
-            status_select.on('update:model-value', on_status_change)
+            # Status Filter select
+            status_select = ui.select({
+                'all': 'Todos los estados',
+                'active': 'Activos',
+                'paused': 'Pausados'
+            }, value='all', on_change=on_status_change).classes('w-48').props('outlined dense dark')
             
             # Global Actions
             with ui.row().classes('gap-2'):
@@ -128,31 +125,31 @@ def create_inventory_page():
                                 status_color = 'emerald' if is_active else 'amber'
                                 ui.label(p['status'].upper()).classes(f'text-[10px] px-1.5 py-0.5 rounded bg-{status_color}-500/10 text-{status_color}-400 font-semibold border border-{status_color}-500/20')
 
-                        # Price Input
-                        p_input = ui.number(value=price, format='%.2f').classes('w-32').props('outlined dense dark')
                         def make_on_price_change(rs):
                             def on_price_change(e):
                                 rs['price'] = e.value or 0.0
                                 update_margin_display(rs)
                             return on_price_change
-                        p_input.on('update:model-value', make_on_price_change(row_state))
 
-                        # Stock Input
-                        s_input = ui.number(value=p['available_quantity'], format='%d').classes('w-24').props('outlined dense dark')
+                        # Price Input
+                        p_input = ui.number(value=price, format='%.2f', on_change=make_on_price_change(row_state)).classes('w-32').props('outlined dense dark')
+
                         def make_on_qty_change(rs):
                             def on_qty_change(e):
                                 rs['qty'] = int(e.value or 0)
                             return on_qty_change
-                        s_input.on('update:model-value', make_on_qty_change(row_state))
 
-                        # Cost Price Input (saved locally, doesn't sync to Mercado Libre)
-                        c_input = ui.number(value=cost, format='%.2f').classes('w-32').props('outlined dense dark')
+                        # Stock Input
+                        s_input = ui.number(value=p['available_quantity'], format='%d', on_change=make_on_qty_change(row_state)).classes('w-24').props('outlined dense dark')
+
                         def make_on_cost_change(rs):
                             def on_cost_change(e):
                                 rs['cost'] = e.value or 0.0
                                 update_margin_display(rs)
                             return on_cost_change
-                        c_input.on('update:model-value', make_on_cost_change(row_state))
+
+                        # Cost Price Input (saved locally, doesn't sync to Mercado Libre)
+                        c_input = ui.number(value=cost, format='%.2f', on_change=make_on_cost_change(row_state)).classes('w-32').props('outlined dense dark')
 
                         # Margen Indicator (calculated)
                         with ui.column().classes('w-24 items-center justify-center gap-0.5'):

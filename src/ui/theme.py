@@ -50,16 +50,43 @@ def init_theme():
             ::-webkit-scrollbar-thumb:hover {
                 background: #475569;
             }
+            
+            /* Light Theme Overrides */
+            body.body--light {
+                background-color: #F8FAFC !important;
+                color: #0F172A !important;
+            }
+            body.body--light .bg-slate-950 { background-color: #F8FAFC !important; }
+            body.body--light .bg-slate-900 { background-color: #FFFFFF !important; }
+            body.body--light .text-slate-100, body.body--light .text-white { color: #0F172A !important; }
+            body.body--light .text-slate-200 { color: #1E293B !important; }
+            body.body--light .text-slate-300 { color: #334155 !important; }
+            body.body--light .text-slate-400 { color: #475569 !important; }
+            body.body--light .text-slate-500 { color: #64748B !important; }
+            body.body--light .border-slate-800 { border-color: #E2E8F0 !important; }
+            body.body--light .border-slate-700 { border-color: #CBD5E1 !important; }
+            body.body--light .glass-card {
+                background: rgba(255, 255, 255, 0.9) !important;
+                border: 1px solid rgba(0, 0, 0, 0.08) !important;
+                box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+            }
+            body.body--light ::-webkit-scrollbar-track { background: #F1F5F9; }
+            body.body--light ::-webkit-scrollbar-thumb { background: #CBD5E1; }
+            body.body--light ::-webkit-scrollbar-thumb:hover { background: #94A3B8; }
         </style>
     ''')
-    # Default to dark mode for a premium tech look
-    ui.dark_mode().enable()
+    # Set to light mode as requested (daylight theme)
+    ui.dark_mode().disable()
 
 def get_connection_status():
     """Determines connection state and returns status text, color, and icon."""
-    demo = meli_api.is_demo_mode()
-    if demo:
+    demo_setting = database.get_setting('demo_mode', '1') == '1'
+    if demo_setting:
         return "Modo Demo Activo", "amber", "bolt"
+    
+    from src import config  # lazy import to prevent circular dependency if any
+    if not config.is_configured():
+        return "Configuración Pendiente", "red", "settings"
     
     auth = database.get_setting('access_token')
     if auth:
@@ -116,7 +143,12 @@ def page_frame(active_page: str):
             
             # Simple Dark/Light mode toggle
             dark = ui.dark_mode()
-            ui.button(icon='dark_mode', on_click=dark.toggle).props('flat round dense').classes('text-slate-400 hover:text-slate-100')
+            
+            def toggle_theme():
+                dark.toggle()
+                theme_btn.props(f"icon={'light_mode' if dark.value else 'dark_mode'}")
+                
+            theme_btn = ui.button(icon='dark_mode', on_click=toggle_theme).props('flat round dense').classes('text-slate-400 hover:text-slate-100')
 
     # Sidebar Left
     with ui.left_drawer(value=True, bordered=False).classes('bg-slate-900 border-r border-slate-800 p-0 q-pa-none'):

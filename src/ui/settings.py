@@ -1,11 +1,13 @@
 from nicegui import ui, app
+from fastapi.responses import RedirectResponse
+import urllib.parse
 from src import config, database, meli_api
 
 # Define custom callback endpoint on the FastAPI app instance
 @app.get('/meli_callback')
 def meli_callback(code: str = None, error: str = None):
     if error:
-        return ui.navigate.to('/settings?status=error&msg=Autorizacion_cancelada')
+        return RedirectResponse('/settings?status=error&msg=Autorizacion_cancelada')
         
     if code:
         ok, msg = meli_api.authenticate_with_code(code)
@@ -14,11 +16,12 @@ def meli_callback(code: str = None, error: str = None):
             # En demo mode o real, obtenemos datos
             meli_api.sync_products()
             meli_api.sync_orders()
-            return ui.navigate.to('/settings?status=success')
+            return RedirectResponse('/settings?status=success')
         else:
-            return ui.navigate.to(f'/settings?status=error&msg={msg}')
+            safe_msg = urllib.parse.quote(msg)
+            return RedirectResponse(f'/settings?status=error&msg={safe_msg}')
             
-    return ui.navigate.to('/settings')
+    return RedirectResponse('/settings')
 
 def create_settings_page():
     # Parse query parameters from URL for success/error alerts
@@ -36,22 +39,30 @@ def create_settings_page():
                 ui.label('Modo Demostración / Sandbox').classes('text-lg font-semibold text-slate-100')
                 ui.label('Usa el sistema con datos simulados sin conectar una cuenta real de Mercado Libre.').classes('text-xs text-slate-400')
             
-            is_demo = database.get_setting('demo_mode', '1') == '1'
-            demo_switch = ui.switch('Demo Mode', value=is_demo).classes('text-slate-100')
-            
             async def toggle_demo(e):
-                val = '1' if e.value else '0'
+                is_active = e.value
+                val = '1' if is_active else '0'
                 database.set_setting('demo_mode', val)
-                if e.value:
+                
+                # Clear cached products, orders, and customers
+                database.clear_all_caches()
+                
+                if is_active:
                     ui.notify('Modo Demo activado. Se usarán datos de simulación.', type='warning')
                     # Pre-populate mock cache
                     meli_api.sync_products()
                     meli_api.sync_orders()
                 else:
-                    ui.notify('Modo Real activado. Por favor, vincula tu cuenta de vendedor.', type='info')
+                    # Clear access token to force clean authentication in real mode
+                    database.delete_setting('access_token')
+                    database.delete_setting('refresh_token')
+                    database.delete_setting('user_id')
+                    database.delete_setting('user_nickname')
+                    ui.notify('Modo Real activado y datos de simulación eliminados. Por favor, vincula tu cuenta.', type='info')
                 ui.navigate.to('/settings')
-                
-            demo_switch.on('update:model-value', toggle_demo)
+
+            is_demo = database.get_setting('demo_mode', '1') == '1'
+            demo_switch = ui.switch('Demo Mode', value=is_demo, on_change=toggle_demo).classes('text-slate-100')
 
     with ui.row().classes('w-full gap-6 items-start'):
         # Left Panel: Mercado Libre Integration
@@ -94,7 +105,8 @@ def create_settings_page():
                     ui.notify('Abriendo ventana de autorización de Mercado Libre...', type='info')
                     ui.navigate.to(url, new_tab=True)
                     
-                ui.button('Vincular Cuenta de Mercado Libre', icon='cloud_upload', on_click=connect_meli).classes('w-full bg-emerald-600 hover:bg-emerald-700 text-white font-medium py-2 rounded-lg').props('disabled' if is_demo else '')
+                connect_btn = ui.button('Vincular Cuenta de Mercado Libre', icon='cloud_upload', on_click=connect_meli).classes('w-full bg-emerald-600 hover:bg-emerald-700 text-white font-medium py-2 rounded-lg')
+                connect_btn.enabled = not is_demo
                 
         # Right Panel: Merchant / Billing Details
         with ui.card().classes('w-[400px] q-pa-lg glass-card gap-4'):
@@ -125,7 +137,11 @@ def create_settings_page():
             # clear the query params without reloading
             await ui.run_javascript('window.history.replaceState({}, document.title, "/settings")')
         elif 'status=error' in query:
-            ui.notify('Error de vinculación: el proceso de autorización falló.', type='negative', duration=5)
+            import urllib.parse
+            params = urllib.parse.parse_qs(query.lstrip('?'))
+            msg_list = params.get('msg', [])
+            error_msg = msg_list[0] if msg_list else 'El proceso de autorización falló.'
+            ui.notify(f'Error de vinculación: {error_msg}', type='negative', duration=8)
             await ui.run_javascript('window.history.replaceState({}, document.title, "/settings")')
             
     ui.timer(0.5, check_auth_results, once=True)

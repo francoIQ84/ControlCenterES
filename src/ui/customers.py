@@ -8,17 +8,15 @@ def create_customers_page():
     # Search Query
     search_query = {'val': ''}
 
+    def on_search(e):
+        search_query['val'] = e.value.lower() if e.value else ''
+        refresh_customers()
+
     # Control Bar
     with ui.card().classes('w-full q-pa-md glass-card mb-6'):
-        search_input = ui.input(placeholder='Buscar por nombre, usuario o email...').classes('w-80').props('outlined dense dark')
+        search_input = ui.input(placeholder='Buscar por nombre, usuario o email...', on_change=on_search).classes('w-80').props('outlined dense dark')
 
     customers_container = ui.column().classes('w-full gap-4')
-
-    def on_search(e):
-        search_query['val'] = e.value.lower()
-        refresh_customers()
-        
-    search_input.on('update:model-value', on_search)
 
     def refresh_customers():
         customers_container.clear()

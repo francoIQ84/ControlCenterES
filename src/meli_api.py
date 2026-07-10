@@ -81,10 +81,14 @@ def authenticate_with_code(code):
         response = requests.post(url, headers=headers, data=data)
         if response.status_code == 200:
             res_data = response.json()
-            config.set_access_token(res_data['access_token'])
-            config.set_refresh_token(res_data['refresh_token'])
-            config.set_token_expiry(time.time() + res_data['expires_in'])
-            config.set_user_id(str(res_data['user_id']))
+            access_token = res_data.get('access_token')
+            if not access_token:
+                return False, "La respuesta de Mercado Libre no contiene el token de acceso ('access_token')."
+            
+            config.set_access_token(access_token)
+            config.set_refresh_token(res_data.get('refresh_token', ''))
+            config.set_token_expiry(time.time() + res_data.get('expires_in', 21600))
+            config.set_user_id(str(res_data.get('user_id', '')))
             return True, "Autenticación exitosa"
         else:
             return False, f"Error Meli API: {response.text}"
@@ -191,17 +195,30 @@ def sync_products():
 
     try:
         # Search all active and paused items
-        # Limit to 50 for simplicity of this control panel
         search_path = f"/users/{user_id}/items/search"
-        params = {'limit': 50}
-        response = api_request("GET", search_path, params=params)
         
-        if response.status_code != 200:
-            return False, f"No se pudieron buscar publicaciones: {response.text}"
+        all_item_ids = []
+        offset = 0
+        limit = 50
+        
+        while True:
+            params = {'limit': limit, 'offset': offset}
+            response = api_request("GET", search_path, params=params)
             
-        item_ids = response.json().get('results', [])
-        if not item_ids:
+            if response.status_code != 200:
+                return False, f"No se pudieron buscar publicaciones: {response.text}"
+                
+            results = response.json().get('results', [])
+            if not results:
+                break
+                
+            all_item_ids.extend(results)
+            offset += limit
+            
+        if not all_item_ids:
             return True, 0
+            
+        item_ids = all_item_ids
             
         # Get details in chunks of 20 (multi-get limit)
         products = []
@@ -230,7 +247,7 @@ def sync_products():
     except Exception as e:
         return False, f"Excepción en sincronización: {str(e)}"
 
-def sync_orders():
+def sync_orders(limit=50, date_from=None, date_to=None):
     """Synchronizes sales orders from Meli to SQLite cache."""
     if is_demo_mode():
         # Generate mock orders and customers
@@ -288,19 +305,37 @@ def sync_orders():
     try:
         # Get recent seller orders
         search_path = f"/orders/search"
-        params = {
-            'seller': user_id,
-            'limit': 50
-        }
-        response = api_request("GET", search_path, params=params)
+        all_results = []
+        offset = 0
         
-        if response.status_code != 200:
-            return False, f"No se pudieron buscar órdenes: {response.text}"
+        while offset < limit:
+            chunk_limit = min(50, limit - offset)
+            params = {
+                'seller': user_id,
+                'limit': chunk_limit,
+                'offset': offset,
+                'sort': 'date_desc'
+            }
+            if date_from:
+                params['order.date_created.from'] = date_from
+            if date_to:
+                params['order.date_created.to'] = date_to
+                
+            response = api_request("GET", search_path, params=params)
             
-        results = response.json().get('results', [])
+            if response.status_code != 200:
+                return False, f"No se pudieron buscar órdenes: {response.text}"
+                
+            results = response.json().get('results', [])
+            if not results:
+                break
+                
+            all_results.extend(results)
+            offset += len(results)
+            
         orders = []
         
-        for o in results:
+        for o in all_results:
             items = []
             for item_wrapper in o.get('order_items', []):
                 item_details = item_wrapper.get('item', {})
