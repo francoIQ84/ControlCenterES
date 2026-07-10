@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react'
 export default function Sales() {
   const [orders, setOrders] = useState([])
   const [loading, setLoading] = useState(true)
+  const [sortConfig, setSortConfig] = useState({ key: null, direction: 'asc' })
 
   useEffect(() => {
     fetch('/api/sales/')
@@ -12,6 +13,49 @@ export default function Sales() {
         setLoading(false)
       })
   }, [])
+
+  const requestSort = (key) => {
+    let direction = 'asc'
+    if (sortConfig.key === key && sortConfig.direction === 'asc') {
+      direction = 'desc'
+    }
+    setSortConfig({ key, direction })
+  }
+
+  const getSortIcon = (key) => {
+    if (sortConfig.key !== key) return ' ⇅'
+    return sortConfig.direction === 'asc' ? ' ▲' : ' ▼'
+  }
+
+  const sortedOrders = React.useMemo(() => {
+    let sortableItems = [...orders]
+    if (sortConfig.key !== null) {
+      sortableItems.sort((a, b) => {
+        let aVal = a[sortConfig.key]
+        let bVal = b[sortConfig.key]
+
+        // Custom handles
+        if (sortConfig.key === 'date_created') {
+          aVal = new Date(a.date_created).getTime()
+          bVal = new Date(b.date_created).getTime()
+        } else if (sortConfig.key === 'buyer') {
+          aVal = (a.buyer?.nickname || "").toLowerCase()
+          bVal = (b.buyer?.nickname || "").toLowerCase()
+        } else if (sortConfig.key === 'total_amount') {
+          aVal = a.total_amount || 0
+          bVal = b.total_amount || 0
+        } else if (sortConfig.key === 'status') {
+          aVal = (a.status || "").toLowerCase()
+          bVal = (b.status || "").toLowerCase()
+        }
+
+        if (aVal < bVal) return sortConfig.direction === 'asc' ? -1 : 1
+        if (aVal > bVal) return sortConfig.direction === 'asc' ? 1 : -1
+        return 0
+      })
+    }
+    return sortableItems
+  }, [orders, sortConfig])
 
   return (
     <div>
@@ -23,16 +67,16 @@ export default function Sales() {
           <table className="data-table">
             <thead>
               <tr>
-                <th>Fecha</th>
-                <th>Orden ID</th>
-                <th>Comprador</th>
-                <th>Monto</th>
-                <th>Estado</th>
+                <th onClick={() => requestSort('date_created')} style={{cursor: 'pointer', userSelect: 'none'}}>Fecha{getSortIcon('date_created')}</th>
+                <th onClick={() => requestSort('order_id')} style={{cursor: 'pointer', userSelect: 'none'}}>Orden ID{getSortIcon('order_id')}</th>
+                <th onClick={() => requestSort('buyer')} style={{cursor: 'pointer', userSelect: 'none'}}>Comprador{getSortIcon('buyer')}</th>
+                <th onClick={() => requestSort('total_amount')} style={{cursor: 'pointer', userSelect: 'none'}}>Monto{getSortIcon('total_amount')}</th>
+                <th onClick={() => requestSort('status')} style={{cursor: 'pointer', userSelect: 'none'}}>Estado{getSortIcon('status')}</th>
                 <th>Items</th>
               </tr>
             </thead>
             <tbody>
-              {orders.map(o => (
+              {sortedOrders.map(o => (
                 <tr key={o.order_id}>
                   <td>{new Date(o.date_created).toLocaleString()}</td>
                   <td style={{fontFamily: 'monospace'}}>{o.order_id}</td>

@@ -5,6 +5,7 @@ export default function Inventory() {
   const [products, setProducts] = useState([])
   const [loading, setLoading] = useState(true)
   const [query, setQuery] = useState("")
+  const [sortConfig, setSortConfig] = useState({ key: null, direction: 'asc' })
 
   const fetchProducts = () => {
     setLoading(true)
@@ -51,6 +52,49 @@ export default function Inventory() {
     }
   }
 
+  const requestSort = (key) => {
+    let direction = 'asc'
+    if (sortConfig.key === key && sortConfig.direction === 'asc') {
+      direction = 'desc'
+    }
+    setSortConfig({ key, direction })
+  }
+
+  const getSortIcon = (key) => {
+    if (sortConfig.key !== key) return ' ⇅'
+    return sortConfig.direction === 'asc' ? ' ▲' : ' ▼'
+  }
+
+  const sortedProducts = React.useMemo(() => {
+    let sortableItems = [...products]
+    if (sortConfig.key !== null) {
+      sortableItems.sort((a, b) => {
+        let aVal = a[sortConfig.key]
+        let bVal = b[sortConfig.key]
+
+        // Custom handles
+        if (sortConfig.key === 'title') {
+          aVal = (a.title || "").toLowerCase()
+          bVal = (b.title || "").toLowerCase()
+        } else if (sortConfig.key === 'status') {
+          aVal = (a.status || "").toLowerCase()
+          bVal = (b.status || "").toLowerCase()
+        } else if (sortConfig.key === 'stock') {
+          aVal = a.available_quantity || 0
+          bVal = b.available_quantity || 0
+        } else if (sortConfig.key === 'is_web_active') {
+          aVal = a.is_web_active || 0
+          bVal = b.is_web_active || 0
+        }
+
+        if (aVal < bVal) return sortConfig.direction === 'asc' ? -1 : 1
+        if (aVal > bVal) return sortConfig.direction === 'asc' ? 1 : -1
+        return 0
+      })
+    }
+    return sortableItems
+  }, [products, sortConfig])
+
   return (
     <div>
       <h1 className="page-title">Inventario de Publicaciones</h1>
@@ -72,15 +116,15 @@ export default function Inventory() {
             <thead>
               <tr>
                 <th>IMG</th>
-                <th>Detalle</th>
-                <th>Status (ML)</th>
-                <th>Stock & Precios</th>
-                <th>Datos Tienda Web</th>
+                <th onClick={() => requestSort('title')} style={{cursor: 'pointer', userSelect: 'none'}}>Detalle{getSortIcon('title')}</th>
+                <th onClick={() => requestSort('status')} style={{cursor: 'pointer', userSelect: 'none'}}>Status (ML){getSortIcon('status')}</th>
+                <th onClick={() => requestSort('stock')} style={{cursor: 'pointer', userSelect: 'none'}}>Stock & Precios{getSortIcon('stock')}</th>
+                <th onClick={() => requestSort('is_web_active')} style={{cursor: 'pointer', userSelect: 'none'}}>Datos Tienda Web{getSortIcon('is_web_active')}</th>
                 <th>Acción</th>
               </tr>
             </thead>
             <tbody>
-              {products.map(p => (
+              {sortedProducts.map(p => (
                 <ProductRow key={p.ml_id} p={p} onSave={handleUpdate} />
               ))}
             </tbody>
