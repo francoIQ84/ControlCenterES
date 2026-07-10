@@ -60,5 +60,5 @@ if __name__ in {"__main__", "__mp_main__"}:
     ui.run(
         port=8088,
         title="ControlCenterES - Gestor Mercado Libre",
-        favicon="space_dashboard"
+        favicon="📊"
     )
