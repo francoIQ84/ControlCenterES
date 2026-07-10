@@ -1,7 +1,7 @@
 from nicegui import ui
 from src import database, meli_api
 from src.utils import invoice_gen
-from datetime import datetime
+from datetime import datetime, timedelta
 
 def create_sales_page():
     ui.label('Control de Ventas').classes('text-3xl font-bold text-slate-100 mb-2')
@@ -20,17 +20,36 @@ def create_sales_page():
             search_input = ui.input(placeholder='Buscar por comprador, ID o producto...', on_change=on_search).classes('w-80').props('outlined dense dark')
             
             with ui.row().classes('items-center gap-4'):
-                date_from_input = ui.input('Desde (YYYY-MM-DD)').classes('w-40').props('outlined dense')
-                date_to_input = ui.input('Hasta (YYYY-MM-DD)').classes('w-40').props('outlined dense')
-                limit_input = ui.number(label='Cantidad', value=2000, min=1, max=5000, format='%.0f').classes('w-24').props('outlined dense')
+                time_range_select = ui.select({
+                    '18m': 'Últimos 18 meses',
+                    '12m': 'Últimos 12 meses',
+                    '6m': 'Últimos 6 meses',
+                    '1m': 'Último mes',
+                    '1w': 'Última semana'
+                }, value='18m', label='Período').classes('w-48').props('outlined dense')
+                
+                limit_input = ui.number(label='Máx. Resultados', value=2000, min=1, max=5000, format='%.0f').classes('w-32').props('outlined dense')
                 
                 async def sync_sales():
-                    n = ui.notification('Buscando ventas recientes...', type='ongoing', spinner=True)
+                    sync_btn.disable()
+                    sync_btn.text = 'Actualizando...'
+                    sync_btn.icon = 'hourglass_bottom'
+                    n = ui.notification('Buscando ventas...', type='ongoing', spinner=True)
                     limit_val = int(limit_input.value or 2000)
                     
-                    # Formateo básico de fecha a ISO8601 exigido por ML si el input tiene valor
-                    d_from = f"{date_from_input.value}T00:00:00.000-00:00" if date_from_input.value else None
-                    d_to = f"{date_to_input.value}T23:59:59.000-00:00" if date_to_input.value else None
+                    # Calcular fecha en base al selector
+                    now = datetime.utcnow()
+                    days = 540 # default 18m
+                    val = time_range_select.value
+                    if val == '18m': days = 540
+                    elif val == '12m': days = 365
+                    elif val == '6m': days = 180
+                    elif val == '1m': days = 30
+                    elif val == '1w': days = 7
+                    
+                    d_from_dt = now - timedelta(days=days)
+                    d_from = d_from_dt.strftime('%Y-%m-%dT00:00:00.000-00:00')
+                    d_to = None # Hasta la actualidad
                     
                     ok, count = meli_api.sync_orders(limit=limit_val, date_from=d_from, date_to=d_to)
                     if ok:
@@ -45,7 +64,11 @@ def create_sales_page():
                         n.icon = 'error'
                         n.type = 'negative'
                         
-                ui.button('Actualizar Ventas', icon='sync_alt', on_click=sync_sales).classes('bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 rounded-lg')
+                    sync_btn.enable()
+                    sync_btn.text = 'Actualizar Ventas'
+                    sync_btn.icon = 'sync_alt'
+                        
+                sync_btn = ui.button('Actualizar Ventas', icon='sync_alt', on_click=sync_sales).classes('bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 rounded-lg')
 
     sales_container = ui.column().classes('w-full gap-4')
 

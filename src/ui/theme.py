@@ -118,6 +118,8 @@ def page_frame(active_page: str):
                 
             # Quick Sync
             async def run_sync():
+                top_sync_btn.disable()
+                top_sync_btn.icon = 'hourglass_bottom'
                 n = ui.notification('Iniciando sincronización...', type='ongoing', spinner=True)
                 try:
                     p_ok, p_count = meli_api.sync_products()
@@ -138,8 +140,10 @@ def page_frame(active_page: str):
                     n.icon = 'report_problem'
                     n.spinner = False
                     n.type = 'negative'
+                top_sync_btn.enable()
+                top_sync_btn.icon = 'refresh'
                     
-            ui.button(icon='refresh', on_click=run_sync).props('flat round dense').classes('text-slate-400 hover:text-slate-100')
+            top_sync_btn = ui.button(icon='refresh', on_click=run_sync).props('flat round dense').classes('text-slate-400 hover:text-slate-100')
             
             # Simple Dark/Light mode toggle
             dark = ui.dark_mode()

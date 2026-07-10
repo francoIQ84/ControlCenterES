@@ -28,6 +28,9 @@ def create_inventory_page():
             # Global Actions
             with ui.row().classes('gap-2'):
                 async def sync_all():
+                    sync_btn.disable()
+                    sync_btn.text = 'Sincronizando...'
+                    sync_btn.icon = 'hourglass_bottom'
                     n = ui.notification('Sincronizando catálogo con Mercado Libre...', type='ongoing', spinner=True)
                     ok, count = meli_api.sync_products()
                     if ok:
@@ -41,8 +44,11 @@ def create_inventory_page():
                         n.spinner = False
                         n.icon = 'report_problem'
                         n.type = 'negative'
+                    sync_btn.enable()
+                    sync_btn.text = 'Sincronizar Catálogo'
+                    sync_btn.icon = 'sync'
                 
-                ui.button('Sincronizar Catálogo', icon='sync', on_click=sync_all).classes('bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 rounded-lg')
+                sync_btn = ui.button('Sincronizar Catálogo', icon='sync', on_click=sync_all).classes('bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 rounded-lg')
 
     # Container for inventory items
     list_container = ui.column().classes('w-full gap-4')
