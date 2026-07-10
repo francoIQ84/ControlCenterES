@@ -4,14 +4,15 @@ import { ChevronLeft } from 'lucide-react';
 import AddToCartButton from "../../../components/AddToCartButton";
 
 async function getProduct(id: string) {
-  const res = await fetch("http://localhost:8090/api/storefront/products", { next: { revalidate: 60 } });
+  const res = await fetch("http://localhost:8090/api/storefront/products", { cache: 'no-store' });
   if (!res.ok) return null;
   const products = await res.json();
   return products.find((p: any) => p.id === id);
 }
 
-export default async function ProductPage({ params }: { params: { id: string } }) {
-  const product = await getProduct(params.id);
+export default async function ProductPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  const product = await getProduct(id);
 
   if (!product) {
     return (
