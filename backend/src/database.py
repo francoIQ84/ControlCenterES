@@ -38,7 +38,11 @@ def init_db():
                     permalink TEXT,
                     thumbnail TEXT,
                     status TEXT,
-                    last_sync TEXT
+                    last_sync TEXT,
+                    price_web REAL DEFAULT 0.0,
+                    images TEXT,
+                    description TEXT,
+                    is_web_active INTEGER DEFAULT 0
                 )
             ''')
 
@@ -56,7 +60,8 @@ def init_db():
                     payment_status TEXT,
                     shipping_status TEXT,
                     items_json TEXT,
-                    invoice_generated INTEGER DEFAULT 0
+                    invoice_generated INTEGER DEFAULT 0,
+                    source_platform TEXT DEFAULT 'MERCADOLIBRE'
                 )
             ''')
 
@@ -69,7 +74,8 @@ def init_db():
                     email TEXT,
                     phone TEXT,
                     document_type TEXT,
-                    document_number TEXT
+                    document_number TEXT,
+                    source_platform TEXT DEFAULT 'MERCADOLIBRE'
                 )
             ''')
 
@@ -105,14 +111,18 @@ def save_products(products_list):
     with get_connection() as conn:
         with conn.cursor() as cursor:
             for p in products_list:
-                cursor.execute("SELECT cost_price FROM products_cache WHERE ml_id = %s", (p['ml_id'],))
+                cursor.execute("SELECT cost_price, price_web, images, description, is_web_active FROM products_cache WHERE ml_id = %s", (p['ml_id'],))
                 row = cursor.fetchone()
                 cost_price = row['cost_price'] if row else 0.0
+                price_web = row['price_web'] if row else 0.0
+                images = row['images'] if row else ''
+                description = row['description'] if row else ''
+                is_web_active = row['is_web_active'] if row else 0
 
                 cursor.execute('''
                     INSERT INTO products_cache 
-                    (ml_id, title, price, available_quantity, cost_price, permalink, thumbnail, status, last_sync)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    (ml_id, title, price, available_quantity, cost_price, permalink, thumbnail, status, last_sync, price_web, images, description, is_web_active)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     ON CONFLICT (ml_id) DO UPDATE SET
                         title = EXCLUDED.title,
                         price = EXCLUDED.price,
@@ -122,7 +132,7 @@ def save_products(products_list):
                         status = EXCLUDED.status,
                         last_sync = EXCLUDED.last_sync
                 ''', (p['ml_id'], p['title'], p['price'], p['available_quantity'], cost_price, 
-                      p.get('permalink'), p.get('thumbnail'), p.get('status'), now))
+                      p.get('permalink'), p.get('thumbnail'), p.get('status'), now, price_web, images, description, is_web_active))
 
 def update_product_cost(ml_id, cost_price):
     with get_connection() as conn:
@@ -134,10 +144,19 @@ def update_product_stock_price(ml_id, quantity, price):
         with conn.cursor() as cursor:
             cursor.execute("UPDATE products_cache SET available_quantity = %s, price = %s WHERE ml_id = %s", (quantity, price, ml_id))
 
-def get_all_products(query=None, status_filter=None):
+def update_product_web_details(ml_id, price_web, images, description, is_web_active):
     with get_connection() as conn:
         with conn.cursor() as cursor:
-            sql = "SELECT ml_id, title, price, available_quantity, cost_price, permalink, thumbnail, status, last_sync FROM products_cache WHERE 1=1"
+            cursor.execute('''
+                UPDATE products_cache 
+                SET price_web = %s, images = %s, description = %s, is_web_active = %s 
+                WHERE ml_id = %s
+            ''', (price_web, images, description, is_web_active, ml_id))
+
+def get_all_products(query=None, status_filter=None, is_web_active=None):
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            sql = "SELECT ml_id, title, price, available_quantity, cost_price, permalink, thumbnail, status, last_sync, price_web, images, description, is_web_active FROM products_cache WHERE 1=1"
             params = []
             
             if query:
@@ -147,6 +166,10 @@ def get_all_products(query=None, status_filter=None):
             if status_filter:
                 sql += " AND status = %s"
                 params.append(status_filter)
+                
+            if is_web_active is not None:
+                sql += " AND is_web_active = %s"
+                params.append(is_web_active)
                 
             cursor.execute(sql, params)
             rows = cursor.fetchall()
@@ -158,14 +181,15 @@ def save_orders_and_customers(orders_list):
     with get_connection() as conn:
         with conn.cursor() as cursor:
             for o in orders_list:
-                cursor.execute("SELECT invoice_generated FROM orders_cache WHERE order_id = %s", (o['order_id'],))
+                cursor.execute("SELECT invoice_generated, source_platform FROM orders_cache WHERE order_id = %s", (o['order_id'],))
                 existing = cursor.fetchone()
                 invoice_generated = existing['invoice_generated'] if existing else 0
+                source_platform = existing['source_platform'] if existing else o.get('source_platform', 'MERCADOLIBRE')
 
                 cursor.execute('''
                     INSERT INTO orders_cache 
-                    (order_id, date_created, buyer_id, buyer_nickname, buyer_name, total_amount, currency_id, status, payment_status, shipping_status, items_json, invoice_generated)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    (order_id, date_created, buyer_id, buyer_nickname, buyer_name, total_amount, currency_id, status, payment_status, shipping_status, items_json, invoice_generated, source_platform)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     ON CONFLICT (order_id) DO UPDATE SET
                         status = EXCLUDED.status,
                         payment_status = EXCLUDED.payment_status,
@@ -173,13 +197,13 @@ def save_orders_and_customers(orders_list):
                 ''', (
                     o['order_id'], o['date_created'], o['buyer']['id'], o['buyer']['nickname'], o['buyer']['name'],
                     o['total_amount'], o['currency_id'], o['status'], o['payment_status'], o['shipping_status'],
-                    json.dumps(o['items']), invoice_generated
+                    json.dumps(o['items']), invoice_generated, source_platform
                 ))
                 
                 cursor.execute('''
                     INSERT INTO customers 
-                    (buyer_id, nickname, full_name, email, phone, document_type, document_number)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s)
+                    (buyer_id, nickname, full_name, email, phone, document_type, document_number, source_platform)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                     ON CONFLICT (buyer_id) DO UPDATE SET
                         nickname = EXCLUDED.nickname,
                         full_name = EXCLUDED.full_name,
@@ -188,7 +212,8 @@ def save_orders_and_customers(orders_list):
                 ''', (
                     o['buyer']['id'], o['buyer']['nickname'], o['buyer']['name'],
                     o['buyer'].get('email'), o['buyer'].get('phone'),
-                    o['buyer'].get('document_type'), o['buyer'].get('document_number')
+                    o['buyer'].get('document_type'), o['buyer'].get('document_number'),
+                    o.get('source_platform', 'MERCADOLIBRE')
                 ))
 
 def update_order_invoice_status(order_id, status=1):
@@ -196,10 +221,13 @@ def update_order_invoice_status(order_id, status=1):
         with conn.cursor() as cursor:
             cursor.execute("UPDATE orders_cache SET invoice_generated = %s WHERE order_id = %s", (status, order_id))
 
-def get_all_orders():
+def get_all_orders(source_platform=None):
     with get_connection() as conn:
         with conn.cursor() as cursor:
-            cursor.execute("SELECT order_id, date_created, buyer_id, buyer_nickname, buyer_name, total_amount, currency_id, status, payment_status, shipping_status, items_json, invoice_generated FROM orders_cache ORDER BY date_created DESC")
+            if source_platform:
+                cursor.execute("SELECT order_id, date_created, buyer_id, buyer_nickname, buyer_name, total_amount, currency_id, status, payment_status, shipping_status, items_json, invoice_generated, source_platform FROM orders_cache WHERE source_platform = %s ORDER BY date_created DESC", (source_platform,))
+            else:
+                cursor.execute("SELECT order_id, date_created, buyer_id, buyer_nickname, buyer_name, total_amount, currency_id, status, payment_status, shipping_status, items_json, invoice_generated, source_platform FROM orders_cache ORDER BY date_created DESC")
             rows = cursor.fetchall()
             
             orders = []
@@ -218,7 +246,8 @@ def get_all_orders():
                     'payment_status': r['payment_status'],
                     'shipping_status': r['shipping_status'],
                     'items': json.loads(r['items_json']),
-                    'invoice_generated': bool(r['invoice_generated'])
+                    'invoice_generated': bool(r['invoice_generated']),
+                    'source_platform': r['source_platform']
                 })
             return orders
 
@@ -227,7 +256,7 @@ def get_all_customers():
         with conn.cursor() as cursor:
             cursor.execute('''
                 SELECT 
-                    c.buyer_id, c.nickname, c.full_name, c.email, c.phone, c.document_type, c.document_number,
+                    c.buyer_id, c.nickname, c.full_name, c.email, c.phone, c.document_type, c.document_number, c.source_platform,
                     COUNT(o.order_id) as total_orders,
                     SUM(o.total_amount) as total_spent
                 FROM customers c
@@ -248,7 +277,8 @@ def get_all_customers():
                     'document_type': r['document_type'],
                     'document_number': r['document_number'],
                     'total_orders': r['total_orders'] or 0,
-                    'total_spent': r['total_spent'] or 0.0
+                    'total_spent': r['total_spent'] or 0.0,
+                    'source_platform': r['source_platform']
                 })
             return customers
 

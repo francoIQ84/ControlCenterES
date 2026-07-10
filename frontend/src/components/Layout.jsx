@@ -17,8 +17,8 @@ export default function Layout() {
   const handleSync = async () => {
     setSyncing(true)
     try {
-      await fetch('http://localhost:8088/api/inventory/sync', { method: 'POST' })
-      await fetch('http://localhost:8088/api/sales/sync', { 
+      await fetch('/api/inventory/sync', { method: 'POST' })
+      await fetch('/api/sales/sync', { 
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ limit: 2000 })

@@ -8,6 +8,10 @@ class UpdateProductRequest(BaseModel):
     cost: float
     qty: int
     price: float
+    price_web: float = 0.0
+    images: str = ""
+    description: str = ""
+    is_web_active: int = 0
 
 @router.get("/")
 def get_products(query: str = None, status: str = None):
@@ -24,9 +28,18 @@ def sync_products():
 
 @router.put("/{ml_id}")
 def update_product(ml_id: str, payload: UpdateProductRequest):
-    # Update locally
+    # Update locally (stock, ML price, cost)
     database.update_product_cost(ml_id, payload.cost)
     database.update_product_stock_price(ml_id, payload.qty, payload.price)
+    
+    # Update web details
+    database.update_product_web_details(
+        ml_id, 
+        payload.price_web, 
+        payload.images, 
+        payload.description, 
+        payload.is_web_active
+    )
     
     # Sync to ML
     ok, msg = meli_api.update_stock_and_price(ml_id, payload.qty, payload.price)

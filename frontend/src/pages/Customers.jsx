@@ -5,7 +5,7 @@ export default function Customers() {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    fetch('http://localhost:8088/api/customers/')
+    fetch('/api/customers/')
       .then(res => res.json())
       .then(data => {
         setCustomers(data.customers || [])

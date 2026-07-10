@@ -5,7 +5,7 @@ export default function Sales() {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    fetch('http://localhost:8088/api/sales/')
+    fetch('/api/sales/')
       .then(res => res.json())
       .then(data => {
         setOrders(data.orders || [])

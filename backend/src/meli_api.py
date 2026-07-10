@@ -37,6 +37,18 @@ def is_demo_mode():
     demo_setting = database.get_setting('demo_mode', '1')
     return demo_setting == '1' or not config.is_configured()
 
+def validate_token():
+    """Checks if there is a valid (and active) token, or if we can refresh it."""
+    if is_demo_mode():
+        return True
+    access_token = config.get_access_token()
+    if not access_token:
+        return False
+    try:
+        return check_and_refresh_token()
+    except Exception:
+        return False
+
 # --- Authentication and OAuth ---
 
 def get_auth_url():

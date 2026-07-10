@@ -17,10 +17,24 @@ os.makedirs('invoices', exist_ok=True)
 # Create FastAPI app
 app = FastAPI(title="ControlCenterES - API")
 
+from fastapi import Request
+from fastapi.responses import JSONResponse
+import traceback
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    error_msg = traceback.format_exc()
+    print("GLOBAL ERROR:", error_msg)
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Internal Server Error", "traceback": error_msg}
+    )
+
+
 # Setup CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:3000"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -33,13 +47,9 @@ app.mount("/invoices", StaticFiles(directory="invoices"), name="invoices")
 app.include_router(api_router, prefix="/api")
 
 if __name__ == "__main__":
-    cert_path, key_path = ensure_ssl_certs()
-    
     uvicorn.run(
         "main:app",
         host="0.0.0.0",
-        port=8088,
-        ssl_keyfile=key_path,
-        ssl_certfile=cert_path,
+        port=8090,
         reload=True
     )

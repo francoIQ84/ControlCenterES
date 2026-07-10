@@ -7,11 +7,11 @@ export default function Dashboard() {
   const [orders, setOrders] = useState([])
 
   useEffect(() => {
-    fetch('http://localhost:8088/api/dashboard/metrics')
+    fetch('/api/dashboard/metrics')
       .then(res => res.json())
       .then(data => setStats(data))
       
-    fetch('http://localhost:8088/api/sales/')
+    fetch('/api/sales/')
       .then(res => res.json())
       .then(data => setOrders(data.orders || []))
   }, [])

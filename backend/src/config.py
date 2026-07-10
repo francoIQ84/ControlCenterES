@@ -16,22 +16,22 @@ COUNTRIES = {
 }
 
 def get_client_id():
-    return get_setting('client_id', '')
+    return get_setting('meli_client_id', '')
 
 def set_client_id(val):
-    set_setting('client_id', val)
+    set_setting('meli_client_id', val)
 
 def get_client_secret():
-    return get_setting('client_secret', '')
+    return get_setting('meli_client_secret', '')
 
 def set_client_secret(val):
-    set_setting('client_secret', val)
+    set_setting('meli_client_secret', val)
 
 def get_redirect_uri():
-    return get_setting('redirect_uri', DEFAULT_REDIRECT_URI)
+    return get_setting('meli_redirect_uri', DEFAULT_REDIRECT_URI)
 
 def set_redirect_uri(val):
-    set_setting('redirect_uri', val)
+    set_setting('meli_redirect_uri', val)
 
 def get_country():
     return get_setting('country', DEFAULT_COUNTRY)
@@ -40,32 +40,32 @@ def set_country(val):
     set_setting('country', val)
 
 def get_access_token():
-    return get_setting('access_token', '')
+    return get_setting('meli_access_token', '')
 
 def set_access_token(val):
-    set_setting('access_token', val)
+    set_setting('meli_access_token', val)
 
 def get_refresh_token():
-    return get_setting('refresh_token', '')
+    return get_setting('meli_refresh_token', '')
 
 def set_refresh_token(val):
-    set_setting('refresh_token', val)
+    set_setting('meli_refresh_token', val)
 
 def get_token_expiry():
-    val = get_setting('token_expiry', '0')
+    val = get_setting('meli_token_expiry', '0')
     try:
         return float(val)
     except ValueError:
         return 0.0
 
 def set_token_expiry(val):
-    set_setting('token_expiry', str(val))
+    set_setting('meli_token_expiry', str(val))
 
 def get_user_id():
-    return get_setting('user_id', '')
+    return get_setting('meli_user_id', '')
 
 def set_user_id(val):
-    set_setting('user_id', val)
+    set_setting('meli_user_id', val)
 
 def is_configured():
     """Checks if the basic API keys are set."""

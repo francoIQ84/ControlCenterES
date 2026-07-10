@@ -8,6 +8,7 @@ class SetupRequest(BaseModel):
     client_id: str
     client_secret: str
     redirect_uri: str
+    demo_mode: bool
 
 class CodeRequest(BaseModel):
     code: str
@@ -26,19 +27,27 @@ def get_config():
     return {
         "client_id": database.get_setting('meli_client_id', ''),
         "client_secret": database.get_setting('meli_client_secret', ''),
-        "redirect_uri": database.get_setting('meli_redirect_uri', 'https://localhost:8088')
+        "redirect_uri": database.get_setting('meli_redirect_uri', 'https://lvh.me:8090/meli_callback'),
+        "demo_mode": database.get_setting('demo_mode', '1') == '1'
     }
 
 @router.post("/setup")
 def save_setup(req: SetupRequest):
+    # Clear active session tokens to force clean re-authentication with new settings
+    database.delete_setting('meli_access_token')
+    database.delete_setting('meli_refresh_token')
+    database.delete_setting('meli_user_id')
+    database.delete_setting('meli_token_expiry')
+    
     database.set_setting('meli_client_id', req.client_id)
     database.set_setting('meli_client_secret', req.client_secret)
     database.set_setting('meli_redirect_uri', req.redirect_uri)
+    database.set_setting('demo_mode', '1' if req.demo_mode else '0')
     return {"success": True}
 
 @router.post("/exchange-code")
 def exchange_code(req: CodeRequest):
-    ok, err = meli_api.exchange_code(req.code)
+    ok, err = meli_api.authenticate_with_code(req.code)
     if ok:
         return {"success": True}
     else:

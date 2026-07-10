@@ -2,72 +2,77 @@
 
 ControlCenterES es una plataforma avanzada para la gestión de publicaciones, ventas e inventario sincronizada directamente con la API de Mercado Libre.
 
-La aplicación utiliza una arquitectura moderna separada en backend y frontend.
+La aplicación utiliza una arquitectura moderna separada en backend, frontend administrativo y un storefront público.
 
-## Arquitectura
+## Arquitectura (Monorepo)
 
-- **Backend:** FastAPI (Python) + PostgreSQL (`psycopg2`)
-- **Frontend:** React + Vite + Vanilla CSS
+- **Backend (`/backend`):** FastAPI (Python) + PostgreSQL (`psycopg2`)
+- **Frontend Admin (`/frontend`):** React + Vite + Vanilla CSS
+- **Storefront Público (`/storefront`):** Next.js + React + Tailwind CSS
 - **Integraciones:** API oficial de Mercado Libre
 
 ## Requisitos Previos
 
 - Python 3.10+
-- Node.js y npm (para el frontend)
+- Node.js y npm (para los proyectos React)
 - Servidor PostgreSQL instalado y corriendo
 
 ## Instalación y Configuración
 
 ### 1. Base de Datos
-Asegurate de tener una instancia de PostgreSQL en ejecución. Por defecto, la aplicación intentará conectarse a `postgresql://postgres:postgres@localhost:5432/controlcenter`. Podés sobreescribir esta URL creando una variable de entorno `DATABASE_URL`.
+Asegurate de tener una instancia de PostgreSQL en ejecución. Por defecto, la aplicación intentará conectarse a `postgresql://postgres:postgres@localhost:5432/controlcenter`. Podés sobreescribir esta URL creando una variable de entorno `DATABASE_URL` en el archivo `.env` dentro de `backend/`.
 
 ### 2. Backend (FastAPI)
-Instalar las dependencias de Python y activar el entorno virtual:
-```bash
-# Crear entorno virtual (si no existe)
-python -m venv venv
-
-# Activar entorno virtual (PowerShell)
+Instalar las dependencias de Python y activar el entorno virtual (desde la carpeta raíz):
+```powershell
+# Activar entorno virtual existente
 .\venv\Scripts\Activate.ps1
 
-# Instalar requerimientos
+# Ingresar a backend e instalar requerimientos
+cd backend
 pip install -r requirements.txt
 ```
 
-### 3. Frontend (React)
-Navegar a la carpeta del frontend e instalar las dependencias de Node:
+### 3. Frontends (Node.js)
+Navegar a las carpetas respectivas e instalar dependencias:
 ```bash
+# Para el panel de administración
 cd frontend
+npm install
+
+# Para la tienda pública
+cd ../storefront
 npm install
 ```
 
 ## Ejecución del Proyecto (Desarrollo)
 
-Dado que el frontend y backend corren de forma independiente, necesitas levantar ambos servicios.
+Para tener el proyecto funcionando completamente, es necesario levantar los tres servicios simultáneamente (necesitarás 3 ventanas de terminal abiertas).
 
-**Para el Backend:**
-Ubicado en la carpeta raíz del proyecto y con el entorno virtual activado:
-```bash
+### Terminal 1: Backend
+Activa el entorno virtual, entra a la carpeta `backend` y ejecuta el servidor de Python:
+```powershell
+.\venv\Scripts\Activate.ps1
+cd backend
 python main.py
 ```
 *(El backend API se levantará en `https://localhost:8088`)*
 
-**Para el Frontend:**
-Abre una nueva ventana de terminal, navega a la carpeta `frontend` y ejecuta:
-```bash
+### Terminal 2: Frontend Administrativo
+Entra a la carpeta `frontend` y ejecuta el entorno de Vite:
+```powershell
+cd frontend
 npm run dev
 ```
-*(El frontend UI se levantará típicamente en `http://localhost:5173`)*
+*(El panel de control se levantará típicamente en `http://localhost:5173`)*
 
-## Compilación (Producción)
-
-Si querés preparar la aplicación para llevarla a un servidor en **producción**, Python no requiere compilarse, pero React sí. Para compilar el frontend:
-
-```bash
-cd frontend
-npm run build
+### Terminal 3: Storefront
+Entra a la carpeta `storefront` y ejecuta el servidor de Next.js:
+```powershell
+cd storefront
+npm run dev
 ```
-Esto va a crear una carpeta `dist/` dentro de `frontend/` con todos los archivos estáticos listos y minificados para que los sirva tu servidor web definitivo (como Nginx, Apache, o incluso montarlo directamente en FastAPI).
+*(La tienda pública se levantará típicamente en `http://localhost:3000`)*
 
 ## Funcionalidades
 - Sincronización automática de publicaciones activas/pausadas.
