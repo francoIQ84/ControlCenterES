@@ -49,7 +49,7 @@ export default function Layout() {
         </div>
         <nav className="nav-links">
           <NavLink to="/" className={({isActive}) => `nav-link ${isActive ? 'active' : ''}`}>
-            <LayoutDashboard size={20} /> Dashboard
+            <LayoutDashboard size={20} /> Métricas
           </NavLink>
           <NavLink to="/inventory" className={({isActive}) => `nav-link ${isActive ? 'active' : ''}`}>
             <Package size={20} /> Inventario

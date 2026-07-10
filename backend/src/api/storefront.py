@@ -31,3 +31,23 @@ def get_storefront_products():
             "available_quantity": p['available_quantity']
         })
     return mapped
+
+@router.get("/config")
+def get_storefront_config():
+    import json
+    cfg_str = database.get_setting("web_config")
+    if cfg_str:
+        try:
+            return json.loads(cfg_str)
+        except Exception:
+            pass
+    return {
+        "store_name": "Tienda Oficial",
+        "logo_url": "",
+        "hero_title": "Nuestra Tienda Oficial",
+        "hero_subtitle": "Los mejores productos directo de fábrica, al mejor precio.",
+        "hero_image": "",
+        "contact_phone": "",
+        "address": "",
+        "footer_text": "© 2026 ControlCenterES. Todos los derechos reservados."
+    }

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react'
+import MediaBrowser from '../components/MediaBrowser'
 
 export default function Settings() {
   const [config, setConfig] = useState({ client_id: '', client_secret: '', redirect_uri: '', demo_mode: true })
@@ -6,7 +7,7 @@ export default function Settings() {
   const [code, setCode] = useState("")
   
   // Tabs & Logs
-  const [activeTab, setActiveTab] = useState("connection") // "connection", "security", "users"
+  const [activeTab, setActiveTab] = useState("connection") // "connection", "users", "security", "web_config"
   const [history, setHistory] = useState([])
   const [historyLoading, setHistoryLoading] = useState(false)
 
@@ -22,6 +23,21 @@ export default function Settings() {
   // Change Password Form State
   const [editingUserId, setEditingUserId] = useState(null)
   const [changePassword, setChangePassword] = useState("")
+
+  // Web Config State
+  const [webConfig, setWebConfig] = useState({
+    store_name: "Tienda Oficial",
+    logo_url: "",
+    hero_title: "Nuestra Tienda Oficial",
+    hero_subtitle: "Los mejores productos directo de fábrica, al mejor precio.",
+    hero_image: "",
+    contact_phone: "",
+    address: "",
+    footer_text: "© 2026 ControlCenterES. Todos los derechos reservados."
+  })
+  const [webConfigLoading, setWebConfigLoading] = useState(false)
+  const [showImageSelector, setShowImageSelector] = useState(false)
+  const [selectorTarget, setSelectorTarget] = useState("")
 
   useEffect(() => {
     fetch('/api/settings/config').then(r=>r.json()).then(setConfig)
@@ -69,6 +85,26 @@ export default function Settings() {
   useEffect(() => {
     if (activeTab === "users") {
       fetchUsers()
+    }
+  }, [activeTab])
+
+  // Load Web Config when web_config tab opens
+  useEffect(() => {
+    if (activeTab === "web_config") {
+      setWebConfigLoading(true)
+      fetch('/api/settings/web-config')
+        .then(r => {
+          if (!r.ok) throw new Error("Unauthorized or error")
+          return r.json()
+        })
+        .then(data => {
+          setWebConfig(data)
+          setWebConfigLoading(false)
+        })
+        .catch(err => {
+          console.error(err)
+          setWebConfigLoading(false)
+        })
     }
   }, [activeTab])
 
@@ -186,10 +222,30 @@ export default function Settings() {
     }
   }
 
+  // Web configuration save handler
+  const handleSaveWebConfig = async (e) => {
+    e.preventDefault()
+    try {
+      const res = await fetch('/api/settings/web-config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(webConfig)
+      })
+      if (res.ok) {
+        alert("Configuración de la tienda web guardada con éxito")
+      } else {
+        const errorData = await res.json()
+        alert("Error al guardar: " + (errorData.detail || "Error desconocido"))
+      }
+    } catch(err) {
+      alert("Error de conexión: " + err.message)
+    }
+  }
+
   return (
     <div>
       <h1 className="page-title">Configuración</h1>
-      <p className="page-subtitle">Ajustes del sistema, seguridad, usuarios y conexión con Mercado Libre.</p>
+      <p className="page-subtitle">Ajustes del sistema, seguridad, usuarios y personalización de la tienda web.</p>
 
       {/* Tabs Headers */}
       <div style={{display: 'flex', gap: 15, borderBottom: '1px solid var(--border-color)', marginBottom: 25}}>
@@ -220,6 +276,20 @@ export default function Settings() {
           onClick={() => setActiveTab('users')}
         >
           Gestión de Usuarios
+        </button>
+        <button 
+          style={{
+            padding: '10px 15px',
+            background: 'none',
+            border: 'none',
+            borderBottom: activeTab === 'web_config' ? '3px solid var(--accent-blue)' : 'none',
+            color: activeTab === 'web_config' ? 'var(--text-primary)' : 'var(--text-secondary)',
+            fontWeight: activeTab === 'web_config' ? 'bold' : 'normal',
+            cursor: 'pointer'
+          }}
+          onClick={() => setActiveTab('web_config')}
+        >
+          Configuración Web
         </button>
         <button 
           style={{
@@ -420,7 +490,150 @@ export default function Settings() {
         </div>
       )}
 
-      {/* Tab 3: Security settings */}
+      {/* Tab 3: Web Customizer */}
+      {activeTab === 'web_config' && (
+        <div className="card" style={{width: '100%'}}>
+          <h3>Personalización de la Tienda Web</h3>
+          <p style={{fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: 20}}>
+            Modifica los textos, imágenes y datos de contacto de tu e-commerce storefront en tiempo real.
+          </p>
+          
+          {webConfigLoading ? <p>Cargando configuración...</p> : (
+            <form onSubmit={handleSaveWebConfig} style={{display: 'flex', gap: 30}}>
+              {/* Left Column: Text configurations */}
+              <div style={{flex: 1, display: 'flex', flexDirection: 'column', gap: 15}}>
+                <label>Nombre de la Tienda
+                  <input 
+                    type="text" 
+                    value={webConfig.store_name} 
+                    onChange={e => setWebConfig({ ...webConfig, store_name: e.target.value })} 
+                    style={{width: '100%', marginTop: 5}}
+                    required
+                  />
+                </label>
+                
+                <label>Título del Banner Principal (Hero)
+                  <input 
+                    type="text" 
+                    value={webConfig.hero_title} 
+                    onChange={e => setWebConfig({ ...webConfig, hero_title: e.target.value })} 
+                    style={{width: '100%', marginTop: 5}}
+                    required
+                  />
+                </label>
+                
+                <label>Subtítulo del Banner (Hero)
+                  <textarea 
+                    value={webConfig.hero_subtitle} 
+                    onChange={e => setWebConfig({ ...webConfig, hero_subtitle: e.target.value })} 
+                    style={{width: '100%', marginTop: 5, minHeight: 80, resize: 'vertical'}}
+                    required
+                  />
+                </label>
+
+                <label>Texto de Pie de Página (Footer)
+                  <input 
+                    type="text" 
+                    value={webConfig.footer_text} 
+                    onChange={e => setWebConfig({ ...webConfig, footer_text: e.target.value })} 
+                    style={{width: '100%', marginTop: 5}}
+                    required
+                  />
+                </label>
+              </div>
+              
+              {/* Right Column: Contact & Media configurations */}
+              <div style={{flex: 1, display: 'flex', flexDirection: 'column', gap: 15}}>
+                <label>Teléfono de Contacto (ej. WhatsApp)
+                  <input 
+                    type="text" 
+                    value={webConfig.contact_phone} 
+                    onChange={e => setWebConfig({ ...webConfig, contact_phone: e.target.value })} 
+                    placeholder="ej. 5493416789012"
+                    style={{width: '100%', marginTop: 5}}
+                  />
+                </label>
+                
+                <label>Dirección Local Comercial
+                  <input 
+                    type="text" 
+                    value={webConfig.address} 
+                    onChange={e => setWebConfig({ ...webConfig, address: e.target.value })} 
+                    placeholder="ej. Bv. Oroño 123, Rosario"
+                    style={{width: '100%', marginTop: 5}}
+                  />
+                </label>
+                
+                <div>
+                  <label style={{display: 'block', marginBottom: 5}}>Logotipo de la Tienda</label>
+                  <div style={{display: 'flex', gap: 10}}>
+                    <input 
+                      type="text" 
+                      value={webConfig.logo_url} 
+                      onChange={e => setWebConfig({ ...webConfig, logo_url: e.target.value })} 
+                      placeholder="URL del Logotipo o selecciona de la Galería" 
+                      style={{flex: 1}}
+                    />
+                    <button 
+                      type="button" 
+                      className="btn" 
+                      style={{backgroundColor: 'var(--accent-blue)', color: '#fff'}}
+                      onClick={() => {
+                        setSelectorTarget("logo_url")
+                        setShowImageSelector(true)
+                      }}
+                    >
+                      Galería
+                    </button>
+                  </div>
+                  {webConfig.logo_url && (
+                    <div style={{marginTop: 10, display: 'flex', alignItems: 'center', gap: 10}}>
+                      <span style={{fontSize: '0.75rem', color: 'var(--text-secondary)'}}>Previsualización:</span>
+                      <img src={webConfig.logo_url} alt="Logo preview" style={{maxHeight: 40, objectFit: 'contain', backgroundColor: 'var(--bg-dark)', padding: 4, borderRadius: 4}} />
+                    </div>
+                  )}
+                </div>
+
+                <div>
+                  <label style={{display: 'block', marginBottom: 5}}>Imagen del Banner Principal (Hero)</label>
+                  <div style={{display: 'flex', gap: 10}}>
+                    <input 
+                      type="text" 
+                      value={webConfig.hero_image} 
+                      onChange={e => setWebConfig({ ...webConfig, hero_image: e.target.value })} 
+                      placeholder="URL del Banner o selecciona de la Galería" 
+                      style={{flex: 1}}
+                    />
+                    <button 
+                      type="button" 
+                      className="btn" 
+                      style={{backgroundColor: 'var(--accent-blue)', color: '#fff'}}
+                      onClick={() => {
+                        setSelectorTarget("hero_image")
+                        setShowImageSelector(true)
+                      }}
+                    >
+                      Galería
+                    </button>
+                  </div>
+                  {webConfig.hero_image && (
+                    <div style={{marginTop: 10, display: 'flex', alignItems: 'center', gap: 10}}>
+                      <span style={{fontSize: '0.75rem', color: 'var(--text-secondary)'}}>Previsualización:</span>
+                      <img src={webConfig.hero_image} alt="Banner preview" style={{maxHeight: 60, maxWidth: 150, objectFit: 'contain', borderRadius: 4}} />
+                    </div>
+                  )}
+                </div>
+                
+                <button type="submit" className="btn" style={{marginTop: 10, alignSelf: 'flex-start'}}>
+                  Guardar Configuración Web
+                </button>
+              </div>
+            </form>
+          )}
+        </div>
+      )}
+
+      {/* Tab 4: Security settings */}
       {activeTab === 'security' && (
         <div className="card" style={{width: '100%'}}>
           <h3>Historial de Inicios de Sesión</h3>
@@ -500,6 +713,53 @@ export default function Settings() {
               </tbody>
             </table>
           )}
+        </div>
+      )}
+
+      {/* Media Selector Modal */}
+      {showImageSelector && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0, 0, 0, 0.6)',
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          zIndex: 9999,
+          padding: 20
+        }}>
+          <div className="card shadow-2xl" style={{
+            width: 900,
+            maxWidth: '95%',
+            maxHeight: '90vh',
+            display: 'flex',
+            flexDirection: 'column',
+            padding: 25,
+            overflow: 'hidden',
+            backgroundColor: 'var(--bg-card)',
+            borderRadius: 12
+          }}>
+            <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, borderBottom: '1px solid var(--border-color)', paddingBottom: 15}}>
+              <h3 style={{margin: 0}}>Seleccionar Imagen de Galería</h3>
+              <button 
+                className="btn" 
+                style={{backgroundColor: 'var(--bg-dark)', color: 'var(--text-secondary)', padding: '6px 12px', fontSize: '0.85rem'}}
+                onClick={() => setShowImageSelector(false)}
+              >
+                Cerrar
+              </button>
+            </div>
+            
+            <div style={{flex: 1, overflowY: 'auto'}}>
+              <MediaBrowser onSelectImage={(url) => {
+                setWebConfig(prev => ({ ...prev, [selectorTarget]: url }))
+                setShowImageSelector(false)
+              }} />
+            </div>
+          </div>
         </div>
       )}
     </div>

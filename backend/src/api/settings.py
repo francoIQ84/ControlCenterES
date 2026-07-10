@@ -60,3 +60,39 @@ def logout():
     database.delete_setting('meli_user_id')
     database.clear_all_caches()
     return {"success": True}
+
+class WebConfigModel(BaseModel):
+    store_name: str
+    logo_url: str
+    hero_title: str
+    hero_subtitle: str
+    hero_image: str
+    contact_phone: str
+    address: str
+    footer_text: str
+
+@router.get("/web-config")
+def get_web_config():
+    import json
+    cfg_str = database.get_setting("web_config")
+    if cfg_str:
+        try:
+            return json.loads(cfg_str)
+        except Exception:
+            pass
+    return {
+        "store_name": "Tienda Oficial",
+        "logo_url": "",
+        "hero_title": "Nuestra Tienda Oficial",
+        "hero_subtitle": "Los mejores productos directo de fábrica, al mejor precio.",
+        "hero_image": "",
+        "contact_phone": "",
+        "address": "",
+        "footer_text": "© 2026 ControlCenterES. Todos los derechos reservados."
+    }
+
+@router.post("/web-config")
+def save_web_config(req: WebConfigModel):
+    import json
+    database.set_setting("web_config", json.dumps(req.dict()))
+    return {"success": True}

@@ -9,16 +9,35 @@ import CartSidebar from './CartSidebar';
 export default function NavBar() {
   const { items } = useCart();
   const [isCartOpen, setIsCartOpen] = useState(false);
+  const [storeName, setStoreName] = useState("Tienda Oficial");
+  const [logoUrl, setLogoUrl] = useState("");
 
   const itemCount = items.reduce((acc, item) => acc + item.qty, 0);
+
+  useEffect(() => {
+    fetch("http://localhost:8090/api/storefront/config")
+      .then(res => {
+        if (!res.ok) throw new Error("Network response error");
+        return res.json();
+      })
+      .then(data => {
+        if (data.store_name) setStoreName(data.store_name);
+        if (data.logo_url) setLogoUrl(data.logo_url);
+      })
+      .catch(err => console.error(err));
+  }, []);
 
   return (
     <>
       <nav className="fixed top-0 w-full bg-white/80 backdrop-blur-md border-b border-gray-200 z-40">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between h-16 items-center">
-            <Link href="/" className="flex-shrink-0 flex items-center">
-              <span className="text-xl font-bold text-gray-900 tracking-tight">TiendaOficial</span>
+            <Link href="/" className="flex-shrink-0 flex items-center gap-3">
+              {logoUrl ? (
+                <img src={logoUrl} alt={storeName} className="h-8 max-w-[180px] object-contain" />
+              ) : (
+                <span className="text-xl font-bold text-gray-900 tracking-tight">{storeName}</span>
+              )}
             </Link>
             <div className="flex items-center">
               <button 

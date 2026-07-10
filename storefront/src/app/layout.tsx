@@ -3,6 +3,7 @@ import { Inter } from "next/font/google";
 import "./globals.css";
 import { CartProvider } from "../components/CartProvider";
 import NavBar from "../components/NavBar";
+import Footer from "../components/Footer";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -24,6 +25,7 @@ export default function RootLayout({
           <div className="flex-grow pt-16">
             {children}
           </div>
+          <Footer />
         </CartProvider>
       </body>
     </html>
