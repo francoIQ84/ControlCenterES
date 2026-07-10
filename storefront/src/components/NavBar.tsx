@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { ShoppingCart } from 'lucide-react';
 import { useCart } from './CartProvider';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import CartSidebar from './CartSidebar';
 
 export default function NavBar() {
