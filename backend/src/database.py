@@ -541,3 +541,32 @@ def update_user_info(user_id, full_name):
     with get_connection() as conn:
         with conn.cursor() as cursor:
             cursor.execute("UPDATE users SET full_name = %s WHERE id = %s", (full_name, user_id))
+
+def update_order_shipping_status(order_id: int, shipping_status: str):
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute("UPDATE orders_cache SET shipping_status = %s WHERE order_id = %s", (shipping_status, order_id))
+
+def create_manual_order(order_id: int, date_created: str, buyer_nickname: str, buyer_name: str, total_amount: float, status: str, shipping_status: str, items: list, source_platform: str):
+    import json
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute('''
+                INSERT INTO orders_cache 
+                (order_id, date_created, buyer_id, buyer_nickname, buyer_name, total_amount, currency_id, status, payment_status, shipping_status, items_json, invoice_generated, source_platform)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ''', (
+                order_id,
+                date_created,
+                None,
+                buyer_nickname,
+                buyer_name,
+                total_amount,
+                'ARS',
+                status,
+                'approved',
+                shipping_status,
+                json.dumps(items),
+                0,
+                source_platform
+            ))
