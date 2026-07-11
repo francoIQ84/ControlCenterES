@@ -10,9 +10,24 @@ async function getProduct(id: string) {
   return products.find((p: any) => p.id === id);
 }
 
+async function recordVisit(id: string) {
+  try {
+    await fetch(`http://localhost:8090/api/storefront/products/${id}/visit`, { 
+      method: 'POST',
+      cache: 'no-store'
+    });
+  } catch (e) {
+    console.error("Error recording visit:", e);
+  }
+}
+
 export default async function ProductPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const product = await getProduct(id);
+
+  if (product) {
+    recordVisit(id);
+  }
 
   if (!product) {
     return (

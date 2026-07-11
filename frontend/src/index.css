@@ -8,6 +8,8 @@
   --accent-emerald: #10b981;
   --accent-red: #ef4444;
   --accent-purple: #8b5cf6;
+  --accent-amber: #f59e0b;
+  --accent-cyan: #06b6d4;
   --border-color: rgba(255, 255, 255, 0.1);
 }
 
@@ -17,6 +19,12 @@ body.light-mode {
   --bg-card-hover: #f1f5f9;
   --text-primary: #0f172a;
   --text-secondary: #64748b;
+  --accent-blue: #3b82f6;
+  --accent-emerald: #10b981;
+  --accent-red: #ef4444;
+  --accent-purple: #8b5cf6;
+  --accent-amber: #d97706;
+  --accent-cyan: #0891b2;
   --border-color: rgba(0, 0, 0, 0.1);
 }
 

@@ -47,6 +47,8 @@ def init_db():
                     is_web_active INTEGER DEFAULT 0
                 )
             ''')
+            cursor.execute('ALTER TABLE products_cache ADD COLUMN IF NOT EXISTS visits_meli INTEGER DEFAULT 0;')
+            cursor.execute('ALTER TABLE products_cache ADD COLUMN IF NOT EXISTS visits_web INTEGER DEFAULT 0;')
 
             # Orders cache table
             cursor.execute('''
@@ -160,18 +162,21 @@ def save_products(products_list):
     with get_connection() as conn:
         with conn.cursor() as cursor:
             for p in products_list:
-                cursor.execute("SELECT cost_price, price_web, images, description, is_web_active FROM products_cache WHERE ml_id = %s", (p['ml_id'],))
+                cursor.execute("SELECT cost_price, price_web, images, description, is_web_active, visits_web FROM products_cache WHERE ml_id = %s", (p['ml_id'],))
                 row = cursor.fetchone()
                 cost_price = row['cost_price'] if row else 0.0
                 price_web = row['price_web'] if row else 0.0
                 images = row['images'] if row else ''
                 description = row['description'] if row else ''
                 is_web_active = row['is_web_active'] if row else 0
+                visits_web = row['visits_web'] if row else p.get('visits_web', 0)
+                
+                visits_meli = p.get('visits_meli', 0)
 
                 cursor.execute('''
                     INSERT INTO products_cache 
-                    (ml_id, title, price, available_quantity, cost_price, permalink, thumbnail, status, last_sync, price_web, images, description, is_web_active)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    (ml_id, title, price, available_quantity, cost_price, permalink, thumbnail, status, last_sync, price_web, images, description, is_web_active, visits_meli, visits_web)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     ON CONFLICT (ml_id) DO UPDATE SET
                         title = EXCLUDED.title,
                         price = EXCLUDED.price,
@@ -179,9 +184,10 @@ def save_products(products_list):
                         permalink = EXCLUDED.permalink,
                         thumbnail = EXCLUDED.thumbnail,
                         status = EXCLUDED.status,
-                        last_sync = EXCLUDED.last_sync
+                        last_sync = EXCLUDED.last_sync,
+                        visits_meli = EXCLUDED.visits_meli
                 ''', (p['ml_id'], p['title'], p['price'], p['available_quantity'], cost_price, 
-                      p.get('permalink'), p.get('thumbnail'), p.get('status'), now, price_web, images, description, is_web_active))
+                      p.get('permalink'), p.get('thumbnail'), p.get('status'), now, price_web, images, description, is_web_active, visits_meli, visits_web))
 
 def create_product(product_data):
     now = datetime.now().isoformat()
@@ -189,8 +195,8 @@ def create_product(product_data):
         with conn.cursor() as cursor:
             cursor.execute('''
                 INSERT INTO products_cache 
-                (ml_id, title, price, available_quantity, cost_price, permalink, thumbnail, status, last_sync, price_web, images, description, is_web_active)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                (ml_id, title, price, available_quantity, cost_price, permalink, thumbnail, status, last_sync, price_web, images, description, is_web_active, visits_meli, visits_web)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             ''', (
                 product_data['ml_id'],
                 product_data['title'],
@@ -204,7 +210,9 @@ def create_product(product_data):
                 product_data.get('price_web', 0.0),
                 product_data.get('images', ''),
                 product_data.get('description', ''),
-                product_data.get('is_web_active', 1)
+                product_data.get('is_web_active', 1),
+                product_data.get('visits_meli', 0),
+                product_data.get('visits_web', 0)
             ))
 
 def update_product_cost(ml_id, cost_price):
@@ -229,7 +237,7 @@ def update_product_web_details(ml_id, price_web, images, description, is_web_act
 def get_all_products(query=None, status_filter=None, is_web_active=None):
     with get_connection() as conn:
         with conn.cursor() as cursor:
-            sql = "SELECT ml_id, title, price, available_quantity, cost_price, permalink, thumbnail, status, last_sync, price_web, images, description, is_web_active FROM products_cache WHERE 1=1"
+            sql = "SELECT ml_id, title, price, available_quantity, cost_price, permalink, thumbnail, status, last_sync, price_web, images, description, is_web_active, visits_meli, visits_web FROM products_cache WHERE 1=1"
             params = []
             
             if query:
@@ -357,6 +365,11 @@ def get_all_customers():
 
 # --- Metrics Operations ---
 
+def increment_product_web_visits(ml_id):
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute("UPDATE products_cache SET visits_web = visits_web + 1 WHERE ml_id = %s", (ml_id,))
+
 def get_dashboard_metrics():
     with get_connection() as conn:
         with conn.cursor() as cursor:
@@ -389,13 +402,26 @@ def get_dashboard_metrics():
             cursor.execute("SELECT COUNT(ml_id) as count FROM products_cache WHERE available_quantity <= 3 AND status = 'active'")
             low_stock_count = cursor.fetchone()['count'] or 0
             
+            # Get visits metrics
+            cursor.execute("SELECT SUM(visits_meli) as meli, SUM(visits_web) as web FROM products_cache")
+            visits_row = cursor.fetchone()
+            total_visits_meli = (visits_row['meli'] if visits_row else 0) or 0
+            total_visits_web = (visits_row['web'] if visits_row else 0) or 0
+
+            # Get top products by visits
+            cursor.execute("SELECT ml_id, title, visits_meli, visits_web FROM products_cache ORDER BY (visits_meli + visits_web) DESC LIMIT 5")
+            top_products = [dict(r) for r in cursor.fetchall()]
+
             return {
                 'total_sales': total_sales,
                 'total_revenue': total_revenue,
                 'total_active_products': total_active_products,
                 'total_profit': total_profit,
                 'profit_margin': profit_margin,
-                'low_stock_count': low_stock_count
+                'low_stock_count': low_stock_count,
+                'total_visits_meli': total_visits_meli,
+                'total_visits_web': total_visits_web,
+                'top_products': top_products
             }
 
 def clear_all_caches():

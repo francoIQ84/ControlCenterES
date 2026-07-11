@@ -51,3 +51,8 @@ def get_storefront_config():
         "address": "",
         "footer_text": "© 2026 ControlCenterES. Todos los derechos reservados."
     }
+
+@router.post("/products/{product_id}/visit")
+def record_product_visit(product_id: str):
+    database.increment_product_web_visits(product_id)
+    return {"status": "ok"}

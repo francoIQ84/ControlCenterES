@@ -209,7 +209,9 @@ def sync_products():
                 'available_quantity': qty,
                 'permalink': f"https://articulo.mercadolibre.com.ar/{ml_id.replace('MLA', 'MLA-')}-articulo-demo",
                 'thumbnail': MOCK_THUMBNAILS[i % len(MOCK_THUMBNAILS)],
-                'status': 'active' if qty > 0 else 'paused'
+                'status': 'active' if qty > 0 else 'paused',
+                'visits_meli': random.randint(50, 1500),
+                'visits_web': random.randint(10, 800)
             })
         database.save_products(products)
         return True, len(products)
@@ -253,6 +255,12 @@ def sync_products():
             ids_str = ",".join(chunk)
             details_response = api_request("GET", "/items", params={'ids': ids_str})
             
+            # Fetch visits for the same item IDs
+            visits_response = api_request("GET", "/visits/items", params={'ids': ids_str})
+            visits_dict = {}
+            if visits_response and visits_response.status_code == 200:
+                visits_dict = visits_response.json()
+            
             if details_response.status_code == 200:
                 results = details_response.json()
                 for item_wrapper in results:
@@ -265,7 +273,8 @@ def sync_products():
                             'available_quantity': int(item['available_quantity']),
                             'permalink': item.get('permalink'),
                             'thumbnail': item.get('thumbnail'),
-                            'status': item.get('status')
+                            'status': item.get('status'),
+                            'visits_meli': visits_dict.get(item['id'], 0)
                         })
                         
         database.save_products(products)
