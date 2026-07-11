@@ -15,7 +15,7 @@ export default function NavBar() {
   const itemCount = items.reduce((acc, item) => acc + item.qty, 0);
 
   useEffect(() => {
-    fetch("http://localhost:8090/api/storefront/config")
+    fetch("/api/storefront/config")
       .then(res => {
         if (!res.ok) throw new Error("Network response error");
         return res.json();

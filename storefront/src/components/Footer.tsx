@@ -13,7 +13,7 @@ export default function Footer() {
   });
 
   useEffect(() => {
-    fetch("http://localhost:8090/api/storefront/config")
+    fetch("/api/storefront/config")
       .then(res => res.json())
       .then(data => {
         setCfg(prev => ({ ...prev, ...data }));
