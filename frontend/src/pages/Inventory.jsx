@@ -216,15 +216,16 @@ export default function Inventory() {
       <h1 className="page-title">Inventario de Publicaciones</h1>
       <p className="page-subtitle">Sincronizá tus publicaciones de Mercado Libre y gestioná tu Tienda Web.</p>
 
-      <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20}}>
+      <div className="inventory-controls" style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, gap: 15, flexWrap: 'wrap'}}>
         <input 
           type="text" 
           placeholder="Buscar producto..." 
           value={query} 
           onChange={e => setQuery(e.target.value)} 
+          className="search-input"
           style={{width: 300, marginBottom: 0}}
         />
-        <div style={{display: 'flex', gap: 10}}>
+        <div className="control-buttons" style={{display: 'flex', gap: 10, flexWrap: 'wrap'}}>
           {modifiedCount > 0 && (
             <button className="btn" style={{backgroundColor: '#10b981', color: 'white', border: 'none'}} onClick={saveAllChanges}>
               Guardar {modifiedCount} cambios
@@ -333,25 +334,27 @@ export default function Inventory() {
         </div>
       )}
 
-      <div className="card">
+      <div className="card table-card">
         {loading ? <p>Cargando...</p> : (
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>IMG</th>
-                <th onClick={() => requestSort('title')} style={{cursor: 'pointer', userSelect: 'none'}}>Detalle{getSortIcon('title')}</th>
-                <th onClick={() => requestSort('status')} style={{cursor: 'pointer', userSelect: 'none'}}>Status (ML){getSortIcon('status')}</th>
-                <th onClick={() => requestSort('stock')} style={{cursor: 'pointer', userSelect: 'none'}}>Stock & Precios{getSortIcon('stock')}</th>
-                <th onClick={() => requestSort('is_web_active')} style={{cursor: 'pointer', userSelect: 'none'}}>Datos Tienda Web{getSortIcon('is_web_active')}</th>
-                <th>Acción</th>
-              </tr>
-            </thead>
-            <tbody>
-              {sortedProducts.map(p => (
-                <ProductRow key={p.ml_id} p={p} onSave={handleUpdate} onOpenGallery={openGallery} onDraftChange={handleDraftChange} />
-              ))}
-            </tbody>
-          </table>
+          <div className="data-table-wrapper">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>IMG</th>
+                  <th onClick={() => requestSort('title')} style={{cursor: 'pointer', userSelect: 'none'}}>Detalle{getSortIcon('title')}</th>
+                  <th onClick={() => requestSort('status')} style={{cursor: 'pointer', userSelect: 'none'}}>Status (ML){getSortIcon('status')}</th>
+                  <th onClick={() => requestSort('stock')} style={{cursor: 'pointer', userSelect: 'none'}}>Stock & Precios{getSortIcon('stock')}</th>
+                  <th onClick={() => requestSort('is_web_active')} style={{cursor: 'pointer', userSelect: 'none'}}>Datos Tienda Web{getSortIcon('is_web_active')}</th>
+                  <th>Acción</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sortedProducts.map(p => (
+                  <ProductRow key={p.ml_id} p={p} onSave={handleUpdate} onOpenGallery={openGallery} onDraftChange={handleDraftChange} />
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
 
@@ -468,19 +471,19 @@ function ProductRow({ p, onSave, onOpenGallery, onDraftChange }) {
 
   return (
     <React.Fragment>
-      <tr>
-        <td>
+      <tr className="product-row-card">
+        <td data-label="Imagen">
           <img 
             src={p.thumbnail || 'https://via.placeholder.com/50'} 
             alt="thumb" 
             style={{width: 50, height: 50, objectFit: 'contain', borderRadius: 4, border: '1px solid var(--border-color)', backgroundColor: '#fff'}}
           />
         </td>
-        <td>
+        <td data-label="Detalle">
           <div style={{fontWeight: 600, fontSize: '0.9rem'}}>{p.title}</div>
           <div style={{color: 'var(--text-secondary)', fontSize: '0.75rem', fontFamily: 'monospace'}}>{p.ml_id}</div>
         </td>
-        <td>
+        <td data-label="Estado ML">
           {p.status === 'active' ? 
             <span style={{color: 'var(--accent-emerald)', fontSize: '0.8rem', fontWeight: 600}}><Cloud size={14}/> Activa</span> : 
             (p.status === 'local' ?
@@ -489,7 +492,7 @@ function ProductRow({ p, onSave, onOpenGallery, onDraftChange }) {
             )
           }
         </td>
-        <td>
+        <td data-label="Stock y Precios">
           <div style={{display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center'}}>
             <label style={{fontSize: '0.8rem', color: 'var(--text-secondary)'}}>Stock:
               <input type="number" value={qty} onChange={e => setQty(e.target.value)} style={{width: 60, marginLeft: 5, padding: 4}}/>
@@ -507,7 +510,7 @@ function ProductRow({ p, onSave, onOpenGallery, onDraftChange }) {
             </div>
           )}
         </td>
-        <td>
+        <td data-label="Tienda Web">
           <div style={{display: 'flex', flexDirection: 'column', gap: 5}}>
             <label style={{fontSize: '0.8rem', color: 'var(--text-secondary)'}}>
               <input type="checkbox" checked={isWebActive} onChange={e => setIsWebActive(e.target.checked)} style={{marginRight: 5}}/>
@@ -521,14 +524,14 @@ function ProductRow({ p, onSave, onOpenGallery, onDraftChange }) {
             </button>
           </div>
         </td>
-        <td>
+        <td data-label="Acción">
           <button className="btn-icon" onClick={() => onSave(p.ml_id, qty, price, cost, priceWeb, getCombinedImages(), description, isWebActive)} title="Guardar Todo">
             <Save size={18} className="text-blue-500" />
           </button>
         </td>
       </tr>
       {showWebDetails && (
-        <tr style={{backgroundColor: 'var(--bg-dark)'}}>
+        <tr className="web-details-row" style={{backgroundColor: 'var(--bg-dark)'}}>
           <td colSpan="6" style={{padding: 20}}>
             <div style={{display: 'flex', gap: 20, flexWrap: 'wrap'}}>
               {/* Columna 1: Imagen Principal y Previsualización */}

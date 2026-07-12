@@ -51,16 +51,38 @@ body {
   border-right: 1px solid var(--border-color);
   display: flex;
   flex-direction: column;
+  transition: width 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  overflow: hidden;
+}
+
+.sidebar.collapsed {
+  width: 65px;
+}
+
+.logo-text, .nav-text {
+  opacity: 1;
+  transition: opacity 0.15s ease, max-width 0.25s ease, margin-left 0.25s ease;
+  max-width: 200px;
+  white-space: nowrap;
+  display: inline-block;
+  overflow: hidden;
+}
+
+.sidebar.collapsed .logo-text,
+.sidebar.collapsed .nav-text {
+  opacity: 0;
+  max-width: 0;
+  margin-left: 0;
 }
 
 .sidebar-header {
-  padding: 20px;
+  padding: 20px 22px;
   font-size: 1.25rem;
   font-weight: bold;
   border-bottom: 1px solid var(--border-color);
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 15px;
 }
 
 .nav-links {
@@ -73,11 +95,11 @@ body {
   display: flex;
   align-items: center;
   gap: 15px;
-  padding: 12px 20px;
+  padding: 12px 22px;
   color: var(--text-secondary);
   text-decoration: none;
   font-weight: 500;
-  transition: all 0.2s;
+  transition: all 0.2s, padding 0.25s ease;
 }
 
 .nav-link:hover, .nav-link.active {
@@ -227,4 +249,217 @@ input, select {
 
 input:focus, select:focus {
   border-color: var(--accent-blue);
+}
+
+/* Responsive adjustments for mobile devices */
+@media (max-width: 768px) {
+  .layout {
+    position: relative;
+    flex-direction: column;
+    height: auto;
+    min-height: 100vh;
+  }
+
+  .sidebar {
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: 250px;
+    z-index: 1000;
+    box-shadow: 5px 0 15px rgba(0, 0, 0, 0.15);
+    transform: translateX(0);
+    transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .sidebar.collapsed {
+    transform: translateX(-100%);
+    width: 250px;
+  }
+
+  .sidebar.collapsed .logo-text,
+  .sidebar.collapsed .nav-text {
+    opacity: 1 !important;
+    max-width: 200px !important;
+  }
+
+  .sidebar-backdrop {
+    display: block;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(0, 0, 0, 0.4);
+    backdrop-filter: blur(2px);
+    z-index: 999;
+  }
+
+  .main-content {
+    width: 100%;
+    margin-left: 0;
+    height: auto;
+    min-height: 100vh;
+  }
+
+  .header {
+    width: 100%;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    background-color: var(--bg-card);
+  }
+
+  .content-area {
+    padding: 15px;
+  }
+
+  .page-title {
+    font-size: 1.5rem !important;
+    margin-bottom: 5px !important;
+  }
+
+  .page-subtitle {
+    font-size: 0.9rem !important;
+    margin-bottom: 20px !important;
+  }
+
+  .inventory-controls {
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 10px !important;
+  }
+
+  .inventory-controls .search-input {
+    width: 100% !important;
+  }
+
+  .inventory-controls .control-buttons {
+    width: 100% !important;
+    display: flex;
+    gap: 10px;
+  }
+
+  .inventory-controls .control-buttons .btn {
+    flex: 1;
+    text-align: center;
+    justify-content: center;
+  }
+
+  /* Transform table into stacked cards on mobile */
+  .data-table, 
+  .data-table thead, 
+  .data-table tbody, 
+  .data-table th, 
+  .data-table td, 
+  .data-table tr {
+    display: block;
+    width: 100%;
+  }
+
+  .data-table thead {
+    display: none; /* Hide header columns */
+  }
+
+  .data-table tr.product-row-card {
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    margin-bottom: 20px;
+    padding: 15px;
+    background-color: var(--bg-card);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+  }
+
+  .data-table td {
+    border-bottom: 1px solid var(--border-color);
+    padding: 10px 0;
+    position: relative;
+    text-align: left !important;
+  }
+
+  .data-table td:last-child {
+    border-bottom: none;
+  }
+
+  /* Add data label before value */
+  .data-table td::before {
+    content: attr(data-label);
+    display: block;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    font-weight: 700;
+    color: var(--text-secondary);
+    margin-bottom: 6px;
+  }
+
+  /* Adjust styles of cells when stacked */
+  .data-table td[data-label="Imagen"] img {
+    width: 80px !important;
+    height: 80px !important;
+  }
+
+  .data-table td[data-label="Stock y Precios"] div {
+    flex-direction: column;
+    align-items: stretch !important;
+    gap: 8px !important;
+  }
+
+  .data-table td[data-label="Stock y Precios"] input {
+    width: 100% !important;
+    margin-left: 0 !important;
+    margin-top: 4px;
+  }
+
+  .data-table td[data-label="Tienda Web"] input {
+    width: 100% !important;
+    margin-left: 0 !important;
+    margin-top: 4px;
+  }
+
+  .data-table td[data-label="Acción"] {
+    display: flex;
+    justify-content: flex-end;
+    padding-top: 15px;
+    border-top: 1px dashed var(--border-color);
+  }
+
+  .data-table td[data-label="Acción"] button {
+    width: 100%;
+    justify-content: center;
+    padding: 10px;
+    background-color: var(--accent-blue);
+    color: white;
+    border-radius: 6px;
+  }
+
+  /* Web details nested card adjustment */
+  .data-table tr.web-details-row {
+    margin-top: -15px;
+    margin-bottom: 20px;
+    border: 1px solid var(--border-color);
+    border-top: none;
+    border-radius: 0 0 12px 12px;
+    padding: 15px;
+    background-color: var(--bg-dark);
+    display: block;
+    width: 100%;
+  }
+
+  .data-table tr.web-details-row td {
+    padding: 0;
+    border: none;
+    display: block;
+    width: 100%;
+  }
+
+  .data-table tr.web-details-row td::before {
+    display: none;
+  }
+
+  /* Add Product Modal adjustment on mobile */
+  .card[style*="width: 500"] {
+    width: 100% !important;
+    margin: 10px;
+    border-radius: 12px;
+  }
 }
