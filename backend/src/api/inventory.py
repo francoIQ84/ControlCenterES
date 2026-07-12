@@ -83,6 +83,54 @@ def create_product(payload: CreateProductRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error al guardar en base de datos: {str(e)}")
 
+class BulkUpdateItem(BaseModel):
+    ml_id: str
+    cost: float
+    qty: int
+    price: float
+    price_web: float = 0.0
+    images: str = ""
+    description: str = ""
+    is_web_active: int = 0
+
+class BulkUpdateRequest(BaseModel):
+    items: list[BulkUpdateItem]
+
+@router.put("/bulk")
+def bulk_update_products(payload: BulkUpdateRequest):
+    warnings = []
+    for item in payload.items:
+        db_status = "active"
+        try:
+            with database.get_connection() as conn:
+                with conn.cursor() as cursor:
+                    cursor.execute("SELECT status FROM products_cache WHERE ml_id = %s", (item.ml_id,))
+                    row = cursor.fetchone()
+                    if row:
+                        db_status = row['status']
+        except Exception:
+            pass
+
+        database.update_product_cost(item.ml_id, item.cost)
+        database.update_product_stock_price(item.ml_id, item.qty, item.price)
+        database.update_product_web_details(
+            item.ml_id, 
+            item.price_web, 
+            item.images, 
+            item.description, 
+            item.is_web_active
+        )
+
+        is_local = item.ml_id.startswith('LOCAL-') or item.ml_id.startswith('WEB-')
+        if db_status in ('active', 'paused') and not is_local:
+            ok, msg = meli_api.update_stock_and_price(item.ml_id, item.qty, item.price)
+            if not ok:
+                warnings.append(f"{item.ml_id}: Falló la sincronización con Mercado Libre: {msg}")
+        elif not is_local:
+            warnings.append(f"{item.ml_id}: Artículo cerrado ({db_status}) en ML, no sincronizado.")
+
+    return {"success": True, "warnings": warnings}
+
 @router.put("/{ml_id}")
 def update_product(ml_id: str, payload: UpdateProductRequest):
     # Get current product status from local cache

@@ -7,6 +7,7 @@ export default function Inventory() {
   const [loading, setLoading] = useState(true)
   const [query, setQuery] = useState("")
   const [sortConfig, setSortConfig] = useState({ key: null, direction: 'asc' })
+  const [drafts, setDrafts] = useState({})
 
   const initialNewProduct = {
     title: "",
@@ -29,12 +30,73 @@ export default function Inventory() {
     setGalleryOpen(true)
   }
 
+  const handleDraftChange = (ml_id, data) => {
+    setDrafts(prev => ({
+      ...prev,
+      [ml_id]: data
+    }))
+  }
+
+  const getModifiedItems = React.useCallback(() => {
+    const modified = []
+    for (const ml_id in drafts) {
+      const orig = products.find(p => p.ml_id === ml_id)
+      if (orig) {
+        const d = drafts[ml_id]
+        const isChanged =
+          d.qty !== (orig.available_quantity || 0) ||
+          d.price !== (orig.price || 0) ||
+          d.cost !== (orig.cost_price || 0) ||
+          d.price_web !== (orig.price_web || 0) ||
+          d.images !== (orig.images || "") ||
+          d.description !== (orig.description || "") ||
+          d.is_web_active !== (orig.is_web_active ? 1 : 0);
+        if (isChanged) {
+          modified.push(d)
+        }
+      }
+    }
+    return modified
+  }, [drafts, products])
+
+  const saveAllChanges = async () => {
+    const itemsToSave = getModifiedItems()
+    if (itemsToSave.length === 0) return
+
+    try {
+      setLoading(true)
+      const res = await fetch('/api/inventory/bulk', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ items: itemsToSave })
+      })
+      if (res.ok) {
+        const data = await res.json()
+        if (data.warnings && data.warnings.length > 0) {
+          alert("Guardado con algunas advertencias:\n" + data.warnings.join('\n'))
+        } else {
+          alert("Todos los cambios guardados correctamente")
+        }
+        setDrafts({})
+        fetchProducts()
+      } else {
+        const errText = await res.text()
+        alert("Error al guardar cambios en lote: " + errText)
+        setLoading(false)
+      }
+    } catch(e) {
+      alert("Error: " + e.message)
+      setLoading(false)
+    }
+  }
+
   const fetchProducts = () => {
     setLoading(true)
     fetch(`/api/inventory/?query=${query}`)
       .then(res => res.json())
       .then(data => {
         setProducts(data.products || [])
+        setDrafts({})
         setLoading(false)
       })
   }
@@ -147,6 +209,8 @@ export default function Inventory() {
     return sortableItems
   }, [products, sortConfig])
 
+  const modifiedCount = getModifiedItems().length
+
   return (
     <div>
       <h1 className="page-title">Inventario de Publicaciones</h1>
@@ -160,9 +224,16 @@ export default function Inventory() {
           onChange={e => setQuery(e.target.value)} 
           style={{width: 300, marginBottom: 0}}
         />
-        <button className="btn" onClick={() => setShowAddModal(true)}>
-          + Agregar Producto
-        </button>
+        <div style={{display: 'flex', gap: 10}}>
+          {modifiedCount > 0 && (
+            <button className="btn" style={{backgroundColor: '#10b981', color: 'white', border: 'none'}} onClick={saveAllChanges}>
+              Guardar {modifiedCount} cambios
+            </button>
+          )}
+          <button className="btn" onClick={() => setShowAddModal(true)}>
+            + Agregar Producto
+          </button>
+        </div>
       </div>
 
       {showAddModal && (
@@ -277,7 +348,7 @@ export default function Inventory() {
             </thead>
             <tbody>
               {sortedProducts.map(p => (
-                <ProductRow key={p.ml_id} p={p} onSave={handleUpdate} onOpenGallery={openGallery} />
+                <ProductRow key={p.ml_id} p={p} onSave={handleUpdate} onOpenGallery={openGallery} onDraftChange={handleDraftChange} />
               ))}
             </tbody>
           </table>
@@ -333,7 +404,7 @@ export default function Inventory() {
   )
 }
 
-function ProductRow({ p, onSave, onOpenGallery }) {
+function ProductRow({ p, onSave, onOpenGallery, onDraftChange }) {
   const [qty, setQty] = useState(p.available_quantity)
   const [price, setPrice] = useState(p.price)
   const [cost, setCost] = useState(p.cost_price)
@@ -375,6 +446,25 @@ function ProductRow({ p, onSave, onOpenGallery }) {
       return [cleanMain, ...cleanAdd].join(',')
     }
   }
+
+  const parseNum = (val, isInt = false) => {
+    if (val === null || val === undefined || val === "") return 0
+    const parsed = isInt ? parseInt(val, 10) : parseFloat(val)
+    return isNaN(parsed) ? 0 : parsed
+  }
+
+  useEffect(() => {
+    onDraftChange(p.ml_id, {
+      ml_id: p.ml_id,
+      qty: parseNum(qty, true),
+      price: parseNum(price),
+      cost: parseNum(cost),
+      price_web: parseNum(priceWeb),
+      images: getCombinedImages(),
+      description: description || "",
+      is_web_active: isWebActive ? 1 : 0
+    })
+  }, [qty, price, cost, priceWeb, isWebActive, description, useMeliImage, customMainUrl, additionalUrls])
 
   return (
     <React.Fragment>
