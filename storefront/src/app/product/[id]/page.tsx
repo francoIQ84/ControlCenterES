@@ -2,6 +2,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { ChevronLeft } from 'lucide-react';
 import AddToCartButton from "../../../components/AddToCartButton";
+import ProductImageGallery from "../../../components/ProductImageGallery";
 
 async function getProduct(id: string) {
   const res = await fetch("http://localhost:8090/api/storefront/products", { cache: 'no-store' });
@@ -47,22 +48,7 @@ export default async function ProductPage({ params }: { params: Promise<{ id: st
 
       <div className="lg:grid lg:grid-cols-2 lg:gap-x-12 xl:gap-x-16">
         <div className="lg:max-w-lg lg:self-end">
-          <div className="rounded-2xl overflow-hidden bg-white border border-gray-200 p-4 shadow-sm flex items-center justify-center">
-            <img 
-              src={product.images[0] || 'https://via.placeholder.com/800'} 
-              alt={product.title} 
-              className="w-full h-auto object-contain max-h-[500px]"
-            />
-          </div>
-          {product.images.length > 1 && (
-            <div className="mt-4 grid grid-cols-4 gap-4">
-              {product.images.map((img: string, idx: number) => (
-                <div key={idx} className="border border-gray-200 rounded-lg overflow-hidden bg-white p-2">
-                  <img src={img} alt="" className="w-full h-24 object-contain" />
-                </div>
-              ))}
-            </div>
-          )}
+          <ProductImageGallery images={product.images} title={product.title} />
         </div>
 
         <div className="mt-10 px-4 sm:px-0 lg:mt-0">

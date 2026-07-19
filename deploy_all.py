@@ -58,6 +58,9 @@ try:
     except IOError:
         pass
     sftp.put('storefront/public/favicon.ico', '/var/www/controlcenter/storefront/public/favicon.ico')
+    
+    # Upload components
+    sftp.put('storefront/src/components/ProductImageGallery.tsx', '/var/www/controlcenter/storefront/src/components/ProductImageGallery.tsx')
         
     # 2. Upload frontend built assets
     print("\nUploading frontend built assets...")
