@@ -10,6 +10,11 @@ export default defineConfig({
         target: 'http://localhost:8090',
         changeOrigin: true,
         secure: false, // Ignorar certificado autofirmado local
+      },
+      '/uploads': {
+        target: 'http://localhost:8090',
+        changeOrigin: true,
+        secure: false,
       }
     }
   }

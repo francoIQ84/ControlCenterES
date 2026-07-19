@@ -8,11 +8,13 @@ export default function Sales() {
 
   // Modal State
   const [showModal, setShowModal] = useState(false)
+  const [inventory, setInventory] = useState([])
   const [newOrder, setNewOrder] = useState({
     buyer_nickname: "",
     buyer_name: "",
     source_platform: "LOCAL", // "LOCAL" or "WEB"
     shipping_status: "pending", // "pending" or "delivered"
+    payment_method: "Efectivo",
     items: [{ id: "manual-1", title: "", quantity: 1, price: 0 }]
   })
 
@@ -30,8 +32,18 @@ export default function Sales() {
       })
   }
 
+  const fetchInventory = () => {
+    fetch('/api/inventory/')
+      .then(res => res.json())
+      .then(data => {
+        setInventory(data.products || [])
+      })
+      .catch(err => console.error(err))
+  }
+
   useEffect(() => {
     fetchOrders()
+    fetchInventory()
   }, [])
 
   const handleToggleShipping = async (orderId, currentStatus) => {
@@ -117,6 +129,7 @@ export default function Sales() {
           buyer_name: "",
           source_platform: "LOCAL",
           shipping_status: "pending",
+          payment_method: "Efectivo",
           items: [{ id: "manual-1", title: "", quantity: 1, price: 0 }]
         })
         fetchOrders()
@@ -126,6 +139,24 @@ export default function Sales() {
     } catch(err) {
       alert("Error: " + err.message)
     }
+  }
+
+  const handleSourcePlatformChange = (newPlatform) => {
+    const updatedItems = newOrder.items.map(item => {
+      const selectedProduct = inventory.find(p => p.ml_id === item.id)
+      if (selectedProduct) {
+        const price = newPlatform === 'LOCAL' 
+          ? selectedProduct.price 
+          : (selectedProduct.price_web || selectedProduct.price)
+        return { ...item, price }
+      }
+      return item
+    })
+    setNewOrder(prev => ({
+      ...prev,
+      source_platform: newPlatform,
+      items: updatedItems
+    }))
   }
 
   const requestSort = (key) => {
@@ -321,7 +352,7 @@ export default function Sales() {
                       fontWeight: 600,
                       backgroundColor: o.status === 'paid' || o.status === 'approved' ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)',
                       color: o.status === 'paid' || o.status === 'approved' ? 'var(--accent-emerald)' : 'var(--accent-red)'
-                    }}>{(o.status === 'paid' || o.status === 'approved') ? 'APROBADO' : o.status.toUpperCase()}</span>
+                    }}>{(o.status === 'paid' || o.status === 'approved') ? `APROBADO ${o.payment_method ? `(${o.payment_method})` : ''}` : o.status.toUpperCase()}</span>
                   </td>
                   <td>{renderShippingBadge(o)}</td>
                 </tr>
@@ -373,11 +404,24 @@ export default function Sales() {
                 <label style={{flex: 1}}>Canal de Venta
                   <select 
                     value={newOrder.source_platform}
-                    onChange={e => setNewOrder({ ...newOrder, source_platform: e.target.value })}
+                    onChange={e => handleSourcePlatformChange(e.target.value)}
                     style={{width: '100%', marginTop: 5}}
                   >
                     <option value="LOCAL">Local Comercial</option>
                     <option value="WEB">Tienda Web</option>
+                  </select>
+                </label>
+
+                <label style={{flex: 1}}>Medio de Pago
+                  <select 
+                    value={newOrder.payment_method}
+                    onChange={e => setNewOrder({ ...newOrder, payment_method: e.target.value })}
+                    style={{width: '100%', marginTop: 5}}
+                  >
+                    <option value="Efectivo">Efectivo</option>
+                    <option value="Mercado Pago (Point)">Mercado Pago (Point)</option>
+                    <option value="Mercado Pago (Link)">Mercado Pago (Link)</option>
+                    <option value="Transferencia">Transferencia Bancaria</option>
                   </select>
                 </label>
                 
@@ -433,14 +477,32 @@ export default function Sales() {
                 {newOrder.items.map((item, idx) => (
                   <div key={item.id} style={{display: 'flex', gap: 10, alignItems: 'flex-end', marginBottom: 10}}>
                     <label style={{flex: 3}}>Nombre del Producto
-                      <input 
-                        type="text" 
-                        required 
-                        placeholder="ej. Bomba Sumergible"
-                        value={item.title}
-                        onChange={e => handleItemChange(idx, 'title', e.target.value)}
+                      <select
+                        required
+                        value={item.id.startsWith('manual-') ? "" : item.id}
+                        onChange={e => {
+                          const prodId = e.target.value
+                          const selectedProduct = inventory.find(p => p.ml_id === prodId)
+                          const title = selectedProduct ? selectedProduct.title : ""
+                          let price = 0
+                          if (selectedProduct) {
+                            price = newOrder.source_platform === 'LOCAL' 
+                              ? selectedProduct.price 
+                              : (selectedProduct.price_web || selectedProduct.price)
+                          }
+                          handleItemChange(idx, 'title', title)
+                          handleItemChange(idx, 'id', prodId)
+                          handleItemChange(idx, 'price', price)
+                        }}
                         style={{width: '100%', marginTop: 5}}
-                      />
+                      >
+                        <option value="">Seleccione un producto...</option>
+                        {inventory.map(prod => (
+                          <option key={prod.ml_id} value={prod.ml_id}>
+                            {prod.title} (${newOrder.source_platform === 'LOCAL' ? prod.price : (prod.price_web || prod.price)})
+                          </option>
+                        ))}
+                      </select>
                     </label>
                     
                     <label style={{width: 80}}>Cant.

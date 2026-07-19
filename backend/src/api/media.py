@@ -57,7 +57,7 @@ def list_media(path: str = ""):
                 files.append({
                     "name": entry.name,
                     "path": rel_path,
-                    "url": f"http://localhost:8090/uploads/{rel_path}",
+                    "url": f"/uploads/{rel_path}",
                     "size": size,
                     "date": mtime
                 })
@@ -122,7 +122,7 @@ async def upload_file(path: str = "", file: UploadFile = File(...)):
         return {
             "success": True,
             "filename": safe_filename,
-            "url": f"http://localhost:8090/uploads/{rel_path}"
+            "url": f"/uploads/{rel_path}"
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error al guardar archivo: {str(e)}")

@@ -256,7 +256,7 @@ def sync_products():
             details_response = api_request("GET", "/items", params={'ids': ids_str})
             
             # Fetch visits for the same item IDs
-            visits_response = api_request("GET", "/visits/items", params={'ids': ids_str})
+            visits_response = api_request("GET", "/items/visits", params={'ids': ids_str})
             visits_dict = {}
             if visits_response and visits_response.status_code == 200:
                 visits_dict = visits_response.json()
@@ -401,11 +401,35 @@ def sync_orders(limit=50, date_from=None, date_to=None):
             }
             
             # Shipping and Payment statuses
-            shipping_status = o.get('shipping', {}).get('status', 'pending')
+            tags = o.get('tags', [])
+            if 'delivered' in tags:
+                shipping_status = 'delivered'
+            elif 'shipped' in tags:
+                shipping_status = 'shipped'
+            else:
+                shipping_status = o.get('shipping', {}).get('status')
+                if not shipping_status:
+                    shipping_status = 'pending'
             payment_status = 'pending'
+            payment_method = 'unknown'
             payments = o.get('payments', [])
             if payments:
                 payment_status = payments[0].get('status', 'pending')
+                payment_method_raw = payments[0].get('payment_method_id', 'unknown')
+                
+                # Simple mapping for display
+                payment_method_map = {
+                    'account_money': 'Mercado Pago (Dinero en cuenta)',
+                    'rapipago': 'Rapipago',
+                    'pagofacil': 'Pago Fácil',
+                    'redlink': 'Red Link',
+                    'visa': 'Visa',
+                    'master': 'Mastercard',
+                    'amex': 'Amex',
+                    'cabal': 'Cabal',
+                    'unknown': 'Desconocido'
+                }
+                payment_method = payment_method_map.get(payment_method_raw, payment_method_raw.capitalize())
                 
             orders.append({
                 'order_id': o['id'],
@@ -415,6 +439,7 @@ def sync_orders(limit=50, date_from=None, date_to=None):
                 'currency_id': o.get('currency_id', 'ARS'),
                 'status': o['status'],
                 'payment_status': payment_status,
+                'payment_method': payment_method,
                 'shipping_status': shipping_status,
                 'items': items
             })

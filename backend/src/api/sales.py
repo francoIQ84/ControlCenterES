@@ -29,6 +29,7 @@ class ManualOrderRequest(BaseModel):
     shipping_status: str
     source_platform: str
     items: List[ManualOrderProduct]
+    payment_method: Optional[str] = None
 
 @router.get("/")
 def get_sales():
@@ -71,6 +72,7 @@ def create_order(req: ManualOrderRequest):
         status="paid",
         shipping_status=req.shipping_status,
         items=items_list,
-        source_platform=req.source_platform
+        source_platform=req.source_platform,
+        payment_method=req.payment_method
     )
     return {"success": True, "order_id": order_id}

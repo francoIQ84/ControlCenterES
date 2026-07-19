@@ -8,6 +8,11 @@ export default function Inventory() {
   const [query, setQuery] = useState("")
   const [sortConfig, setSortConfig] = useState({ key: null, direction: 'asc' })
   const [drafts, setDrafts] = useState({})
+  
+  // Categories State
+  const [categories, setCategories] = useState([])
+  const [showCategoriesModal, setShowCategoriesModal] = useState(false)
+  const [newCategoryName, setNewCategoryName] = useState("")
 
   const initialNewProduct = {
     title: "",
@@ -18,7 +23,9 @@ export default function Inventory() {
     images: "",
     description: "",
     is_web_active: true,
-    publish_to_meli: false
+    publish_to_meli: false,
+    category_id: "",
+    sync_meli: true
   }
   const [newProduct, setNewProduct] = useState(initialNewProduct)
   const [showAddModal, setShowAddModal] = useState(false)
@@ -50,7 +57,9 @@ export default function Inventory() {
           d.price_web !== (orig.price_web || 0) ||
           d.images !== (orig.images || "") ||
           d.description !== (orig.description || "") ||
-          d.is_web_active !== (orig.is_web_active ? 1 : 0);
+          d.is_web_active !== (orig.is_web_active ? 1 : 0) ||
+          (d.category_id || null) !== (orig.category_id || null) ||
+          d.sync_meli !== (orig.sync_meli === 0 ? 0 : 1);
         if (isChanged) {
           modified.push(d)
         }
@@ -101,11 +110,19 @@ export default function Inventory() {
       })
   }
 
+  const fetchCategories = () => {
+    fetch('/api/categories/')
+      .then(res => res.json())
+      .then(data => setCategories(data.categories || []))
+      .catch(err => console.error(err))
+  }
+
   useEffect(() => {
     fetchProducts()
+    fetchCategories()
   }, [query])
 
-  const handleUpdate = async (ml_id, qty, price, cost, price_web, images, description, is_web_active) => {
+  const handleUpdate = async (ml_id, qty, price, cost, price_web, images, description, is_web_active, category_id, sync_meli) => {
     try {
       const res = await fetch(`/api/inventory/${ml_id}`, {
         method: 'PUT',
@@ -117,7 +134,9 @@ export default function Inventory() {
           price_web: parseFloat(price_web) || 0,
           images: images || "",
           description: description || "",
-          is_web_active: is_web_active ? 1 : 0
+          is_web_active: is_web_active ? 1 : 0,
+          category_id: category_id ? parseInt(category_id) : null,
+          sync_meli: sync_meli ? 1 : 0
         })
       })
       if(res.ok) {
@@ -136,6 +155,45 @@ export default function Inventory() {
     }
   }
 
+  const handleCreateCategory = async (e) => {
+    e.preventDefault()
+    if (!newCategoryName.trim()) return
+    try {
+      const res = await fetch('/api/categories/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: newCategoryName.trim() })
+      })
+      if (res.ok) {
+        setNewCategoryName("")
+        fetchCategories()
+      } else {
+        const err = await res.json()
+        alert("Error: " + (err.detail || "No se pudo crear la categoría"))
+      }
+    } catch (err) {
+      alert("Error: " + err.message)
+    }
+  }
+
+  const handleDeleteCategory = async (id) => {
+    if (!confirm("¿Estás seguro de que deseas borrar esta categoría? Los productos asociados se quedarán sin categoría.")) return
+    try {
+      const res = await fetch(`/api/categories/${id}`, {
+        method: 'DELETE'
+      })
+      if (res.ok) {
+        fetchCategories()
+        fetchProducts()
+      } else {
+        const err = await res.json()
+        alert("Error: " + (err.detail || "No se pudo borrar la categoría"))
+      }
+    } catch (err) {
+      alert("Error: " + err.message)
+    }
+  }
+
   const handleAddSubmit = async (e) => {
     e.preventDefault()
     try {
@@ -144,7 +202,9 @@ export default function Inventory() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           ...newProduct,
-          is_web_active: newProduct.is_web_active ? 1 : 0
+          is_web_active: newProduct.is_web_active ? 1 : 0,
+          category_id: newProduct.category_id || null,
+          sync_meli: newProduct.sync_meli ? 1 : 0
         })
       })
       if(res.ok) {
@@ -231,6 +291,9 @@ export default function Inventory() {
               Guardar {modifiedCount} cambios
             </button>
           )}
+          <button className="btn" style={{backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)', border: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', gap: 5}} onClick={() => setShowCategoriesModal(true)}>
+            📁 Gestionar Categorías
+          </button>
           <button className="btn" onClick={() => setShowAddModal(true)}>
             + Agregar Producto
           </button>
@@ -294,6 +357,19 @@ export default function Inventory() {
                 <input type="text" value={newProduct.images} onChange={e => setNewProduct({...newProduct, images: e.target.value})} placeholder="https://ejemplo.com/foto.jpg" style={{width: '100%'}}/>
               </label>
 
+              <label style={{fontSize: '0.85rem'}}>Categoría
+                <select 
+                  value={newProduct.category_id} 
+                  onChange={e => setNewProduct({...newProduct, category_id: e.target.value ? parseInt(e.target.value) : ""})} 
+                  style={{width: '100%', marginTop: 5}}
+                >
+                  <option value="">Sin Categoría</option>
+                  {categories.map(c => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+                </select>
+              </label>
+
               <label style={{fontSize: '0.85rem'}}>Descripción Web
                 <textarea value={newProduct.description} onChange={e => setNewProduct({...newProduct, description: e.target.value})} style={{width: '100%', height: 70, marginTop: 5, padding: 8, backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)', border: '1px solid var(--border-color)', borderRadius: 4}}/>
               </label>
@@ -350,7 +426,7 @@ export default function Inventory() {
               </thead>
               <tbody>
                 {sortedProducts.map(p => (
-                  <ProductRow key={p.ml_id} p={p} onSave={handleUpdate} onOpenGallery={openGallery} onDraftChange={handleDraftChange} />
+                  <ProductRow key={p.ml_id} p={p} onSave={handleUpdate} onOpenGallery={openGallery} onDraftChange={handleDraftChange} categories={categories} />
                 ))}
               </tbody>
             </table>
@@ -403,17 +479,91 @@ export default function Inventory() {
           </div>
         </div>
       )}
+
+      {showCategoriesModal && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0, 0, 0, 0.7)',
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          zIndex: 1000
+        }}>
+          <div className="card" style={{
+            width: 450,
+            maxWidth: '90%',
+            maxHeight: '80vh',
+            overflowY: 'auto',
+            padding: 25,
+            border: '1px solid var(--border-color)',
+            backgroundColor: 'var(--bg-card)',
+            borderRadius: 12
+          }}>
+            <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, borderBottom: '1px solid var(--border-color)', paddingBottom: 15}}>
+              <h3 style={{margin: 0}}>Gestionar Categorías</h3>
+              <button 
+                className="btn" 
+                style={{backgroundColor: 'transparent', border: '1px solid var(--border-color)', color: 'var(--text-primary)', padding: '4px 8px', fontSize: '0.75rem'}}
+                onClick={() => setShowCategoriesModal(false)}
+              >
+                Cerrar
+              </button>
+            </div>
+            
+            <form onSubmit={handleCreateCategory} style={{display: 'flex', gap: 10, marginBottom: 20}}>
+              <input 
+                type="text" 
+                required 
+                placeholder="Nueva categoría (ej. Bombas)" 
+                value={newCategoryName}
+                onChange={e => setNewCategoryName(e.target.value)}
+                style={{flex: 1, padding: 6}}
+              />
+              <button type="submit" className="btn" style={{padding: '6px 12px'}}>Añadir</button>
+            </form>
+            
+            <div style={{display: 'flex', flexDirection: 'column', gap: 10}}>
+              <span style={{fontSize: '0.8rem', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em'}}>Categorías Existentes</span>
+              {categories.length === 0 ? (
+                <p style={{color: 'var(--text-secondary)', fontSize: '0.9rem', textAlign: 'center', margin: '20px 0'}}>No hay categorías creadas aún.</p>
+              ) : (
+                <ul style={{listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: 8, maxHeight: '30vh', overflowY: 'auto'}}>
+                  {categories.map(c => (
+                    <li key={c.id} style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 12px', border: '1px solid var(--border-color)', borderRadius: 6, backgroundColor: 'rgba(0,0,0,0.02)'}}>
+                      <span style={{fontWeight: 500, fontSize: '0.9rem'}}>{c.name} <small style={{color: 'var(--text-secondary)', fontWeight: 'normal'}}>({c.slug})</small></span>
+                      <button 
+                        type="button" 
+                        className="btn" 
+                        style={{backgroundColor: 'rgba(239, 68, 68, 0.1)', color: 'var(--accent-red)', padding: '2px 6px', fontSize: '0.75rem', border: 'none'}}
+                        onClick={() => handleDeleteCategory(c.id)}
+                      >
+                        Eliminar
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
 
-function ProductRow({ p, onSave, onOpenGallery, onDraftChange }) {
+function ProductRow({ p, onSave, onOpenGallery, onDraftChange, categories }) {
   const [qty, setQty] = useState(p.available_quantity)
   const [price, setPrice] = useState(p.price)
   const [cost, setCost] = useState(p.cost_price)
   
   const [priceWeb, setPriceWeb] = useState(p.price_web || 0)
   const [isWebActive, setIsWebActive] = useState(p.is_web_active === 1)
+  const [categoryId, setCategoryId] = useState(p.category_id || "")
+  const [syncMeli, setSyncMeli] = useState(p.sync_meli !== 0)
   const [description, setDescription] = useState(p.description || "")
   const [showWebDetails, setShowWebDetails] = useState(false)
 
@@ -465,9 +615,11 @@ function ProductRow({ p, onSave, onOpenGallery, onDraftChange }) {
       price_web: parseNum(priceWeb),
       images: getCombinedImages(),
       description: description || "",
-      is_web_active: isWebActive ? 1 : 0
+      is_web_active: isWebActive ? 1 : 0,
+      category_id: categoryId ? parseInt(categoryId) : null,
+      sync_meli: syncMeli ? 1 : 0
     })
-  }, [qty, price, cost, priceWeb, isWebActive, description, useMeliImage, customMainUrl, additionalUrls])
+  }, [qty, price, cost, priceWeb, isWebActive, description, useMeliImage, customMainUrl, additionalUrls, categoryId, syncMeli])
 
   return (
     <React.Fragment>
@@ -525,7 +677,7 @@ function ProductRow({ p, onSave, onOpenGallery, onDraftChange }) {
           </div>
         </td>
         <td data-label="Acción">
-          <button className="btn-icon" onClick={() => onSave(p.ml_id, qty, price, cost, priceWeb, getCombinedImages(), description, isWebActive)} title="Guardar Todo">
+          <button className="btn-icon" onClick={() => onSave(p.ml_id, qty, price, cost, priceWeb, getCombinedImages(), description, isWebActive, categoryId, syncMeli)} title="Guardar Todo">
             <Save size={18} className="text-blue-500" />
           </button>
         </td>
@@ -583,15 +735,43 @@ function ProductRow({ p, onSave, onOpenGallery, onDraftChange }) {
                 )}
               </div>
 
-              {/* Columna 2: Imágenes Adicionales */}
-              <div style={{flex: 1, minWidth: 200}}>
-                <label style={{fontSize: '0.85rem', fontWeight: 'bold', display: 'block', marginBottom: 5}}>Imágenes Adicionales (URLs, separadas por coma)</label>
-                <textarea 
-                  value={additionalUrls} 
-                  onChange={e => setAdditionalUrls(e.target.value)} 
-                  style={{width: '100%', height: 80, backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)', border: '1px solid var(--border-color)', borderRadius: 4, padding: 8, fontSize: '0.8rem'}}
-                  placeholder="https://ejemplo.com/foto1.jpg, https://ejemplo.com/foto2.jpg"
-                />
+              {/* Columna 2: Imágenes Adicionales y Categoría */}
+              <div style={{flex: 1, minWidth: 200, display: 'flex', flexDirection: 'column', gap: 10}}>
+                <div>
+                  <label style={{fontSize: '0.85rem', fontWeight: 'bold', display: 'block', marginBottom: 5}}>Imágenes Adicionales (URLs, separadas por coma)</label>
+                  <textarea 
+                    value={additionalUrls} 
+                    onChange={e => setAdditionalUrls(e.target.value)} 
+                    style={{width: '100%', height: 80, backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)', border: '1px solid var(--border-color)', borderRadius: 4, padding: 8, fontSize: '0.8rem'}}
+                    placeholder="https://ejemplo.com/foto1.jpg, https://ejemplo.com/foto2.jpg"
+                  />
+                </div>
+                <div>
+                  <label style={{fontSize: '0.85rem', fontWeight: 'bold', display: 'block', marginBottom: 5}}>Categoría de Producto</label>
+                  <select 
+                    value={categoryId} 
+                    onChange={e => setCategoryId(e.target.value ? parseInt(e.target.value) : "")} 
+                    style={{width: '100%', padding: '6px 10px', backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)', border: '1px solid var(--border-color)', borderRadius: 4}}
+                  >
+                    <option value="">Sin Categoría</option>
+                    {categories.map(c => (
+                       <option key={c.id} value={c.id}>{c.name}</option>
+                    ))}
+                  </select>
+                </div>
+                {p.status !== 'local' && (
+                  <div style={{marginTop: 5}}>
+                    <label style={{display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.85rem', cursor: 'pointer', color: 'var(--text-primary)'}}>
+                      <input 
+                        type="checkbox" 
+                        checked={syncMeli} 
+                        onChange={e => setSyncMeli(e.target.checked)} 
+                        style={{width: 'auto'}}
+                      />
+                      Sincronizar con Mercado Libre
+                    </label>
+                  </div>
+                )}
               </div>
 
               {/* Columna 3: Descripción */}

@@ -7,6 +7,7 @@ from .settings import router as settings_router
 from .storefront import router as storefront_router
 from .media import router as media_router
 from .auth import router as auth_router, verify_session
+from .categories import router as categories_router
 
 api_router = APIRouter()
 
@@ -21,3 +22,4 @@ api_router.include_router(customers_router, prefix="/customers", tags=["customer
 api_router.include_router(dashboard_router, prefix="/dashboard", tags=["dashboard"], dependencies=[Depends(verify_session)])
 api_router.include_router(settings_router, prefix="/settings", tags=["settings"], dependencies=[Depends(verify_session)])
 api_router.include_router(media_router, prefix="/media", tags=["media"], dependencies=[Depends(verify_session)])
+api_router.include_router(categories_router, prefix="/categories", tags=["categories"], dependencies=[Depends(verify_session)])

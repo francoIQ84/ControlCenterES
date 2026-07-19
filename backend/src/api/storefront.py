@@ -6,13 +6,10 @@ from src import database
 router = APIRouter()
 
 @router.get("/products")
-def get_storefront_products():
-    # Only return products that are active for the web
-    products = database.get_all_products(is_web_active=1)
+def get_storefront_products(category: str = None):
+    # Only return products that are active for the web, potentially filtered by category slug
+    products = database.get_all_products(is_web_active=1, category_slug=category)
     
-    # We might want to filter or map the response so we don't expose ML specific things if we don't want to
-    # but for simplicity, we'll return the list and let the frontend map it.
-    # However, it's a good practice to ensure images are parsed if they are JSON.
     mapped = []
     for p in products:
         imgs = []
@@ -28,9 +25,16 @@ def get_storefront_products():
             "original_price": p['price'],
             "images": imgs,
             "description": p['description'],
-            "available_quantity": p['available_quantity']
+            "available_quantity": p['available_quantity'],
+            "category_id": p.get('category_id'),
+            "category_name": p.get('category_name'),
+            "category_slug": p.get('category_slug')
         })
     return mapped
+
+@router.get("/categories")
+def get_storefront_categories():
+    return database.get_all_categories()
 
 @router.get("/config")
 def get_storefront_config():

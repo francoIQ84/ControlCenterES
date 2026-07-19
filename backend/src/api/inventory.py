@@ -1,4 +1,5 @@
 from fastapi import APIRouter, HTTPException
+from typing import Optional
 from pydantic import BaseModel
 from src import database, meli_api
 import random
@@ -14,6 +15,8 @@ class UpdateProductRequest(BaseModel):
     images: str = ""
     description: str = ""
     is_web_active: int = 0
+    category_id: Optional[int] = None
+    sync_meli: int = 1
 
 class CreateProductRequest(BaseModel):
     title: str
@@ -25,6 +28,8 @@ class CreateProductRequest(BaseModel):
     description: str = ""
     is_web_active: int = 1
     publish_to_meli: bool = False
+    category_id: Optional[int] = None
+    sync_meli: int = 1
 
 @router.get("/")
 def get_products(query: str = None, status: str = None):
@@ -74,7 +79,9 @@ def create_product(payload: CreateProductRequest):
         "price_web": payload.price_web,
         "images": payload.images,
         "description": payload.description,
-        "is_web_active": payload.is_web_active
+        "is_web_active": payload.is_web_active,
+        "category_id": payload.category_id,
+        "sync_meli": payload.sync_meli
     }
 
     try:
@@ -92,6 +99,8 @@ class BulkUpdateItem(BaseModel):
     images: str = ""
     description: str = ""
     is_web_active: int = 0
+    category_id: Optional[int] = None
+    sync_meli: int = 1
 
 class BulkUpdateRequest(BaseModel):
     items: list[BulkUpdateItem]
@@ -118,15 +127,17 @@ def bulk_update_products(payload: BulkUpdateRequest):
             item.price_web, 
             item.images, 
             item.description, 
-            item.is_web_active
+            item.is_web_active,
+            item.category_id,
+            item.sync_meli
         )
 
         is_local = item.ml_id.startswith('LOCAL-') or item.ml_id.startswith('WEB-')
-        if db_status in ('active', 'paused') and not is_local:
+        if db_status in ('active', 'paused') and not is_local and item.sync_meli == 1:
             ok, msg = meli_api.update_stock_and_price(item.ml_id, item.qty, item.price)
             if not ok:
                 warnings.append(f"{item.ml_id}: Falló la sincronización con Mercado Libre: {msg}")
-        elif not is_local:
+        elif not is_local and item.sync_meli == 1:
             warnings.append(f"{item.ml_id}: Artículo cerrado ({db_status}) en ML, no sincronizado.")
 
     return {"success": True, "warnings": warnings}
@@ -155,12 +166,14 @@ def update_product(ml_id: str, payload: UpdateProductRequest):
         payload.price_web, 
         payload.images, 
         payload.description, 
-        payload.is_web_active
+        payload.is_web_active,
+        payload.category_id,
+        payload.sync_meli
     )
     
-    # Sync to ML only if the product status is active or paused and NOT local-only
+    # Sync to ML only if the product status is active or paused and NOT local-only AND sync_meli is enabled
     is_local = ml_id.startswith('LOCAL-') or ml_id.startswith('WEB-')
-    if db_status in ('active', 'paused') and not is_local:
+    if db_status in ('active', 'paused') and not is_local and payload.sync_meli == 1:
         ok, msg = meli_api.update_stock_and_price(ml_id, payload.qty, payload.price)
         if not ok:
             return {
@@ -169,6 +182,8 @@ def update_product(ml_id: str, payload: UpdateProductRequest):
             }
     elif is_local:
         return {"success": True, "message": "Updated locally (local-only product)"}
+    elif payload.sync_meli == 0:
+        return {"success": True, "message": "Updated locally (Mercado Libre sync is disabled for this product)"}
     else:
         return {
             "success": True, 

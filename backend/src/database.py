@@ -50,6 +50,18 @@ def init_db():
             cursor.execute('ALTER TABLE products_cache ADD COLUMN IF NOT EXISTS visits_meli INTEGER DEFAULT 0;')
             cursor.execute('ALTER TABLE products_cache ADD COLUMN IF NOT EXISTS visits_web INTEGER DEFAULT 0;')
 
+            # Categories table
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS categories (
+                    id SERIAL PRIMARY KEY,
+                    name VARCHAR(100) UNIQUE NOT NULL,
+                    slug VARCHAR(100) UNIQUE NOT NULL
+                )
+            ''')
+            # Add category_id to products_cache
+            cursor.execute('ALTER TABLE products_cache ADD COLUMN IF NOT EXISTS category_id INTEGER REFERENCES categories(id) ON DELETE SET NULL;')
+            cursor.execute('ALTER TABLE products_cache ADD COLUMN IF NOT EXISTS sync_meli INTEGER DEFAULT 1;')
+
             # Orders cache table
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS orders_cache (
@@ -65,9 +77,11 @@ def init_db():
                     shipping_status TEXT,
                     items_json TEXT,
                     invoice_generated INTEGER DEFAULT 0,
-                    source_platform TEXT DEFAULT 'MERCADOLIBRE'
+                    source_platform TEXT DEFAULT 'MERCADOLIBRE',
+                    payment_method TEXT
                 )
             ''')
+            cursor.execute('ALTER TABLE orders_cache ADD COLUMN IF NOT EXISTS payment_method TEXT;')
 
             # Customers table
             cursor.execute('''
@@ -129,6 +143,26 @@ def init_db():
                     INSERT INTO users (username, password_hash, full_name)
                     VALUES (%s, %s, %s)
                 ''', ("admin", admin_pw_hash, "Administrador"))
+
+# --- Categories Operations ---
+
+def get_all_categories():
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute("SELECT id, name, slug FROM categories ORDER BY name ASC")
+            return cursor.fetchall()
+
+def create_category(name: str, slug: str):
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute("INSERT INTO categories (name, slug) VALUES (%s, %s) ON CONFLICT (name) DO UPDATE SET slug = EXCLUDED.slug RETURNING id", (name, slug))
+            return cursor.fetchone()['id']
+
+def delete_category(category_id: int):
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute("UPDATE products_cache SET category_id = NULL WHERE category_id = %s", (category_id,))
+            cursor.execute("DELETE FROM categories WHERE id = %s", (category_id,))
 
 # --- Settings Operations ---
 
@@ -195,8 +229,8 @@ def create_product(product_data):
         with conn.cursor() as cursor:
             cursor.execute('''
                 INSERT INTO products_cache 
-                (ml_id, title, price, available_quantity, cost_price, permalink, thumbnail, status, last_sync, price_web, images, description, is_web_active, visits_meli, visits_web)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                (ml_id, title, price, available_quantity, cost_price, permalink, thumbnail, status, last_sync, price_web, images, description, is_web_active, visits_meli, visits_web, category_id, sync_meli)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             ''', (
                 product_data['ml_id'],
                 product_data['title'],
@@ -212,7 +246,9 @@ def create_product(product_data):
                 product_data.get('description', ''),
                 product_data.get('is_web_active', 1),
                 product_data.get('visits_meli', 0),
-                product_data.get('visits_web', 0)
+                product_data.get('visits_web', 0),
+                product_data.get('category_id'),
+                product_data.get('sync_meli', 1)
             ))
 
 def update_product_cost(ml_id, cost_price):
@@ -225,32 +261,43 @@ def update_product_stock_price(ml_id, quantity, price):
         with conn.cursor() as cursor:
             cursor.execute("UPDATE products_cache SET available_quantity = %s, price = %s WHERE ml_id = %s", (quantity, price, ml_id))
 
-def update_product_web_details(ml_id, price_web, images, description, is_web_active):
+def update_product_web_details(ml_id, price_web, images, description, is_web_active, category_id=None, sync_meli=1):
     with get_connection() as conn:
         with conn.cursor() as cursor:
             cursor.execute('''
                 UPDATE products_cache 
-                SET price_web = %s, images = %s, description = %s, is_web_active = %s 
+                SET price_web = %s, images = %s, description = %s, is_web_active = %s, category_id = %s, sync_meli = %s
                 WHERE ml_id = %s
-            ''', (price_web, images, description, is_web_active, ml_id))
+            ''', (price_web, images, description, is_web_active, category_id, sync_meli, ml_id))
 
-def get_all_products(query=None, status_filter=None, is_web_active=None):
+def get_all_products(query=None, status_filter=None, is_web_active=None, category_slug=None):
     with get_connection() as conn:
         with conn.cursor() as cursor:
-            sql = "SELECT ml_id, title, price, available_quantity, cost_price, permalink, thumbnail, status, last_sync, price_web, images, description, is_web_active, visits_meli, visits_web FROM products_cache WHERE 1=1"
+            sql = """
+                SELECT p.ml_id, p.title, p.price, p.available_quantity, p.cost_price, p.permalink, p.thumbnail, 
+                       p.status, p.last_sync, p.price_web, p.images, p.description, p.is_web_active, 
+                       p.visits_meli, p.visits_web, p.category_id, p.sync_meli, c.name as category_name, c.slug as category_slug
+                FROM products_cache p
+                LEFT JOIN categories c ON p.category_id = c.id
+                WHERE 1=1
+            """
             params = []
             
             if query:
-                sql += " AND (title ILIKE %s OR ml_id ILIKE %s)"
+                sql += " AND (p.title ILIKE %s OR p.ml_id ILIKE %s)"
                 params.extend([f"%{query}%", f"%{query}%"])
                 
             if status_filter:
-                sql += " AND status = %s"
+                sql += " AND p.status = %s"
                 params.append(status_filter)
                 
             if is_web_active is not None:
-                sql += " AND is_web_active = %s"
+                sql += " AND p.is_web_active = %s"
                 params.append(is_web_active)
+                
+            if category_slug:
+                sql += " AND c.slug = %s"
+                params.append(category_slug)
                 
             cursor.execute(sql, params)
             rows = cursor.fetchall()
@@ -269,16 +316,17 @@ def save_orders_and_customers(orders_list):
 
                 cursor.execute('''
                     INSERT INTO orders_cache 
-                    (order_id, date_created, buyer_id, buyer_nickname, buyer_name, total_amount, currency_id, status, payment_status, shipping_status, items_json, invoice_generated, source_platform)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    (order_id, date_created, buyer_id, buyer_nickname, buyer_name, total_amount, currency_id, status, payment_status, shipping_status, items_json, invoice_generated, source_platform, payment_method)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     ON CONFLICT (order_id) DO UPDATE SET
                         status = EXCLUDED.status,
                         payment_status = EXCLUDED.payment_status,
-                        shipping_status = EXCLUDED.shipping_status
+                        shipping_status = EXCLUDED.shipping_status,
+                        payment_method = EXCLUDED.payment_method
                 ''', (
                     o['order_id'], o['date_created'], o['buyer']['id'], o['buyer']['nickname'], o['buyer']['name'],
                     o['total_amount'], o['currency_id'], o['status'], o['payment_status'], o['shipping_status'],
-                    json.dumps(o['items']), invoice_generated, source_platform
+                    json.dumps(o['items']), invoice_generated, source_platform, o.get('payment_method')
                 ))
                 
                 cursor.execute('''
@@ -306,9 +354,9 @@ def get_all_orders(source_platform=None):
     with get_connection() as conn:
         with conn.cursor() as cursor:
             if source_platform:
-                cursor.execute("SELECT order_id, date_created, buyer_id, buyer_nickname, buyer_name, total_amount, currency_id, status, payment_status, shipping_status, items_json, invoice_generated, source_platform FROM orders_cache WHERE source_platform = %s ORDER BY date_created DESC", (source_platform,))
+                cursor.execute("SELECT order_id, date_created, buyer_id, buyer_nickname, buyer_name, total_amount, currency_id, status, payment_status, shipping_status, items_json, invoice_generated, source_platform, payment_method FROM orders_cache WHERE source_platform = %s ORDER BY date_created DESC", (source_platform,))
             else:
-                cursor.execute("SELECT order_id, date_created, buyer_id, buyer_nickname, buyer_name, total_amount, currency_id, status, payment_status, shipping_status, items_json, invoice_generated, source_platform FROM orders_cache ORDER BY date_created DESC")
+                cursor.execute("SELECT order_id, date_created, buyer_id, buyer_nickname, buyer_name, total_amount, currency_id, status, payment_status, shipping_status, items_json, invoice_generated, source_platform, payment_method FROM orders_cache ORDER BY date_created DESC")
             rows = cursor.fetchall()
             
             orders = []
@@ -325,6 +373,7 @@ def get_all_orders(source_platform=None):
                     'currency_id': r['currency_id'],
                     'status': r['status'],
                     'payment_status': r['payment_status'],
+                    'payment_method': r['payment_method'],
                     'shipping_status': r['shipping_status'],
                     'items': json.loads(r['items_json']),
                     'invoice_generated': bool(r['invoice_generated']),
@@ -573,14 +622,14 @@ def update_order_shipping_status(order_id: int, shipping_status: str):
         with conn.cursor() as cursor:
             cursor.execute("UPDATE orders_cache SET shipping_status = %s WHERE order_id = %s", (shipping_status, order_id))
 
-def create_manual_order(order_id: int, date_created: str, buyer_nickname: str, buyer_name: str, total_amount: float, status: str, shipping_status: str, items: list, source_platform: str):
+def create_manual_order(order_id: int, date_created: str, buyer_nickname: str, buyer_name: str, total_amount: float, status: str, shipping_status: str, items: list, source_platform: str, payment_method: str = None):
     import json
     with get_connection() as conn:
         with conn.cursor() as cursor:
             cursor.execute('''
                 INSERT INTO orders_cache 
-                (order_id, date_created, buyer_id, buyer_nickname, buyer_name, total_amount, currency_id, status, payment_status, shipping_status, items_json, invoice_generated, source_platform)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                (order_id, date_created, buyer_id, buyer_nickname, buyer_name, total_amount, currency_id, status, payment_status, shipping_status, items_json, invoice_generated, source_platform, payment_method)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             ''', (
                 order_id,
                 date_created,
@@ -594,5 +643,6 @@ def create_manual_order(order_id: int, date_created: str, buyer_nickname: str, b
                 shipping_status,
                 json.dumps(items),
                 0,
-                source_platform
+                source_platform,
+                payment_method
             ))

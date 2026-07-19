@@ -1,8 +1,17 @@
 import Image from "next/image";
 import Link from "next/link";
 
-async function getProducts() {
-  const res = await fetch("http://localhost:8090/api/storefront/products", { cache: 'no-store' });
+async function getProducts(categorySlug?: string) {
+  const url = categorySlug 
+    ? `http://localhost:8090/api/storefront/products?category=${encodeURIComponent(categorySlug)}`
+    : "http://localhost:8090/api/storefront/products";
+  const res = await fetch(url, { cache: 'no-store' });
+  if (!res.ok) return [];
+  return res.json();
+}
+
+async function getCategories() {
+  const res = await fetch("http://localhost:8090/api/storefront/categories", { cache: 'no-store' });
   if (!res.ok) return [];
   return res.json();
 }
@@ -21,8 +30,14 @@ async function getWebConfig() {
   return res.json();
 }
 
-export default async function Home() {
-  const products = await getProducts();
+export default async function Home(props: {
+  searchParams: Promise<{ category?: string }>
+}) {
+  const searchParams = await props.searchParams;
+  const activeCategory = searchParams.category || "";
+  
+  const products = await getProducts(activeCategory);
+  const categories = await getCategories();
   const cfg = await getWebConfig();
 
   return (
@@ -45,9 +60,36 @@ export default async function Home() {
         </div>
       </div>
 
+      {/* Category Navigation Bar */}
+      <div className="flex gap-2 mb-8 overflow-x-auto pb-2 scrollbar-none">
+        <Link
+          href="/"
+          className={`px-4 py-2 rounded-full text-sm font-semibold transition-all duration-200 border whitespace-nowrap ${
+            !activeCategory
+              ? "bg-emerald-600 text-white border-emerald-600 shadow-sm"
+              : "bg-white text-gray-700 border-gray-200 hover:border-emerald-500 hover:text-emerald-600"
+          }`}
+        >
+          Todos
+        </Link>
+        {categories.map((cat: any) => (
+          <Link
+            key={cat.id}
+            href={`/?category=${cat.slug}`}
+            className={`px-4 py-2 rounded-full text-sm font-semibold transition-all duration-200 border whitespace-nowrap ${
+              activeCategory === cat.slug
+                ? "bg-emerald-600 text-white border-emerald-600 shadow-sm"
+                : "bg-white text-gray-700 border-gray-200 hover:border-emerald-500 hover:text-emerald-600"
+            }`}
+          >
+            {cat.name}
+          </Link>
+        ))}
+      </div>
+
       {products.length === 0 ? (
         <div className="text-center text-gray-500 py-20">
-          No hay productos disponibles por el momento.
+          No hay productos disponibles en esta categoría por el momento.
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-8">
