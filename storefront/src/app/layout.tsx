@@ -8,8 +8,8 @@ import Footer from "../components/Footer";
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "Tienda Oficial",
-  description: "E-Commerce de ControlCenterES",
+  title: "Hidroponia Rosario | Tienda Oficial",
+  description: "Tu tienda de hidroponia y cultivos en Rosario. Nutrientes, sustratos, iluminación y más.",
 };
 
 export default function RootLayout({

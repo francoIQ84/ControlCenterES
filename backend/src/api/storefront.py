@@ -14,9 +14,9 @@ def get_storefront_products(category: str = None):
     for p in products:
         imgs = []
         if p['images']:
-            imgs = [i.strip() for i in p['images'].split(',') if i.strip()]
+            imgs = [i.strip().replace('-I.jpg', '-O.jpg') for i in p['images'].split(',') if i.strip()]
         elif p['thumbnail']:
-            imgs = [p['thumbnail']]
+            imgs = [p['thumbnail'].replace('-I.jpg', '-O.jpg')]
             
         mapped.append({
             "id": p['ml_id'],
@@ -28,7 +28,9 @@ def get_storefront_products(category: str = None):
             "available_quantity": p['available_quantity'],
             "category_id": p.get('category_id'),
             "category_name": p.get('category_name'),
-            "category_slug": p.get('category_slug')
+            "category_slug": p.get('category_slug'),
+            "permalink": p.get('permalink'),
+            "status": p.get('status')
         })
     return mapped
 

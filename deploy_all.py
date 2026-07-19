@@ -38,6 +38,26 @@ try:
     # 1.5 Upload storefront files
     print("Uploading storefront files...")
     sftp.put('storefront/src/app/page.tsx', '/var/www/controlcenter/storefront/src/app/page.tsx')
+    sftp.put('storefront/src/app/layout.tsx', '/var/www/controlcenter/storefront/src/app/layout.tsx')
+    sftp.put('storefront/src/app/favicon.ico', '/var/www/controlcenter/storefront/src/app/favicon.ico')
+    
+    # Ensure product/[id]/ remote path exists and upload details page
+    try:
+        sftp.mkdir('/var/www/controlcenter/storefront/src/app/product')
+    except IOError:
+        pass
+    try:
+        sftp.mkdir('/var/www/controlcenter/storefront/src/app/product/[id]')
+    except IOError:
+        pass
+    sftp.put('storefront/src/app/product/[id]/page.tsx', '/var/www/controlcenter/storefront/src/app/product/[id]/page.tsx')
+    
+    # Upload public favicon
+    try:
+        sftp.mkdir('/var/www/controlcenter/storefront/public')
+    except IOError:
+        pass
+    sftp.put('storefront/public/favicon.ico', '/var/www/controlcenter/storefront/public/favicon.ico')
         
     # 2. Upload frontend built assets
     print("\nUploading frontend built assets...")

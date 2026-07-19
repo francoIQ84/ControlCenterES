@@ -200,7 +200,7 @@ def save_products(products_list):
                 row = cursor.fetchone()
                 cost_price = row['cost_price'] if row else 0.0
                 price_web = row['price_web'] if row else 0.0
-                images = row['images'] if row else ''
+                images = row['images'] if (row and row['images']) else p.get('images', '')
                 description = row['description'] if row else ''
                 is_web_active = row['is_web_active'] if row else 0
                 visits_web = row['visits_web'] if row else p.get('visits_web', 0)
@@ -219,7 +219,8 @@ def save_products(products_list):
                         thumbnail = EXCLUDED.thumbnail,
                         status = EXCLUDED.status,
                         last_sync = EXCLUDED.last_sync,
-                        visits_meli = EXCLUDED.visits_meli
+                        visits_meli = EXCLUDED.visits_meli,
+                        images = CASE WHEN products_cache.images IS NULL OR products_cache.images = '' THEN EXCLUDED.images ELSE products_cache.images END
                 ''', (p['ml_id'], p['title'], p['price'], p['available_quantity'], cost_price, 
                       p.get('permalink'), p.get('thumbnail'), p.get('status'), now, price_web, images, description, is_web_active, visits_meli, visits_web))
 

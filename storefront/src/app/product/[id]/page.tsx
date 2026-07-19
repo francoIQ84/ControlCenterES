@@ -95,6 +95,20 @@ export default async function ProductPage({ params }: { params: Promise<{ id: st
 
           <AddToCartButton product={product} />
 
+          {product.status === 'active' && product.permalink && (
+            <div className="mt-4">
+              <a 
+                href={product.permalink} 
+                target="_blank" 
+                rel="noopener noreferrer" 
+                className="w-full flex items-center justify-center px-6 py-3 border border-gray-300 rounded-md shadow-sm text-base font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors"
+                style={{ border: '1px solid #ffe600', backgroundColor: '#fff9c4' }}
+              >
+                Ver en Mercado Libre
+              </a>
+            </div>
+          )}
+
           <div className="mt-10 border-t border-gray-200 pt-8">
             <h3 className="text-sm font-medium text-gray-900">Seguridad garantizada</h3>
             <p className="mt-4 text-sm text-gray-500">

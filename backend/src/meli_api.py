@@ -295,6 +295,10 @@ def sync_products():
                 for item_wrapper in results:
                     item = item_wrapper.get('body', {})
                     if item.get('id'):
+                        pictures = item.get('pictures', [])
+                        images_list = [pic.get('secure_url') or pic.get('url') for pic in pictures if pic.get('secure_url') or pic.get('url')]
+                        images_str = ",".join(images_list)
+                        
                         products.append({
                             'ml_id': item['id'],
                             'title': item['title'],
@@ -303,7 +307,8 @@ def sync_products():
                             'permalink': item.get('permalink'),
                             'thumbnail': item.get('thumbnail'),
                             'status': item.get('status'),
-                            'visits_meli': visits_dict.get(item['id'], 0)
+                            'visits_meli': visits_dict.get(item['id'], 0),
+                            'images': images_str
                         })
                         
         database.save_products(products)
