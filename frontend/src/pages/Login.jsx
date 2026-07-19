@@ -25,6 +25,7 @@ export default function Login() {
         localStorage.setItem('adminToken', data.token)
         localStorage.setItem('adminUsername', data.username)
         localStorage.setItem('adminFullName', data.full_name)
+        localStorage.setItem('justLoggedIn', 'true')
         // Redirect to dashboard
         window.location.href = '/'
       } else {

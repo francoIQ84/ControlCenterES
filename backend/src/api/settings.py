@@ -1,6 +1,8 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, BackgroundTasks
 from pydantic import BaseModel
+from typing import Optional
 from src import database, meli_api, config
+from src.progress import get_progress, update_progress
 
 router = APIRouter()
 
@@ -13,13 +15,18 @@ class SetupRequest(BaseModel):
 class CodeRequest(BaseModel):
     code: str
 
+class SyncAllRequest(BaseModel):
+    limit: int = 2000
+    date_from: Optional[str] = None
+
 @router.get("/status")
 def get_auth_status():
     user_id = config.get_user_id()
     token_valid = meli_api.validate_token()
     return {
         "is_authenticated": bool(user_id and token_valid),
-        "user_id": user_id
+        "user_id": user_id,
+        "demo_mode": meli_api.is_demo_mode()
     }
 
 @router.get("/config")
@@ -96,3 +103,34 @@ def save_web_config(req: WebConfigModel):
     import json
     database.set_setting("web_config", json.dumps(req.dict()))
     return {"success": True}
+
+def run_background_sync(limit: int, date_from: Optional[str]):
+    try:
+        # Step 1: Products Sync
+        ok_products, count_or_msg = meli_api.sync_products()
+        if not ok_products:
+            raise Exception(f"Fallo en la sincronización de productos: {count_or_msg}")
+            
+        # Step 2: Sales Sync
+        ok_sales, count_or_msg = meli_api.sync_orders(limit=limit, date_from=date_from)
+        if not ok_sales:
+            raise Exception(f"Fallo en la sincronización de ventas: {count_or_msg}")
+            
+        # Finalized successfully
+        update_progress(status="completed", progress=100, message="Sincronización histórica finalizada exitosamente.")
+    except Exception as e:
+        update_progress(status="failed", message=str(e))
+
+@router.post("/sync-all")
+def trigger_sync_all(req: SyncAllRequest, background_tasks: BackgroundTasks):
+    current_status = get_progress().get("status")
+    if current_status in ["syncing_products", "syncing_sales"]:
+        return {"success": True, "message": "Sincronización ya en curso."}
+        
+    update_progress(status="idle", progress=0, message="Iniciando...", current=0, total=100)
+    background_tasks.add_task(run_background_sync, req.limit, req.date_from)
+    return {"success": True, "message": "Sincronización en segundo plano iniciada."}
+
+@router.get("/sync-progress")
+def get_sync_progress():
+    return get_progress()

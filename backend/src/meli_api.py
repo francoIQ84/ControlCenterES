@@ -222,6 +222,8 @@ def sync_products():
         return False, "Usuario no autenticado"
 
     try:
+        from src.progress import update_progress
+        update_progress(status="syncing_products", progress=5, message="Buscando publicaciones en Mercado Libre...", current=0, total=100)
         # Search all active and paused items
         search_path = f"/users/{user_id}/items/search"
         
@@ -231,6 +233,11 @@ def sync_products():
         
         while True:
             params = {'limit': limit, 'offset': offset}
+            update_progress(
+                status="syncing_products",
+                progress=5 + min(15, int((offset / 500) * 15)),
+                message=f"Buscando ids de publicaciones ({len(all_item_ids)} encontradas)..."
+            )
             response = api_request("GET", search_path, params=params)
             
             if response.status_code != 200:
@@ -244,16 +251,25 @@ def sync_products():
             offset += limit
             
         if not all_item_ids:
+            update_progress(status="completed", progress=100, message="Sincronización finalizada: No se encontraron publicaciones.")
             return True, 0
             
         item_ids = all_item_ids
             
         # Get details in chunks of 20 (multi-get limit)
         products = []
-        for i in range(0, len(item_ids), 20):
+        total_items = len(item_ids)
+        for idx, i in enumerate(range(0, total_items, 20)):
             chunk = item_ids[i:i+20]
-            ids_str = ",".join(chunk)
-            details_response = api_request("GET", "/items", params={'ids': ids_str})
+            current_progress = 20 + int((idx / max(1, total_items / 20)) * 20)
+            update_progress(
+                status="syncing_products",
+                progress=current_progress,
+                message=f"Sincronizando detalles y visitas de productos ({i}/{total_items})...",
+                current=i,
+                total=total_items
+            )
+            details_response = api_request("GET", "/items", params={'ids': ",".join(chunk)})
             
             # Fetch visits for the same item IDs. Since /visits/items only supports 1 item per request, we query them in parallel.
             visits_dict = {}
@@ -291,8 +307,10 @@ def sync_products():
                         })
                         
         database.save_products(products)
+        update_progress(status="syncing_products", progress=40, message=f"Productos sincronizados: {len(products)} guardados")
         return True, len(products)
     except Exception as e:
+        update_progress(status="failed", message=f"Excepción en sincronización de productos: {str(e)}")
         return False, f"Excepción en sincronización: {str(e)}"
 
 def sync_orders(limit=50, date_from=None, date_to=None):
@@ -351,6 +369,8 @@ def sync_orders(limit=50, date_from=None, date_to=None):
         return False, "Usuario no autenticado"
 
     try:
+        from src.progress import update_progress
+        update_progress(status="syncing_sales", progress=40, message="Buscando ventas en Mercado Libre...", current=0, total=limit)
         # Get recent seller orders
         search_path = f"/orders/search"
         all_results = []
@@ -369,6 +389,15 @@ def sync_orders(limit=50, date_from=None, date_to=None):
             if date_to:
                 params['order.date_created.to'] = date_to
                 
+            # Progress between 40% and 95%
+            current_progress = 40 + int((offset / max(1, limit)) * 55)
+            update_progress(
+                status="syncing_sales",
+                progress=current_progress,
+                message=f"Buscando ventas de Mercado Libre ({offset}/{limit})...",
+                current=offset,
+                total=limit
+            )
             response = api_request("GET", search_path, params=params)
             
             if response.status_code != 200:
@@ -458,8 +487,10 @@ def sync_orders(limit=50, date_from=None, date_to=None):
             })
             
         database.save_orders_and_customers(orders)
+        update_progress(status="completed", progress=100, message="Sincronización finalizada con éxito.")
         return True, len(orders)
     except Exception as e:
+        update_progress(status="failed", message=f"Excepción en sincronización de ventas: {str(e)}")
         return False, f"Excepción en sincronización de órdenes: {str(e)}"
 
 def update_stock_and_price(ml_id, quantity, price):
