@@ -255,11 +255,24 @@ def sync_products():
             ids_str = ",".join(chunk)
             details_response = api_request("GET", "/items", params={'ids': ids_str})
             
-            # Fetch visits for the same item IDs
-            visits_response = api_request("GET", "/items/visits", params={'ids': ids_str})
+            # Fetch visits for the same item IDs. Since /visits/items only supports 1 item per request, we query them in parallel.
             visits_dict = {}
-            if visits_response and visits_response.status_code == 200:
-                visits_dict = visits_response.json()
+            from concurrent.futures import ThreadPoolExecutor
+            
+            def fetch_single_visit(item_id):
+                try:
+                    v_res = api_request("GET", "/visits/items", params={'ids': item_id})
+                    if v_res is not None and v_res.status_code == 200:
+                        v_data = v_res.json()
+                        return item_id, v_data.get(item_id, 0)
+                except Exception:
+                    pass
+                return item_id, 0
+                
+            with ThreadPoolExecutor(max_workers=5) as executor:
+                res_visits = executor.map(fetch_single_visit, chunk)
+                for item_id, val in res_visits:
+                    visits_dict[item_id] = val
             
             if details_response.status_code == 200:
                 results = details_response.json()
