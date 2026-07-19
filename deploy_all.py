@@ -15,6 +15,7 @@ local_backend_files = {
     'backend/src/api/settings.py': '/var/www/controlcenter/backend/src/api/settings.py',
     'backend/src/api/__init__.py': '/var/www/controlcenter/backend/src/api/__init__.py',
     'backend/src/api/categories.py': '/var/www/controlcenter/backend/src/api/categories.py',
+    'backend/src/api/dashboard.py': '/var/www/controlcenter/backend/src/api/dashboard.py',
     'backend/src/api/inventory.py': '/var/www/controlcenter/backend/src/api/inventory.py',
     'backend/src/api/storefront.py': '/var/www/controlcenter/backend/src/api/storefront.py'
 }

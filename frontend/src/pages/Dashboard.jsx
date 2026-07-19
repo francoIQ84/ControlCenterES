@@ -5,12 +5,15 @@ import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recha
 export default function Dashboard() {
   const [stats, setStats] = useState(null)
   const [orders, setOrders] = useState([])
+  const [period, setPeriod] = useState('total')
 
   useEffect(() => {
-    fetch('/api/dashboard/metrics')
+    fetch(`/api/dashboard/metrics?period=${period}`)
       .then(res => res.json())
       .then(data => setStats(data))
-      
+  }, [period])
+
+  useEffect(() => {
     fetch('/api/sales/')
       .then(res => res.json())
       .then(data => setOrders(data.orders || []))
@@ -18,20 +21,73 @@ export default function Dashboard() {
 
   if (!stats) return <div>Cargando...</div>
 
-  // Prepare chart data
+  // Prepare chart data with client-side filtering based on selected period
+  const now = new Date();
+  let dateThreshold = null;
+  if (period === 'day') {
+    dateThreshold = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+  } else if (period === 'week') {
+    dateThreshold = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+  } else if (period === 'month') {
+    dateThreshold = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+  } else if (period === 'year') {
+    dateThreshold = new Date(now.getTime() - 365 * 24 * 60 * 60 * 1000);
+  }
+
   const salesByDate = {}
   orders.forEach(o => {
-    if(o.status === 'paid') {
-      const d = o.date_created.split('T')[0]
-      salesByDate[d] = (salesByDate[d] || 0) + o.total_amount
+    if (o.status === 'paid') {
+      const orderDate = new Date(o.date_created);
+      if (!dateThreshold || orderDate >= dateThreshold) {
+        const d = o.date_created.split('T')[0]
+        salesByDate[d] = (salesByDate[d] || 0) + o.total_amount
+      }
     }
   })
   const chartData = Object.keys(salesByDate).sort().map(d => ({ date: d, amount: salesByDate[d] }))
 
   return (
     <div>
-      <h1 className="page-title">Panel de Control</h1>
-      <p className="page-subtitle">Analiza el rendimiento de tus ventas en Mercado Libre, márgenes de ganancia y alertas de inventario.</p>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '15px' }}>
+        <div>
+          <h1 className="page-title" style={{ margin: 0 }}>Panel de Control</h1>
+          <p className="page-subtitle" style={{ margin: '5px 0 0 0' }}>Analiza el rendimiento de tus ventas en Mercado Libre, ganancias y estadísticas de visitas.</p>
+        </div>
+        
+        {/* Period Selector Group */}
+        <div style={{
+          display: 'flex',
+          backgroundColor: 'var(--bg-card)',
+          border: '1px solid var(--border-color)',
+          borderRadius: '8px',
+          padding: '4px',
+          gap: '4px'
+        }}>
+          {['day', 'week', 'month', 'year', 'total'].map((p) => (
+            <button
+              key={p}
+              onClick={() => setPeriod(p)}
+              style={{
+                padding: '6px 14px',
+                borderRadius: '6px',
+                fontSize: '0.85rem',
+                fontWeight: '600',
+                border: 'none',
+                cursor: 'pointer',
+                backgroundColor: period === p ? 'var(--accent-blue)' : 'transparent',
+                color: period === p ? '#fff' : 'var(--text-secondary)',
+                transition: 'all 0.2s'
+              }}
+            >
+              {p === 'day' && 'Hoy'}
+              {p === 'week' && '7 Días'}
+              {p === 'month' && 'Mes'}
+              {p === 'year' && 'Año'}
+              {p === 'total' && 'Histórico'}
+            </button>
+          ))}
+        </div>
+      </div>
 
       <div className="grid-cards">
         <div className="card kpi-card" style={{borderLeft: '4px solid var(--accent-blue)'}}>
@@ -88,7 +144,7 @@ export default function Dashboard() {
         <div className="card">
           <h3 style={{marginTop: 0, marginBottom: 15}}>Productos más Vistos</h3>
           {stats.top_products && stats.top_products.length > 0 ? (
-            <div style={{overflowX: 'auto'}}>
+            <div style={{overflowX: 'auto', maxHeight: '350px', overflowY: 'auto'}}>
               <table className="data-table" style={{width: '100%', borderCollapse: 'collapse'}}>
                 <thead>
                   <tr style={{borderBottom: '1px solid var(--border-color)'}}>
@@ -131,6 +187,63 @@ export default function Dashboard() {
             </div>
           ) : (
             <p className="kpi-subtitle" style={{margin: '40px 0', textAlign: 'center'}}>No hay datos de visitas disponibles</p>
+          )}
+        </div>
+      </div>
+
+      {/* Web Visits Breakdown */}
+      <div style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(350px, 1fr))', gap: '20px', marginTop: '20px', alignItems: 'start'}}>
+        {/* Visits by Domain */}
+        <div className="card">
+          <h3 style={{marginTop: 0, marginBottom: 15}}>Visitas por Sitio Web</h3>
+          {stats.visits_by_domain && stats.visits_by_domain.length > 0 ? (
+            <div style={{overflowX: 'auto'}}>
+              <table className="data-table" style={{width: '100%', borderCollapse: 'collapse'}}>
+                <thead>
+                  <tr style={{borderBottom: '1px solid var(--border-color)'}}>
+                    <th style={{textAlign: 'left', padding: '10px 5px'}}>Dominio</th>
+                    <th style={{textAlign: 'right', padding: '10px 5px'}}>Visitas</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {stats.visits_by_domain.map((d, idx) => (
+                    <tr key={idx} style={{borderBottom: '1px solid var(--border-color)'}}>
+                      <td style={{padding: '10px 5px', fontWeight: 600, fontSize: '0.85rem'}}>{d.domain}</td>
+                      <td style={{textAlign: 'right', padding: '10px 5px', fontWeight: 600, color: 'var(--accent-cyan)'}}>{d.count.toLocaleString()}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <p className="kpi-subtitle" style={{margin: '40px 0', textAlign: 'center'}}>No hay visitas registradas para este periodo</p>
+          )}
+        </div>
+
+        {/* Visits by Country */}
+        <div className="card">
+          <h3 style={{marginTop: 0, marginBottom: 15}}>Origen Geográfico (Visitas Web)</h3>
+          {stats.visits_by_country && stats.visits_by_country.length > 0 ? (
+            <div style={{overflowX: 'auto'}}>
+              <table className="data-table" style={{width: '100%', borderCollapse: 'collapse'}}>
+                <thead>
+                  <tr style={{borderBottom: '1px solid var(--border-color)'}}>
+                    <th style={{textAlign: 'left', padding: '10px 5px'}}>País</th>
+                    <th style={{textAlign: 'right', padding: '10px 5px'}}>Visitas</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {stats.visits_by_country.map((c, idx) => (
+                    <tr key={idx} style={{borderBottom: '1px solid var(--border-color)'}}>
+                      <td style={{padding: '10px 5px', fontWeight: 600, fontSize: '0.85rem'}}>{c.country}</td>
+                      <td style={{textAlign: 'right', padding: '10px 5px', fontWeight: 600, color: 'var(--accent-blue)'}}>{c.count.toLocaleString()}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <p className="kpi-subtitle" style={{margin: '40px 0', textAlign: 'center'}}>No hay visitas registradas para este periodo</p>
           )}
         </div>
       </div>

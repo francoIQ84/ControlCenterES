@@ -58,6 +58,18 @@ def init_db():
                     slug VARCHAR(100) UNIQUE NOT NULL
                 )
             ''')
+
+            # Web visits log table
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS web_visits_log (
+                    id SERIAL PRIMARY KEY,
+                    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    ml_id TEXT,
+                    domain TEXT,
+                    ip_address TEXT,
+                    country TEXT
+                )
+            ''')
             # Add category_id to products_cache
             cursor.execute('ALTER TABLE products_cache ADD COLUMN IF NOT EXISTS category_id INTEGER REFERENCES categories(id) ON DELETE SET NULL;')
             cursor.execute('ALTER TABLE products_cache ADD COLUMN IF NOT EXISTS sync_meli INTEGER DEFAULT 1;')
@@ -415,15 +427,52 @@ def get_all_customers():
 
 # --- Metrics Operations ---
 
-def increment_product_web_visits(ml_id):
+def increment_product_web_visits(ml_id, domain=None, ip_address=None):
+    country = "Desconocido"
+    if ip_address and ip_address not in ("127.0.0.1", "localhost", "::1") and not ip_address.startswith("192.168."):
+        try:
+            import requests
+            res = requests.get(f"http://ip-api.com/json/{ip_address}", timeout=2.0)
+            if res.status_code == 200:
+                data = res.json()
+                if data.get("status") == "success":
+                    country = data.get("country", "Desconocido")
+        except Exception:
+            pass
+
     with get_connection() as conn:
         with conn.cursor() as cursor:
             cursor.execute("UPDATE products_cache SET visits_web = visits_web + 1 WHERE ml_id = %s", (ml_id,))
+            cursor.execute(
+                "INSERT INTO web_visits_log (ml_id, domain, ip_address, country) VALUES (%s, %s, %s, %s)",
+                (ml_id, domain or "hidroponiarosario.com", ip_address or "127.0.0.1", country)
+            )
 
-def get_dashboard_metrics():
+def get_dashboard_metrics(period="total"):
+    from datetime import datetime, timedelta
+    date_filter = ""
+    params = []
+    start_date = None
+    
+    if period != "total":
+        now = datetime.now()
+        if period == "day":
+            start_date = now - timedelta(days=1)
+        elif period == "week":
+            start_date = now - timedelta(days=7)
+        elif period == "month":
+            start_date = now - timedelta(days=30)
+        elif period == "year":
+            start_date = now - timedelta(days=365)
+            
+        if start_date:
+            date_filter = " AND date_created >= %s"
+            params.append(start_date.isoformat())
+
     with get_connection() as conn:
         with conn.cursor() as cursor:
-            cursor.execute("SELECT COUNT(order_id) as count, SUM(total_amount) as total FROM orders_cache WHERE status = 'paid'")
+            sales_query = "SELECT COUNT(order_id) as count, SUM(total_amount) as total FROM orders_cache WHERE status = 'paid'" + date_filter
+            cursor.execute(sales_query, tuple(params))
             sales_row = cursor.fetchone()
             total_sales = sales_row['count'] or 0
             total_revenue = sales_row['total'] or 0.0
@@ -431,7 +480,8 @@ def get_dashboard_metrics():
             cursor.execute("SELECT COUNT(ml_id) as count FROM products_cache WHERE status = 'active'")
             total_active_products = cursor.fetchone()['count'] or 0
             
-            cursor.execute("SELECT items_json FROM orders_cache WHERE status = 'paid'")
+            items_query = "SELECT items_json FROM orders_cache WHERE status = 'paid'" + date_filter
+            cursor.execute(items_query, tuple(params))
             orders_items = cursor.fetchall()
             
             cursor.execute("SELECT ml_id, cost_price FROM products_cache")
@@ -452,15 +502,33 @@ def get_dashboard_metrics():
             cursor.execute("SELECT COUNT(ml_id) as count FROM products_cache WHERE available_quantity <= 3 AND status = 'active'")
             low_stock_count = cursor.fetchone()['count'] or 0
             
-            # Get visits metrics
-            cursor.execute("SELECT SUM(visits_meli) as meli, SUM(visits_web) as web FROM products_cache")
+            cursor.execute("SELECT SUM(visits_meli) as meli FROM products_cache")
             visits_row = cursor.fetchone()
             total_visits_meli = (visits_row['meli'] if visits_row else 0) or 0
-            total_visits_web = (visits_row['web'] if visits_row else 0) or 0
+            
+            visit_where = ""
+            visit_params = []
+            if period != "total" and start_date:
+                visit_where = " WHERE timestamp >= %s"
+                visit_params.append(start_date)
+                
+            cursor.execute(f"SELECT COUNT(*) as count FROM web_visits_log{visit_where}", tuple(visit_params))
+            logged_visits_web = cursor.fetchone()['count'] or 0
+            
+            if logged_visits_web > 0 or period != "total":
+                total_visits_web = logged_visits_web
+            else:
+                cursor.execute("SELECT SUM(visits_web) as web FROM products_cache")
+                total_visits_web = cursor.fetchone()['web'] or 0
 
-            # Get top products by visits
-            cursor.execute("SELECT ml_id, title, visits_meli, visits_web FROM products_cache ORDER BY (visits_meli + visits_web) DESC LIMIT 5")
+            cursor.execute("SELECT ml_id, title, visits_meli, visits_web FROM products_cache ORDER BY (visits_meli + visits_web) DESC LIMIT 20")
             top_products = [dict(r) for r in cursor.fetchall()]
+
+            cursor.execute(f"SELECT domain, COUNT(*) as count FROM web_visits_log{visit_where} GROUP BY domain ORDER BY count DESC", tuple(visit_params))
+            visits_by_domain = [dict(r) for r in cursor.fetchall()]
+
+            cursor.execute(f"SELECT country, COUNT(*) as count FROM web_visits_log{visit_where} GROUP BY country ORDER BY count DESC", tuple(visit_params))
+            visits_by_country = [dict(r) for r in cursor.fetchall()]
 
             return {
                 'total_sales': total_sales,
@@ -471,7 +539,9 @@ def get_dashboard_metrics():
                 'low_stock_count': low_stock_count,
                 'total_visits_meli': total_visits_meli,
                 'total_visits_web': total_visits_web,
-                'top_products': top_products
+                'top_products': top_products,
+                'visits_by_domain': visits_by_domain,
+                'visits_by_country': visits_by_country
             }
 
 def clear_all_caches():

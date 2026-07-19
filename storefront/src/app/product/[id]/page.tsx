@@ -1,6 +1,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { ChevronLeft } from 'lucide-react';
+import { headers } from "next/headers";
 import AddToCartButton from "../../../components/AddToCartButton";
 import ProductImageGallery from "../../../components/ProductImageGallery";
 
@@ -11,9 +12,9 @@ async function getProduct(id: string) {
   return products.find((p: any) => p.id === id);
 }
 
-async function recordVisit(id: string) {
+async function recordVisit(id: string, domain: string, ip: string) {
   try {
-    await fetch(`http://localhost:8090/api/storefront/products/${id}/visit`, { 
+    await fetch(`http://localhost:8090/api/storefront/products/${id}/visit?domain=${encodeURIComponent(domain)}&ip=${encodeURIComponent(ip)}`, { 
       method: 'POST',
       cache: 'no-store'
     });
@@ -27,7 +28,10 @@ export default async function ProductPage({ params }: { params: Promise<{ id: st
   const product = await getProduct(id);
 
   if (product) {
-    recordVisit(id);
+    const headersList = await headers();
+    const host = headersList.get('host') || 'hidroponiarosario.com';
+    const clientIp = headersList.get('x-forwarded-for')?.split(',')[0].trim() || headersList.get('x-real-ip') || '127.0.0.1';
+    recordVisit(id, host, clientIp);
   }
 
   if (!product) {
