@@ -230,6 +230,31 @@ export default function Layout() {
           </button>
           
           <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+            {/* AFIP Status Badge */}
+            {meliStatus && (
+              <div style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '8px',
+                padding: '6px 12px',
+                borderRadius: '20px',
+                fontSize: '0.8rem',
+                fontWeight: '600',
+                backgroundColor: meliStatus.afip_active ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)',
+                color: meliStatus.afip_active ? 'var(--accent-emerald)' : 'var(--accent-red)',
+                border: `1px solid ${meliStatus.afip_active ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)'}`
+              }}>
+                <span style={{
+                  width: '8px',
+                  height: '8px',
+                  borderRadius: '50%',
+                  backgroundColor: meliStatus.afip_active ? 'var(--accent-emerald)' : 'var(--accent-red)',
+                  boxShadow: meliStatus.afip_active ? '0 0 8px var(--accent-emerald)' : '0 0 8px var(--accent-red)'
+                }}></span>
+                <span>{meliStatus.afip_active ? 'AFIP Vinculada' : 'AFIP Inactiva'}</span>
+              </div>
+            )}
+
             {/* Vínculo Meli status Badge */}
             {meliStatus && (
               <div style={{

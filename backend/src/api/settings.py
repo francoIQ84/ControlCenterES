@@ -24,10 +24,16 @@ class SyncAllRequest(BaseModel):
 def get_auth_status():
     user_id = config.get_user_id()
     token_valid = meli_api.validate_token()
+    
+    afip_enabled = database.get_setting('afip_enabled', '0') == '1'
+    cert_exists = os.path.exists("backend/data/afip/arca.crt")
+    key_exists = os.path.exists("backend/data/afip/arca.key")
+    
     return {
         "is_authenticated": bool(user_id and token_valid),
         "user_id": user_id,
-        "demo_mode": meli_api.is_demo_mode()
+        "demo_mode": meli_api.is_demo_mode(),
+        "afip_active": afip_enabled and cert_exists and key_exists
     }
 
 @router.get("/config")
