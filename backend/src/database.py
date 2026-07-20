@@ -97,6 +97,7 @@ def init_db():
             cursor.execute('ALTER TABLE orders_cache ADD COLUMN IF NOT EXISTS invoice_number TEXT;')
             cursor.execute('ALTER TABLE orders_cache ADD COLUMN IF NOT EXISTS afip_cae TEXT;')
             cursor.execute('ALTER TABLE orders_cache ADD COLUMN IF NOT EXISTS afip_cae_exp TEXT;')
+            cursor.execute('ALTER TABLE orders_cache ADD COLUMN IF NOT EXISTS meli_invoice_attached INTEGER DEFAULT 0;')
 
             # Customers table
             cursor.execute('''
@@ -361,17 +362,19 @@ def save_orders_and_customers(orders_list):
 
                 cursor.execute('''
                     INSERT INTO orders_cache 
-                    (order_id, date_created, buyer_id, buyer_nickname, buyer_name, total_amount, currency_id, status, payment_status, shipping_status, items_json, invoice_generated, source_platform, payment_method)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    (order_id, date_created, buyer_id, buyer_nickname, buyer_name, total_amount, currency_id, status, payment_status, shipping_status, items_json, invoice_generated, source_platform, payment_method, meli_invoice_attached)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     ON CONFLICT (order_id) DO UPDATE SET
                         status = EXCLUDED.status,
                         payment_status = EXCLUDED.payment_status,
                         shipping_status = EXCLUDED.shipping_status,
-                        payment_method = EXCLUDED.payment_method
+                        payment_method = EXCLUDED.payment_method,
+                        meli_invoice_attached = EXCLUDED.meli_invoice_attached
                 ''', (
                     o['order_id'], o['date_created'], o['buyer']['id'], o['buyer']['nickname'], o['buyer']['name'],
                     o['total_amount'], o['currency_id'], o['status'], o['payment_status'], o['shipping_status'],
-                    json.dumps(o['items']), invoice_generated, source_platform, o.get('payment_method')
+                    json.dumps(o['items']), invoice_generated, source_platform, o.get('payment_method'),
+                    o.get('meli_invoice_attached', 0)
                 ))
                 
                 cursor.execute('''
@@ -406,7 +409,7 @@ def get_order_by_id(order_id):
             cursor.execute("""
                 SELECT o.order_id, o.date_created, o.buyer_id, o.buyer_nickname, o.buyer_name, o.total_amount, o.currency_id, o.status, 
                        o.payment_status, o.shipping_status, o.items_json, o.invoice_generated, o.source_platform, o.payment_method, 
-                       o.invoice_number, o.afip_cae, o.afip_cae_exp, c.document_type, c.document_number, c.address 
+                       o.invoice_number, o.afip_cae, o.afip_cae_exp, o.meli_invoice_attached, c.document_type, c.document_number, c.address 
                 FROM orders_cache o
                 LEFT JOIN customers c ON o.buyer_id = c.buyer_id
                 WHERE o.order_id = %s
@@ -436,7 +439,8 @@ def get_order_by_id(order_id):
                 'source_platform': r['source_platform'],
                 'invoice_number': r.get('invoice_number', ''),
                 'afip_cae': r.get('afip_cae', ''),
-                'afip_cae_exp': r.get('afip_cae_exp', '')
+                'afip_cae_exp': r.get('afip_cae_exp', ''),
+                'meli_invoice_attached': bool(r.get('meli_invoice_attached', 0))
             }
 
 def get_last_invoice_number_for_pto(pto_vta, cbte_tipo):
@@ -472,7 +476,7 @@ def get_all_orders(source_platform=None):
                 cursor.execute("""
                     SELECT o.order_id, o.date_created, o.buyer_id, o.buyer_nickname, o.buyer_name, o.total_amount, o.currency_id, o.status, 
                            o.payment_status, o.shipping_status, o.items_json, o.invoice_generated, o.source_platform, o.payment_method,
-                           o.invoice_number, o.afip_cae, o.afip_cae_exp, c.document_type, c.document_number, c.address
+                           o.invoice_number, o.afip_cae, o.afip_cae_exp, o.meli_invoice_attached, c.document_type, c.document_number, c.address
                     FROM orders_cache o
                     LEFT JOIN customers c ON o.buyer_id = c.buyer_id
                     WHERE o.source_platform = %s 
@@ -482,7 +486,7 @@ def get_all_orders(source_platform=None):
                 cursor.execute("""
                     SELECT o.order_id, o.date_created, o.buyer_id, o.buyer_nickname, o.buyer_name, o.total_amount, o.currency_id, o.status, 
                            o.payment_status, o.shipping_status, o.items_json, o.invoice_generated, o.source_platform, o.payment_method,
-                           o.invoice_number, o.afip_cae, o.afip_cae_exp, c.document_type, c.document_number, c.address
+                           o.invoice_number, o.afip_cae, o.afip_cae_exp, o.meli_invoice_attached, c.document_type, c.document_number, c.address
                     FROM orders_cache o
                     LEFT JOIN customers c ON o.buyer_id = c.buyer_id
                     ORDER BY o.date_created DESC
@@ -513,7 +517,8 @@ def get_all_orders(source_platform=None):
                     'source_platform': r['source_platform'],
                     'invoice_number': r.get('invoice_number', ''),
                     'afip_cae': r.get('afip_cae', ''),
-                    'afip_cae_exp': r.get('afip_cae_exp', '')
+                    'afip_cae_exp': r.get('afip_cae_exp', ''),
+                    'meli_invoice_attached': bool(r.get('meli_invoice_attached', 0))
                 })
             return orders
 

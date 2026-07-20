@@ -45,7 +45,15 @@ def get_afip_qr_code(order, merchant_cuit, pto_vta, tipo_cmp, cae, size=80):
             else:
                 doc_tipo = 96
 
+    cae_exp = order.get('afip_cae_exp', '')
     date_str = order['date_created'].split('T')[0]
+    if cae_exp:
+        try:
+            from datetime import datetime, timedelta
+            exp_date = datetime.strptime(str(cae_exp).split('T')[0], '%Y-%m-%d')
+            date_str = (exp_date - timedelta(days=10)).strftime('%Y-%m-%d')
+        except Exception:
+            pass
 
     qr_data = {
         "ver": 1,
@@ -217,12 +225,23 @@ def generate_invoice_pdf(order):
     cae = order.get('afip_cae', '')
     cae_exp = order.get('afip_cae_exp', '')
 
-    # Parse date
-    try:
-        order_date = datetime.fromisoformat(order['date_created'].replace('Z', '+00:00'))
-        formatted_date = order_date.strftime("%d/%m/%Y")
-    except Exception:
-        formatted_date = datetime.now().strftime("%d/%m/%Y")
+    # Parse date (Invoice Date)
+    formatted_date = None
+    if cae_exp:
+        try:
+            from datetime import timedelta
+            # El vencimiento del CAE es a los 10 días exactos de la fecha de emisión (CbteFch)
+            exp_date = datetime.strptime(str(cae_exp).split('T')[0], '%Y-%m-%d')
+            formatted_date = (exp_date - timedelta(days=10)).strftime("%d/%m/%Y")
+        except Exception:
+            pass
+
+    if not formatted_date:
+        try:
+            order_date = datetime.fromisoformat(order['date_created'].replace('Z', '+00:00'))
+            formatted_date = order_date.strftime("%d/%m/%Y")
+        except Exception:
+            formatted_date = datetime.now().strftime("%d/%m/%Y")
 
     # ---- Buyer info ----
     buyer = order.get('buyer', {})

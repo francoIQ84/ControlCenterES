@@ -29,3 +29,6 @@ __pycache__/
 # Local Database & Invoices
 data/
 invoices/
+
+# Deployment scripts (ignored for security)
+deploy_all.py

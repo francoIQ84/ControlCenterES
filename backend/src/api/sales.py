@@ -258,3 +258,17 @@ def get_invoice_pdf_endpoint(order_id: int):
         raise HTTPException(status_code=404, detail="El archivo PDF de la factura no existe")
         
     return FileResponse(filepath, media_type="application/pdf", filename=filename)
+
+@router.get("/{order_id}/meli-invoice/pdf")
+def get_meli_invoice_pdf_endpoint(order_id: int):
+    pdf_bytes = meli_api.download_meli_invoice(order_id)
+    if not pdf_bytes:
+        raise HTTPException(status_code=404, detail="No se encontró factura adjunta en Mercado Libre para esta venta.")
+        
+    # Guardamos temporalmente para devolverlo
+    os.makedirs("backend/invoices", exist_ok=True)
+    filepath = os.path.join("backend/invoices", f"meli_factura_{order_id}.pdf")
+    with open(filepath, "wb") as f:
+        f.write(pdf_bytes)
+        
+    return FileResponse(filepath, media_type="application/pdf", filename=f"meli_factura_{order_id}.pdf")

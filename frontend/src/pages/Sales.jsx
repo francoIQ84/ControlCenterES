@@ -397,7 +397,7 @@ export default function Sales() {
                             textDecoration: 'none'
                           }}
                         >
-                          Ver Factura
+                          Ver Factura AFIP
                         </a>
                         {o.invoice_number && (
                           <small style={{fontSize: '0.65rem', color: 'var(--text-secondary)', fontFamily: 'monospace'}}>
@@ -406,22 +406,48 @@ export default function Sales() {
                         )}
                       </div>
                     ) : (
-                      <button 
-                        onClick={() => handleCreateInvoice(o.order_id)}
-                        disabled={invoicingStates[o.order_id]}
-                        className="btn" 
-                        style={{
-                          padding: '4px 10px',
-                          fontSize: '0.75rem',
-                          backgroundColor: invoicingStates[o.order_id] ? 'var(--bg-dark)' : 'var(--accent-emerald)',
-                          color: '#fff',
-                          borderRadius: '4px',
-                          border: 'none',
-                          cursor: invoicingStates[o.order_id] ? 'not-allowed' : 'pointer'
-                        }}
-                      >
-                        {invoicingStates[o.order_id] ? 'Facturando...' : 'Facturar'}
-                      </button>
+                      <div style={{display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'center'}}>
+                        {o.source_platform === 'MERCADOLIBRE' && o.meli_invoice_attached ? (
+                          <a 
+                            href={`/api/sales/${o.order_id}/meli-invoice/pdf?token=${localStorage.getItem('adminToken')}`} 
+                            target="_blank" 
+                            rel="noopener noreferrer" 
+                            className="btn" 
+                            style={{
+                              padding: '4px 10px',
+                              fontSize: '0.75rem',
+                              backgroundColor: 'rgba(255, 230, 0, 0.15)',
+                              color: '#b39200',
+                              borderRadius: '4px',
+                              border: '1px solid #b39200',
+                              cursor: 'pointer',
+                              textDecoration: 'none',
+                              textAlign: 'center',
+                              width: '100%'
+                            }}
+                          >
+                            Factura ML
+                          </a>
+                        ) : (
+                          <button 
+                            onClick={() => handleCreateInvoice(o.order_id)}
+                            disabled={invoicingStates[o.order_id]}
+                            className="btn" 
+                            style={{
+                              padding: '4px 10px',
+                              fontSize: '0.75rem',
+                              backgroundColor: invoicingStates[o.order_id] ? 'var(--bg-dark)' : 'var(--accent-emerald)',
+                              color: '#fff',
+                              borderRadius: '4px',
+                              border: 'none',
+                              cursor: invoicingStates[o.order_id] ? 'not-allowed' : 'pointer',
+                              width: '100%'
+                            }}
+                          >
+                            {invoicingStates[o.order_id] ? 'Facturando...' : 'Facturar (AFIP)'}
+                          </button>
+                        )}
+                      </div>
                     )}
                   </td>
                 </tr>
