@@ -9,6 +9,7 @@ export default function Sales() {
   // Modal State
   const [showModal, setShowModal] = useState(false)
   const [inventory, setInventory] = useState([])
+  const [meliEnableManualMsg, setMeliEnableManualMsg] = useState(false)
   const [newOrder, setNewOrder] = useState({
     buyer_nickname: "",
     buyer_name: "",
@@ -89,6 +90,15 @@ export default function Sales() {
   useEffect(() => {
     fetchOrders()
     fetchInventory()
+    fetch('/api/settings/config')
+      .then(res => {
+        if (res.ok) return res.json()
+        throw new Error("Cannot fetch settings config")
+      })
+      .then(data => {
+        setMeliEnableManualMsg(!!data.meli_enable_manual_msg)
+      })
+      .catch(err => console.warn("Failed to fetch Meli config:", err))
   }, [])
 
   const handleToggleShipping = async (orderId, currentStatus) => {
@@ -509,7 +519,7 @@ export default function Sales() {
                         )}
                       </div>
                     )}
-                    {o.source_platform === 'MERCADOLIBRE' && (
+                    {o.source_platform === 'MERCADOLIBRE' && meliEnableManualMsg && (
                       <div style={{display: 'flex', gap: 4, marginTop: 5, justifyContent: 'center', width: '100%'}}>
                         <button 
                           onClick={() => handleSendMeliMessage(o.order_id, 'purchase')} 

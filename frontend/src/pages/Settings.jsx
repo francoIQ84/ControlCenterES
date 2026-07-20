@@ -9,7 +9,11 @@ export default function Settings() {
     demo_mode: true,
     meli_msg_purchase: '',
     meli_msg_shipping: '',
-    meli_msg_invoice: ''
+    meli_msg_invoice: '',
+    meli_enable_manual_msg: false,
+    meli_send_purchase_msg: true,
+    meli_send_shipping_msg: true,
+    meli_send_invoice_msg: true
   })
   const [status, setStatus] = useState({ is_authenticated: false, user_id: null })
   const [code, setCode] = useState("")
@@ -690,36 +694,80 @@ export default function Settings() {
           </div>
 
           <div className="card">
-            <h3>Mensajería Automática (Mercado Libre)</h3>
+            <h3>Mensajería Automática y Manual (Mercado Libre)</h3>
             <p style={{fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: 15}}>
-              Configura los mensajes predeterminados que se enviarán de forma automática a los compradores en las diferentes etapas de la venta.
+              Configura los mensajes predeterminados y decide qué comunicaciones se envían de forma automática o si se habilitan controles manuales.
             </p>
             <div style={{display: 'flex', flexDirection: 'column', gap: 15}}>
-              <label style={{fontSize: '0.85rem'}}>Mensaje Automático de Compra (Se envía al crearse la venta)
+              
+              <label style={{display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.9rem', cursor: 'pointer', borderBottom: '1px solid var(--border-color)', paddingBottom: 12, marginBottom: 10}}>
+                <input 
+                  type="checkbox" 
+                  checked={config.meli_enable_manual_msg || false} 
+                  onChange={e => setConfig({...config, meli_enable_manual_msg: e.target.checked})} 
+                  style={{width: 'auto'}}
+                />
+                <strong>Habilitar botones de mensajería manual en la lista de Ventas</strong>
+              </label>
+
+              <div style={{borderBottom: '1px solid var(--border-color)', paddingBottom: 15}}>
+                <label style={{display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.9rem', cursor: 'pointer', fontWeight: 600}}>
+                  <input 
+                    type="checkbox" 
+                    checked={config.meli_send_purchase_msg !== false} 
+                    onChange={e => setConfig({...config, meli_send_purchase_msg: e.target.checked})} 
+                    style={{width: 'auto'}}
+                  />
+                  Enviar mensaje automático de compra
+                </label>
                 <textarea 
                   value={config.meli_msg_purchase || ""} 
                   onChange={e => setConfig({...config, meli_msg_purchase: e.target.value})} 
+                  disabled={config.meli_send_purchase_msg === false}
                   placeholder="ej. ¡Hola! Gracias por tu compra. Nos pondremos en contacto a la brevedad para coordinar. ¡Saludos!"
-                  style={{width: '100%', marginTop: 5, minHeight: 70, padding: 8, backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)', border: '1px solid var(--border-color)', borderRadius: 4}}
+                  style={{width: '100%', marginTop: 8, minHeight: 70, padding: 8, backgroundColor: config.meli_send_purchase_msg === false ? 'var(--bg-dark)' : 'var(--bg-card)', color: 'var(--text-primary)', border: '1px solid var(--border-color)', borderRadius: 4, opacity: config.meli_send_purchase_msg === false ? 0.6 : 1}}
                 />
-              </label>
-              <label style={{fontSize: '0.85rem'}}>Mensaje de Seguimiento de Envío (Se envía cuando el paquete figura en camino)
+              </div>
+
+              <div style={{borderBottom: '1px solid var(--border-color)', paddingBottom: 15}}>
+                <label style={{display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.9rem', cursor: 'pointer', fontWeight: 600}}>
+                  <input 
+                    type="checkbox" 
+                    checked={config.meli_send_shipping_msg !== false} 
+                    onChange={e => setConfig({...config, meli_send_shipping_msg: e.target.checked})} 
+                    style={{width: 'auto'}}
+                  />
+                  Enviar mensaje automático de seguimiento de envío
+                </label>
                 <textarea 
                   value={config.meli_msg_shipping || ""} 
                   onChange={e => setConfig({...config, meli_msg_shipping: e.target.value})} 
+                  disabled={config.meli_send_shipping_msg === false}
                   placeholder="ej. Hola, te informamos que tu pedido está en camino. Puedes realizar el seguimiento desde el detalle de tu compra. ¡Gracias por confiar en nosotros!"
-                  style={{width: '100%', marginTop: 5, minHeight: 70, padding: 8, backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)', border: '1px solid var(--border-color)', borderRadius: 4}}
+                  style={{width: '100%', marginTop: 8, minHeight: 70, padding: 8, backgroundColor: config.meli_send_shipping_msg === false ? 'var(--bg-dark)' : 'var(--bg-card)', color: 'var(--text-primary)', border: '1px solid var(--border-color)', borderRadius: 4, opacity: config.meli_send_shipping_msg === false ? 0.6 : 1}}
                 />
-              </label>
-              <label style={{fontSize: '0.85rem'}}>Mensaje al Adjuntar Factura (Se envía al subir la factura digital)
+              </div>
+
+              <div style={{borderBottom: '1px solid var(--border-color)', paddingBottom: 15}}>
+                <label style={{display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.9rem', cursor: 'pointer', fontWeight: 600}}>
+                  <input 
+                    type="checkbox" 
+                    checked={config.meli_send_invoice_msg !== false} 
+                    onChange={e => setConfig({...config, meli_send_invoice_msg: e.target.checked})} 
+                    style={{width: 'auto'}}
+                  />
+                  Enviar mensaje automático al adjuntar factura
+                </label>
                 <textarea 
                   value={config.meli_msg_invoice || ""} 
                   onChange={e => setConfig({...config, meli_msg_invoice: e.target.value})} 
+                  disabled={config.meli_send_invoice_msg === false}
                   placeholder="ej. Hola, te informamos que ya adjuntamos tu factura digital a los detalles de tu compra. ¡Saludos!"
-                  style={{width: '100%', marginTop: 5, minHeight: 70, padding: 8, backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)', border: '1px solid var(--border-color)', borderRadius: 4}}
+                  style={{width: '100%', marginTop: 8, minHeight: 70, padding: 8, backgroundColor: config.meli_send_invoice_msg === false ? 'var(--bg-dark)' : 'var(--bg-card)', color: 'var(--text-primary)', border: '1px solid var(--border-color)', borderRadius: 4, opacity: config.meli_send_invoice_msg === false ? 0.6 : 1}}
                 />
-              </label>
-              <button className="btn" onClick={handleSave} style={{alignSelf: 'flex-start'}}>Guardar Cambios de Mensajes</button>
+              </div>
+
+              <button className="btn" onClick={handleSave} style={{alignSelf: 'flex-start'}}>Guardar Cambios de Configuración</button>
             </div>
           </div>
         </div>

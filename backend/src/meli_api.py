@@ -525,16 +525,18 @@ def sync_orders(limit=50, date_from=None, date_to=None):
         database.save_orders_and_customers(orders)
 
         # Send automatic post-sale purchase message for new orders
+        send_purchase_enabled = database.get_setting('meli_send_purchase_msg', '1') == '1'
         purchase_msg = database.get_setting('meli_msg_purchase', '')
-        if purchase_msg:
+        if send_purchase_enabled and purchase_msg:
             for order_id in new_order_ids:
                 ok_msg, info_msg = send_post_sale_message(order_id, purchase_msg)
                 if not ok_msg:
                     print(f"[Sync] Error al enviar mensaje de compra para {order_id}: {info_msg}")
 
         # Send automatic shipping tracking message for transitioned orders
+        send_shipping_enabled = database.get_setting('meli_send_shipping_msg', '1') == '1'
         shipping_msg = database.get_setting('meli_msg_shipping', '')
-        if shipping_msg:
+        if send_shipping_enabled and shipping_msg:
             for order_id in shipped_order_ids:
                 ok_msg, info_msg = send_post_sale_message(order_id, shipping_msg)
                 if ok_msg:
@@ -816,10 +818,12 @@ def upload_invoice_to_meli(order_id, pdf_path):
                         (order_id,)
                     )
             # Send post-sale message
-            msg_text = database.get_setting('meli_msg_invoice', 'Hola, gracias por tu compra. Te informamos que ya adjuntamos tu factura digital a los detalles de tu compra. ¡Saludos!')
-            ok_msg, info_msg = send_post_sale_message(order_id, msg_text)
-            if not ok_msg:
-                print(f"Advertencia: No se pudo enviar el mensaje posventa para order {order_id}: {info_msg}")
+            send_invoice_enabled = database.get_setting('meli_send_invoice_msg', '1') == '1'
+            if send_invoice_enabled:
+                msg_text = database.get_setting('meli_msg_invoice', 'Hola, gracias por tu compra. Te informamos que ya adjuntamos tu factura digital a los detalles de tu compra. ¡Saludos!')
+                ok_msg, info_msg = send_post_sale_message(order_id, msg_text)
+                if not ok_msg:
+                    print(f"Advertencia: No se pudo enviar el mensaje posventa para order {order_id}: {info_msg}")
                 
             return True, "Factura adjuntada en Mercado Libre exitosamente"
         else:
