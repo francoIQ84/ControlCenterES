@@ -61,6 +61,12 @@ export default function Settings() {
   const [webConfigLoading, setWebConfigLoading] = useState(false)
   const [showImageSelector, setShowImageSelector] = useState(false)
   const [selectorTarget, setSelectorTarget] = useState("")
+  
+  // Backup State
+  const [backups, setBackups] = useState([])
+  const [backupsLoading, setBackupsLoading] = useState(false)
+  const [creatingBackup, setCreatingBackup] = useState(false)
+  const [diskSpace, setDiskSpace] = useState(null)
 
   useEffect(() => {
     fetch('/api/settings/config').then(r=>r.json()).then(setConfig)
@@ -251,6 +257,78 @@ export default function Settings() {
         })
     }
   }, [activeTab])
+  
+  // Load Backups and Disk Space when backups tab opens
+  const fetchBackups = () => {
+    setBackupsLoading(true)
+    fetch('/api/backup/list')
+      .then(r => {
+        if (!r.ok) throw new Error("Unauthorized or error")
+        return r.json()
+      })
+      .then(data => {
+        setBackups(data || [])
+        setBackupsLoading(false)
+      })
+      .catch(err => {
+        console.error(err)
+        setBackupsLoading(false)
+      })
+  }
+
+  const fetchDiskSpace = () => {
+    fetch('/api/backup/disk-space')
+      .then(r => r.json())
+      .then(setDiskSpace)
+      .catch(err => console.error(err))
+  }
+
+  useEffect(() => {
+    if (activeTab === "backups") {
+      fetchBackups()
+      fetchDiskSpace()
+    }
+  }, [activeTab])
+
+  const handleCreateBackup = async () => {
+    setCreatingBackup(true)
+    try {
+      const res = await fetch('/api/backup/create', { method: 'POST' })
+      const data = await res.json()
+      if (res.ok) {
+        alert("Respaldo creado con éxito: " + data.filename)
+        fetchBackups()
+        fetchDiskSpace()
+      } else {
+        alert("Error al crear respaldo: " + (data.detail || "Error desconocido"))
+      }
+    } catch(err) {
+      alert("Error de conexión: " + err.message)
+    } finally {
+      setCreatingBackup(false)
+    }
+  }
+
+  const handleDownloadBackup = async (filename) => {
+    try {
+      const res = await fetch(`/api/backup/download/${filename}`)
+      if (!res.ok) {
+        alert("Error al descargar el respaldo")
+        return
+      }
+      const blob = await res.blob()
+      const url = window.URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = filename
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      window.URL.revokeObjectURL(url)
+    } catch(err) {
+      alert("Error de conexión: " + err.message)
+    }
+  }
 
   const handleSave = async () => {
     await fetch('/api/settings/setup', {
@@ -462,6 +540,20 @@ export default function Settings() {
           onClick={() => setActiveTab('arca')}
         >
           Facturación ARCA (ex AFIP)
+        </button>
+        <button 
+          style={{
+            padding: '10px 15px',
+            background: 'none',
+            border: 'none',
+            borderBottom: activeTab === 'backups' ? '3px solid var(--accent-blue)' : 'none',
+            color: activeTab === 'backups' ? 'var(--text-primary)' : 'var(--text-secondary)',
+            fontWeight: activeTab === 'backups' ? 'bold' : 'normal',
+            cursor: 'pointer'
+          }}
+          onClick={() => setActiveTab('backups')}
+        >
+          Respaldos
         </button>
       </div>
 
@@ -1170,6 +1262,100 @@ export default function Settings() {
                 />
                 {uploadingCert && <span style={{fontSize: '0.8rem', color: 'var(--text-secondary)'}}>Subiendo certificado...</span>}
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Tab 6: Backups */}
+      {activeTab === 'backups' && (
+        <div style={{display: 'flex', gap: 20, alignItems: 'flex-start'}}>
+          <div className="card" style={{flex: 2}}>
+            <h3>Respaldos del Sistema (Backups)</h3>
+            <p style={{fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: 15}}>
+              Descarga un archivo ZIP completo con la base de datos, configuraciones e imágenes de la tienda.
+            </p>
+            
+            <button 
+              className="btn" 
+              onClick={handleCreateBackup} 
+              disabled={creatingBackup}
+              style={{marginBottom: 20, backgroundColor: 'var(--accent-emerald)', color: '#fff'}}
+            >
+              {creatingBackup ? 'Creando respaldo (puede demorar)...' : 'Crear Nuevo Respaldo'}
+            </button>
+            
+            {backupsLoading ? <p>Cargando respaldos...</p> : (
+              <table className="data-table" style={{width: '100%', borderCollapse: 'collapse'}}>
+                <thead>
+                  <tr>
+                    <th style={{textAlign: 'left', padding: '12px 10px'}}>Archivo</th>
+                    <th style={{textAlign: 'left', padding: '12px 10px'}}>Fecha de Creación</th>
+                    <th style={{textAlign: 'left', padding: '12px 10px'}}>Tamaño</th>
+                    <th style={{textAlign: 'left', padding: '12px 10px'}}>Acciones</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {backups.map(b => (
+                    <tr key={b.filename} style={{borderBottom: '1px solid var(--border-color)'}}>
+                      <td style={{padding: '12px 10px', fontSize: '0.85rem', fontWeight: 600}}>
+                        {b.filename}
+                      </td>
+                      <td style={{padding: '12px 10px', fontSize: '0.85rem'}}>
+                        {new Date(b.created_at).toLocaleString()}
+                      </td>
+                      <td style={{padding: '12px 10px', fontSize: '0.85rem'}}>
+                        {(b.size_bytes / (1024 * 1024)).toFixed(2)} MB
+                      </td>
+                      <td style={{padding: '12px 10px', fontSize: '0.85rem'}}>
+                        <button 
+                          onClick={() => handleDownloadBackup(b.filename)}
+                          className="btn"
+                          style={{padding: '4px 12px', fontSize: '0.75rem', backgroundColor: 'var(--accent-blue)', color: '#fff', border: 'none', cursor: 'pointer', display: 'inline-block'}}
+                        >
+                          Descargar
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                  {backups.length === 0 && (
+                    <tr>
+                      <td colSpan="4" style={{padding: '20px', textAlign: 'center', color: 'var(--text-secondary)'}}>
+                        No hay respaldos creados aún.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            )}
+          </div>
+
+          <div style={{flex: 1, display: 'flex', flexDirection: 'column', gap: 20}}>
+            <div className="card">
+              <h3>Espacio en la VPS</h3>
+              {diskSpace ? (
+                <div style={{marginTop: 15}}>
+                  <div style={{display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem', marginBottom: 5}}>
+                    <span>{diskSpace.used_gb} GB Usados</span>
+                    <span style={{color: 'var(--text-secondary)'}}>{diskSpace.free_gb} GB Libres</span>
+                  </div>
+                  <div style={{width: '100%', height: 10, backgroundColor: 'var(--bg-dark)', borderRadius: 5, overflow: 'hidden'}}>
+                    <div 
+                      style={{
+                        height: '100%', 
+                        width: `${diskSpace.percent_used}%`, 
+                        backgroundColor: diskSpace.percent_used > 85 ? 'var(--accent-red)' : (diskSpace.percent_used > 70 ? 'var(--accent-amber)' : 'var(--accent-emerald)'),
+                        transition: 'width 0.3s ease'
+                      }}
+                    ></div>
+                  </div>
+                  <div style={{textAlign: 'right', fontSize: '0.75rem', marginTop: 5, color: 'var(--text-secondary)'}}>
+                    Total: {diskSpace.total_gb} GB
+                  </div>
+                </div>
+              ) : (
+                <p style={{fontSize: '0.85rem', color: 'var(--text-secondary)'}}>Cargando información de disco...</p>
+              )}
             </div>
           </div>
         </div>

@@ -550,18 +550,35 @@ def get_all_customers():
 
 # --- Metrics Operations ---
 
+_ip_country_cache = {}
+import time
+
 def increment_product_web_visits(ml_id, domain=None, ip_address=None):
     country = "Desconocido"
-    if ip_address and ip_address not in ("127.0.0.1", "localhost", "::1") and not ip_address.startswith("192.168."):
-        try:
-            import requests
-            res = requests.get(f"http://ip-api.com/json/{ip_address}", timeout=2.0)
-            if res.status_code == 200:
-                data = res.json()
-                if data.get("status") == "success":
-                    country = data.get("country", "Desconocido")
-        except Exception:
-            pass
+    
+    is_local = False
+    if not ip_address or ip_address in ("127.0.0.1", "localhost", "::1"):
+        is_local = True
+    elif ip_address.startswith("192.168.") or ip_address.startswith("10."):
+        is_local = True
+        
+    if not is_local:
+        now = time.time()
+        if ip_address in _ip_country_cache and (now - _ip_country_cache[ip_address][1]) < 86400:
+            country = _ip_country_cache[ip_address][0]
+        else:
+            try:
+                import requests
+                res = requests.get(f"http://ip-api.com/json/{ip_address}", timeout=2.0)
+                if res.status_code == 200:
+                    data = res.json()
+                    if data.get("status") == "success":
+                        country = data.get("country", "Desconocido")
+                        _ip_country_cache[ip_address] = (country, now)
+                    elif data.get("status") == "fail" and data.get("message") == "private range":
+                        _ip_country_cache[ip_address] = ("Desconocido", now)
+            except Exception:
+                pass
 
     with get_connection() as conn:
         with conn.cursor() as cursor:

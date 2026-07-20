@@ -17,6 +17,7 @@ scheduler.start_scheduler()
 # Create invoices and uploads directory
 os.makedirs('invoices', exist_ok=True)
 os.makedirs('uploads', exist_ok=True)
+os.makedirs('backups', exist_ok=True)
 
 # Create FastAPI app
 app = FastAPI(title="ControlCenterES - API")

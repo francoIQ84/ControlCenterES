@@ -20,8 +20,10 @@ local_backend_files = {
     'backend/src/api/inventory.py': '/var/www/controlcenter/backend/src/api/inventory.py',
     'backend/src/api/storefront.py': '/var/www/controlcenter/backend/src/api/storefront.py',
     'backend/src/api/expenses.py': '/var/www/controlcenter/backend/src/api/expenses.py',
+    'backend/src/api/backup.py': '/var/www/controlcenter/backend/src/api/backup.py',
     'backend/src/utils/afip_ws.py': '/var/www/controlcenter/backend/src/utils/afip_ws.py',
-    'backend/src/utils/invoice_gen.py': '/var/www/controlcenter/backend/src/utils/invoice_gen.py'
+    'backend/src/utils/invoice_gen.py': '/var/www/controlcenter/backend/src/utils/invoice_gen.py',
+    'backend/main.py': '/var/www/controlcenter/backend/main.py'
 }
 
 local_frontend_dist = 'frontend/dist'
