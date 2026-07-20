@@ -92,12 +92,12 @@ export default function Dashboard() {
       <div className="grid-cards">
         <div className="card kpi-card" style={{borderLeft: '4px solid var(--accent-blue)'}}>
           <div className="kpi-title">Facturación Total <DollarSign size={18} color="var(--accent-blue)"/></div>
-          <div className="kpi-value">${stats.total_revenue.toLocaleString()}</div>
+          <div className="kpi-value">${Math.round(stats.total_revenue || 0).toLocaleString()}</div>
           <div className="kpi-subtitle">Ordenes aprobadas pagadas</div>
         </div>
         <div className="card kpi-card" style={{borderLeft: '4px solid var(--accent-emerald)'}}>
           <div className="kpi-title">Ganancia Neta Est. <TrendingUp size={18} color="var(--accent-emerald)"/></div>
-          <div className="kpi-value">${stats.total_profit.toLocaleString()}</div>
+          <div className="kpi-value">${Math.round(stats.total_profit || 0).toLocaleString()}</div>
           <div className="kpi-subtitle">Margen Promedio: {stats.profit_margin.toFixed(1)}%</div>
         </div>
         <div className="card kpi-card" style={{borderLeft: '4px solid var(--accent-purple)'}}>
@@ -112,8 +112,8 @@ export default function Dashboard() {
         </div>
         <div className="card kpi-card" style={{borderLeft: '4px solid var(--accent-red)'}}>
           <div className="kpi-title">Gastos Totales <TrendingDown size={18} color="var(--accent-red)"/></div>
-          <div className="kpi-value">${(stats.expenses_total || 0).toLocaleString()}</div>
-          <div className="kpi-subtitle">Fijos: ${(stats.expenses_fixed || 0).toLocaleString()} | Var: ${(stats.expenses_variable || 0).toLocaleString()}</div>
+          <div className="kpi-value">${Math.round(stats.expenses_total || 0).toLocaleString()}</div>
+          <div className="kpi-subtitle">Fijos: ${Math.round(stats.expenses_fixed || 0).toLocaleString()} | Var: ${Math.round(stats.expenses_variable || 0).toLocaleString()}</div>
         </div>
         <div className="card kpi-card" style={{borderLeft: '4px solid var(--accent-amber)'}}>
           <div className="kpi-title">Visitas Mercado Libre <Eye size={18} color="var(--accent-amber)"/></div>

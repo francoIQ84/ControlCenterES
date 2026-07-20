@@ -158,6 +158,8 @@ def init_db():
                     description VARCHAR(255) NOT NULL,
                     amount REAL NOT NULL,
                     category VARCHAR(100),
+                    month INT,
+                    year INT,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             ''')
@@ -173,6 +175,8 @@ def init_db():
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             ''')
+            cursor.execute('ALTER TABLE fixed_expenses ADD COLUMN IF NOT EXISTS month INT;')
+            cursor.execute('ALTER TABLE fixed_expenses ADD COLUMN IF NOT EXISTS year INT;')
             cursor.execute('ALTER TABLE login_history ADD COLUMN IF NOT EXISTS username VARCHAR(100);')
 
             # Seed default admin user if no users exist
@@ -626,43 +630,28 @@ def get_dashboard_metrics(period="total"):
             var_row = cursor.fetchone()
             total_var_expenses = var_row['total'] if var_row and var_row['total'] else 0.0
             
-            # Fixed expenses (prorated by period)
-            cursor.execute("SELECT SUM(amount) as total FROM fixed_expenses")
-            fixed_row = cursor.fetchone()
-            total_fixed_monthly = fixed_row['total'] if fixed_row and fixed_row['total'] else 0.0
+            # Fixed expenses (now stored by month/year)
+            fixed_query = "SELECT SUM(amount) as total FROM fixed_expenses"
+            fixed_params = []
             
-            total_fixed_expenses = 0.0
+            if period in ["year", "month", "week", "day"]:
+                now = datetime.now()
+                fixed_query += " WHERE year = %s"
+                fixed_params.append(now.year)
+                
+                if period in ["month", "week", "day"]:
+                    fixed_query += " AND month = %s"
+                    fixed_params.append(now.month)
+            
+            cursor.execute(fixed_query, tuple(fixed_params))
+            fixed_row = cursor.fetchone()
+            total_fixed_raw = fixed_row['total'] if fixed_row and fixed_row['total'] else 0.0
+            
+            total_fixed_expenses = total_fixed_raw
             if period == "day":
-                total_fixed_expenses = total_fixed_monthly / 30.0
+                total_fixed_expenses = total_fixed_raw / 30.0
             elif period == "week":
-                total_fixed_expenses = total_fixed_monthly / 4.333
-            elif period == "month":
-                total_fixed_expenses = total_fixed_monthly
-            elif period == "year":
-                total_fixed_expenses = total_fixed_monthly * 12.0
-            else:
-                # 'total' period: calculate months since first order
-                cursor.execute("SELECT MIN(date_created) as first_date FROM orders_cache")
-                first_date_row = cursor.fetchone()
-                if first_date_row and first_date_row['first_date']:
-                    try:
-                        # date_created is typically ISO string
-                        dt_str = first_date_row['first_date'].replace("Z", "+00:00")
-                        # Handle potential fractional seconds
-                        if '.' in dt_str and '+' in dt_str:
-                            first_dt = datetime.fromisoformat(dt_str)
-                        else:
-                            first_dt = datetime.fromisoformat(dt_str)
-                        
-                        # Use UTC now for naive comparison if needed, or make it aware
-                        now_dt = datetime.now(first_dt.tzinfo) if first_dt.tzinfo else datetime.now()
-                        days_active = (now_dt - first_dt).days
-                        months_active = max(1.0, days_active / 30.0)
-                        total_fixed_expenses = total_fixed_monthly * months_active
-                    except Exception:
-                        total_fixed_expenses = total_fixed_monthly
-                else:
-                    total_fixed_expenses = total_fixed_monthly
+                total_fixed_expenses = total_fixed_raw / 4.333
 
             total_expenses = total_var_expenses + total_fixed_expenses
             

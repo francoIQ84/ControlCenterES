@@ -17,7 +17,7 @@ export default function Expenses() {
 
   const fetchFixed = async () => {
     try {
-      const res = await fetch('/api/expenses/fixed')
+      const res = await fetch(`/api/expenses/fixed?month=${selectedMonth}&year=${selectedYear}`)
       if (res.ok) {
         setFixedExpenses(await res.json())
       }
@@ -57,7 +57,9 @@ export default function Expenses() {
         body: JSON.stringify({
           description: newFixed.description,
           amount: parseFloat(newFixed.amount),
-          category: newFixed.category
+          category: newFixed.category,
+          month: selectedMonth,
+          year: selectedYear
         })
       })
       if (res.ok) {
@@ -113,10 +115,24 @@ export default function Expenses() {
 
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '15px' }}>
         <div>
           <h1 className="page-title" style={{ margin: 0 }}>Control de Gastos</h1>
-          <p className="page-subtitle" style={{ margin: '5px 0 0 0' }}>Gestiona tus egresos para un cálculo real de rentabilidad.</p>
+          <p className="page-subtitle" style={{ margin: '5px 0 0 0' }}>Gestiona tus egresos. Seleccioná el mes que querés visualizar y rendir.</p>
+        </div>
+        
+        {/* GLOBAL MONTH SELECTOR */}
+        <div style={{ display: 'flex', gap: 10, backgroundColor: 'var(--bg-card)', padding: '10px 15px', borderRadius: 8, border: '1px solid var(--border-color)', alignItems: 'center' }}>
+          <Calendar size={18} color="var(--text-secondary)" />
+          <span style={{fontWeight: 'bold'}}>Período a rendir:</span>
+          <select value={selectedMonth} onChange={e => setSelectedMonth(parseInt(e.target.value))}>
+            {[1,2,3,4,5,6,7,8,9,10,11,12].map(m => (
+              <option key={m} value={m}>{new Date(2000, m-1, 1).toLocaleString('es-ES', { month: 'long' }).toUpperCase()}</option>
+            ))}
+          </select>
+          <select value={selectedYear} onChange={e => setSelectedYear(parseInt(e.target.value))}>
+            {[2024, 2025, 2026, 2027].map(y => <option key={y} value={y}>{y}</option>)}
+          </select>
         </div>
       </div>
 
@@ -126,10 +142,10 @@ export default function Expenses() {
         <div className="card">
           <h3 style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 0 }}>
             <Wallet size={20} color="var(--accent-blue)" /> 
-            Gastos Fijos (Mensuales)
+            Gastos Fijos
           </h3>
           <p className="page-subtitle" style={{fontSize: '0.85rem', marginBottom: 20}}>
-            Estos gastos se aplican automáticamente como descuento todos los meses en tus métricas (ej. Sueldos, Alquiler).
+            Estos gastos se asocian al mes seleccionado arriba (ej. Sueldos, Alquiler).
           </p>
 
           <form onSubmit={handleAddFixed} style={{ display: 'flex', gap: 10, marginBottom: 20, flexWrap: 'wrap' }}>
@@ -157,7 +173,7 @@ export default function Expenses() {
             >
               {fixedCategories.map(c => <option key={c} value={c}>{c}</option>)}
             </select>
-            <button type="submit" className="btn-primary" style={{ padding: '0 15px' }} title="Agregar">
+            <button type="submit" className="btn-primary" style={{ padding: '0 15px' }} title="Agregar al mes">
               <Plus size={18} />
             </button>
           </form>
@@ -174,12 +190,12 @@ export default function Expenses() {
                   </tr>
                 </thead>
                 <tbody>
-                  {fixedExpenses.length === 0 && <tr><td colSpan="4" style={{textAlign: 'center', color: 'var(--text-secondary)'}}>No hay gastos fijos.</td></tr>}
+                  {fixedExpenses.length === 0 && <tr><td colSpan="4" style={{textAlign: 'center', color: 'var(--text-secondary)'}}>No hay gastos fijos para este mes.</td></tr>}
                   {fixedExpenses.map(exp => (
                     <tr key={exp.id}>
                       <td>{exp.description}</td>
                       <td><span className="badge" style={{backgroundColor: 'var(--bg-hover)', color: 'var(--text-primary)'}}>{exp.category}</span></td>
-                      <td style={{textAlign: 'right', fontWeight: 'bold'}}>${exp.amount.toLocaleString()}</td>
+                      <td style={{textAlign: 'right', fontWeight: 'bold'}}>${Math.round(exp.amount).toLocaleString()}</td>
                       <td style={{textAlign: 'center'}}>
                         <button className="btn-icon" onClick={() => handleDeleteFixed(exp.id)} style={{color: 'var(--accent-red)'}}>
                           <Trash2 size={16} />
@@ -191,7 +207,7 @@ export default function Expenses() {
                 <tfoot>
                   <tr>
                     <td colSpan="2" style={{textAlign: 'right', fontWeight: 'bold', paddingTop: 15}}>Total Mensual Fijo:</td>
-                    <td style={{textAlign: 'right', fontWeight: 'bold', fontSize: '1.1rem', color: 'var(--accent-red)', paddingTop: 15}}>${totalFixed.toLocaleString()}</td>
+                    <td style={{textAlign: 'right', fontWeight: 'bold', fontSize: '1.1rem', color: 'var(--accent-red)', paddingTop: 15}}>${Math.round(totalFixed).toLocaleString()}</td>
                     <td></td>
                   </tr>
                 </tfoot>
@@ -202,25 +218,13 @@ export default function Expenses() {
 
         {/* VARIABLE EXPENSES CARD */}
         <div className="card">
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 }}>
-            <h3 style={{ display: 'flex', alignItems: 'center', gap: 10, margin: 0 }}>
-              <TrendingDown size={20} color="var(--accent-red)" /> 
-              Gastos Variables
-            </h3>
-            <div style={{ display: 'flex', gap: 10 }}>
-              <select value={selectedMonth} onChange={e => setSelectedMonth(parseInt(e.target.value))}>
-                {[1,2,3,4,5,6,7,8,9,10,11,12].map(m => (
-                  <option key={m} value={m}>{new Date(2000, m-1, 1).toLocaleString('es-ES', { month: 'long' })}</option>
-                ))}
-              </select>
-              <select value={selectedYear} onChange={e => setSelectedYear(parseInt(e.target.value))}>
-                {[2024, 2025, 2026, 2027].map(y => <option key={y} value={y}>{y}</option>)}
-              </select>
-            </div>
-          </div>
+          <h3 style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 0 }}>
+            <TrendingDown size={20} color="var(--accent-red)" /> 
+            Gastos Variables
+          </h3>
           
           <p className="page-subtitle" style={{fontSize: '0.85rem', marginBottom: 20}}>
-            Anota los gastos puntuales o del día a día (insumos, envíos, reparaciones).
+            Anota los gastos puntuales para este mes (insumos, envíos, reparaciones). Podés elegir el día exacto.
           </p>
 
           <form onSubmit={handleAddVariable} style={{ display: 'flex', gap: 10, marginBottom: 20, flexWrap: 'wrap' }}>
@@ -273,13 +277,13 @@ export default function Expenses() {
                   </tr>
                 </thead>
                 <tbody>
-                  {variableExpenses.length === 0 && <tr><td colSpan="5" style={{textAlign: 'center', color: 'var(--text-secondary)'}}>No hay gastos este mes.</td></tr>}
+                  {variableExpenses.length === 0 && <tr><td colSpan="5" style={{textAlign: 'center', color: 'var(--text-secondary)'}}>No hay gastos para este mes.</td></tr>}
                   {variableExpenses.map(exp => (
                     <tr key={exp.id}>
                       <td style={{whiteSpace: 'nowrap'}}>{exp.date}</td>
                       <td>{exp.description}</td>
                       <td><span className="badge" style={{backgroundColor: 'var(--bg-hover)', color: 'var(--text-primary)'}}>{exp.category}</span></td>
-                      <td style={{textAlign: 'right', fontWeight: 'bold'}}>${exp.amount.toLocaleString()}</td>
+                      <td style={{textAlign: 'right', fontWeight: 'bold'}}>${Math.round(exp.amount).toLocaleString()}</td>
                       <td style={{textAlign: 'center'}}>
                         <button className="btn-icon" onClick={() => handleDeleteVariable(exp.id)} style={{color: 'var(--accent-red)'}}>
                           <Trash2 size={16} />
@@ -291,7 +295,7 @@ export default function Expenses() {
                 <tfoot>
                   <tr>
                     <td colSpan="3" style={{textAlign: 'right', fontWeight: 'bold', paddingTop: 15}}>Total Variables del Mes:</td>
-                    <td style={{textAlign: 'right', fontWeight: 'bold', fontSize: '1.1rem', color: 'var(--accent-red)', paddingTop: 15}}>${totalVariable.toLocaleString()}</td>
+                    <td style={{textAlign: 'right', fontWeight: 'bold', fontSize: '1.1rem', color: 'var(--accent-red)', paddingTop: 15}}>${Math.round(totalVariable).toLocaleString()}</td>
                     <td></td>
                   </tr>
                 </tfoot>

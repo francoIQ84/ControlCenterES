@@ -11,6 +11,8 @@ class FixedExpenseCreate(BaseModel):
     description: str
     amount: float
     category: str
+    month: int
+    year: int
 
 class VariableExpenseCreate(BaseModel):
     date: str
@@ -19,10 +21,17 @@ class VariableExpenseCreate(BaseModel):
     category: str
 
 @router.get("/fixed")
-def get_fixed_expenses(current_user: dict = Depends(get_current_user)):
+def get_fixed_expenses(month: Optional[int] = None, year: Optional[int] = None, current_user: dict = Depends(get_current_user)):
+    query = "SELECT * FROM fixed_expenses"
+    params = []
+    if month and year:
+        query += " WHERE month = %s AND year = %s"
+        params.extend([month, year])
+    query += " ORDER BY created_at DESC"
+    
     with database.get_connection() as conn:
         with conn.cursor() as cursor:
-            cursor.execute("SELECT * FROM fixed_expenses ORDER BY created_at DESC")
+            cursor.execute(query, tuple(params))
             return cursor.fetchall()
 
 @router.post("/fixed")
@@ -30,8 +39,8 @@ def create_fixed_expense(expense: FixedExpenseCreate, current_user: dict = Depen
     with database.get_connection() as conn:
         with conn.cursor() as cursor:
             cursor.execute(
-                "INSERT INTO fixed_expenses (description, amount, category) VALUES (%s, %s, %s) RETURNING *",
-                (expense.description, expense.amount, expense.category)
+                "INSERT INTO fixed_expenses (description, amount, category, month, year) VALUES (%s, %s, %s, %s, %s) RETURNING *",
+                (expense.description, expense.amount, expense.category, expense.month, expense.year)
             )
             return cursor.fetchone()
 
