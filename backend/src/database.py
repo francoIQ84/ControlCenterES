@@ -563,10 +563,13 @@ import time
 def increment_product_web_visits(ml_id, domain=None, ip_address=None):
     country = "Desconocido"
     
+    if ip_address and ip_address.startswith("::ffff:"):
+        ip_address = ip_address.replace("::ffff:", "")
+        
     is_local = False
     if not ip_address or ip_address in ("127.0.0.1", "localhost", "::1"):
         is_local = True
-    elif ip_address.startswith("192.168.") or ip_address.startswith("10."):
+    elif ip_address.startswith("192.168.") or ip_address.startswith("10.") or ip_address.startswith("172."):
         is_local = True
         
     if not is_local:
