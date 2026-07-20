@@ -3,7 +3,7 @@ import json
 import base64
 from datetime import datetime
 from reportlab.lib.pagesizes import A4
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, HRFlowable
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, HRFlowable, PageBreak
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
 from reportlab.lib.units import mm, cm
@@ -85,13 +85,14 @@ def get_afip_qr_code(order, merchant_cuit, pto_vta, tipo_cmp, cae, size=80):
 
 
 # ──────────────────────────────────────────────
-# Custom Flowable: Header Box
-# Renders the top AFIP-standard 3-column header:
+# Custom Flowable: Header Box (AFIP-standard)
+# Renders the top 3-column header:
 #  [Seller Info] | [Letter Box] | [FACTURA + numbering]
+# With ORIGINAL/DUPLICADO band at top
 # ──────────────────────────────────────────────
 class AFIPHeaderFlowable(Flowable):
     def __init__(self, seller, letter_char, cod_cmp, invoice_number, invoice_date, 
-                 cuit, iibb, iva_condition, start_date, pto_vta, tipo_cmp, width):
+                 cuit, iibb, iva_condition, start_date, pto_vta, tipo_cmp, width, copy_type="ORIGINAL"):
         super().__init__()
         self.seller = seller
         self.letter_char = letter_char
@@ -105,106 +106,182 @@ class AFIPHeaderFlowable(Flowable):
         self.pto_vta = pto_vta
         self.tipo_cmp = tipo_cmp
         self.width = width
-        self.height = 95 * mm
+        self.copy_type = copy_type
+        self.height = 100 * mm
 
     def draw(self):
         c = self.canv
         w = self.width
         h = self.height
 
-        # Outer border
-        c.setLineWidth(0.8)
+        # ─── Outer border ───
+        c.setStrokeColor(colors.HexColor('#333333'))
+        c.setLineWidth(1.0)
         c.rect(0, 0, w, h)
 
-        # Center vertical divider
+        # ─── Copy type band (ORIGINAL / DUPLICADO) ───
+        band_h = 8 * mm
+        c.setFillColor(colors.HexColor('#f0f0f0'))
+        c.rect(0, h - band_h, w, band_h, fill=1, stroke=0)
+        c.setStrokeColor(colors.HexColor('#333333'))
+        c.setLineWidth(0.6)
+        c.line(0, h - band_h, w, h - band_h)
+
+        c.setFillColor(colors.HexColor('#333333'))
+        c.setFont("Helvetica-Bold", 9)
+        c.drawCentredString(w / 2, h - 6 * mm, self.copy_type)
+
+        # ─── Center vertical divider (below band) ───
         center_x = w / 2
-        c.line(center_x, 0, center_x, h)
+        content_top = h - band_h
+        c.setLineWidth(0.6)
+        c.line(center_x, 0, center_x, content_top)
 
-        # ORIGINAL/DUPLICATE header band
-        c.setFillColor(colors.black)
-        c.setFont("Helvetica-Bold", 10)
-        c.drawCentredString(w / 2, h - 8 * mm, "ORIGINAL")
+        # ─── LEFT COLUMN: Seller info ───
+        left_margin = 5 * mm
+        y = content_top - 8 * mm
 
-        # Thin line under ORIGINAL
-        c.setLineWidth(0.5)
-        c.line(0, h - 10 * mm, w, h - 10 * mm)
+        # Razón Social (large, bold)
+        c.setFont("Helvetica-Bold", 12)
+        c.setFillColor(colors.HexColor('#1a1a1a'))
+        name = self.seller.get('name', '')
+        # Truncate if too long for column
+        if len(name) > 32:
+            name = name[:30] + "…"
+        c.drawString(left_margin, y, name)
 
-        content_h = h - 10 * mm
-        left_w = center_x
-        right_w = w - center_x
+        # Razón Social subtitle
+        razon = self.seller.get('razon_social', self.seller.get('name', ''))
+        if razon and razon != name:
+            y -= 5 * mm
+            c.setFont("Helvetica", 7)
+            c.setFillColor(colors.HexColor('#666666'))
+            c.drawString(left_margin, y, f"Razón Social: {razon}")
 
-        # ---- LEFT COLUMN: Seller info ----
-        y = content_h - 6 * mm
-        c.setFont("Helvetica-Bold", 10)
-        c.drawString(4 * mm, y, self.seller.get('name', ''))
-
+        # Address
         y -= 5 * mm
-        c.setFont("Helvetica", 8)
-        c.setFillColor(colors.HexColor('#555555'))
-        c.drawString(4 * mm, y, f"Razón Social: {self.seller.get('razon_social', self.seller.get('name', ''))}")
+        c.setFont("Helvetica", 7.5)
+        c.setFillColor(colors.HexColor('#444444'))
+        address = self.seller.get('address', '')
+        if len(address) > 48:
+            address = address[:46] + "…"
+        c.drawString(left_margin, y, f"Domicilio Comercial: {address}")
 
+        # IVA condition
         y -= 5 * mm
-        c.drawString(4 * mm, y, f"Domicilio Comercial: {self.seller.get('address', '')}")
+        c.setFont("Helvetica", 7.5)
+        c.setFillColor(colors.HexColor('#444444'))
+        c.drawString(left_margin, y, f"Condición frente al IVA: {self.iva_condition}")
 
-        y -= 5 * mm
-        c.drawString(4 * mm, y, f"Condición frente al IVA: {self.iva_condition}")
+        # Separator line
+        y -= 3 * mm
+        c.setStrokeColor(colors.HexColor('#cccccc'))
+        c.setLineWidth(0.3)
+        c.line(left_margin, y, center_x - 4 * mm, y)
 
         # CUIT formatted XX-XXXXXXXX-X
         cuit_clean = "".join([x for x in str(self.cuit) if x.isdigit()])
         cuit_fmt = self.cuit if '-' in str(self.cuit) else (
             f"{cuit_clean[0:2]}-{cuit_clean[2:10]}-{cuit_clean[10]}" if len(cuit_clean) == 11 else self.cuit
         )
-        y -= 5 * mm
-        c.setFillColor(colors.black)
+        y -= 4.5 * mm
+        c.setFillColor(colors.HexColor('#1a1a1a'))
+        c.setFont("Helvetica-Bold", 8)
+        c.drawString(left_margin, y, "CUIT: ")
+        cuit_w = c.stringWidth("CUIT: ", "Helvetica-Bold", 8)
         c.setFont("Helvetica", 8)
-        c.drawString(4 * mm, y, f"CUIT: {cuit_fmt}")
+        c.drawString(left_margin + cuit_w, y, cuit_fmt)
 
-        y -= 4 * mm
-        c.drawString(4 * mm, y, f"Ingresos Brutos: {self.iibb or cuit_fmt}")
+        # IIBB
+        y -= 4.5 * mm
+        c.setFont("Helvetica-Bold", 8)
+        c.drawString(left_margin, y, "Ingresos Brutos: ")
+        iibb_w = c.stringWidth("Ingresos Brutos: ", "Helvetica-Bold", 8)
+        c.setFont("Helvetica", 8)
+        c.drawString(left_margin + iibb_w, y, str(self.iibb or cuit_fmt))
 
-        y -= 4 * mm
-        c.drawString(4 * mm, y, f"Fecha de Inicio de Actividades: {self.start_date}")
+        # Start date
+        y -= 4.5 * mm
+        c.setFont("Helvetica-Bold", 8)
+        c.drawString(left_margin, y, "Inicio de Actividades: ")
+        start_w = c.stringWidth("Inicio de Actividades: ", "Helvetica-Bold", 8)
+        c.setFont("Helvetica", 8)
+        c.drawString(left_margin + start_w, y, self.start_date)
 
-        # ---- CENTER LETTER BOX ----
-        box_size = 22 * mm
+        # ─── CENTER LETTER BOX ───
+        box_size = 16 * mm
         box_x = center_x - (box_size / 2)
-        box_y = content_h - 5 * mm - box_size
-        c.setLineWidth(1)
+        box_y = content_top - box_size
+
+        # Box shadow effect
+        c.setFillColor(colors.HexColor('#e0e0e0'))
+        c.rect(box_x + 0.5 * mm, box_y - 0.5 * mm, box_size, box_size, fill=1, stroke=0)
+
+        # Main box
+        c.setStrokeColor(colors.HexColor('#333333'))
+        c.setLineWidth(1.2)
         c.setFillColor(colors.white)
         c.rect(box_x, box_y, box_size, box_size, fill=1, stroke=1)
-        c.setFillColor(colors.black)
-        c.setFont("Helvetica-Bold", 28)
-        c.drawCentredString(center_x, box_y + 6 * mm, self.letter_char)
-        c.setFont("Helvetica-Bold", 7)
-        c.drawCentredString(center_x, box_y + 2 * mm, self.cod_cmp)
 
-        # ---- RIGHT COLUMN: Invoice info ----
-        rx = center_x + 4 * mm
-        y2 = content_h - 6 * mm
+        # Letter
+        c.setFillColor(colors.HexColor('#1a1a1a'))
+        c.setFont("Helvetica-Bold", 24)
+        c.drawCentredString(center_x, box_y + 5.5 * mm, self.letter_char)
+
+        # Code below letter
+        c.setFont("Helvetica-Bold", 6.5)
+        c.setFillColor(colors.HexColor('#555555'))
+        c.drawCentredString(center_x, box_y + 1.5 * mm, self.cod_cmp)
+
+        # ─── RIGHT COLUMN: Invoice info ───
+        rx = center_x + 12 * mm
+        y2 = content_top - 6 * mm
+
+        # "FACTURA" title
         c.setFont("Helvetica-Bold", 18)
-        c.setFillColor(colors.black)
+        c.setFillColor(colors.HexColor('#1a1a1a'))
         c.drawString(rx, y2, "FACTURA")
 
+        # Punto de Venta and Comp. Nro
         y2 -= 8 * mm
-        # Parse pto_vta and number
         inv_parts = str(self.invoice_number).split('-')
         pto_str = inv_parts[0] if len(inv_parts) == 2 else f"{self.pto_vta:04d}"
         nro_str = inv_parts[1] if len(inv_parts) == 2 else "00000001"
 
-        c.setFont("Helvetica", 8)
-        c.drawString(rx, y2, f"Punto de Venta: {pto_str}    Comp. Nro: {nro_str}")
+        c.setFont("Helvetica-Bold", 8)
+        c.setFillColor(colors.HexColor('#444444'))
+        c.drawString(rx, y2, "Punto de Venta: ")
+        pv_w = c.stringWidth("Punto de Venta: ", "Helvetica-Bold", 8)
+        c.setFont("Helvetica", 9)
+        c.setFillColor(colors.HexColor('#1a1a1a'))
+        c.drawString(rx + pv_w, y2, pto_str)
 
-        y2 -= 5 * mm
-        c.drawString(rx, y2, f"Fecha de Emisión: {self.invoice_date}")
+        # Comp Nro on same line
+        comp_x = rx + pv_w + c.stringWidth(pto_str + "   ", "Helvetica", 9)
+        c.setFont("Helvetica-Bold", 8)
+        c.setFillColor(colors.HexColor('#444444'))
+        c.drawString(comp_x, y2, "Comp. Nro: ")
+        cn_w = c.stringWidth("Comp. Nro: ", "Helvetica-Bold", 8)
+        c.setFont("Helvetica", 9)
+        c.setFillColor(colors.HexColor('#1a1a1a'))
+        c.drawString(comp_x + cn_w, y2, nro_str)
+
+        # Fecha de Emisión
+        y2 -= 6 * mm
+        c.setFont("Helvetica-Bold", 8)
+        c.setFillColor(colors.HexColor('#444444'))
+        c.drawString(rx, y2, "Fecha de Emisión: ")
+        fe_w = c.stringWidth("Fecha de Emisión: ", "Helvetica-Bold", 8)
+        c.setFont("Helvetica", 9)
+        c.setFillColor(colors.HexColor('#1a1a1a'))
+        c.drawString(rx + fe_w, y2, self.invoice_date)
 
 
 # ──────────────────────────────────────────────
-# Main generator
+# Build a single invoice page (story elements)
 # ──────────────────────────────────────────────
-def generate_invoice_pdf(order):
-    os.makedirs(PDF_DIR, exist_ok=True)
-    filename = f"factura_{order['order_id']}.pdf"
-    filepath = os.path.join(PDF_DIR, filename)
+def _build_invoice_page(order, copy_type, usable_w):
+    """Builds all the flowable elements for one page of the invoice (ORIGINAL or DUPLICADO)."""
 
     # ---- Load merchant settings ----
     merchant_name = database.get_setting('merchant_name', 'Hidroponia Rosario')
@@ -230,7 +307,6 @@ def generate_invoice_pdf(order):
     if cae_exp:
         try:
             from datetime import timedelta
-            # El vencimiento del CAE es a los 10 días exactos de la fecha de emisión (CbteFch)
             exp_date = datetime.strptime(str(cae_exp).split('T')[0], '%Y-%m-%d')
             formatted_date = (exp_date - timedelta(days=10)).strftime("%d/%m/%Y")
         except Exception:
@@ -254,7 +330,6 @@ def generate_invoice_pdf(order):
     buyer_address = buyer.get('address', '') or ''
     buyer_condition = 'Consumidor Final'
 
-    # Determine buyer IVA condition from document type
     if buyer_doc_type in ('CUIT', 'CUIL') and buyer_doc_number:
         buyer_condition = 'Responsable Inscripto'
 
@@ -267,32 +342,7 @@ def generate_invoice_pdf(order):
         else:
             buyer_doc_display = buyer_doc_number
 
-    # ---- Build PDF ----
-    page_w, page_h = A4
-    margin = 15 * mm
-
-    doc = SimpleDocTemplate(
-        filepath,
-        pagesize=A4,
-        rightMargin=margin,
-        leftMargin=margin,
-        topMargin=margin,
-        bottomMargin=margin
-    )
-
-    usable_w = page_w - 2 * margin
-    styles = getSampleStyleSheet()
-
-    def style(name, font='Helvetica', size=8, color=colors.black, align=TA_LEFT, bold=False):
-        return ParagraphStyle(
-            name,
-            fontName='Helvetica-Bold' if bold else font,
-            fontSize=size,
-            textColor=color,
-            alignment=align,
-            leading=size + 2
-        )
-
+    # ---- Styles ----
     BORDER = colors.HexColor('#333333')
     HEADER_BG = colors.HexColor('#e8e8e8')
     LIGHT_GRAY = colors.HexColor('#f5f5f5')
@@ -300,10 +350,20 @@ def generate_invoice_pdf(order):
     BLACK = colors.black
     BLUE_ARCA = colors.HexColor('#003A70')
 
+    def style(name, font='Helvetica', size=8, color=colors.black, align=TA_LEFT, bold=False):
+        return ParagraphStyle(
+            f"{name}_{copy_type}",
+            fontName='Helvetica-Bold' if bold else font,
+            fontSize=size,
+            textColor=color,
+            alignment=align,
+            leading=size + 2
+        )
+
     story = []
 
     # ══════════════════════════════════════════
-    # 1. MAIN HEADER (ORIGINAL + Seller + Letter)
+    # 1. MAIN HEADER (ORIGINAL/DUPLICADO + Seller + Letter)
     # ══════════════════════════════════════════
     seller = {
         'name': merchant_name,
@@ -322,7 +382,8 @@ def generate_invoice_pdf(order):
         start_date=merchant_start_date,
         pto_vta=pto_vta_val,
         tipo_cmp=tipo_cmp_val,
-        width=usable_w
+        width=usable_w,
+        copy_type=copy_type
     )
     story.append(header)
     story.append(Spacer(1, 4 * mm))
@@ -330,7 +391,6 @@ def generate_invoice_pdf(order):
     # ══════════════════════════════════════════
     # 2. BUYER INFO ROW
     # ══════════════════════════════════════════
-    # Build buyer info as a 2-column table
     buyer_left_data = [
         [
             Paragraph(f"<b>Período Facturado Desde:</b> {formatted_date}",
@@ -489,7 +549,6 @@ def generate_invoice_pdf(order):
     # 5. ARCA FOOTER (QR + CAE + Legalese)
     # ══════════════════════════════════════════
     if cae:
-        # Format CAE expiry date
         cae_exp_fmt = cae_exp
         try:
             cae_exp_fmt = datetime.strptime(str(cae_exp), '%Y-%m-%d').strftime('%d/%m/%Y')
@@ -498,7 +557,6 @@ def generate_invoice_pdf(order):
 
         qr_drawing = get_afip_qr_code(order, merchant_cuit, pto_vta_val, tipo_cmp_val, cae, size=55)
 
-        # ARCA logo text (bolded, blue)
         arca_logo_para = Paragraph(
             '<b><font color="#003A70" size="14">ARCA</font></b><br/>'
             '<font color="#666666" size="6.5">AGENCIA DE RECAUDACIÓN<br/>Y CONTROL ADUANERO</font>',
@@ -538,8 +596,41 @@ def generate_invoice_pdf(order):
     )
     story.append(disclaimer)
 
-    # ──────────────────────────────────────────
-    # Build PDF
-    # ──────────────────────────────────────────
+    return story
+
+
+# ──────────────────────────────────────────────
+# Main generator
+# ──────────────────────────────────────────────
+def generate_invoice_pdf(order):
+    os.makedirs(PDF_DIR, exist_ok=True)
+    filename = f"factura_{order['order_id']}.pdf"
+    filepath = os.path.join(PDF_DIR, filename)
+
+    page_w, page_h = A4
+    margin = 15 * mm
+    usable_w = page_w - 2 * margin
+
+    doc = SimpleDocTemplate(
+        filepath,
+        pagesize=A4,
+        rightMargin=margin,
+        leftMargin=margin,
+        topMargin=margin,
+        bottomMargin=margin
+    )
+
+    # Build both copies: ORIGINAL (page 1) + DUPLICADO (page 2)
+    story = []
+
+    # Page 1: ORIGINAL
+    story.extend(_build_invoice_page(order, "ORIGINAL", usable_w))
+
+    # Page break
+    story.append(PageBreak())
+
+    # Page 2: DUPLICADO
+    story.extend(_build_invoice_page(order, "DUPLICADO", usable_w))
+
     doc.build(story)
     return filepath

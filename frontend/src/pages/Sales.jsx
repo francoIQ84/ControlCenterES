@@ -42,7 +42,11 @@ export default function Sales() {
       })
       if (res.ok) {
         const data = await res.json()
-        alert(`Factura generada con éxito: ${data.invoice_number}`)
+        let msg = `Factura generada con éxito: ${data.invoice_number}`
+        if (data.meli_uploaded !== undefined) {
+           msg += data.meli_uploaded ? ` | Adjuntada en ML ✓` : ` | Error ML: ${data.meli_msg}`
+        }
+        alert(msg)
         fetchOrders()
       } else {
         const err = await res.json()

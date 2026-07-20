@@ -3,6 +3,7 @@ import requests
 import json
 from datetime import datetime, timedelta
 import random
+import os
 
 from src import config
 from src import database
@@ -706,3 +707,74 @@ def download_meli_invoice(order_id):
         return None
 
 
+def upload_invoice_to_meli(order_id, pdf_path):
+    """
+    Sube la factura PDF generada a Mercado Libre como documento fiscal adjunto.
+    Usa POST multipart/form-data a /packs/{order_id}/fiscal_documents.
+    Retorna (success: bool, message: str).
+    """
+    if is_demo_mode():
+        return True, "Factura adjuntada (modo demo)"
+
+    if not os.path.exists(pdf_path):
+        return False, f"El archivo PDF no existe: {pdf_path}"
+
+    try:
+        check_and_refresh_token()
+        access_token = config.get_access_token()
+        if not access_token:
+            return False, "No hay token de acceso válido para Mercado Libre"
+
+        url = f"{API_BASE_URL}/packs/{order_id}/fiscal_documents"
+        headers = {
+            'Authorization': f"Bearer {access_token}"
+        }
+
+        # Try with the order_id first
+        with open(pdf_path, 'rb') as f:
+            files = {
+                'fiscal_document': (os.path.basename(pdf_path), f, 'application/pdf')
+            }
+            response = requests.post(url, headers=headers, files=files, timeout=30)
+
+        # If it says order belongs to a pack, we need to fetch the pack_id and retry
+        if response.status_code == 400:
+            try:
+                err_data = response.json()
+                if err_data.get('error') == 'order_belong_pack':
+                    # Fetch the order details to get the pack_id
+                    order_res = api_request("GET", f"/orders/{order_id}")
+                    if order_res and order_res.status_code == 200:
+                        order_data = order_res.json()
+                        pack_id = order_data.get('pack_id')
+                        if pack_id:
+                            # Retry with pack_id
+                            url_pack = f"{API_BASE_URL}/packs/{pack_id}/fiscal_documents"
+                            with open(pdf_path, 'rb') as f:
+                                files_pack = {
+                                    'fiscal_document': (os.path.basename(pdf_path), f, 'application/pdf')
+                                }
+                                response = requests.post(url_pack, headers=headers, files=files_pack, timeout=30)
+            except Exception as e:
+                print(f"Error trying to fetch pack_id for order {order_id}: {e}")
+
+        if response.status_code in (200, 201):
+            # Update meli_invoice_attached in DB
+            with database.get_connection() as conn:
+                with conn.cursor() as cursor:
+                    cursor.execute(
+                        "UPDATE orders_cache SET meli_invoice_attached = 1 WHERE order_id = %s",
+                        (order_id,)
+                    )
+            return True, "Factura adjuntada en Mercado Libre exitosamente"
+        else:
+            error_detail = ""
+            try:
+                err_data = response.json()
+                error_detail = err_data.get('message', '') or err_data.get('error', '') or str(err_data)
+            except Exception:
+                error_detail = response.text[:200]
+            return False, f"Error al adjuntar en ML (HTTP {response.status_code}): {error_detail}"
+
+    except Exception as e:
+        return False, f"Error de conexión al adjuntar factura en ML: {str(e)}"

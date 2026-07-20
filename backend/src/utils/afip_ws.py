@@ -300,14 +300,22 @@ def create_invoice(order: dict):
         order['afip_cae_exp'] = cae_exp
         
         from src.utils.invoice_gen import generate_invoice_pdf
-        generate_invoice_pdf(order)
+        pdf_path = generate_invoice_pdf(order)
+        
+        meli_uploaded = False
+        meli_msg = ""
+        if order.get('source_platform') == 'MERCADOLIBRE':
+            from src import meli_api
+            meli_uploaded, meli_msg = meli_api.upload_invoice_to_meli(order['order_id'], pdf_path)
         
         return {
             "success": True,
             "invoice_number": formatted_invoice_number,
             "cae": cae,
             "cae_exp": cae_exp,
-            "mode": "mock"
+            "mode": "mock",
+            "meli_uploaded": meli_uploaded,
+            "meli_msg": meli_msg
         }
         
     try:
@@ -422,14 +430,22 @@ def create_invoice(order: dict):
         
         # Regenerate reportlab invoice PDF with real AFIP values
         from src.utils.invoice_gen import generate_invoice_pdf
-        generate_invoice_pdf(order)
+        pdf_path = generate_invoice_pdf(order)
+        
+        meli_uploaded = False
+        meli_msg = ""
+        if order.get('source_platform') == 'MERCADOLIBRE':
+            from src import meli_api
+            meli_uploaded, meli_msg = meli_api.upload_invoice_to_meli(order['order_id'], pdf_path)
         
         return {
             "success": True,
             "invoice_number": formatted_invoice_number,
             "cae": cae,
             "cae_exp": cae_exp,
-            "mode": "real"
+            "mode": "real",
+            "meli_uploaded": meli_uploaded,
+            "meli_msg": meli_msg
         }
     except Exception as e:
         return {
