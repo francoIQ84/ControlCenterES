@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { Outlet, NavLink } from 'react-router-dom'
-import { LayoutDashboard, Package, Receipt, Users, Settings, Sun, Moon, RefreshCw, Zap, Image, LogOut, Menu, FileText } from 'lucide-react'
+import { LayoutDashboard, Package, Receipt, Users, Settings, Sun, Moon, RefreshCw, Zap, Image, LogOut, Menu, FileText, Wallet } from 'lucide-react'
 
 export default function Layout() {
   const [lightMode, setLightMode] = useState(true)
@@ -204,6 +204,10 @@ export default function Layout() {
           <NavLink to="/billing" className={({isActive}) => `nav-link ${isActive ? 'active' : ''}`}>
             <FileText size={20} style={{ minWidth: 20 }} />
             <span className="nav-text">Facturación</span>
+          </NavLink>
+          <NavLink to="/expenses" className={({isActive}) => `nav-link ${isActive ? 'active' : ''}`}>
+            <Wallet size={20} style={{ minWidth: 20 }} />
+            <span className="nav-text">Gastos</span>
           </NavLink>
           <NavLink to="/customers" className={({isActive}) => `nav-link ${isActive ? 'active' : ''}`}>
             <Users size={20} style={{ minWidth: 20 }} />

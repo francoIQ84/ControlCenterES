@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react'
-import { DollarSign, TrendingUp, ShoppingBag, AlertTriangle, Eye, Globe } from 'lucide-react'
+import { DollarSign, TrendingUp, ShoppingBag, AlertTriangle, Eye, Globe, TrendingDown } from 'lucide-react'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
 
 export default function Dashboard() {
@@ -109,6 +109,11 @@ export default function Dashboard() {
           <div className="kpi-title">Alertas de Stock <AlertTriangle size={18} color="var(--accent-red)"/></div>
           <div className="kpi-value" style={{color: stats.low_stock_count > 0 ? 'var(--accent-red)' : 'inherit'}}>{stats.low_stock_count}</div>
           <div className="kpi-subtitle">Productos con 3 unidades o menos</div>
+        </div>
+        <div className="card kpi-card" style={{borderLeft: '4px solid var(--accent-red)'}}>
+          <div className="kpi-title">Gastos Totales <TrendingDown size={18} color="var(--accent-red)"/></div>
+          <div className="kpi-value">${(stats.expenses_total || 0).toLocaleString()}</div>
+          <div className="kpi-subtitle">Fijos: ${(stats.expenses_fixed || 0).toLocaleString()} | Var: ${(stats.expenses_variable || 0).toLocaleString()}</div>
         </div>
         <div className="card kpi-card" style={{borderLeft: '4px solid var(--accent-amber)'}}>
           <div className="kpi-title">Visitas Mercado Libre <Eye size={18} color="var(--accent-amber)"/></div>

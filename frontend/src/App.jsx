@@ -6,6 +6,7 @@ import Inventory from './pages/Inventory'
 import Sales from './pages/Sales'
 import Customers from './pages/Customers'
 import Settings from './pages/Settings'
+import Expenses from './pages/Expenses'
 import MediaManager from './pages/MediaManager'
 import Login from './pages/Login'
 import Billing from './pages/Billing'
@@ -71,6 +72,7 @@ function App() {
             <Route path="customers" element={<Customers />} />
             <Route path="settings" element={<Settings />} />
             <Route path="media" element={<MediaManager />} />
+            <Route path="expenses" element={<Expenses />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Route>
         </Route>

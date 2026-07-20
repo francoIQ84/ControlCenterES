@@ -150,6 +150,29 @@ def init_db():
                     user_agent TEXT
                 )
             ''')
+
+            # Fixed Expenses table
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS fixed_expenses (
+                    id SERIAL PRIMARY KEY,
+                    description VARCHAR(255) NOT NULL,
+                    amount REAL NOT NULL,
+                    category VARCHAR(100),
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+
+            # Variable Expenses table
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS variable_expenses (
+                    id SERIAL PRIMARY KEY,
+                    date DATE NOT NULL,
+                    description VARCHAR(255) NOT NULL,
+                    amount REAL NOT NULL,
+                    category VARCHAR(100),
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
             cursor.execute('ALTER TABLE login_history ADD COLUMN IF NOT EXISTS username VARCHAR(100);')
 
             # Seed default admin user if no users exist
@@ -592,7 +615,59 @@ def get_dashboard_metrics(period="total"):
                     cost = costs.get(ml_id, 0.0)
                     total_cost += cost * quantity
                     
-            total_profit = total_revenue - total_cost
+            # --- EXPENSES CALCULATION ---
+            # Variable expenses for the period
+            var_query = "SELECT SUM(amount) as total FROM variable_expenses"
+            var_params = []
+            if start_date:
+                var_query += " WHERE date >= %s"
+                var_params.append(start_date.date().isoformat())
+            cursor.execute(var_query, tuple(var_params))
+            var_row = cursor.fetchone()
+            total_var_expenses = var_row['total'] if var_row and var_row['total'] else 0.0
+            
+            # Fixed expenses (prorated by period)
+            cursor.execute("SELECT SUM(amount) as total FROM fixed_expenses")
+            fixed_row = cursor.fetchone()
+            total_fixed_monthly = fixed_row['total'] if fixed_row and fixed_row['total'] else 0.0
+            
+            total_fixed_expenses = 0.0
+            if period == "day":
+                total_fixed_expenses = total_fixed_monthly / 30.0
+            elif period == "week":
+                total_fixed_expenses = total_fixed_monthly / 4.333
+            elif period == "month":
+                total_fixed_expenses = total_fixed_monthly
+            elif period == "year":
+                total_fixed_expenses = total_fixed_monthly * 12.0
+            else:
+                # 'total' period: calculate months since first order
+                cursor.execute("SELECT MIN(date_created) as first_date FROM orders_cache")
+                first_date_row = cursor.fetchone()
+                if first_date_row and first_date_row['first_date']:
+                    try:
+                        # date_created is typically ISO string
+                        dt_str = first_date_row['first_date'].replace("Z", "+00:00")
+                        # Handle potential fractional seconds
+                        if '.' in dt_str and '+' in dt_str:
+                            first_dt = datetime.fromisoformat(dt_str)
+                        else:
+                            first_dt = datetime.fromisoformat(dt_str)
+                        
+                        # Use UTC now for naive comparison if needed, or make it aware
+                        now_dt = datetime.now(first_dt.tzinfo) if first_dt.tzinfo else datetime.now()
+                        days_active = (now_dt - first_dt).days
+                        months_active = max(1.0, days_active / 30.0)
+                        total_fixed_expenses = total_fixed_monthly * months_active
+                    except Exception:
+                        total_fixed_expenses = total_fixed_monthly
+                else:
+                    total_fixed_expenses = total_fixed_monthly
+
+            total_expenses = total_var_expenses + total_fixed_expenses
+            
+            # Net profit = Revenue - Product Costs - Expenses
+            total_profit = total_revenue - total_cost - total_expenses
             profit_margin = (total_profit / total_revenue * 100) if total_revenue > 0 else 0.0
             
             cursor.execute("SELECT COUNT(ml_id) as count FROM products_cache WHERE available_quantity <= 3 AND status = 'active'")
@@ -632,6 +707,10 @@ def get_dashboard_metrics(period="total"):
                 'total_active_products': total_active_products,
                 'total_profit': total_profit,
                 'profit_margin': profit_margin,
+                'expenses_fixed': total_fixed_expenses,
+                'expenses_variable': total_var_expenses,
+                'expenses_total': total_expenses,
+                'product_costs': total_cost,
                 'low_stock_count': low_stock_count,
                 'total_visits_meli': total_visits_meli,
                 'total_visits_web': total_visits_web,
