@@ -1,9 +1,10 @@
-from fastapi import APIRouter, HTTPException, BackgroundTasks, File, UploadFile
+from fastapi import APIRouter, HTTPException, BackgroundTasks, File, UploadFile, Depends
 from pydantic import BaseModel
 import os
 from typing import Optional
 from src import database, meli_api, config
 from src.progress import get_progress, update_progress
+from src.api.auth import require_permission
 
 router = APIRouter()
 
@@ -37,7 +38,7 @@ def get_auth_status():
     }
 
 @router.get("/config")
-def get_config():
+def get_config(_=Depends(require_permission("settings"))):
     return {
         "client_id": database.get_setting('meli_client_id', ''),
         "client_secret": database.get_setting('meli_client_secret', ''),
@@ -46,7 +47,7 @@ def get_config():
     }
 
 @router.post("/setup")
-def save_setup(req: SetupRequest):
+def save_setup(req: SetupRequest, _=Depends(require_permission("settings"))):
     # Clear active session tokens to force clean re-authentication with new settings
     database.delete_setting('meli_access_token')
     database.delete_setting('meli_refresh_token')
@@ -60,7 +61,7 @@ def save_setup(req: SetupRequest):
     return {"success": True}
 
 @router.post("/exchange-code")
-def exchange_code(req: CodeRequest):
+def exchange_code(req: CodeRequest, _=Depends(require_permission("settings"))):
     ok, err = meli_api.authenticate_with_code(req.code)
     if ok:
         return {"success": True}
@@ -68,7 +69,7 @@ def exchange_code(req: CodeRequest):
         raise HTTPException(status_code=400, detail=err)
 
 @router.post("/logout")
-def logout():
+def logout(_=Depends(require_permission("settings"))):
     database.delete_setting('meli_access_token')
     database.delete_setting('meli_refresh_token')
     database.delete_setting('meli_user_id')
@@ -87,7 +88,7 @@ class WebConfigModel(BaseModel):
     favicon_url: Optional[str] = ""
 
 @router.get("/web-config")
-def get_web_config():
+def get_web_config(_=Depends(require_permission("settings"))):
     import json
     cfg_str = database.get_setting("web_config")
     if cfg_str:
@@ -111,7 +112,7 @@ def get_web_config():
     }
 
 @router.post("/web-config")
-def save_web_config(req: WebConfigModel):
+def save_web_config(req: WebConfigModel, _=Depends(require_permission("settings"))):
     import json
     database.set_setting("web_config", json.dumps(req.dict()))
     return {"success": True}
@@ -166,7 +167,7 @@ class CsrRequest(BaseModel):
     company_name: str
 
 @router.get("/arca-config")
-def get_arca_config():
+def get_arca_config(_=Depends(require_permission("settings"))):
     cert_exists = os.path.exists("backend/data/afip/arca.crt")
     key_exists = os.path.exists("backend/data/afip/arca.key")
     return {
@@ -187,7 +188,7 @@ def get_arca_config():
     }
 
 @router.post("/arca-config")
-def save_arca_config(req: ArcaConfigRequest):
+def save_arca_config(req: ArcaConfigRequest, _=Depends(require_permission("settings"))):
     database.set_setting('afip_enabled', '1' if req.afip_enabled else '0')
     database.set_setting('afip_cuit', req.afip_cuit.strip())
     database.set_setting('afip_pto_vta', str(req.afip_pto_vta))
@@ -203,7 +204,7 @@ def save_arca_config(req: ArcaConfigRequest):
     return {"success": True}
 
 @router.post("/arca-generate-csr")
-def generate_arca_csr(req: CsrRequest):
+def generate_arca_csr(req: CsrRequest, _=Depends(require_permission("settings"))):
     try:
         from src.utils.afip_ws import generate_csr_and_key
         csr_pem, _ = generate_csr_and_key(req.cuit, req.company_name)
@@ -212,7 +213,7 @@ def generate_arca_csr(req: CsrRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/arca-upload-cert")
-def upload_arca_cert(file: UploadFile = File(...)):
+def upload_arca_cert(file: UploadFile = File(...), _=Depends(require_permission("settings"))):
     try:
         os.makedirs("backend/data/afip", exist_ok=True)
         cert_path = "backend/data/afip/arca.crt"

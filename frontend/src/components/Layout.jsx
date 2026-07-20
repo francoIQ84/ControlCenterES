@@ -67,13 +67,22 @@ export default function Layout() {
       if (!token) return;
       
       try {
-        // 1. Obtener estado de autenticación de Meli
+        // 1. Obtener perfil de usuario para actualizar permisos y nombre
+        const profileRes = await fetch('/api/auth/profile');
+        if (profileRes.ok) {
+          const profileData = await profileRes.json();
+          localStorage.setItem('adminPermissions', profileData.permissions || "");
+          localStorage.setItem('adminUsername', profileData.username);
+          localStorage.setItem('adminFullName', profileData.full_name);
+        }
+
+        // 2. Obtener estado de autenticación de Meli
         const statusRes = await fetch('/api/settings/status');
         if (!statusRes.ok) return;
         const statusData = await statusRes.json();
         setMeliStatus(statusData);
         
-        // 2. Redirección automática si acaba de iniciar sesión y no está vinculado
+        // 3. Redirección automática si acaba de iniciar sesión y no está vinculado
         const justLoggedIn = localStorage.getItem('justLoggedIn');
         if (justLoggedIn === 'true') {
           localStorage.removeItem('justLoggedIn');
@@ -89,7 +98,7 @@ export default function Layout() {
           }
         }
         
-        // 3. Sincronización automática de 7 días al ingresar (una vez por sesión de navegador)
+        // 4. Sincronización automática de 7 días al ingresar (una vez por sesión de navegador)
         const autoSynced = sessionStorage.getItem('meliAutoSynced');
         if (!autoSynced && statusData.is_authenticated) {
           sessionStorage.setItem('meliAutoSynced', 'true');
@@ -125,6 +134,13 @@ export default function Layout() {
     
     initStatusAndSync();
   }, []);
+
+  const hasPermission = (perm) => {
+    const permsStr = localStorage.getItem('adminPermissions');
+    if (permsStr === null) return true; // default allowed during loading
+    const perms = permsStr.split(',').map(p => p.trim());
+    return perms.includes(perm);
+  };
 
   const startPollingProgress = () => {
     const interval = setInterval(async () => {
@@ -175,6 +191,7 @@ export default function Layout() {
       await fetch('/api/auth/logout', { method: 'POST' })
     } catch(e) {}
     localStorage.removeItem('adminToken')
+    localStorage.removeItem('adminPermissions')
     window.location.href = '/login'
   }
 
@@ -189,38 +206,54 @@ export default function Layout() {
           <span className="logo-text">ControlCenterES</span>
         </div>
         <nav className="nav-links">
-          <NavLink to="/" className={({isActive}) => `nav-link ${isActive ? 'active' : ''}`}>
-            <LayoutDashboard size={20} style={{ minWidth: 20 }} />
-            <span className="nav-text">Métricas</span>
-          </NavLink>
-          <NavLink to="/inventory" className={({isActive}) => `nav-link ${isActive ? 'active' : ''}`}>
-            <Package size={20} style={{ minWidth: 20 }} />
-            <span className="nav-text">Inventario</span>
-          </NavLink>
-          <NavLink to="/sales" className={({isActive}) => `nav-link ${isActive ? 'active' : ''}`}>
-            <Receipt size={20} style={{ minWidth: 20 }} />
-            <span className="nav-text">Ventas</span>
-          </NavLink>
-          <NavLink to="/billing" className={({isActive}) => `nav-link ${isActive ? 'active' : ''}`}>
-            <FileText size={20} style={{ minWidth: 20 }} />
-            <span className="nav-text">Facturación</span>
-          </NavLink>
-          <NavLink to="/expenses" className={({isActive}) => `nav-link ${isActive ? 'active' : ''}`}>
-            <Wallet size={20} style={{ minWidth: 20 }} />
-            <span className="nav-text">Gastos</span>
-          </NavLink>
-          <NavLink to="/customers" className={({isActive}) => `nav-link ${isActive ? 'active' : ''}`}>
-            <Users size={20} style={{ minWidth: 20 }} />
-            <span className="nav-text">Clientes</span>
-          </NavLink>
-          <NavLink to="/media" className={({isActive}) => `nav-link ${isActive ? 'active' : ''}`}>
-            <Image size={20} style={{ minWidth: 20 }} />
-            <span className="nav-text">Imágenes</span>
-          </NavLink>
-          <NavLink to="/settings" className={({isActive}) => `nav-link ${isActive ? 'active' : ''}`}>
-            <Settings size={20} style={{ minWidth: 20 }} />
-            <span className="nav-text">Configuración</span>
-          </NavLink>
+          {hasPermission('dashboard') && (
+            <NavLink to="/" className={({isActive}) => `nav-link ${isActive ? 'active' : ''}`}>
+              <LayoutDashboard size={20} style={{ minWidth: 20 }} />
+              <span className="nav-text">Métricas</span>
+            </NavLink>
+          )}
+          {hasPermission('inventory') && (
+            <NavLink to="/inventory" className={({isActive}) => `nav-link ${isActive ? 'active' : ''}`}>
+              <Package size={20} style={{ minWidth: 20 }} />
+              <span className="nav-text">Inventario</span>
+            </NavLink>
+          )}
+          {hasPermission('sales') && (
+            <NavLink to="/sales" className={({isActive}) => `nav-link ${isActive ? 'active' : ''}`}>
+              <Receipt size={20} style={{ minWidth: 20 }} />
+              <span className="nav-text">Ventas</span>
+            </NavLink>
+          )}
+          {hasPermission('billing') && (
+            <NavLink to="/billing" className={({isActive}) => `nav-link ${isActive ? 'active' : ''}`}>
+              <FileText size={20} style={{ minWidth: 20 }} />
+              <span className="nav-text">Facturación</span>
+            </NavLink>
+          )}
+          {hasPermission('expenses') && (
+            <NavLink to="/expenses" className={({isActive}) => `nav-link ${isActive ? 'active' : ''}`}>
+              <Wallet size={20} style={{ minWidth: 20 }} />
+              <span className="nav-text">Gastos</span>
+            </NavLink>
+          )}
+          {hasPermission('customers') && (
+            <NavLink to="/customers" className={({isActive}) => `nav-link ${isActive ? 'active' : ''}`}>
+              <Users size={20} style={{ minWidth: 20 }} />
+              <span className="nav-text">Clientes</span>
+            </NavLink>
+          )}
+          {hasPermission('media') && (
+            <NavLink to="/media" className={({isActive}) => `nav-link ${isActive ? 'active' : ''}`}>
+              <Image size={20} style={{ minWidth: 20 }} />
+              <span className="nav-text">Imágenes</span>
+            </NavLink>
+          )}
+          {hasPermission('settings') && (
+            <NavLink to="/settings" className={({isActive}) => `nav-link ${isActive ? 'active' : ''}`}>
+              <Settings size={20} style={{ minWidth: 20 }} />
+              <span className="nav-text">Configuración</span>
+            </NavLink>
+          )}
         </nav>
       </aside>
       <main className="main-content">

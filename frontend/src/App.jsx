@@ -84,6 +84,19 @@ function ProtectedRoute() {
   return <Outlet />
 }
 
+function PermissionRoute({ permission, children }) {
+  const permsStr = localStorage.getItem('adminPermissions');
+  if (permsStr === null) {
+    return children; // default allowed during loading
+  }
+  
+  const perms = permsStr.split(',').map(p => p.trim());
+  if (!perms.includes(permission)) {
+    return <Navigate to="/" replace />;
+  }
+  return children;
+}
+
 function App() {
   return (
     <BrowserRouter>
@@ -93,14 +106,14 @@ function App() {
         {/* Protected Admin Routes */}
         <Route element={<ProtectedRoute />}>
           <Route path="/" element={<Layout />}>
-            <Route index element={<Dashboard />} />
-            <Route path="inventory" element={<Inventory />} />
-            <Route path="sales" element={<Sales />} />
-            <Route path="billing" element={<Billing />} />
-            <Route path="customers" element={<Customers />} />
-            <Route path="settings" element={<Settings />} />
-            <Route path="media" element={<MediaManager />} />
-            <Route path="expenses" element={<Expenses />} />
+            <Route index element={<PermissionRoute permission="dashboard"><Dashboard /></PermissionRoute>} />
+            <Route path="inventory" element={<PermissionRoute permission="inventory"><Inventory /></PermissionRoute>} />
+            <Route path="sales" element={<PermissionRoute permission="sales"><Sales /></PermissionRoute>} />
+            <Route path="billing" element={<PermissionRoute permission="billing"><Billing /></PermissionRoute>} />
+            <Route path="customers" element={<PermissionRoute permission="customers"><Customers /></PermissionRoute>} />
+            <Route path="settings" element={<PermissionRoute permission="settings"><Settings /></PermissionRoute>} />
+            <Route path="media" element={<PermissionRoute permission="media"><MediaManager /></PermissionRoute>} />
+            <Route path="expenses" element={<PermissionRoute permission="expenses"><Expenses /></PermissionRoute>} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Route>
         </Route>

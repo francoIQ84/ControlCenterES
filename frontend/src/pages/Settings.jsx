@@ -19,10 +19,31 @@ export default function Settings() {
   const [newUsername, setNewUsername] = useState("")
   const [newPassword, setNewPassword] = useState("")
   const [newFullName, setNewFullName] = useState("")
+  const [newPerms, setNewPerms] = useState({
+    dashboard: true,
+    inventory: true,
+    sales: true,
+    billing: true,
+    expenses: true,
+    customers: true,
+    media: true,
+    settings: true
+  })
   
-  // Change Password Form State
+  // Change Password / Permissions Form State
   const [editingUserId, setEditingUserId] = useState(null)
   const [changePassword, setChangePassword] = useState("")
+  const [editingPermissionsUserId, setEditingPermissionsUserId] = useState(null)
+  const [editPerms, setEditPerms] = useState({
+    dashboard: false,
+    inventory: false,
+    sales: false,
+    billing: false,
+    expenses: false,
+    customers: false,
+    media: false,
+    settings: false
+  })
 
   // Web Config State
   const [webConfig, setWebConfig] = useState({
@@ -372,6 +393,8 @@ export default function Settings() {
       return
     }
     
+    const permissions = Object.keys(newPerms).filter(k => newPerms[k]).join(',')
+    
     try {
       const res = await fetch('/api/auth/users', {
         method: 'POST',
@@ -379,7 +402,8 @@ export default function Settings() {
         body: JSON.stringify({
           username: newUsername,
           password: newPassword,
-          full_name: newFullName
+          full_name: newFullName,
+          permissions
         })
       })
       const data = await res.json()
@@ -388,9 +412,58 @@ export default function Settings() {
         setNewUsername("")
         setNewPassword("")
         setNewFullName("")
+        setNewPerms({
+          dashboard: true,
+          inventory: true,
+          sales: true,
+          billing: true,
+          expenses: true,
+          customers: true,
+          media: true,
+          settings: true
+        })
         fetchUsers()
       } else {
         alert("Error: " + (data.detail || "No se pudo crear el usuario"))
+      }
+    } catch(err) {
+      alert("Error al conectar con el servidor: " + err.message)
+    }
+  }
+
+  const handleEditPermissionsClick = (user) => {
+    setEditingPermissionsUserId(user.id)
+    setEditingUserId(null) // Cerrar tarjeta de clave
+    const list = (user.permissions || "").split(',').map(p => p.trim())
+    setEditPerms({
+      dashboard: list.includes('dashboard'),
+      inventory: list.includes('inventory'),
+      sales: list.includes('sales'),
+      billing: list.includes('billing'),
+      expenses: list.includes('expenses'),
+      customers: list.includes('customers'),
+      media: list.includes('media'),
+      settings: list.includes('settings')
+    })
+  }
+
+  const handleUpdatePermissions = async (e) => {
+    e.preventDefault()
+    const permissions = Object.keys(editPerms).filter(k => editPerms[k]).join(',')
+    
+    try {
+      const res = await fetch(`/api/auth/users/${editingPermissionsUserId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ permissions })
+      })
+      const data = await res.json()
+      if (res.ok) {
+        alert("Permisos actualizados exitosamente")
+        setEditingPermissionsUserId(null)
+        fetchUsers()
+      } else {
+        alert("Error: " + (data.detail || "No se pudieron actualizar los permisos"))
       }
     } catch(err) {
       alert("Error al conectar con el servidor: " + err.message)
@@ -645,10 +718,18 @@ export default function Settings() {
                           style={{padding: '4px 8px', fontSize: '0.75rem', backgroundColor: 'var(--accent-blue)', color: '#fff'}}
                           onClick={() => {
                             setEditingUserId(u.id)
+                            setEditingPermissionsUserId(null)
                             setChangePassword("")
                           }}
                         >
                           Clave
+                        </button>
+                        <button 
+                          className="btn" 
+                          style={{padding: '4px 8px', fontSize: '0.75rem', backgroundColor: 'var(--accent-emerald)', color: '#fff'}}
+                          onClick={() => handleEditPermissionsClick(u)}
+                        >
+                          Permisos
                         </button>
                         <button 
                           className="btn" 
@@ -700,6 +781,45 @@ export default function Settings() {
                     style={{width: '100%', marginTop: 5}}
                   />
                 </label>
+                
+                <div style={{marginTop: 5, marginBottom: 5}}>
+                  <span style={{fontSize: '0.85rem', fontWeight: 600, display: 'block', marginBottom: 5}}>Permisos:</span>
+                  <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 15px', fontSize: '0.85rem'}}>
+                    <label style={{display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer'}}>
+                      <input type="checkbox" checked={newPerms.dashboard} onChange={e => setNewPerms(prev => ({...prev, dashboard: e.target.checked}))} />
+                      Métricas
+                    </label>
+                    <label style={{display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer'}}>
+                      <input type="checkbox" checked={newPerms.inventory} onChange={e => setNewPerms(prev => ({...prev, inventory: e.target.checked}))} />
+                      Inventario
+                    </label>
+                    <label style={{display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer'}}>
+                      <input type="checkbox" checked={newPerms.sales} onChange={e => setNewPerms(prev => ({...prev, sales: e.target.checked}))} />
+                      Ventas
+                    </label>
+                    <label style={{display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer'}}>
+                      <input type="checkbox" checked={newPerms.billing} onChange={e => setNewPerms(prev => ({...prev, billing: e.target.checked}))} />
+                      Facturación
+                    </label>
+                    <label style={{display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer'}}>
+                      <input type="checkbox" checked={newPerms.expenses} onChange={e => setNewPerms(prev => ({...prev, expenses: e.target.checked}))} />
+                      Gastos
+                    </label>
+                    <label style={{display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer'}}>
+                      <input type="checkbox" checked={newPerms.customers} onChange={e => setNewPerms(prev => ({...prev, customers: e.target.checked}))} />
+                      Clientes
+                    </label>
+                    <label style={{display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer'}}>
+                      <input type="checkbox" checked={newPerms.media} onChange={e => setNewPerms(prev => ({...prev, media: e.target.checked}))} />
+                      Imágenes
+                    </label>
+                    <label style={{display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer'}}>
+                      <input type="checkbox" checked={newPerms.settings} onChange={e => setNewPerms(prev => ({...prev, settings: e.target.checked}))} />
+                      Configuración
+                    </label>
+                  </div>
+                </div>
+
                 <button type="submit" className="btn" style={{marginTop: 5}}>Crear Cuenta</button>
               </form>
             </div>
@@ -729,6 +849,63 @@ export default function Settings() {
                       className="btn" 
                       style={{backgroundColor: 'var(--bg-dark)', color: 'var(--text-secondary)', flex: 1}}
                       onClick={() => setEditingUserId(null)}
+                    >
+                      Cancelar
+                    </button>
+                  </div>
+                </form>
+              </div>
+            )}
+
+            {/* Edit Permissions Card */}
+            {editingPermissionsUserId && (
+              <div className="card" style={{border: '1px solid var(--accent-blue)'}}>
+                <h3>Editar Permisos</h3>
+                <p style={{fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: 8}}>
+                  Modificando los permisos del usuario #{editingPermissionsUserId}.
+                </p>
+                <form onSubmit={handleUpdatePermissions} style={{display: 'flex', flexDirection: 'column', gap: 12}}>
+                  <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 15px', fontSize: '0.85rem'}}>
+                    <label style={{display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer'}}>
+                      <input type="checkbox" checked={editPerms.dashboard} onChange={e => setEditPerms(prev => ({...prev, dashboard: e.target.checked}))} />
+                      Métricas
+                    </label>
+                    <label style={{display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer'}}>
+                      <input type="checkbox" checked={editPerms.inventory} onChange={e => setEditPerms(prev => ({...prev, inventory: e.target.checked}))} />
+                      Inventario
+                    </label>
+                    <label style={{display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer'}}>
+                      <input type="checkbox" checked={editPerms.sales} onChange={e => setEditPerms(prev => ({...prev, sales: e.target.checked}))} />
+                      Ventas
+                    </label>
+                    <label style={{display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer'}}>
+                      <input type="checkbox" checked={editPerms.billing} onChange={e => setEditPerms(prev => ({...prev, billing: e.target.checked}))} />
+                      Facturación
+                    </label>
+                    <label style={{display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer'}}>
+                      <input type="checkbox" checked={editPerms.expenses} onChange={e => setEditPerms(prev => ({...prev, expenses: e.target.checked}))} />
+                      Gastos
+                    </label>
+                    <label style={{display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer'}}>
+                      <input type="checkbox" checked={editPerms.customers} onChange={e => setEditPerms(prev => ({...prev, customers: e.target.checked}))} />
+                      Clientes
+                    </label>
+                    <label style={{display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer'}}>
+                      <input type="checkbox" checked={editPerms.media} onChange={e => setEditPerms(prev => ({...prev, media: e.target.checked}))} />
+                      Imágenes
+                    </label>
+                    <label style={{display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer'}}>
+                      <input type="checkbox" checked={editPerms.settings} onChange={e => setEditPerms(prev => ({...prev, settings: e.target.checked}))} />
+                      Configuración
+                    </label>
+                  </div>
+                  <div style={{display: 'flex', gap: 10, marginTop: 5}}>
+                    <button type="submit" className="btn" style={{flex: 1}}>Guardar</button>
+                    <button 
+                      type="button" 
+                      className="btn" 
+                      style={{backgroundColor: 'var(--bg-dark)', color: 'var(--text-secondary)', flex: 1}}
+                      onClick={() => setEditingPermissionsUserId(null)}
                     >
                       Cancelar
                     </button>

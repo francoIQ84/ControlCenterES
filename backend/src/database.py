@@ -125,6 +125,8 @@ def init_db():
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             ''')
+            cursor.execute('ALTER TABLE users ADD COLUMN IF NOT EXISTS permissions TEXT;')
+            cursor.execute("UPDATE users SET permissions = 'dashboard,inventory,sales,billing,expenses,customers,media,settings' WHERE permissions IS NULL;")
 
             # Active Sessions table
             cursor.execute('''
@@ -185,9 +187,9 @@ def init_db():
             if cursor.fetchone()['count'] == 0:
                 admin_pw_hash = hash_password("admin123")
                 cursor.execute('''
-                    INSERT INTO users (username, password_hash, full_name)
-                    VALUES (%s, %s, %s)
-                ''', ("admin", admin_pw_hash, "Administrador"))
+                    INSERT INTO users (username, password_hash, full_name, permissions)
+                    VALUES (%s, %s, %s, %s)
+                ''', ("admin", admin_pw_hash, "Administrador", "dashboard,inventory,sales,billing,expenses,customers,media,settings"))
 
 # --- Categories Operations ---
 
@@ -816,14 +818,14 @@ def get_login_history(limit=100):
 def get_user_by_username(username: str):
     with get_connection() as conn:
         with conn.cursor() as cursor:
-            cursor.execute("SELECT id, username, password_hash, full_name FROM users WHERE username = %s", (username,))
+            cursor.execute("SELECT id, username, password_hash, full_name, permissions FROM users WHERE username = %s", (username,))
             return cursor.fetchone()
 
 def get_user_by_token(token: str):
     with get_connection() as conn:
         with conn.cursor() as cursor:
             cursor.execute('''
-                SELECT u.id, u.username, u.full_name
+                SELECT u.id, u.username, u.full_name, u.permissions
                 FROM users u
                 JOIN active_sessions s ON u.id = s.user_id
                 WHERE s.token = %s AND s.expires_at > %s
@@ -833,7 +835,7 @@ def get_user_by_token(token: str):
 def get_all_users():
     with get_connection() as conn:
         with conn.cursor() as cursor:
-            cursor.execute("SELECT id, username, full_name, created_at FROM users ORDER BY username ASC")
+            cursor.execute("SELECT id, username, full_name, permissions, created_at FROM users ORDER BY username ASC")
             rows = cursor.fetchall()
             for r in rows:
                 if r['created_at']:
@@ -843,16 +845,23 @@ def get_all_users():
                         r['created_at'] = str(r['created_at'])
             return rows
 
-def create_user(username, password, full_name):
+def create_user(username, password, full_name, permissions=None):
+    if permissions is None:
+        permissions = "dashboard,inventory,sales,billing,expenses,customers,media,settings"
     pw_hash = hash_password(password)
     with get_connection() as conn:
         with conn.cursor() as cursor:
             cursor.execute('''
-                INSERT INTO users (username, password_hash, full_name)
-                VALUES (%s, %s, %s)
+                INSERT INTO users (username, password_hash, full_name, permissions)
+                VALUES (%s, %s, %s, %s)
                 RETURNING id
-            ''', (username, pw_hash, full_name))
+            ''', (username, pw_hash, full_name, permissions))
             return cursor.fetchone()['id']
+
+def update_user_permissions(user_id, permissions):
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute("UPDATE users SET permissions = %s WHERE id = %s", (permissions, user_id))
 
 def delete_user(user_id):
     with get_connection() as conn:

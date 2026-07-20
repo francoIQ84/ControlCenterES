@@ -18,10 +18,12 @@ class UserCreate(BaseModel):
     username: str
     password: str
     full_name: str
+    permissions: Optional[str] = None
 
 class UserUpdate(BaseModel):
     full_name: Optional[str] = None
     password: Optional[str] = None
+    permissions: Optional[str] = None
 
 def get_client_ip(request: Request) -> str:
     """Extracts client IP address, handling proxy headers."""
@@ -71,6 +73,21 @@ def get_current_user(token: str = Depends(verify_session)):
         raise HTTPException(status_code=401, detail="No autorizado: Usuario inválido")
     return user
 
+def require_permission(permission: str):
+    """FastAPI dependency to check if the current user has the required permission."""
+    def dependency(current_user: dict = Depends(get_current_user)):
+        permissions_str = current_user.get("permissions") or ""
+        # If permissions string is empty, default to allow everything (legacy safety)
+        if not permissions_str:
+            return
+        allowed_list = [p.strip() for p in permissions_str.split(",") if p.strip()]
+        if permission not in allowed_list:
+            raise HTTPException(
+                status_code=403, 
+                detail=f"No tiene permisos para acceder a esta sección ({permission})"
+            )
+    return dependency
+
 @router.post("/login")
 def login(payload: LoginRequest, request: Request):
     ip = get_client_ip(request)
@@ -102,6 +119,7 @@ def login(payload: LoginRequest, request: Request):
                 "token": token, 
                 "username": user['username'],
                 "full_name": user['full_name'],
+                "permissions": user.get('permissions', ''),
                 "message": "Autenticación exitosa"
             }
         except Exception as e:
@@ -138,41 +156,52 @@ def get_history(token: str = Depends(verify_session)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error al consultar historial: {str(e)}")
 
+@router.get("/profile")
+def get_profile(current_user: dict = Depends(get_current_user)):
+    return {
+        "id": current_user["id"],
+        "username": current_user["username"],
+        "full_name": current_user["full_name"],
+        "permissions": current_user.get("permissions", "")
+    }
+
 # --- User Management CRUD API ---
 
 @router.get("/users")
-def list_users(current_user: dict = Depends(get_current_user)):
+def list_users(current_user: dict = Depends(get_current_user), _=Depends(require_permission("settings"))):
     try:
         return database.get_all_users()
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error al listar usuarios: {str(e)}")
 
 @router.post("/users")
-def add_user(payload: UserCreate, current_user: dict = Depends(get_current_user)):
+def add_user(payload: UserCreate, current_user: dict = Depends(get_current_user), _=Depends(require_permission("settings"))):
     # Check duplicate
     existing = database.get_user_by_username(payload.username)
     if existing:
         raise HTTPException(status_code=400, detail="El nombre de usuario ya está registrado")
         
     try:
-        user_id = database.create_user(payload.username, payload.password, payload.full_name)
+        user_id = database.create_user(payload.username, payload.password, payload.full_name, payload.permissions)
         return {"success": True, "user_id": user_id, "message": "Usuario creado exitosamente"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error al crear usuario: {str(e)}")
 
 @router.put("/users/{user_id}")
-def update_user(user_id: int, payload: UserUpdate, current_user: dict = Depends(get_current_user)):
+def update_user(user_id: int, payload: UserUpdate, current_user: dict = Depends(get_current_user), _=Depends(require_permission("settings"))):
     try:
         if payload.full_name is not None:
             database.update_user_info(user_id, payload.full_name)
         if payload.password is not None and payload.password.strip() != "":
             database.update_user_password(user_id, payload.password)
+        if payload.permissions is not None:
+            database.update_user_permissions(user_id, payload.permissions)
         return {"success": True, "message": "Usuario actualizado exitosamente"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error al actualizar usuario: {str(e)}")
 
 @router.delete("/users/{user_id}")
-def delete_user(user_id: int, current_user: dict = Depends(get_current_user)):
+def delete_user(user_id: int, current_user: dict = Depends(get_current_user), _=Depends(require_permission("settings"))):
     # Prevent self-deletion
     if user_id == current_user['id']:
         raise HTTPException(status_code=400, detail="No puedes eliminar tu propio usuario administrador")
