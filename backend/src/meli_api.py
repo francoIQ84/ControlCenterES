@@ -850,21 +850,40 @@ def send_post_sale_message(order_id, text_content):
         if not access_token or not seller_id:
             return False, "Falta token o seller_id de Mercado Libre para enviar mensaje"
 
-        # Resolving pack_id (if part of a pack, or just the order_id)
+        # Resolving pack_id and buyer_id
         pack_id = order_id
+        buyer_id = None
         order_res = api_request("GET", f"/orders/{order_id}")
         if order_res and order_res.status_code == 200:
             order_data = order_res.json()
             pack_id = order_data.get('pack_id') or order_id
+            buyer_id = order_data.get('buyer', {}).get('id')
 
-        url = f"{API_BASE_URL}/messages/packs/{pack_id}/sellers/{seller_id}"
+        if not buyer_id:
+            # Fallback to local DB cache
+            with database.get_connection() as conn:
+                with conn.cursor() as cursor:
+                    cursor.execute("SELECT buyer_id FROM orders_cache WHERE order_id = %s", (order_id,))
+                    row = cursor.fetchone()
+                    if row:
+                        buyer_id = row['buyer_id']
+
+        url = f"{API_BASE_URL}/messages/packs/{pack_id}/sellers/{seller_id}?tag=post_sale"
         headers = {
             'Authorization': f"Bearer {access_token}",
             'Content-Type': 'application/json'
         }
+        seller_user_id = int(seller_id) if str(seller_id).isdigit() else seller_id
         payload = {
-            "text": text_content
+            "text": text_content,
+            "from": {
+                "user_id": seller_user_id
+            }
         }
+        if buyer_id:
+            payload["to"] = {
+                "user_id": int(buyer_id) if str(buyer_id).isdigit() else buyer_id
+            }
         res = requests.post(url, headers=headers, json=payload, timeout=20)
         if res.status_code in (200, 201):
             return True, "Mensaje de posventa enviado con éxito"
