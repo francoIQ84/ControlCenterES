@@ -46,7 +46,12 @@ try:
     print("Uploading storefront files...")
     sftp.put('storefront/src/app/page.tsx', '/var/www/controlcenter/storefront/src/app/page.tsx')
     sftp.put('storefront/src/app/layout.tsx', '/var/www/controlcenter/storefront/src/app/layout.tsx')
-    sftp.put('storefront/src/app/favicon.ico', '/var/www/controlcenter/storefront/src/app/favicon.ico')
+    
+    # Remove old favicon from remote so next.js uses dynamic metadata
+    try:
+        sftp.remove('/var/www/controlcenter/storefront/src/app/favicon.ico')
+    except IOError:
+        pass
     
     # Ensure product/[id]/ remote path exists and upload details page
     try:

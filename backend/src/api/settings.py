@@ -78,6 +78,7 @@ class WebConfigModel(BaseModel):
     contact_phone: str
     address: str
     footer_text: str
+    favicon_url: Optional[str] = ""
 
 @router.get("/web-config")
 def get_web_config():
@@ -85,7 +86,10 @@ def get_web_config():
     cfg_str = database.get_setting("web_config")
     if cfg_str:
         try:
-            return json.loads(cfg_str)
+            cfg = json.loads(cfg_str)
+            if "favicon_url" not in cfg:
+                cfg["favicon_url"] = ""
+            return cfg
         except Exception:
             pass
     return {
@@ -96,7 +100,8 @@ def get_web_config():
         "hero_image": "",
         "contact_phone": "",
         "address": "",
-        "footer_text": "© 2026 ControlCenterES. Todos los derechos reservados."
+        "footer_text": "© 2026 ControlCenterES. Todos los derechos reservados.",
+        "favicon_url": ""
     }
 
 @router.post("/web-config")

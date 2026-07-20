@@ -845,6 +845,36 @@ export default function Settings() {
                 </div>
 
                 <div>
+                  <label style={{display: 'block', marginBottom: 5}}>Favicon (Ícono de pestaña)</label>
+                  <div style={{display: 'flex', gap: 10}}>
+                    <input 
+                      type="text" 
+                      value={webConfig.favicon_url || ""} 
+                      onChange={e => setWebConfig({ ...webConfig, favicon_url: e.target.value })} 
+                      placeholder="URL del Favicon (Recomendado: 32x32px)" 
+                      style={{flex: 1}}
+                    />
+                    <button 
+                      type="button" 
+                      className="btn" 
+                      style={{backgroundColor: 'var(--accent-blue)', color: '#fff'}}
+                      onClick={() => {
+                        setSelectorTarget("favicon_url")
+                        setShowImageSelector(true)
+                      }}
+                    >
+                      Galería
+                    </button>
+                  </div>
+                  {webConfig.favicon_url && (
+                    <div style={{marginTop: 10, display: 'flex', alignItems: 'center', gap: 10}}>
+                      <span style={{fontSize: '0.75rem', color: 'var(--text-secondary)'}}>Previsualización:</span>
+                      <img src={webConfig.favicon_url} alt="Favicon preview" style={{maxHeight: 32, maxWidth: 32, objectFit: 'contain', backgroundColor: 'var(--bg-dark)', padding: 2, borderRadius: 4}} />
+                    </div>
+                  )}
+                </div>
+
+                <div>
                   <label style={{display: 'block', marginBottom: 5}}>Imagen del Banner Principal (Hero)</label>
                   <div style={{display: 'flex', gap: 10}}>
                     <input 
