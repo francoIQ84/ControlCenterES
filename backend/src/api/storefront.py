@@ -1,4 +1,4 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 from pydantic import BaseModel
 from typing import List
 from src import database
@@ -59,6 +59,18 @@ def get_storefront_config():
     }
 
 @router.post("/products/{product_id}/visit")
-def record_product_visit(product_id: str):
-    database.increment_product_web_visits(product_id)
+def record_product_visit(product_id: str, request: Request, domain: str = None, ip: str = None):
+    x_forwarded_for = request.headers.get("X-Forwarded-For")
+    client_ip = ip
+    if not client_ip:
+        if x_forwarded_for:
+            client_ip = x_forwarded_for.split(",")[0].strip()
+        else:
+            client_ip = request.client.host if request.client else "127.0.0.1"
+            
+    client_domain = domain or request.headers.get("host", "hidroponiarosario.com")
+    if client_domain and ":" in client_domain:
+        client_domain = client_domain.split(":")[0]
+        
+    database.increment_product_web_visits(product_id, client_domain, client_ip)
     return {"status": "ok"}

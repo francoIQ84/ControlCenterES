@@ -94,6 +94,9 @@ def init_db():
                 )
             ''')
             cursor.execute('ALTER TABLE orders_cache ADD COLUMN IF NOT EXISTS payment_method TEXT;')
+            cursor.execute('ALTER TABLE orders_cache ADD COLUMN IF NOT EXISTS invoice_number TEXT;')
+            cursor.execute('ALTER TABLE orders_cache ADD COLUMN IF NOT EXISTS afip_cae TEXT;')
+            cursor.execute('ALTER TABLE orders_cache ADD COLUMN IF NOT EXISTS afip_cae_exp TEXT;')
 
             # Customers table
             cursor.execute('''
@@ -108,6 +111,8 @@ def init_db():
                     source_platform TEXT DEFAULT 'MERCADOLIBRE'
                 )
             ''')
+            cursor.execute('ALTER TABLE customers ADD COLUMN IF NOT EXISTS address TEXT;')
+
 
             # Users table
             cursor.execute('''
@@ -344,32 +349,117 @@ def save_orders_and_customers(orders_list):
                 
                 cursor.execute('''
                     INSERT INTO customers 
-                    (buyer_id, nickname, full_name, email, phone, document_type, document_number, source_platform)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                    (buyer_id, nickname, full_name, email, phone, document_type, document_number, address, source_platform)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                     ON CONFLICT (buyer_id) DO UPDATE SET
                         nickname = EXCLUDED.nickname,
                         full_name = EXCLUDED.full_name,
-                        email = EXCLUDED.email,
-                        phone = EXCLUDED.phone
+                        email = CASE WHEN EXCLUDED.email IS NOT NULL AND EXCLUDED.email != '' THEN EXCLUDED.email ELSE customers.email END,
+                        phone = CASE WHEN EXCLUDED.phone IS NOT NULL AND EXCLUDED.phone != '' THEN EXCLUDED.phone ELSE customers.phone END,
+                        document_type = CASE WHEN EXCLUDED.document_type IS NOT NULL AND EXCLUDED.document_type != '' THEN EXCLUDED.document_type ELSE customers.document_type END,
+                        document_number = CASE WHEN EXCLUDED.document_number IS NOT NULL AND EXCLUDED.document_number != '' THEN EXCLUDED.document_number ELSE customers.document_number END,
+                        address = CASE WHEN EXCLUDED.address IS NOT NULL AND EXCLUDED.address != '' THEN EXCLUDED.address ELSE customers.address END
                 ''', (
                     o['buyer']['id'], o['buyer']['nickname'], o['buyer']['name'],
                     o['buyer'].get('email'), o['buyer'].get('phone'),
                     o['buyer'].get('document_type'), o['buyer'].get('document_number'),
+                    o['buyer'].get('address'),
                     o.get('source_platform', 'MERCADOLIBRE')
                 ))
+
 
 def update_order_invoice_status(order_id, status=1):
     with get_connection() as conn:
         with conn.cursor() as cursor:
             cursor.execute("UPDATE orders_cache SET invoice_generated = %s WHERE order_id = %s", (status, order_id))
 
+def get_order_by_id(order_id):
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute("""
+                SELECT o.order_id, o.date_created, o.buyer_id, o.buyer_nickname, o.buyer_name, o.total_amount, o.currency_id, o.status, 
+                       o.payment_status, o.shipping_status, o.items_json, o.invoice_generated, o.source_platform, o.payment_method, 
+                       o.invoice_number, o.afip_cae, o.afip_cae_exp, c.document_type, c.document_number, c.address 
+                FROM orders_cache o
+                LEFT JOIN customers c ON o.buyer_id = c.buyer_id
+                WHERE o.order_id = %s
+            """, (order_id,))
+            r = cursor.fetchone()
+            if not r:
+                return None
+            return {
+                'order_id': r['order_id'],
+                'date_created': r['date_created'],
+                'buyer': {
+                    'id': r['buyer_id'],
+                    'nickname': r['buyer_nickname'],
+                    'name': r['buyer_name'],
+                    'document_type': r.get('document_type', ''),
+                    'document_number': r.get('document_number', ''),
+                    'address': r.get('address', '')
+                },
+                'total_amount': r['total_amount'],
+                'currency_id': r['currency_id'],
+                'status': r['status'],
+                'payment_status': r['payment_status'],
+                'payment_method': r['payment_method'],
+                'shipping_status': r['shipping_status'],
+                'items': json.loads(r['items_json']),
+                'invoice_generated': bool(r['invoice_generated']),
+                'source_platform': r['source_platform'],
+                'invoice_number': r.get('invoice_number', ''),
+                'afip_cae': r.get('afip_cae', ''),
+                'afip_cae_exp': r.get('afip_cae_exp', '')
+            }
+
+def get_last_invoice_number_for_pto(pto_vta, cbte_tipo):
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute("SELECT invoice_number FROM orders_cache WHERE invoice_number LIKE %s", (f"{pto_vta:04d}-%",))
+            rows = cursor.fetchall()
+            max_num = 0
+            for r in rows:
+                if r['invoice_number'] and '-' in r['invoice_number']:
+                    try:
+                        num_str = r['invoice_number'].split('-')[1]
+                        num = int(num_str)
+                        if num > max_num:
+                            max_num = num
+                    except (IndexError, ValueError):
+                        pass
+            return max_num
+
+def save_order_afip_details(order_id, invoice_number, cae, cae_exp):
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute('''
+                UPDATE orders_cache 
+                SET invoice_generated = 1, invoice_number = %s, afip_cae = %s, afip_cae_exp = %s 
+                WHERE order_id = %s
+            ''', (invoice_number, cae, cae_exp, order_id))
+
 def get_all_orders(source_platform=None):
     with get_connection() as conn:
         with conn.cursor() as cursor:
             if source_platform:
-                cursor.execute("SELECT order_id, date_created, buyer_id, buyer_nickname, buyer_name, total_amount, currency_id, status, payment_status, shipping_status, items_json, invoice_generated, source_platform, payment_method FROM orders_cache WHERE source_platform = %s ORDER BY date_created DESC", (source_platform,))
+                cursor.execute("""
+                    SELECT o.order_id, o.date_created, o.buyer_id, o.buyer_nickname, o.buyer_name, o.total_amount, o.currency_id, o.status, 
+                           o.payment_status, o.shipping_status, o.items_json, o.invoice_generated, o.source_platform, o.payment_method,
+                           o.invoice_number, o.afip_cae, o.afip_cae_exp, c.document_type, c.document_number, c.address
+                    FROM orders_cache o
+                    LEFT JOIN customers c ON o.buyer_id = c.buyer_id
+                    WHERE o.source_platform = %s 
+                    ORDER BY o.date_created DESC
+                """, (source_platform,))
             else:
-                cursor.execute("SELECT order_id, date_created, buyer_id, buyer_nickname, buyer_name, total_amount, currency_id, status, payment_status, shipping_status, items_json, invoice_generated, source_platform, payment_method FROM orders_cache ORDER BY date_created DESC")
+                cursor.execute("""
+                    SELECT o.order_id, o.date_created, o.buyer_id, o.buyer_nickname, o.buyer_name, o.total_amount, o.currency_id, o.status, 
+                           o.payment_status, o.shipping_status, o.items_json, o.invoice_generated, o.source_platform, o.payment_method,
+                           o.invoice_number, o.afip_cae, o.afip_cae_exp, c.document_type, c.document_number, c.address
+                    FROM orders_cache o
+                    LEFT JOIN customers c ON o.buyer_id = c.buyer_id
+                    ORDER BY o.date_created DESC
+                """)
             rows = cursor.fetchall()
             
             orders = []
@@ -380,7 +470,10 @@ def get_all_orders(source_platform=None):
                     'buyer': {
                         'id': r['buyer_id'],
                         'nickname': r['buyer_nickname'],
-                        'name': r['buyer_name']
+                        'name': r['buyer_name'],
+                        'document_type': r.get('document_type', ''),
+                        'document_number': r.get('document_number', ''),
+                        'address': r.get('address', '')
                     },
                     'total_amount': r['total_amount'],
                     'currency_id': r['currency_id'],
@@ -390,7 +483,10 @@ def get_all_orders(source_platform=None):
                     'shipping_status': r['shipping_status'],
                     'items': json.loads(r['items_json']),
                     'invoice_generated': bool(r['invoice_generated']),
-                    'source_platform': r['source_platform']
+                    'source_platform': r['source_platform'],
+                    'invoice_number': r.get('invoice_number', ''),
+                    'afip_cae': r.get('afip_cae', ''),
+                    'afip_cae_exp': r.get('afip_cae_exp', '')
                 })
             return orders
 

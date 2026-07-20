@@ -18,6 +18,8 @@ export default function Sales() {
     items: [{ id: "manual-1", title: "", quantity: 1, price: 0 }]
   })
 
+  const [invoicingStates, setInvoicingStates] = useState({})
+
   const fetchOrders = () => {
     setLoading(true)
     fetch('/api/sales/')
@@ -30,6 +32,27 @@ export default function Sales() {
         console.error(err)
         setLoading(false)
       })
+  }
+
+  const handleCreateInvoice = async (orderId) => {
+    setInvoicingStates(prev => ({ ...prev, [orderId]: true }))
+    try {
+      const res = await fetch(`/api/sales/${orderId}/invoice`, {
+        method: 'POST'
+      })
+      if (res.ok) {
+        const data = await res.json()
+        alert(`Factura generada con éxito: ${data.invoice_number}`)
+        fetchOrders()
+      } else {
+        const err = await res.json()
+        alert("Error al facturar: " + (err.detail || "Error desconocido"))
+      }
+    } catch (err) {
+      alert("Error de conexión: " + err.message)
+    } finally {
+      setInvoicingStates(prev => ({ ...prev, [orderId]: false }))
+    }
   }
 
   const fetchInventory = () => {
@@ -324,6 +347,7 @@ export default function Sales() {
                 <th onClick={() => requestSort('total_amount')} style={{cursor: 'pointer', userSelect: 'none'}}>Monto{getSortIcon('total_amount')}</th>
                 <th onClick={() => requestSort('status')} style={{cursor: 'pointer', userSelect: 'none'}}>Pago{getSortIcon('status')}</th>
                 <th onClick={() => requestSort('shipping_status')} style={{cursor: 'pointer', userSelect: 'none'}}>Entrega{getSortIcon('shipping_status')}</th>
+                <th style={{textAlign: 'center'}}>Factura</th>
               </tr>
             </thead>
             <tbody>
@@ -355,6 +379,51 @@ export default function Sales() {
                     }}>{(o.status === 'paid' || o.status === 'approved') ? `APROBADO ${o.payment_method ? `(${o.payment_method})` : ''}` : o.status.toUpperCase()}</span>
                   </td>
                   <td>{renderShippingBadge(o)}</td>
+                  <td style={{textAlign: 'center'}}>
+                    {o.invoice_generated ? (
+                      <div style={{display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'center'}}>
+                        <a 
+                          href={`/api/sales/${o.order_id}/invoice/pdf?token=${localStorage.getItem('adminToken')}`} 
+                          target="_blank" 
+                          rel="noopener noreferrer" 
+                          className="btn" 
+                          style={{
+                            padding: '4px 8px',
+                            fontSize: '0.75rem',
+                            backgroundColor: 'rgba(37, 99, 235, 0.1)',
+                            color: 'var(--accent-blue)',
+                            border: '1px solid var(--accent-blue)',
+                            borderRadius: '4px',
+                            textDecoration: 'none'
+                          }}
+                        >
+                          Ver Factura
+                        </a>
+                        {o.invoice_number && (
+                          <small style={{fontSize: '0.65rem', color: 'var(--text-secondary)', fontFamily: 'monospace'}}>
+                            {o.invoice_number}
+                          </small>
+                        )}
+                      </div>
+                    ) : (
+                      <button 
+                        onClick={() => handleCreateInvoice(o.order_id)}
+                        disabled={invoicingStates[o.order_id]}
+                        className="btn" 
+                        style={{
+                          padding: '4px 10px',
+                          fontSize: '0.75rem',
+                          backgroundColor: invoicingStates[o.order_id] ? 'var(--bg-dark)' : 'var(--accent-emerald)',
+                          color: '#fff',
+                          borderRadius: '4px',
+                          border: 'none',
+                          cursor: invoicingStates[o.order_id] ? 'not-allowed' : 'pointer'
+                        }}
+                      >
+                        {invoicingStates[o.order_id] ? 'Facturando...' : 'Facturar'}
+                      </button>
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>

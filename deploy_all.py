@@ -12,12 +12,15 @@ local_backend_files = {
     'backend/src/progress.py': '/var/www/controlcenter/backend/src/progress.py',
     'backend/src/api/sales.py': '/var/www/controlcenter/backend/src/api/sales.py',
     'backend/src/api/media.py': '/var/www/controlcenter/backend/src/api/media.py',
+    'backend/src/api/auth.py': '/var/www/controlcenter/backend/src/api/auth.py',
     'backend/src/api/settings.py': '/var/www/controlcenter/backend/src/api/settings.py',
     'backend/src/api/__init__.py': '/var/www/controlcenter/backend/src/api/__init__.py',
     'backend/src/api/categories.py': '/var/www/controlcenter/backend/src/api/categories.py',
     'backend/src/api/dashboard.py': '/var/www/controlcenter/backend/src/api/dashboard.py',
     'backend/src/api/inventory.py': '/var/www/controlcenter/backend/src/api/inventory.py',
-    'backend/src/api/storefront.py': '/var/www/controlcenter/backend/src/api/storefront.py'
+    'backend/src/api/storefront.py': '/var/www/controlcenter/backend/src/api/storefront.py',
+    'backend/src/utils/afip_ws.py': '/var/www/controlcenter/backend/src/utils/afip_ws.py',
+    'backend/src/utils/invoice_gen.py': '/var/www/controlcenter/backend/src/utils/invoice_gen.py'
 }
 
 local_frontend_dist = 'frontend/dist'

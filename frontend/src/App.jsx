@@ -8,6 +8,7 @@ import Customers from './pages/Customers'
 import Settings from './pages/Settings'
 import MediaManager from './pages/MediaManager'
 import Login from './pages/Login'
+import Billing from './pages/Billing'
 
 // Global fetch interceptor to append authorization token
 const originalFetch = window.fetch
@@ -66,6 +67,7 @@ function App() {
             <Route index element={<Dashboard />} />
             <Route path="inventory" element={<Inventory />} />
             <Route path="sales" element={<Sales />} />
+            <Route path="billing" element={<Billing />} />
             <Route path="customers" element={<Customers />} />
             <Route path="settings" element={<Settings />} />
             <Route path="media" element={<MediaManager />} />

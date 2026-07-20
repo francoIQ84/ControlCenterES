@@ -3,7 +3,7 @@ import time
 import secrets
 import requests
 from datetime import datetime, timedelta
-from fastapi import APIRouter, Request, HTTPException, Header, Depends
+from fastapi import APIRouter, Request, HTTPException, Header, Depends, Query
 from pydantic import BaseModel, Field
 from typing import Optional
 from src import database
@@ -50,14 +50,19 @@ def get_ip_location(ip: str) -> dict:
         pass
     return {"country": "Desconocido", "region": "Desconocido", "city": "Desconocido"}
 
-def verify_session(authorization: str = Header(None)):
-    """FastAPI dependency to secure endpoints by checking active session tokens."""
-    if not authorization or not authorization.startswith("Bearer "):
+def verify_session(request: Request, authorization: str = Header(None)):
+    """FastAPI dependency to secure endpoints by checking active session tokens via Header or Query Param."""
+    final_token = None
+    if authorization and authorization.startswith("Bearer "):
+        final_token = authorization.split(" ")[1]
+    else:
+        final_token = request.query_params.get("token")
+        
+    if not final_token:
         raise HTTPException(status_code=401, detail="No autorizado: Falta token de sesión")
-    token = authorization.split(" ")[1]
-    if not database.validate_session(token):
+    if not database.validate_session(final_token):
         raise HTTPException(status_code=401, detail="No autorizado: Sesión inválida o expirada")
-    return token
+    return final_token
 
 def get_current_user(token: str = Depends(verify_session)):
     """FastAPI dependency to fetch current authenticated user info."""

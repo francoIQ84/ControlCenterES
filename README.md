@@ -212,6 +212,50 @@ sudo systemctl status controlcenter-backend
 sudo systemctl status controlcenter-storefront
 ```
 
+## Configuración de Facturación Electrónica ARCA (ex AFIP)
+
+Para emitir facturas electrónicas oficiales y realizar búsquedas de CUITs a través de los servicios web de ARCA/AFIP, es necesario configurar las credenciales de seguridad (Certificado Digital y Clave Privada) correspondientes. El sistema admite dos entornos de ejecución:
+
+1. **Homologación (Pruebas):** Utilizado para realizar pruebas de desarrollo. La AFIP firma los certificados en este entorno bajo la entidad emisora `CN=Computadores`. Las facturas emitidas aquí **no tienen validez fiscal**.
+2. **Producción (Real):** Utilizado para la emisión real y vinculante de facturas oficiales. Requiere un certificado emitido por la autoridad real de la AFIP (`CN=Sub CA de Produccion de Servicios Web`).
+
+---
+
+### Guía de Configuración Paso a Paso para Producción (Real)
+
+#### Paso 1: Generar la Solicitud de Certificado (CSR) en el Panel
+1. Ve a la pestaña **Ajustes** en el panel administrativo de ControlCenter.
+2. En la sección **1. Generar Solicitud de Certificado (CSR)**, escribe un nombre identificatorio para tu alias de servidor en el campo de texto (por ejemplo: `ControlCenterES` o `HidroponiaRosario`).
+3. Haz clic en **Generar CSR**.
+4. Haz clic en el botón azul **Descargar arca.csr** para guardar el archivo de solicitud criptográfica en tu computadora local. *(Este proceso creará y guardará automáticamente la clave privada asociada `arca.key` en la carpeta segura de tu VPS: `/backend/backend/data/afip/arca.key`)*.
+
+#### Paso 2: Firmar el Certificado en el Portal Oficial de AFIP
+1. Ingresa a la web de la [AFIP](https://www.afip.gob.ar/) con tu CUIT y Clave Fiscal.
+2. Abre el servicio **"Administración de Certificados Digitales"** *(si no lo tienes activo, agrégalo desde el "Administrador de Relaciones de Clave Fiscal")*.
+3. Haz clic en **Agregar Alias**.
+4. Escribe el mismo alias que ingresaste en tu panel (ej: `ControlCenterES`).
+5. Sube el archivo `arca.csr` que descargaste en el Paso 1 y guarda.
+6. En la tabla de alias registrados, haz clic en **Ver/Descargar** al lado de tu nuevo alias para descargar el certificado firmado por AFIP (un archivo con extensión `.crt`).
+7. En el panel de **Ajustes** de ControlCenter, dirígete a la sección **2. Subir Certificado AFIP (.crt)**, selecciona el archivo descargado y haz clic en subir.
+
+#### Paso 3: Delegar los Web Services (Autorización) en AFIP
+Para que el alias/certificado que creaste pueda interactuar con los servidores de facturación, debes asociarle los servicios web adecuados:
+1. En la web de AFIP, ingresa al servicio **"Administrador de Relaciones de Clave Fiscal"**.
+2. Haz clic en **Nueva Relación**.
+3. Haz clic en **Buscar** (al lado del campo de servicio) -> selecciona **ARCA / AFIP** -> **Servicios Web**.
+4. Selecciona el servicio que deseas asociar:
+   * **`Facturación Electrónica`** (nombre interno: `wsfe`) para la emisión de comprobantes.
+   * **`ws_sr_constancia_inscripcion`** para la consulta automatizada de datos fiscales de compradores.
+5. En la sección **Representante**, haz clic en **Buscar** y selecciona el alias que creaste (ej. `ControlCenterES`).
+6. Haz clic en **Confirmar**.
+
+#### Paso 4: Activar y Guardar
+Una vez que hayas subido el certificado y delegado las relaciones en el portal de la AFIP:
+1. Selecciona **Entorno: Producción (Real)** en la columna izquierda de los Ajustes de ControlCenter.
+2. Haz clic en **Guardar Configuración ARCA**.
+3. Escribe tu CUIT en el campo correspondiente y haz clic en **Buscar AFIP** para comprobar la conectividad en producción. El sistema consultará los registros reales de AFIP y autocompletará tu Razón Social e Ingresos Brutos de inmediato.
+
+
 
 
 

@@ -520,3 +520,87 @@ def update_stock_and_price(ml_id, quantity, price):
             return False, f"Error de API Mercado Libre: {response.text}"
     except Exception as e:
         return False, f"Excepción de red: {str(e)}"
+
+def fetch_order_billing_info(order_id):
+    """
+    Fetches detailed billing and address info for a Mercado Libre order.
+    Returns a dict with document_type, document_number, name, address, and taxpayer_type.
+    """
+    if is_demo_mode():
+        return {
+            'document_type': 'CUIT',
+            'document_number': '20313832482',
+            'name': 'JUAN PEREZ (MOCK)',
+            'address': 'Av. Corrientes 1234, Capital Federal, (1043)',
+            'taxpayer_type': 'Responsable Inscripto'
+        }
+
+    path = f"/orders/{order_id}/billing_info"
+    try:
+        res = api_request("GET", path)
+        if not res or res.status_code != 200:
+            return {}
+        
+        data = res.json()
+        billing_info = data.get('billing_info', {})
+        if not billing_info:
+            return {}
+            
+        result = {
+            'document_type': billing_info.get('doc_type'),
+            'document_number': billing_info.get('doc_number'),
+            'name': '',
+            'address': '',
+            'taxpayer_type': 'Consumidor Final'
+        }
+        
+        first_name = ''
+        last_name = ''
+        street = ''
+        number = ''
+        city = ''
+        state = ''
+        zip_code = ''
+        
+        for item in billing_info.get('additional_info', []):
+            t = item.get('type')
+            v = item.get('value')
+            if not v:
+                continue
+            if t == 'FIRST_NAME':
+                first_name = v
+            elif t == 'LAST_NAME':
+                last_name = v
+            elif t == 'STREET_NAME':
+                street = v
+            elif t == 'STREET_NUMBER':
+                number = v
+            elif t == 'CITY_NAME':
+                city = v
+            elif t == 'STATE_NAME':
+                state = v
+            elif t == 'ZIP_CODE':
+                zip_code = v
+            elif t == 'TAXPAYER_TYPE_ID':
+                result['taxpayer_type'] = v
+                
+        if first_name or last_name:
+            result['name'] = f"{first_name} {last_name}".strip()
+        
+        address_parts = []
+        if street:
+            address_parts.append(f"{street} {number}".strip() if number else street)
+        if city:
+            address_parts.append(city)
+        if state:
+            address_parts.append(state)
+        if zip_code:
+            address_parts.append(f"({zip_code})")
+            
+        if address_parts:
+            result['address'] = ", ".join(address_parts)
+            
+        return result
+    except Exception:
+        return {}
+

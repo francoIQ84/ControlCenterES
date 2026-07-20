@@ -7,7 +7,7 @@ export default function Settings() {
   const [code, setCode] = useState("")
   
   // Tabs & Logs
-  const [activeTab, setActiveTab] = useState("connection") // "connection", "users", "security", "web_config"
+  const [activeTab, setActiveTab] = useState("connection") // "connection", "users", "security", "web_config", "arca"
   const [history, setHistory] = useState([])
   const [historyLoading, setHistoryLoading] = useState(false)
 
@@ -35,6 +35,29 @@ export default function Settings() {
     address: "",
     footer_text: "© 2026 ControlCenterES. Todos los derechos reservados."
   })
+
+  // ARCA State
+  const [arcaConfig, setArcaConfig] = useState({
+    afip_enabled: false,
+    afip_cuit: '',
+    afip_pto_vta: 1,
+    afip_type_cmp: 11,
+    afip_concept: 1,
+    afip_environment: 'homologacion',
+    merchant_name: '',
+    merchant_address: '',
+    merchant_phone: '',
+    merchant_iibb: '',
+    merchant_iva_condition: 'Responsable Monotributo',
+    merchant_start_date: '',
+    afip_cert_uploaded: false,
+    afip_key_generated: false
+  })
+  const [searchingCuit, setSearchingCuit] = useState(false)
+  const [csrCompanyName, setCsrCompanyName] = useState('Hidroponia Rosario')
+  const [generatedCsr, setGeneratedCsr] = useState('')
+  const [generatingCsr, setGeneratingCsr] = useState(false)
+  const [uploadingCert, setUploadingCert] = useState(false)
   const [webConfigLoading, setWebConfigLoading] = useState(false)
   const [showImageSelector, setShowImageSelector] = useState(false)
   const [selectorTarget, setSelectorTarget] = useState("")
@@ -43,6 +66,127 @@ export default function Settings() {
     fetch('/api/settings/config').then(r=>r.json()).then(setConfig)
     fetch('/api/settings/status').then(r=>r.json()).then(setStatus)
   }, [])
+
+  useEffect(() => {
+    if (activeTab === "arca") {
+      fetch('/api/settings/arca-config')
+        .then(r => r.json())
+        .then(setArcaConfig)
+        .catch(err => console.error(err))
+    }
+  }, [activeTab])
+
+  const handleSaveArcaConfig = async (e) => {
+    e.preventDefault()
+    try {
+      const res = await fetch('/api/settings/arca-config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(arcaConfig)
+      })
+      if (res.ok) {
+        alert("Configuración de facturación ARCA guardada con éxito")
+      } else {
+        alert("Error al guardar la configuración")
+      }
+    } catch(err) {
+      alert("Error de conexión: " + err.message)
+    }
+  }
+
+  const handleGenerateCsr = async () => {
+    if (!arcaConfig.afip_cuit) {
+      alert("Por favor ingresa tu CUIT antes de generar la solicitud de certificado (CSR).")
+      return
+    }
+    setGeneratingCsr(true)
+    try {
+      const res = await fetch('/api/settings/arca-generate-csr', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          cuit: arcaConfig.afip_cuit,
+          company_name: csrCompanyName
+        })
+      })
+      if (res.ok) {
+        const data = await res.json()
+        setGeneratedCsr(data.csr)
+        alert("Solicitud de certificado (CSR) generada con éxito. Cópiala o descárgala para subirla en la web de AFIP.")
+        fetch('/api/settings/arca-config').then(r=>r.json()).then(setArcaConfig)
+      } else {
+        const err = await res.json()
+        alert("Error al generar CSR: " + (err.detail || "Error del servidor"))
+      }
+    } catch(err) {
+      alert("Error de conexión: " + err.message)
+    } finally {
+      setGeneratingCsr(false)
+    }
+  }
+
+  const handleUploadCert = async (e) => {
+    const file = e.target.files[0]
+    if (!file) return
+    
+    setUploadingCert(true)
+    const formData = new FormData()
+    formData.append("file", file)
+    
+    try {
+      const res = await fetch('/api/settings/arca-upload-cert', {
+        method: 'POST',
+        body: formData
+      })
+      if (res.ok) {
+        alert("Certificado digital (.crt) subido con éxito.")
+        fetch('/api/settings/arca-config').then(r=>r.json()).then(setArcaConfig)
+      } else {
+        alert("Error al subir el certificado")
+      }
+    } catch(err) {
+      alert("Error de conexión: " + err.message)
+    } finally {
+      setUploadingCert(false)
+    }
+  }
+
+  const handleCuitLookup = async () => {
+    if (!arcaConfig.afip_cuit) {
+      alert("Por favor ingresa un CUIT para buscar.")
+      return
+    }
+    setSearchingCuit(true)
+    try {
+      const res = await fetch(`/api/settings/arca-cuit-lookup?cuit=${arcaConfig.afip_cuit}&env=${arcaConfig.afip_environment}`)
+      if (res.ok) {
+        const data = await res.json()
+        setArcaConfig(prev => ({
+          ...prev,
+          merchant_name: data.razon_social || prev.merchant_name,
+          merchant_address: data.direccion || prev.merchant_address,
+          merchant_iibb: data.iibb || prev.merchant_iibb,
+          merchant_iva_condition: data.iva_condition || prev.merchant_iva_condition,
+          merchant_start_date: data.fecha_inicio || prev.merchant_start_date
+        }))
+        let msg = "✅ Datos recuperados de AFIP con éxito"
+        if (data.categoria_monotributo) {
+          msg += `\n\nCategoría Monotributo: ${data.categoria_monotributo}`
+        }
+        if (data.monotributo_max_factura) {
+          msg += `\nMonto máx. facturación: ${data.monotributo_max_factura}`
+        }
+        alert(msg)
+      } else {
+        const err = await res.json()
+        alert("Error al buscar CUIT: " + (err.detail || "Error de AFIP"))
+      }
+    } catch(err) {
+      alert("Error de conexión: " + err.message)
+    } finally {
+      setSearchingCuit(false)
+    }
+  }
 
   // Load history when security tab opens
   useEffect(() => {
@@ -304,6 +448,20 @@ export default function Settings() {
           onClick={() => setActiveTab('security')}
         >
           Seguridad & Accesos
+        </button>
+        <button 
+          style={{
+            padding: '10px 15px',
+            background: 'none',
+            border: 'none',
+            borderBottom: activeTab === 'arca' ? '3px solid var(--accent-blue)' : 'none',
+            color: activeTab === 'arca' ? 'var(--text-primary)' : 'var(--text-secondary)',
+            fontWeight: activeTab === 'arca' ? 'bold' : 'normal',
+            cursor: 'pointer'
+          }}
+          onClick={() => setActiveTab('arca')}
+        >
+          Facturación ARCA (ex AFIP)
         </button>
       </div>
 
@@ -713,6 +871,307 @@ export default function Settings() {
               </tbody>
             </table>
           )}
+        </div>
+      )}
+
+      {/* Tab 5: ARCA / AFIP Billing Settings */}
+      {activeTab === 'arca' && (
+        <div style={{display: 'flex', gap: 20, alignItems: 'flex-start', flexWrap: 'wrap'}}>
+          <div className="card" style={{flex: 1, minWidth: 350}}>
+            <h3>Facturación Electrónica ARCA (ex AFIP)</h3>
+            <p style={{fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: 20}}>
+              Vincula tu cuenta comercial y emite facturas oficiales autorizadas por ARCA.
+            </p>
+            
+            <form onSubmit={handleSaveArcaConfig} style={{display: 'flex', flexDirection: 'column', gap: 15}}>
+              <label style={{display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.9rem', cursor: 'pointer'}}>
+                <input 
+                  type="checkbox" 
+                  checked={arcaConfig.afip_enabled} 
+                  onChange={e => setArcaConfig({...arcaConfig, afip_enabled: e.target.checked})} 
+                  style={{width: 'auto'}}
+                />
+                Activar Facturación Electrónica ARCA/AFIP
+              </label>
+
+              <label>CUIT de la Empresa / Monotributista
+                <div style={{display: 'flex', gap: 10, marginTop: 5}}>
+                  <input 
+                    type="text" 
+                    required
+                    placeholder="ej. 30-71234567-9"
+                    value={arcaConfig.afip_cuit} 
+                    onChange={e => setArcaConfig({...arcaConfig, afip_cuit: e.target.value})} 
+                    style={{flex: 1, marginTop: 0}}
+                  />
+                  <button 
+                    type="button" 
+                    onClick={handleCuitLookup}
+                    disabled={searchingCuit}
+                    className="btn"
+                    style={{backgroundColor: 'var(--accent-blue)', color: '#fff', fontSize: '0.8rem', padding: '0 12px', height: '38px'}}
+                  >
+                    {searchingCuit ? "Buscando..." : "Buscar AFIP"}
+                  </button>
+                </div>
+              </label>
+
+              <label>Razón Social (Oficial)
+                <input 
+                  type="text" 
+                  required
+                  placeholder="ej. Hidroponia Rosario S.R.L."
+                  value={arcaConfig.merchant_name} 
+                  onChange={e => setArcaConfig({...arcaConfig, merchant_name: e.target.value})} 
+                  style={{width: '100%', marginTop: 5}}
+                />
+              </label>
+
+              <label>Dirección Comercial / Fiscal
+                <input 
+                  type="text" 
+                  required
+                  placeholder="ej. Bv. Oroño 4500, Rosario"
+                  value={arcaConfig.merchant_address} 
+                  onChange={e => setArcaConfig({...arcaConfig, merchant_address: e.target.value})} 
+                  style={{width: '100%', marginTop: 5}}
+                />
+              </label>
+
+              <label>Teléfono de Contacto
+                <input 
+                  type="text" 
+                  placeholder="ej. +54 341 456-7890"
+                  value={arcaConfig.merchant_phone} 
+                  onChange={e => setArcaConfig({...arcaConfig, merchant_phone: e.target.value})} 
+                  style={{width: '100%', marginTop: 5}}
+                />
+              </label>
+
+              <label>N° de Ingresos Brutos (IIBB)
+                <input 
+                  type="text" 
+                  placeholder="ej. 20313832482 (o mismo que CUIT)"
+                  value={arcaConfig.merchant_iibb} 
+                  onChange={e => setArcaConfig({...arcaConfig, merchant_iibb: e.target.value})} 
+                  style={{width: '100%', marginTop: 5}}
+                />
+              </label>
+
+              <div style={{display: 'flex', gap: 15}}>
+                <label style={{flex: 1}}>Condición frente al IVA
+                  <select
+                    value={arcaConfig.merchant_iva_condition}
+                    onChange={e => setArcaConfig({...arcaConfig, merchant_iva_condition: e.target.value})}
+                    style={{width: '100%', marginTop: 5}}
+                  >
+                    <option value="Responsable Monotributo">Responsable Monotributo</option>
+                    <option value="Responsable Inscripto">Responsable Inscripto</option>
+                    <option value="Exento">Exento</option>
+                    <option value="No Responsable">No Responsable</option>
+                  </select>
+                </label>
+                <label style={{flex: 1}}>Fecha de Inicio de Actividades
+                  <input 
+                    type="text" 
+                    placeholder="ej. 01/01/2020"
+                    value={arcaConfig.merchant_start_date} 
+                    onChange={e => setArcaConfig({...arcaConfig, merchant_start_date: e.target.value})} 
+                    style={{width: '100%', marginTop: 5}}
+                  />
+                </label>
+              </div>
+
+              <div style={{display: 'flex', gap: 15}}>
+                <label style={{flex: 1}}>Punto de Venta
+                  <input 
+                    type="number" 
+                    required
+                    min="1"
+                    value={arcaConfig.afip_pto_vta} 
+                    onChange={e => setArcaConfig({...arcaConfig, afip_pto_vta: parseInt(e.target.value) || 1})} 
+                    style={{width: '100%', marginTop: 5}}
+                  />
+                </label>
+
+                <label style={{flex: 1}}>Tipo de Comprobante
+                  <select 
+                    value={arcaConfig.afip_type_cmp} 
+                    onChange={e => setArcaConfig({...arcaConfig, afip_type_cmp: parseInt(e.target.value) || 11})} 
+                    style={{width: '100%', marginTop: 5}}
+                  >
+                    <option value={11}>Factura C (Monotributo)</option>
+                    <option value={6}>Factura B (Consumidor Final)</option>
+                  </select>
+                </label>
+              </div>
+
+              <div style={{display: 'flex', gap: 15}}>
+                <label style={{flex: 1}}>Concepto Factura
+                  <select 
+                    value={arcaConfig.afip_concept} 
+                    onChange={e => setArcaConfig({...arcaConfig, afip_concept: parseInt(e.target.value) || 1})} 
+                    style={{width: '100%', marginTop: 5}}
+                  >
+                    <option value={1}>Productos</option>
+                    <option value={2}>Servicios</option>
+                    <option value={3}>Productos & Servicios</option>
+                  </select>
+                </label>
+
+                <label style={{flex: 1}}>Entorno
+                  <select 
+                    value={arcaConfig.afip_environment} 
+                    onChange={e => setArcaConfig({...arcaConfig, afip_environment: e.target.value})} 
+                    style={{width: '100%', marginTop: 5}}
+                  >
+                    <option value="homologacion">Homologación (Prueba)</option>
+                    <option value="produccion">Producción (Real)</option>
+                  </select>
+                </label>
+              </div>
+
+              <button className="btn" type="submit" style={{marginTop: 10}}>
+                Guardar Configuración ARCA
+              </button>
+            </form>
+          </div>
+
+          <div className="card" style={{flex: 1, minWidth: 350}}>
+            <h3>Certificados Digitales de Autenticación</h3>
+            <p style={{fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: 20}}>
+              Configura tus credenciales y certificados para establecer conexión segura con ARCA.
+            </p>
+
+            <div style={{display: 'flex', flexDirection: 'column', gap: 15, marginBottom: 25}}>
+              <div style={{display: 'flex', gap: 10, alignItems: 'center'}}>
+                <span style={{fontSize: '0.9rem', fontWeight: 600}}>Clave Privada:</span>
+                <span style={{
+                  padding: '3px 8px',
+                  borderRadius: 12,
+                  fontSize: '0.75rem',
+                  fontWeight: 'bold',
+                  backgroundColor: arcaConfig.afip_key_generated ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+                  color: arcaConfig.afip_key_generated ? 'var(--accent-emerald)' : 'var(--accent-red)'
+                }}>
+                  {arcaConfig.afip_key_generated ? "✓ Generada" : "✗ Faltante"}
+                </span>
+              </div>
+              <div style={{display: 'flex', gap: 10, alignItems: 'center'}}>
+                <span style={{fontSize: '0.9rem', fontWeight: 600}}>Certificado (.crt):</span>
+                <span style={{
+                  padding: '3px 8px',
+                  borderRadius: 12,
+                  fontSize: '0.75rem',
+                  fontWeight: 'bold',
+                  backgroundColor: arcaConfig.afip_cert_uploaded ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+                  color: arcaConfig.afip_cert_uploaded ? 'var(--accent-emerald)' : 'var(--accent-red)'
+                }}>
+                  {arcaConfig.afip_cert_uploaded ? "✓ Activo" : "✗ Pendiente de subir"}
+                </span>
+              </div>
+
+              {!arcaConfig.afip_cert_uploaded && (
+                <div className="alert warning" style={{
+                  padding: 10,
+                  borderRadius: 6,
+                  backgroundColor: 'rgba(245, 158, 11, 0.1)',
+                  color: 'var(--accent-orange)',
+                  fontSize: '0.8rem',
+                  border: '1px solid rgba(245, 158, 11, 0.2)'
+                }}>
+                  <strong>Nota:</strong> Al no tener un certificado activo, el sistema operará en <strong>Modo Demo / Homologación de prueba</strong> generándote facturas simuladas con CAE para que pruebes las vistas.
+                </div>
+              )}
+            </div>
+
+            <div style={{borderTop: '1px solid var(--border-color)', paddingTop: 20, marginBottom: 20}}>
+              <h4>1. Generar Solicitud de Certificado (CSR)</h4>
+              <p style={{fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: 15}}>
+                Ingresa el nombre de tu empresa para generar la clave privada y la solicitud CSR que debes subir en AFIP.
+              </p>
+
+              <div style={{display: 'flex', gap: 10, marginBottom: 15}}>
+                <input 
+                  type="text" 
+                  placeholder="Nombre de la Empresa"
+                  value={csrCompanyName}
+                  onChange={e => setCsrCompanyName(e.target.value)}
+                  style={{flex: 1}}
+                />
+                <button 
+                  className="btn" 
+                  disabled={generatingCsr}
+                  onClick={handleGenerateCsr}
+                  style={{whiteSpace: 'nowrap', backgroundColor: 'var(--bg-dark)', color: 'var(--text-secondary)'}}
+                >
+                  {generatingCsr ? 'Generando...' : 'Generar CSR'}
+                </button>
+              </div>
+
+              {generatedCsr && (
+                <div style={{display: 'flex', flexDirection: 'column', gap: 8}}>
+                  <label style={{fontSize: '0.8rem', fontWeight: 600}}>Solicitud Certificado (CSR):</label>
+                  <textarea 
+                    readOnly
+                    rows="6"
+                    value={generatedCsr}
+                    style={{
+                      fontFamily: 'monospace',
+                      fontSize: '0.75rem',
+                      width: '100%',
+                      padding: 10,
+                      backgroundColor: 'var(--bg-dark)',
+                      color: '#fff',
+                      border: '1px solid var(--border-color)',
+                      borderRadius: 6
+                    }}
+                  />
+                  <a 
+                    href={`data:text/plain;charset=utf-8,${encodeURIComponent(generatedCsr)}`} 
+                    download="arca.csr"
+                    className="btn"
+                    style={{
+                      padding: '6px 12px',
+                      fontSize: '0.8rem',
+                      display: 'inline-block',
+                      textAlign: 'center',
+                      textDecoration: 'none',
+                      backgroundColor: 'var(--accent-blue)',
+                      color: '#fff',
+                      borderRadius: 4
+                    }}
+                  >
+                    Descargar arca.csr
+                  </a>
+                </div>
+              )}
+            </div>
+
+            <div style={{borderTop: '1px solid var(--border-color)', paddingTop: 20}}>
+              <h4>2. Subir Certificado AFIP (.crt)</h4>
+              <p style={{fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: 15}}>
+                Sube el certificado digital emitido por la web de AFIP correspondiente al CSR generado arriba.
+              </p>
+
+              <div style={{display: 'flex', flexDirection: 'column', gap: 10}}>
+                <input 
+                  type="file" 
+                  accept=".crt,.pem"
+                  onChange={handleUploadCert}
+                  disabled={uploadingCert}
+                  style={{
+                    fontSize: '0.85rem',
+                    padding: 8,
+                    border: '1px dashed var(--border-color)',
+                    borderRadius: 6,
+                    cursor: 'pointer'
+                  }}
+                />
+                {uploadingCert && <span style={{fontSize: '0.8rem', color: 'var(--text-secondary)'}}>Subiendo certificado...</span>}
+              </div>
+            </div>
+          </div>
         </div>
       )}
 
