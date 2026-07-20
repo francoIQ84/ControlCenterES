@@ -4,6 +4,8 @@ export default function Billing() {
   const [sales, setSales] = useState([])
   const [loading, setLoading] = useState(true)
   const [sortConfig, setSortConfig] = useState({ key: 'invoice_number', direction: 'desc' })
+  const [docFilter, setDocFilter] = useState('all') // 'all', 'cuit', 'dni'
+  const [typeFilter, setTypeFilter] = useState('all') // 'all', 'meli', 'local'
   const [searchTerm, setSearchTerm] = useState('')
   const [ptoVta, setPtoVta] = useState(1)
   const [cbteTipo, setCbteTipo] = useState(11)
@@ -86,7 +88,7 @@ export default function Billing() {
     return sortConfig.direction === 'asc' ? ' ▲' : ' ▼'
   }
 
-  // Filter based on search term
+  // Filter based on search term and dropdown filters
   const filteredSales = React.useMemo(() => {
     return sales.filter(o => {
       const q = searchTerm.toLowerCase()
@@ -96,9 +98,20 @@ export default function Billing() {
       const docNum = (o.buyer?.document_number || '').toLowerCase()
       const orderId = String(o.order_id)
       
-      return invNum.includes(q) || cae.includes(q) || buyerName.includes(q) || docNum.includes(q) || orderId.includes(q)
+      const matchesSearch = invNum.includes(q) || cae.includes(q) || buyerName.includes(q) || docNum.includes(q) || orderId.includes(q)
+      if (!matchesSearch) return false
+
+      const isCuit = o.buyer?.document_type === 'CUIT' || String(o.buyer?.document_number || '').length === 11
+      if (docFilter === 'cuit' && !isCuit) return false
+      if (docFilter === 'dni' && isCuit) return false
+
+      const isMeli = o.source_platform === 'MERCADOLIBRE'
+      if (typeFilter === 'meli' && !isMeli) return false
+      if (typeFilter === 'local' && isMeli) return false
+
+      return true
     })
-  }, [sales, searchTerm])
+  }, [sales, searchTerm, docFilter, typeFilter])
 
   // Sort sales
   const sortedSales = React.useMemo(() => {
@@ -306,21 +319,48 @@ export default function Billing() {
 
       {/* Filter and Search */}
       <div className="card" style={{ marginBottom: '20px', padding: '15px 20px' }}>
-        <div style={{ display: 'flex', gap: '15px', alignItems: 'center' }}>
+        <div style={{ display: 'flex', gap: '15px', alignItems: 'center', flexWrap: 'wrap' }}>
           <input
             type="text"
             placeholder="Buscar por Nro. Factura, CAE, Nombre Comprador o DNI/CUIT..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            style={{ flex: 1, padding: '10px', borderRadius: '6px', border: '1px solid #ddd', fontSize: '0.9rem' }}
+            style={{ flex: 1, minWidth: '250px', padding: '10px', borderRadius: '6px', border: '1px solid #ddd', fontSize: '0.9rem' }}
           />
-          {searchTerm && (
+          
+          <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+            <select
+              value={docFilter}
+              onChange={(e) => setDocFilter(e.target.value)}
+              style={{ padding: '9px 12px', borderRadius: '6px', border: '1px solid #ddd', fontSize: '0.9rem', backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)', height: '40px' }}
+            >
+              <option value="all">Todos los Documentos</option>
+              <option value="cuit">Sólo CUIT (Empresas)</option>
+              <option value="dni">Sólo DNI (Consumidor Final)</option>
+            </select>
+
+            <select
+              value={typeFilter}
+              onChange={(e) => setTypeFilter(e.target.value)}
+              style={{ padding: '9px 12px', borderRadius: '6px', border: '1px solid #ddd', fontSize: '0.9rem', backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)', height: '40px' }}
+            >
+              <option value="all">Todos los Canales</option>
+              <option value="meli">Mercado Libre</option>
+              <option value="local">Locales/Web</option>
+            </select>
+          </div>
+
+          {(searchTerm || docFilter !== 'all' || typeFilter !== 'all') && (
             <button 
               className="btn btn-secondary" 
-              onClick={() => setSearchTerm('')}
-              style={{ padding: '10px 15px' }}
+              onClick={() => {
+                setSearchTerm('')
+                setDocFilter('all')
+                setTypeFilter('all')
+              }}
+              style={{ padding: '10px 15px', height: '40px' }}
             >
-              Limpiar
+              Limpiar Filtros
             </button>
           )}
         </div>

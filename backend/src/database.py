@@ -44,11 +44,14 @@ def init_db():
                     price_web REAL DEFAULT 0.0,
                     images TEXT,
                     description TEXT,
-                    is_web_active INTEGER DEFAULT 0
+                    is_web_active INTEGER DEFAULT 0,
+                    min_stock INTEGER DEFAULT 0
                 )
             ''')
             cursor.execute('ALTER TABLE products_cache ADD COLUMN IF NOT EXISTS visits_meli INTEGER DEFAULT 0;')
             cursor.execute('ALTER TABLE products_cache ADD COLUMN IF NOT EXISTS visits_web INTEGER DEFAULT 0;')
+            cursor.execute('ALTER TABLE products_cache ADD COLUMN IF NOT EXISTS min_stock INTEGER DEFAULT 0;')
+            cursor.execute('ALTER TABLE products_cache ADD COLUMN IF NOT EXISTS cost_meli REAL DEFAULT 0.0;')
 
             # Categories table
             cursor.execute('''
@@ -243,9 +246,10 @@ def save_products(products_list):
     with get_connection() as conn:
         with conn.cursor() as cursor:
             for p in products_list:
-                cursor.execute("SELECT cost_price, price_web, images, description, is_web_active, visits_web FROM products_cache WHERE ml_id = %s", (p['ml_id'],))
+                cursor.execute("SELECT cost_price, cost_meli, price_web, images, description, is_web_active, visits_web FROM products_cache WHERE ml_id = %s", (p['ml_id'],))
                 row = cursor.fetchone()
                 cost_price = row['cost_price'] if row else 0.0
+                cost_meli = row['cost_meli'] if row else 0.0
                 price_web = row['price_web'] if row else 0.0
                 images = row['images'] if (row and row['images']) else p.get('images', '')
                 description = row['description'] if row else ''
@@ -256,8 +260,8 @@ def save_products(products_list):
 
                 cursor.execute('''
                     INSERT INTO products_cache 
-                    (ml_id, title, price, available_quantity, cost_price, permalink, thumbnail, status, last_sync, price_web, images, description, is_web_active, visits_meli, visits_web)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    (ml_id, title, price, available_quantity, cost_price, cost_meli, permalink, thumbnail, status, last_sync, price_web, images, description, is_web_active, visits_meli, visits_web)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     ON CONFLICT (ml_id) DO UPDATE SET
                         title = EXCLUDED.title,
                         price = EXCLUDED.price,
@@ -268,7 +272,7 @@ def save_products(products_list):
                         last_sync = EXCLUDED.last_sync,
                         visits_meli = EXCLUDED.visits_meli,
                         images = CASE WHEN products_cache.images IS NULL OR products_cache.images = '' THEN EXCLUDED.images ELSE products_cache.images END
-                ''', (p['ml_id'], p['title'], p['price'], p['available_quantity'], cost_price, 
+                ''', (p['ml_id'], p['title'], p['price'], p['available_quantity'], cost_price, cost_meli, 
                       p.get('permalink'), p.get('thumbnail'), p.get('status'), now, price_web, images, description, is_web_active, visits_meli, visits_web))
 
 def create_product(product_data):
@@ -277,14 +281,15 @@ def create_product(product_data):
         with conn.cursor() as cursor:
             cursor.execute('''
                 INSERT INTO products_cache 
-                (ml_id, title, price, available_quantity, cost_price, permalink, thumbnail, status, last_sync, price_web, images, description, is_web_active, visits_meli, visits_web, category_id, sync_meli)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                (ml_id, title, price, available_quantity, cost_price, cost_meli, permalink, thumbnail, status, last_sync, price_web, images, description, is_web_active, visits_meli, visits_web, category_id, sync_meli, min_stock)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             ''', (
                 product_data['ml_id'],
                 product_data['title'],
                 product_data['price'],
                 product_data['available_quantity'],
                 product_data.get('cost_price', 0.0),
+                product_data.get('cost_meli', 0.0),
                 product_data.get('permalink', ''),
                 product_data.get('thumbnail', ''),
                 product_data.get('status', 'active'),
@@ -296,39 +301,40 @@ def create_product(product_data):
                 product_data.get('visits_meli', 0),
                 product_data.get('visits_web', 0),
                 product_data.get('category_id'),
-                product_data.get('sync_meli', 1)
+                product_data.get('sync_meli', 1),
+                product_data.get('min_stock', 0)
             ))
 
-def update_product_cost(ml_id, cost_price):
+def update_product_cost(ml_id, cost_price, cost_meli):
     with get_connection() as conn:
         with conn.cursor() as cursor:
-            cursor.execute("UPDATE products_cache SET cost_price = %s WHERE ml_id = %s", (cost_price, ml_id))
+            cursor.execute("UPDATE products_cache SET cost_price = %s, cost_meli = %s WHERE ml_id = %s", (cost_price, cost_meli, ml_id))
 
 def update_product_stock_price(ml_id, quantity, price):
     with get_connection() as conn:
         with conn.cursor() as cursor:
             cursor.execute("UPDATE products_cache SET available_quantity = %s, price = %s WHERE ml_id = %s", (quantity, price, ml_id))
 
-def update_product_web_details(ml_id, price_web, images, description, is_web_active, category_id=None, sync_meli=1):
+def update_product_web_details(ml_id, price_web, images, description, is_web_active, category_id=None, sync_meli=1, min_stock=0):
     with get_connection() as conn:
         with conn.cursor() as cursor:
             cursor.execute('''
                 UPDATE products_cache 
-                SET price_web = %s, images = %s, description = %s, is_web_active = %s, category_id = %s, sync_meli = %s
+                SET price_web = %s, images = %s, description = %s, is_web_active = %s, category_id = %s, sync_meli = %s, min_stock = %s
                 WHERE ml_id = %s
-            ''', (price_web, images, description, is_web_active, category_id, sync_meli, ml_id))
+            ''', (price_web, images, description, is_web_active, category_id, sync_meli, min_stock, ml_id))
 
 def get_all_products(query=None, status_filter=None, is_web_active=None, category_slug=None):
     with get_connection() as conn:
         with conn.cursor() as cursor:
             sql = """
-                SELECT p.ml_id, p.title, p.price, p.available_quantity, p.cost_price, p.permalink, p.thumbnail, 
+                SELECT p.ml_id, p.title, p.price, p.available_quantity, p.cost_price, p.cost_meli, p.permalink, p.thumbnail, 
                        p.status, p.last_sync, p.price_web, p.images, p.description, p.is_web_active, 
-                       p.visits_meli, p.visits_web, p.category_id, p.sync_meli, c.name as category_name, c.slug as category_slug
-                FROM products_cache p
-                LEFT JOIN categories c ON p.category_id = c.id
-                WHERE 1=1
-            """
+                       p.visits_meli, p.visits_web, p.category_id, p.sync_meli, p.min_stock, c.name as category_name, c.slug as category_slug
+                 FROM products_cache p
+                 LEFT JOIN categories c ON p.category_id = c.id
+                 WHERE 1=1
+             """
             params = []
             
             if query:
@@ -630,20 +636,27 @@ def get_dashboard_metrics(period="total"):
             cursor.execute("SELECT COUNT(ml_id) as count FROM products_cache WHERE status = 'active'")
             total_active_products = cursor.fetchone()['count'] or 0
             
-            items_query = "SELECT items_json FROM orders_cache WHERE status = 'paid'" + date_filter
+            items_query = "SELECT items_json, source_platform FROM orders_cache WHERE status = 'paid'" + date_filter
             cursor.execute(items_query, tuple(params))
             orders_items = cursor.fetchall()
             
-            cursor.execute("SELECT ml_id, cost_price FROM products_cache")
-            costs = {r['ml_id']: r['cost_price'] for r in cursor.fetchall()}
+            cursor.execute("SELECT ml_id, cost_price, cost_meli FROM products_cache")
+            costs = {r['ml_id']: (r['cost_price'], r['cost_meli']) for r in cursor.fetchall()}
             
             total_cost = 0.0
             for row in orders_items:
+                source_platform = row.get('source_platform', 'MERCADOLIBRE')
                 items = json.loads(row['items_json'])
                 for item in items:
                     ml_id = item.get('id')
                     quantity = item.get('quantity', 1)
-                    cost = costs.get(ml_id, 0.0)
+                    cost_base, cost_ml = costs.get(ml_id, (0.0, 0.0))
+                    
+                    if source_platform == 'MERCADOLIBRE':
+                        cost = cost_base + cost_ml
+                    else:
+                        cost = cost_base
+                        
                     total_cost += cost * quantity
                     
             # --- EXPENSES CALCULATION ---
@@ -686,13 +699,23 @@ def get_dashboard_metrics(period="total"):
             total_profit = total_revenue - total_cost - total_expenses
             profit_margin = (total_profit / total_revenue * 100) if total_revenue > 0 else 0.0
             
-            cursor.execute("SELECT COUNT(ml_id) as count FROM products_cache WHERE available_quantity <= 3 AND status = 'active'")
+            cursor.execute("SELECT COUNT(ml_id) as count FROM products_cache WHERE available_quantity <= CASE WHEN min_stock > 0 THEN min_stock ELSE 3 END AND status = 'active'")
             low_stock_count = cursor.fetchone()['count'] or 0
+            
+            cursor.execute("""
+                SELECT ml_id, title, available_quantity, min_stock, status 
+                FROM products_cache 
+                WHERE available_quantity <= CASE WHEN min_stock > 0 THEN min_stock ELSE 3 END 
+                AND status = 'active'
+                ORDER BY available_quantity ASC LIMIT 10
+            """)
+            low_stock_products = [dict(r) for r in cursor.fetchall()]
             
             cursor.execute("SELECT SUM(visits_meli) as meli FROM products_cache")
             visits_row = cursor.fetchone()
             total_visits_meli = (visits_row['meli'] if visits_row else 0) or 0
             
+            # (Rest of queries...)
             visit_where = ""
             visit_params = []
             if period != "total" and start_date:
@@ -728,6 +751,7 @@ def get_dashboard_metrics(period="total"):
                 'expenses_total': total_expenses,
                 'product_costs': total_cost,
                 'low_stock_count': low_stock_count,
+                'low_stock_products': low_stock_products,
                 'total_visits_meli': total_visits_meli,
                 'total_visits_web': total_visits_web,
                 'top_products': top_products,

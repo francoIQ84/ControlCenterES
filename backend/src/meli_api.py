@@ -766,6 +766,12 @@ def upload_invoice_to_meli(order_id, pdf_path):
                         "UPDATE orders_cache SET meli_invoice_attached = 1 WHERE order_id = %s",
                         (order_id,)
                     )
+            # Send post-sale message
+            msg_text = "Hola, gracias por tu compra. Te informamos que ya adjuntamos tu factura digital a los detalles de tu compra. ¡Saludos!"
+            ok_msg, info_msg = send_post_sale_message(order_id, msg_text)
+            if not ok_msg:
+                print(f"Advertencia: No se pudo enviar el mensaje posventa para order {order_id}: {info_msg}")
+                
             return True, "Factura adjuntada en Mercado Libre exitosamente"
         else:
             error_detail = ""
@@ -778,3 +784,47 @@ def upload_invoice_to_meli(order_id, pdf_path):
 
     except Exception as e:
         return False, f"Error de conexión al adjuntar factura en ML: {str(e)}"
+
+
+def send_post_sale_message(order_id, text_content):
+    """
+    Envia un mensaje de posventa al chat de la orden de Mercado Libre.
+    Resuelve el pack_id y el seller_id correspondientes.
+    """
+    if is_demo_mode():
+        return True, "Mensaje enviado (modo demo)"
+        
+    try:
+        check_and_refresh_token()
+        access_token = config.get_access_token()
+        seller_id = config.get_user_id()
+        if not access_token or not seller_id:
+            return False, "Falta token o seller_id de Mercado Libre para enviar mensaje"
+
+        # Resolving pack_id (if part of a pack, or just the order_id)
+        pack_id = order_id
+        order_res = api_request("GET", f"/orders/{order_id}")
+        if order_res and order_res.status_code == 200:
+            order_data = order_res.json()
+            pack_id = order_data.get('pack_id') or order_id
+
+        url = f"{API_BASE_URL}/messages/packs/{pack_id}/sellers/{seller_id}"
+        headers = {
+            'Authorization': f"Bearer {access_token}",
+            'Content-Type': 'application/json'
+        }
+        payload = {
+            "text": text_content
+        }
+        res = requests.post(url, headers=headers, json=payload, timeout=20)
+        if res.status_code in (200, 201):
+            return True, "Mensaje de posventa enviado con éxito"
+        else:
+            err_msg = ""
+            try:
+                err_msg = res.json().get('message') or res.text[:200]
+            except Exception:
+                err_msg = res.text[:200]
+            return False, f"Error de Mercado Libre ({res.status_code}): {err_msg}"
+    except Exception as e:
+        return False, f"Error al enviar mensaje posventa: {str(e)}"

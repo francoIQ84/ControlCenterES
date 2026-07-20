@@ -9,6 +9,7 @@ router = APIRouter()
 
 class UpdateProductRequest(BaseModel):
     cost: float
+    cost_meli: float = 0.0
     qty: int
     price: float
     price_web: float = 0.0
@@ -17,12 +18,14 @@ class UpdateProductRequest(BaseModel):
     is_web_active: int = 0
     category_id: Optional[int] = None
     sync_meli: int = 1
+    min_stock: int = 0
 
 class CreateProductRequest(BaseModel):
     title: str
     qty: int
     price: float
     cost: float = 0.0
+    cost_meli: float = 0.0
     price_web: float = 0.0
     images: str = ""
     description: str = ""
@@ -30,6 +33,7 @@ class CreateProductRequest(BaseModel):
     publish_to_meli: bool = False
     category_id: Optional[int] = None
     sync_meli: int = 1
+    min_stock: int = 0
 
 @router.get("/")
 def get_products(query: str = None, status: str = None):
@@ -73,6 +77,7 @@ def create_product(payload: CreateProductRequest):
         "price": payload.price,
         "available_quantity": payload.qty,
         "cost_price": payload.cost,
+        "cost_meli": payload.cost_meli,
         "permalink": permalink,
         "thumbnail": payload.images,  # use the provided image as thumbnail
         "status": status,
@@ -81,7 +86,8 @@ def create_product(payload: CreateProductRequest):
         "description": payload.description,
         "is_web_active": payload.is_web_active,
         "category_id": payload.category_id,
-        "sync_meli": payload.sync_meli
+        "sync_meli": payload.sync_meli,
+        "min_stock": payload.min_stock
     }
 
     try:
@@ -93,6 +99,7 @@ def create_product(payload: CreateProductRequest):
 class BulkUpdateItem(BaseModel):
     ml_id: str
     cost: float
+    cost_meli: float = 0.0
     qty: int
     price: float
     price_web: float = 0.0
@@ -101,6 +108,7 @@ class BulkUpdateItem(BaseModel):
     is_web_active: int = 0
     category_id: Optional[int] = None
     sync_meli: int = 1
+    min_stock: int = 0
 
 class BulkUpdateRequest(BaseModel):
     items: list[BulkUpdateItem]
@@ -120,7 +128,7 @@ def bulk_update_products(payload: BulkUpdateRequest):
         except Exception:
             pass
 
-        database.update_product_cost(item.ml_id, item.cost)
+        database.update_product_cost(item.ml_id, item.cost, item.cost_meli)
         database.update_product_stock_price(item.ml_id, item.qty, item.price)
         database.update_product_web_details(
             item.ml_id, 
@@ -129,7 +137,8 @@ def bulk_update_products(payload: BulkUpdateRequest):
             item.description, 
             item.is_web_active,
             item.category_id,
-            item.sync_meli
+            item.sync_meli,
+            item.min_stock
         )
 
         is_local = item.ml_id.startswith('LOCAL-') or item.ml_id.startswith('WEB-')
@@ -157,7 +166,7 @@ def update_product(ml_id: str, payload: UpdateProductRequest):
         pass
 
     # Update locally (stock, ML price, cost)
-    database.update_product_cost(ml_id, payload.cost)
+    database.update_product_cost(ml_id, payload.cost, payload.cost_meli)
     database.update_product_stock_price(ml_id, payload.qty, payload.price)
     
     # Update web details
@@ -168,7 +177,8 @@ def update_product(ml_id: str, payload: UpdateProductRequest):
         payload.description, 
         payload.is_web_active,
         payload.category_id,
-        payload.sync_meli
+        payload.sync_meli,
+        payload.min_stock
     )
     
     # Sync to ML only if the product status is active or paused and NOT local-only AND sync_meli is enabled

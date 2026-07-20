@@ -19,13 +19,15 @@ export default function Inventory() {
     qty: 0,
     price: 0,
     cost: 0,
+    cost_meli: 0,
     price_web: 0,
     images: "",
     description: "",
     is_web_active: true,
     publish_to_meli: false,
     category_id: "",
-    sync_meli: true
+    sync_meli: true,
+    min_stock: 0
   }
   const [newProduct, setNewProduct] = useState(initialNewProduct)
   const [showAddModal, setShowAddModal] = useState(false)
@@ -54,12 +56,14 @@ export default function Inventory() {
           d.qty !== (orig.available_quantity || 0) ||
           d.price !== (orig.price || 0) ||
           d.cost !== (orig.cost_price || 0) ||
+          d.cost_meli !== (orig.cost_meli || 0) ||
           d.price_web !== (orig.price_web || 0) ||
           d.images !== (orig.images || "") ||
           d.description !== (orig.description || "") ||
           d.is_web_active !== (orig.is_web_active ? 1 : 0) ||
           (d.category_id || null) !== (orig.category_id || null) ||
-          d.sync_meli !== (orig.sync_meli === 0 ? 0 : 1);
+          d.sync_meli !== (orig.sync_meli === 0 ? 0 : 1) ||
+          d.min_stock !== (orig.min_stock || 0);
         if (isChanged) {
           modified.push(d)
         }
@@ -122,7 +126,7 @@ export default function Inventory() {
     fetchCategories()
   }, [query])
 
-  const handleUpdate = async (ml_id, qty, price, cost, price_web, images, description, is_web_active, category_id, sync_meli) => {
+  const handleUpdate = async (ml_id, qty, price, cost, cost_meli, price_web, images, description, is_web_active, category_id, sync_meli, min_stock) => {
     try {
       const res = await fetch(`/api/inventory/${ml_id}`, {
         method: 'PUT',
@@ -131,12 +135,14 @@ export default function Inventory() {
           qty: parseInt(qty), 
           price: parseFloat(price), 
           cost: parseFloat(cost),
+          cost_meli: parseFloat(cost_meli) || 0.0,
           price_web: parseFloat(price_web) || 0,
           images: images || "",
           description: description || "",
           is_web_active: is_web_active ? 1 : 0,
           category_id: category_id ? parseInt(category_id) : null,
-          sync_meli: sync_meli ? 1 : 0
+          sync_meli: sync_meli ? 1 : 0,
+          min_stock: parseInt(min_stock) || 0
         })
       })
       if(res.ok) {
@@ -204,7 +210,8 @@ export default function Inventory() {
           ...newProduct,
           is_web_active: newProduct.is_web_active ? 1 : 0,
           category_id: newProduct.category_id || null,
-          sync_meli: newProduct.sync_meli ? 1 : 0
+          sync_meli: newProduct.sync_meli ? 1 : 0,
+          min_stock: newProduct.min_stock || 0
         })
       })
       if(res.ok) {
@@ -291,6 +298,33 @@ export default function Inventory() {
               Guardar {modifiedCount} cambios
             </button>
           )}
+          <button className="btn" style={{backgroundColor: 'var(--bg-dark)', color: 'var(--text-secondary)', border: 'none'}} onClick={() => {
+            if (!sortedProducts || sortedProducts.length === 0) return;
+            const headers = ["ml_id", "Título", "Precio", "Stock Actual", "Costo Base", "Costo ML (Adicional)", "Precio Web", "Estado (ML)", "Sincronizar ML", "Stock Mínimo"];
+            const rows = sortedProducts.map(p => [
+              p.ml_id,
+              p.title,
+              p.price,
+              p.available_quantity,
+              p.cost_price,
+              p.cost_meli || 0,
+              p.price_web || 0,
+              p.status,
+              p.sync_meli !== 0 ? 'Sí' : 'No',
+              p.min_stock || 0
+            ]);
+            const csvContent = "data:text/csv;charset=utf-8,\uFEFF" 
+              + [headers.join(","), ...rows.map(e => e.map(val => `"${String(val).replace(/"/g, '""')}"`).join(","))].join("\n");
+            const encodedUri = encodeURI(csvContent);
+            const link = document.createElement("a");
+            link.setAttribute("href", encodedUri);
+            link.setAttribute("download", `inventario_${new Date().toISOString().slice(0,10)}.csv`);
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+          }}>
+            Exportar a CSV
+          </button>
           <button className="btn" style={{backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)', border: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', gap: 5}} onClick={() => setShowCategoriesModal(true)}>
             📁 Gestionar Categorías
           </button>
@@ -333,8 +367,14 @@ export default function Inventory() {
                 <label style={{flex: 1, fontSize: '0.85rem'}}>Stock *
                   <input type="number" required min="0" value={newProduct.qty} onChange={e => setNewProduct({...newProduct, qty: parseInt(e.target.value) || 0})} style={{width: '100%', marginTop: 5}}/>
                 </label>
-                <label style={{flex: 1, fontSize: '0.85rem'}}>Costo *
+                <label style={{flex: 1, fontSize: '0.85rem'}}>Costo Base *
                   <input type="number" required step="0.01" min="0" value={newProduct.cost} onChange={e => setNewProduct({...newProduct, cost: parseFloat(e.target.value) || 0})} style={{width: '100%', marginTop: 5}}/>
+                </label>
+                <label style={{flex: 1, fontSize: '0.85rem'}}>Costo Adic. ML
+                  <input type="number" step="0.01" min="0" value={newProduct.cost_meli} onChange={e => setNewProduct({...newProduct, cost_meli: parseFloat(e.target.value) || 0})} style={{width: '100%', marginTop: 5}}/>
+                </label>
+                <label style={{flex: 1, fontSize: '0.85rem'}}>Stock Mínimo
+                  <input type="number" min="0" value={newProduct.min_stock} onChange={e => setNewProduct({...newProduct, min_stock: parseInt(e.target.value) || 0})} style={{width: '100%', marginTop: 5}}/>
                 </label>
               </div>
 
@@ -559,6 +599,8 @@ function ProductRow({ p, onSave, onOpenGallery, onDraftChange, categories }) {
   const [qty, setQty] = useState(p.available_quantity)
   const [price, setPrice] = useState(p.price)
   const [cost, setCost] = useState(p.cost_price)
+  const [costMeli, setCostMeli] = useState(p.cost_meli || 0)
+  const [minStock, setMinStock] = useState(p.min_stock || 0)
   
   const [priceWeb, setPriceWeb] = useState(p.price_web || 0)
   const [isWebActive, setIsWebActive] = useState(p.is_web_active === 1)
@@ -583,7 +625,7 @@ function ProductRow({ p, onSave, onOpenGallery, onDraftChange, categories }) {
   }
   const [additionalUrls, setAdditionalUrls] = useState(getInitialAdditional())
   
-  const profit = price - cost
+  const profit = price - (cost + costMeli)
   const margin = price > 0 ? (profit / price) * 100 : 0
 
   const getCombinedImages = () => {
@@ -612,14 +654,16 @@ function ProductRow({ p, onSave, onOpenGallery, onDraftChange, categories }) {
       qty: parseNum(qty, true),
       price: parseNum(price),
       cost: parseNum(cost),
+      cost_meli: parseNum(costMeli),
       price_web: parseNum(priceWeb),
       images: getCombinedImages(),
       description: description || "",
       is_web_active: isWebActive ? 1 : 0,
       category_id: categoryId ? parseInt(categoryId) : null,
-      sync_meli: syncMeli ? 1 : 0
+      sync_meli: syncMeli ? 1 : 0,
+      min_stock: parseNum(minStock, true)
     })
-  }, [qty, price, cost, priceWeb, isWebActive, description, useMeliImage, customMainUrl, additionalUrls, categoryId, syncMeli])
+  }, [qty, price, cost, costMeli, priceWeb, isWebActive, description, useMeliImage, customMainUrl, additionalUrls, categoryId, syncMeli, minStock])
 
   return (
     <React.Fragment>
@@ -644,7 +688,9 @@ function ProductRow({ p, onSave, onOpenGallery, onDraftChange, categories }) {
             )
           }
         </td>
-        <td data-label="Stock y Precios">
+        <td data-label="Stock y Precios" style={{
+          backgroundColor: (p.available_quantity <= (p.min_stock || 3) && p.status === 'active') ? 'rgba(245, 158, 11, 0.05)' : 'transparent'
+        }}>
           <div style={{display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center'}}>
             <label style={{fontSize: '0.8rem', color: 'var(--text-secondary)'}}>Stock:
               <input type="number" value={qty} onChange={e => setQty(e.target.value)} style={{width: 60, marginLeft: 5, padding: 4}}/>
@@ -652,13 +698,24 @@ function ProductRow({ p, onSave, onOpenGallery, onDraftChange, categories }) {
             <label style={{fontSize: '0.8rem', color: 'var(--text-secondary)'}}>Precio ML:
               <input type="number" value={price} onChange={e => setPrice(e.target.value)} style={{width: 80, marginLeft: 5, padding: 4}} disabled={p.status === 'local'}/>
             </label>
-            <label style={{fontSize: '0.8rem', color: 'var(--text-secondary)'}}>Costo:
+            <label style={{fontSize: '0.8rem', color: 'var(--text-secondary)'}}>Costo Base:
               <input type="number" value={cost} onChange={e => setCost(e.target.value)} style={{width: 80, marginLeft: 5, padding: 4}}/>
             </label>
+            <label style={{fontSize: '0.8rem', color: 'var(--text-secondary)'}}>Costo ML:
+              <input type="number" value={costMeli} onChange={e => setCostMeli(e.target.value)} style={{width: 70, marginLeft: 5, padding: 4}}/>
+            </label>
+            <label style={{fontSize: '0.8rem', color: 'var(--text-secondary)'}}>Alerta Mín:
+              <input type="number" value={minStock} onChange={e => setMinStock(e.target.value)} style={{width: 50, marginLeft: 5, padding: 4}}/>
+            </label>
           </div>
+          {(p.available_quantity <= (p.min_stock || 3) && p.status === 'active') && (
+            <div style={{fontSize: '0.75rem', color: 'var(--accent-orange)', fontWeight: 'bold', marginTop: 4}}>
+              ⚠️ Stock Bajo (Límite: {p.min_stock || 3})
+            </div>
+          )}
           {p.status !== 'local' && (
             <div style={{fontSize: '0.75rem', color: profit >= 0 ? 'var(--accent-emerald)' : 'var(--accent-red)', marginTop: 5, fontWeight: 600}}>
-              Margen ML: {margin.toFixed(1)}% (${profit.toFixed(2)})
+              Margen ML: {margin.toFixed(1)}% (Beneficio: ${profit.toFixed(2)})
             </div>
           )}
         </td>
@@ -677,7 +734,7 @@ function ProductRow({ p, onSave, onOpenGallery, onDraftChange, categories }) {
           </div>
         </td>
         <td data-label="Acción">
-          <button className="btn-icon" onClick={() => onSave(p.ml_id, qty, price, cost, priceWeb, getCombinedImages(), description, isWebActive, categoryId, syncMeli)} title="Guardar Todo">
+          <button className="btn-icon" onClick={() => onSave(p.ml_id, qty, price, cost, costMeli, priceWeb, getCombinedImages(), description, isWebActive, categoryId, syncMeli, minStock)} title="Guardar Todo">
             <Save size={18} className="text-blue-500" />
           </button>
         </td>

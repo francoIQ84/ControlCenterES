@@ -113,6 +113,35 @@ export default function Expenses() {
   const totalFixed = fixedExpenses.reduce((acc, curr) => acc + curr.amount, 0)
   const totalVariable = variableExpenses.reduce((acc, curr) => acc + curr.amount, 0)
 
+  const exportToCSV = () => {
+    const headers = ["Tipo Gasto", "Fecha/Periodo", "Descripción", "Categoría", "Monto"];
+    const fixedRows = fixedExpenses.map(e => [
+      "Fijo",
+      `${selectedMonth}/${selectedYear}`,
+      e.description,
+      e.category,
+      e.amount
+    ]);
+    const variableRows = variableExpenses.map(e => [
+      "Variable",
+      e.date,
+      e.description,
+      e.category,
+      e.amount
+    ]);
+    const rows = [...fixedRows, ...variableRows];
+    
+    const csvContent = "data:text/csv;charset=utf-8,\uFEFF" 
+      + [headers.join(","), ...rows.map(e => e.map(val => `"${String(val).replace(/"/g, '""')}"`).join(","))].join("\n");
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", `gastos_${selectedMonth}_${selectedYear}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '15px' }}>
@@ -133,6 +162,13 @@ export default function Expenses() {
           <select value={selectedYear} onChange={e => setSelectedYear(parseInt(e.target.value))}>
             {[2024, 2025, 2026, 2027].map(y => <option key={y} value={y}>{y}</option>)}
           </select>
+          <button 
+            className="btn" 
+            onClick={exportToCSV}
+            style={{ padding: '6px 12px', fontSize: '0.85rem', marginLeft: 10, backgroundColor: 'var(--bg-dark)', color: 'var(--text-secondary)', border: 'none' }}
+          >
+            Exportar a CSV
+          </button>
         </div>
       </div>
 

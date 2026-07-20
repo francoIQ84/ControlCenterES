@@ -322,6 +322,35 @@ export default function Sales() {
     )
   }
 
+  const exportToCSV = () => {
+    if (!sortedOrders || sortedOrders.length === 0) return;
+    
+    const headers = ["Fecha", "Orden ID", "Canal", "Comprador (Nickname)", "Comprador (Nombre)", "Monto Total", "Estado Pago", "Método Pago", "Entrega"];
+    
+    const rows = sortedOrders.map(o => [
+      new Date(o.date_created).toLocaleString(),
+      o.order_id,
+      o.source_platform,
+      o.buyer?.nickname || '',
+      o.buyer?.name || '',
+      o.total_amount,
+      o.status,
+      o.payment_method || '',
+      o.shipping_status || ''
+    ]);
+    
+    const csvContent = "data:text/csv;charset=utf-8,\uFEFF" 
+      + [headers.join(","), ...rows.map(e => e.map(val => `"${String(val).replace(/"/g, '""')}"`).join(","))].join("\n");
+      
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", `ventas_${new Date().toISOString().slice(0,10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   return (
     <div>
       <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20}}>
@@ -329,13 +358,22 @@ export default function Sales() {
           <h1 className="page-title">Historial de Ventas</h1>
           <p className="page-subtitle">Visualiza todas las ventas sincronizadas e ingresa pedidos locales.</p>
         </div>
-        <button 
-          className="btn" 
-          style={{display: 'flex', alignItems: 'center', gap: 6, padding: '10px 16px'}}
-          onClick={() => setShowModal(true)}
-        >
-          <Plus size={16} /> Registrar Venta
-        </button>
+        <div style={{display: 'flex', gap: 10}}>
+          <button 
+            className="btn" 
+            style={{display: 'flex', alignItems: 'center', gap: 6, padding: '10px 16px', backgroundColor: 'var(--bg-dark)', color: 'var(--text-secondary)'}}
+            onClick={exportToCSV}
+          >
+            Exportar a CSV
+          </button>
+          <button 
+            className="btn" 
+            style={{display: 'flex', alignItems: 'center', gap: 6, padding: '10px 16px'}}
+            onClick={() => setShowModal(true)}
+          >
+            <Plus size={16} /> Registrar Venta
+          </button>
+        </div>
       </div>
 
       <div className="card">

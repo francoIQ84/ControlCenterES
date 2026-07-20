@@ -108,7 +108,7 @@ export default function Dashboard() {
         <div className="card kpi-card" style={{borderLeft: '4px solid var(--accent-red)'}}>
           <div className="kpi-title">Alertas de Stock <AlertTriangle size={18} color="var(--accent-red)"/></div>
           <div className="kpi-value" style={{color: stats.low_stock_count > 0 ? 'var(--accent-red)' : 'inherit'}}>{stats.low_stock_count}</div>
-          <div className="kpi-subtitle">Productos con 3 unidades o menos</div>
+          <div className="kpi-subtitle">Productos en stock crítico/alerta</div>
         </div>
         <div className="card kpi-card" style={{borderLeft: '4px solid var(--accent-red)'}}>
           <div className="kpi-title">Gastos Totales <TrendingDown size={18} color="var(--accent-red)"/></div>
@@ -126,7 +126,7 @@ export default function Dashboard() {
           <div className="kpi-subtitle">Total de visualizaciones web</div>
         </div>
       </div>
-
+ 
       <div style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))', gap: '20px', alignItems: 'start'}}>
         <div className="card">
           <h3 style={{marginTop: 0, marginBottom: 15}}>Tendencia de Facturación</h3>
@@ -145,7 +145,7 @@ export default function Dashboard() {
             <p className="kpi-subtitle" style={{margin: '40px 0', textAlign: 'center'}}>No hay datos suficientes</p>
           )}
         </div>
-
+ 
         <div className="card">
           <h3 style={{marginTop: 0, marginBottom: 15}}>Productos más Vistos</h3>
           {stats.top_products && stats.top_products.length > 0 ? (
@@ -195,7 +195,49 @@ export default function Dashboard() {
           )}
         </div>
       </div>
-
+ 
+      {/* Alert Products List */}
+      {stats.low_stock_products && stats.low_stock_products.length > 0 && (
+        <div className="card" style={{marginTop: '20px', borderLeft: '4px solid var(--accent-orange)'}}>
+          <h3 style={{marginTop: 0, marginBottom: 10, display: 'flex', alignItems: 'center', gap: 8, color: 'var(--accent-orange)'}}>
+            <AlertTriangle size={20} />
+            Alerta de Reposición: Productos con Stock Crítico
+          </h3>
+          <p className="page-subtitle" style={{fontSize: '0.85rem', marginBottom: 15}}>
+            Los siguientes artículos alcanzaron o están por debajo del límite de stock mínimo definido.
+          </p>
+          <div style={{overflowX: 'auto'}}>
+            <table className="data-table" style={{width: '100%', borderCollapse: 'collapse'}}>
+              <thead>
+                <tr style={{borderBottom: '1px solid var(--border-color)'}}>
+                  <th style={{textAlign: 'left', padding: '10px 5px'}}>Producto</th>
+                  <th style={{textAlign: 'left', padding: '10px 5px'}}>ID / SKU</th>
+                  <th style={{textAlign: 'center', padding: '10px 5px'}}>Stock Actual</th>
+                  <th style={{textAlign: 'center', padding: '10px 5px'}}>Stock Mínimo</th>
+                  <th style={{textAlign: 'center', padding: '10px 5px'}}>Estado (ML)</th>
+                </tr>
+              </thead>
+              <tbody>
+                {stats.low_stock_products.map((p) => (
+                  <tr key={p.ml_id} style={{borderBottom: '1px solid var(--border-color)'}}>
+                    <td style={{padding: '10px 5px', fontWeight: 600}}>{p.title}</td>
+                    <td style={{padding: '10px 5px', fontFamily: 'monospace', fontSize: '0.8rem'}}>{p.ml_id}</td>
+                    <td style={{textAlign: 'center', padding: '10px 5px', color: 'var(--accent-red)', fontWeight: 'bold'}}>{p.available_quantity}</td>
+                    <td style={{textAlign: 'center', padding: '10px 5px', color: 'var(--text-secondary)'}}>{p.min_stock || 3}</td>
+                    <td style={{textAlign: 'center', padding: '10px 5px'}}>
+                      <span className="badge" style={{
+                        backgroundColor: p.status === 'active' ? 'rgba(16, 185, 129, 0.15)' : 'var(--bg-dark)',
+                        color: p.status === 'active' ? 'var(--accent-emerald)' : 'var(--text-secondary)'
+                      }}>{p.status}</span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+ 
       {/* Web Visits Breakdown */}
       <div style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(350px, 1fr))', gap: '20px', marginTop: '20px', alignItems: 'start'}}>
         {/* Visits by Domain */}
