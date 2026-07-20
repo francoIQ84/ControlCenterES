@@ -8,6 +8,7 @@ export default function Inventory() {
   const [query, setQuery] = useState("")
   const [sortConfig, setSortConfig] = useState({ key: null, direction: 'asc' })
   const [drafts, setDrafts] = useState({})
+  const [viewMode, setViewMode] = useState('detailed') // 'detailed' o 'compact'
   
   // Categories State
   const [categories, setCategories] = useState([])
@@ -284,14 +285,52 @@ export default function Inventory() {
       <p className="page-subtitle">Sincronizá tus publicaciones de Mercado Libre y gestioná tu Tienda Web.</p>
 
       <div className="inventory-controls" style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, gap: 15, flexWrap: 'wrap'}}>
-        <input 
-          type="text" 
-          placeholder="Buscar producto..." 
-          value={query} 
-          onChange={e => setQuery(e.target.value)} 
-          className="search-input"
-          style={{width: 300, marginBottom: 0}}
-        />
+        <div style={{display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap'}}>
+          <input 
+            type="text" 
+            placeholder="Buscar producto..." 
+            value={query} 
+            onChange={e => setQuery(e.target.value)} 
+            className="search-input"
+            style={{width: 250, marginBottom: 0}}
+          />
+          <div style={{display: 'inline-flex', border: '1px solid var(--border-color)', borderRadius: 6, overflow: 'hidden'}}>
+            <button 
+              type="button"
+              className="btn" 
+              style={{
+                padding: '6px 12px', 
+                fontSize: '0.8rem',
+                backgroundColor: viewMode === 'detailed' ? 'var(--accent-blue)' : 'transparent',
+                color: viewMode === 'detailed' ? '#fff' : 'var(--text-secondary)',
+                border: 'none',
+                borderRadius: 0,
+                cursor: 'pointer',
+                boxShadow: 'none'
+              }}
+              onClick={() => setViewMode('detailed')}
+            >
+              Detallada
+            </button>
+            <button 
+              type="button"
+              className="btn" 
+              style={{
+                padding: '6px 12px', 
+                fontSize: '0.8rem',
+                backgroundColor: viewMode === 'compact' ? 'var(--accent-blue)' : 'transparent',
+                color: viewMode === 'compact' ? '#fff' : 'var(--text-secondary)',
+                border: 'none',
+                borderRadius: 0,
+                cursor: 'pointer',
+                boxShadow: 'none'
+              }}
+              onClick={() => setViewMode('compact')}
+            >
+              Comprimida
+            </button>
+          </div>
+        </div>
         <div className="control-buttons" style={{display: 'flex', gap: 10, flexWrap: 'wrap'}}>
           {modifiedCount > 0 && (
             <button className="btn" style={{backgroundColor: '#10b981', color: 'white', border: 'none'}} onClick={saveAllChanges}>
@@ -455,18 +494,33 @@ export default function Inventory() {
           <div className="data-table-wrapper">
             <table className="data-table">
               <thead>
-                <tr>
-                  <th>IMG</th>
-                  <th onClick={() => requestSort('title')} style={{cursor: 'pointer', userSelect: 'none'}}>Detalle{getSortIcon('title')}</th>
-                  <th onClick={() => requestSort('status')} style={{cursor: 'pointer', userSelect: 'none'}}>Status (ML){getSortIcon('status')}</th>
-                  <th onClick={() => requestSort('stock')} style={{cursor: 'pointer', userSelect: 'none'}}>Stock & Precios{getSortIcon('stock')}</th>
-                  <th onClick={() => requestSort('is_web_active')} style={{cursor: 'pointer', userSelect: 'none'}}>Datos Tienda Web{getSortIcon('is_web_active')}</th>
-                  <th>Acción</th>
-                </tr>
+                {viewMode === 'compact' ? (
+                  <tr>
+                    <th style={{width: 50}}>IMG</th>
+                    <th onClick={() => requestSort('title')} style={{cursor: 'pointer', userSelect: 'none'}}>Detalle{getSortIcon('title')}</th>
+                    <th onClick={() => requestSort('status')} style={{cursor: 'pointer', userSelect: 'none'}}>Estado{getSortIcon('status')}</th>
+                    <th style={{width: 60}}>Stock</th>
+                    <th style={{width: 80}}>P. ML</th>
+                    <th style={{width: 80}}>C. Base</th>
+                    <th style={{width: 80}}>C. ML</th>
+                    <th style={{width: 80}}>P. Web</th>
+                    <th style={{width: 50, textAlign: 'center'}}>Web</th>
+                    <th style={{width: 110}}>Acciones</th>
+                  </tr>
+                ) : (
+                  <tr>
+                    <th>IMG</th>
+                    <th onClick={() => requestSort('title')} style={{cursor: 'pointer', userSelect: 'none'}}>Detalle{getSortIcon('title')}</th>
+                    <th onClick={() => requestSort('status')} style={{cursor: 'pointer', userSelect: 'none'}}>Status (ML){getSortIcon('status')}</th>
+                    <th onClick={() => requestSort('stock')} style={{cursor: 'pointer', userSelect: 'none'}}>Stock & Precios{getSortIcon('stock')}</th>
+                    <th onClick={() => requestSort('is_web_active')} style={{cursor: 'pointer', userSelect: 'none'}}>Datos Tienda Web{getSortIcon('is_web_active')}</th>
+                    <th>Acción</th>
+                  </tr>
+                )}
               </thead>
               <tbody>
                 {sortedProducts.map(p => (
-                  <ProductRow key={p.ml_id} p={p} onSave={handleUpdate} onOpenGallery={openGallery} onDraftChange={handleDraftChange} categories={categories} />
+                  <ProductRow key={p.ml_id} p={p} onSave={handleUpdate} onOpenGallery={openGallery} onDraftChange={handleDraftChange} categories={categories} viewMode={viewMode} />
                 ))}
               </tbody>
             </table>
@@ -595,7 +649,7 @@ export default function Inventory() {
   )
 }
 
-function ProductRow({ p, onSave, onOpenGallery, onDraftChange, categories }) {
+function ProductRow({ p, onSave, onOpenGallery, onDraftChange, categories, viewMode }) {
   const [qty, setQty] = useState(p.available_quantity)
   const [price, setPrice] = useState(p.price)
   const [cost, setCost] = useState(p.cost_price)
@@ -664,6 +718,134 @@ function ProductRow({ p, onSave, onOpenGallery, onDraftChange, categories }) {
       min_stock: parseNum(minStock, true)
     })
   }, [qty, price, cost, costMeli, priceWeb, isWebActive, description, useMeliImage, customMainUrl, additionalUrls, categoryId, syncMeli, minStock])
+
+  if (viewMode === 'compact') {
+    return (
+      <React.Fragment>
+        <tr className="product-row-card compact-tr" style={{borderBottom: '1px solid var(--border-color)', fontSize: '0.85rem'}}>
+          <td data-label="Imagen" style={{padding: '5px 8px'}}>
+            <img 
+              src={p.thumbnail || 'https://via.placeholder.com/35'} 
+              alt="thumb" 
+              style={{width: 35, height: 35, objectFit: 'contain', borderRadius: 4, border: '1px solid var(--border-color)', backgroundColor: '#fff'}}
+            />
+          </td>
+          <td data-label="Detalle" style={{padding: '5px 8px'}}>
+            <div style={{fontWeight: 600, fontSize: '0.85rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '280px'}} title={p.title}>{p.title}</div>
+            <div style={{color: 'var(--text-secondary)', fontSize: '0.7rem', fontFamily: 'monospace'}}>{p.ml_id}</div>
+          </td>
+          <td data-label="Estado" style={{padding: '5px 8px'}}>
+            <span style={{
+              fontSize: '0.8rem', 
+              fontWeight: 600,
+              color: p.status === 'active' ? 'var(--accent-emerald)' : 'var(--text-secondary)'
+            }}>
+              {p.status === 'active' ? 'Activa' : p.status}
+            </span>
+          </td>
+          <td data-label="Stock" style={{padding: '5px 8px'}}>
+            <input type="number" value={qty} onChange={e => setQty(e.target.value)} style={{width: 55, padding: '3px 5px', fontSize: '0.8rem', border: '1px solid var(--border-color)', borderRadius: 4, backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)'}}/>
+          </td>
+          <td data-label="P. ML" style={{padding: '5px 8px'}}>
+            <input type="number" value={price} onChange={e => setPrice(e.target.value)} style={{width: 75, padding: '3px 5px', fontSize: '0.8rem', border: '1px solid var(--border-color)', borderRadius: 4, backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)'}} disabled={p.status === 'local'}/>
+          </td>
+          <td data-label="C. Base" style={{padding: '5px 8px'}}>
+            <input type="number" value={cost} onChange={e => setCost(e.target.value)} style={{width: 75, padding: '3px 5px', fontSize: '0.8rem', border: '1px solid var(--border-color)', borderRadius: 4, backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)'}}/>
+          </td>
+          <td data-label="C. ML" style={{padding: '5px 8px'}}>
+            <input type="number" value={costMeli} onChange={e => setCostMeli(e.target.value)} style={{width: 65, padding: '3px 5px', fontSize: '0.8rem', border: '1px solid var(--border-color)', borderRadius: 4, backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)'}}/>
+          </td>
+          <td data-label="P. Web" style={{padding: '5px 8px'}}>
+            <input type="number" value={priceWeb} onChange={e => setPriceWeb(e.target.value)} style={{width: 75, padding: '3px 5px', fontSize: '0.8rem', border: '1px solid var(--border-color)', borderRadius: 4, backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)'}}/>
+          </td>
+          <td data-label="Web" style={{padding: '5px 8px', textAlign: 'center'}}>
+            <input type="checkbox" checked={isWebActive} onChange={e => setIsWebActive(e.target.checked)} style={{width: 'auto', cursor: 'pointer'}}/>
+          </td>
+          <td data-label="Acciones" style={{padding: '5px 8px'}}>
+            <div style={{display: 'flex', gap: 6, alignItems: 'center'}}>
+              <button className="btn-icon" onClick={() => onSave(p.ml_id, qty, price, cost, costMeli, priceWeb, getCombinedImages(), description, isWebActive, categoryId, syncMeli, minStock)} title="Guardar Todo" style={{padding: 4}}>
+                <Save size={14} className="text-blue-500" />
+              </button>
+              <button type="button" className="btn" style={{padding: '3px 6px', fontSize: '0.7rem', backgroundColor: 'var(--bg-hover)', color: 'var(--text-primary)', border: 'none', borderRadius: 4, cursor: 'pointer'}} onClick={() => setShowWebDetails(!showWebDetails)}>
+                Web {showWebDetails ? '▲' : '▼'}
+              </button>
+            </div>
+          </td>
+        </tr>
+        {showWebDetails && (
+          <tr className="web-details-row" style={{backgroundColor: 'var(--bg-dark)'}}>
+            <td colSpan="10" style={{padding: 15}}>
+              <div style={{display: 'flex', gap: 20, flexWrap: 'wrap'}}>
+                {/* Columna 1: Imagen Principal */}
+                <div style={{flex: 1, minWidth: 200, display: 'flex', flexDirection: 'column', gap: 8}}>
+                  <span style={{fontSize: '0.8rem', fontWeight: 'bold'}}>Imagen Web</span>
+                  <div style={{display: 'flex', gap: 10, alignItems: 'center'}}>
+                    <img 
+                      src={useMeliImage ? (p.thumbnail || 'https://via.placeholder.com/150') : (customMainUrl || 'https://via.placeholder.com/150')} 
+                      alt="Preview" 
+                      style={{width: 60, height: 60, objectFit: 'contain', border: '1px solid var(--border-color)', borderRadius: 6, backgroundColor: '#fff'}}
+                    />
+                    <div style={{display: 'flex', flexDirection: 'column', gap: 4}}>
+                      <label style={{fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer'}} disabled={p.status === 'local'}>
+                        <input type="radio" name={`img-source-${p.ml_id}`} checked={useMeliImage} onChange={() => setUseMeliImage(true)} disabled={p.status === 'local'}/>
+                        Mercado Libre
+                      </label>
+                      <label style={{fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer'}}>
+                        <input type="radio" name={`img-source-${p.ml_id}`} checked={!useMeliImage} onChange={() => setUseMeliImage(false)}/>
+                        Personalizada
+                      </label>
+                    </div>
+                  </div>
+                  {!useMeliImage && (
+                    <div style={{display: 'flex', gap: 5}}>
+                      <input type="text" value={customMainUrl} onChange={e => setCustomMainUrl(e.target.value)} style={{flex: 1, fontSize: '0.75rem', padding: '3px 5px', backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)', border: '1px solid var(--border-color)', borderRadius: 4}}/>
+                      <button type="button" className="btn" style={{padding: '2px 6px', fontSize: '0.7rem'}} onClick={() => onOpenGallery((url) => setCustomMainUrl(url))}>Sel</button>
+                    </div>
+                  )}
+                </div>
+                {/* Columna 2: Info Web */}
+                <div style={{flex: 1, minWidth: 200, display: 'flex', flexDirection: 'column', gap: 8}}>
+                  <div>
+                    <label style={{fontSize: '0.8rem', fontWeight: 'bold', display: 'block', marginBottom: 4}}>Categoría</label>
+                    <select value={categoryId} onChange={e => setCategoryId(e.target.value ? parseInt(e.target.value) : "")} style={{width: '100%', padding: '4px 8px', fontSize: '0.75rem', backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)', border: '1px solid var(--border-color)', borderRadius: 4}}>
+                      <option value="">Sin Categoría</option>
+                      {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                    </select>
+                  </div>
+                  <div style={{display: 'flex', alignItems: 'center', gap: 10, marginTop: 4}}>
+                    <label style={{fontSize: '0.75rem', color: 'var(--text-secondary)'}}>Alerta Mín:
+                      <input type="number" value={minStock} onChange={e => setMinStock(e.target.value)} style={{width: 50, marginLeft: 5, padding: '3px 5px', fontSize: '0.75rem', border: '1px solid var(--border-color)', borderRadius: 4, backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)'}}/>
+                    </label>
+                    {p.status !== 'local' && (
+                      <label style={{display: 'flex', alignItems: 'center', gap: 4, fontSize: '0.75rem', cursor: 'pointer', color: 'var(--text-secondary)'}}>
+                        <input type="checkbox" checked={syncMeli} onChange={e => setSyncMeli(e.target.checked)}/>
+                        Sincronizar ML
+                      </label>
+                    )}
+                  </div>
+                </div>
+                {/* Columna 3: Descrip */}
+                <div style={{flex: 2, minWidth: 250}}>
+                  <label style={{fontSize: '0.8rem', fontWeight: 'bold', display: 'block', marginBottom: 4}}>Descripción Web</label>
+                  <textarea value={description} onChange={e => setDescription(e.target.value)} style={{width: '100%', height: 60, padding: 5, fontSize: '0.75rem', backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)', border: '1px solid var(--border-color)', borderRadius: 4}}/>
+                </div>
+              </div>
+              <div style={{display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', color: 'var(--text-secondary)', borderTop: '1px solid var(--border-color)', paddingTop: 8, marginTop: 8}}>
+                <div style={{fontSize: '0.75rem', color: profit >= 0 ? 'var(--accent-emerald)' : 'var(--accent-red)', fontWeight: 600}}>
+                  Costo Total ML: ${(cost + costMeli).toFixed(2)} | Margen ML: {margin.toFixed(1)}% (Beneficio: ${profit.toFixed(2)})
+                </div>
+                {p.available_quantity <= (p.min_stock || 3) && p.status === 'active' && (
+                  <div style={{color: 'var(--accent-orange)', fontWeight: 'bold'}}>
+                    ⚠️ Alerta: Stock Bajo (Límite: {p.min_stock || 3})
+                  </div>
+                )}
+              </div>
+            </td>
+          </tr>
+        )}
+      </React.Fragment>
+    )
+  }
 
   return (
     <React.Fragment>
