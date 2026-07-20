@@ -570,12 +570,15 @@ def lookup_cuit(target_cuit: str, env: str = None):
         if not razon_social:
             raise Exception("No se encontró la razón social para este CUIT en el padrón de AFIP")
         
-        # Extract fecha de inicio de actividades
+        # Extract fecha de inicio de actividades (Standard format: YYYY-MM-DD or YYYYMM)
         fecha_inicio = ""
         if dg is not None:
             fi_node = find_by_local(dg, "fechaInscripcion")
             if fi_node is not None and fi_node.text:
-                fecha_inicio = fi_node.text  # Format: YYYY-MM-DD typically
+                fecha_inicio = fi_node.text
+                if len(fecha_inicio) == 10 and fecha_inicio[4] == '-':
+                    # YYYY-MM-DD -> DD/MM/YYYY
+                    fecha_inicio = f"{fecha_inicio[8:10]}/{fecha_inicio[5:7]}/{fecha_inicio[0:4]}"
         
         # Extract IVA condition and IIBB from impuestos
         iva_condition = ""
@@ -608,13 +611,25 @@ def lookup_cuit(target_cuit: str, env: str = None):
                             if desc_node is not None:
                                 iibb = clean_target  # Typically IIBB number = CUIT
         
-        # Check datosMonotributo for monotributo category
+        # Check datosMonotributo for monotributo category and fallback start date
         categoria_monotributo = ""
         monotributo_max = ""
         dm = find_by_local(persona_return, "datosMonotributo")
         if dm is not None:
             if not iva_condition:
                 iva_condition = "Responsable Monotributo"
+                
+            # Fallback for fecha de inicio: check impuesto periodo if fecha_inicio is empty
+            if not fecha_inicio:
+                imp_node = find_by_local(dm, "impuesto")
+                if imp_node is not None:
+                    per_node = find_by_local(imp_node, "periodo")
+                    if per_node is not None and per_node.text:
+                        # Format "YYYYMM" -> "01/MM/YYYY"
+                        periodo = per_node.text.strip()
+                        if len(periodo) == 6:
+                            fecha_inicio = f"01/{periodo[4:6]}/{periodo[0:4]}"
+                            
             cat_node = find_by_local(dm, "categoriaMonotributo")
             if cat_node is not None:
                 id_cat = find_by_local(cat_node, "idCategoria")
@@ -634,9 +649,8 @@ def lookup_cuit(target_cuit: str, env: str = None):
             cat_letter = categoria_monotributo.strip().upper()[-1:] if categoria_monotributo else ""
             monotributo_max = monotributo_topes.get(cat_letter, "")
         
-        # If no IIBB found, default to CUIT (common for monotributistas)
-        if not iibb and iva_condition == "Responsable Monotributo":
-            iibb = clean_target
+        # If no IIBB found, DO NOT default to CUIT if it might overwrite user input.
+        # Just leave it empty so the frontend preserves the user's manual input.
             
         return {
             "success": True,
