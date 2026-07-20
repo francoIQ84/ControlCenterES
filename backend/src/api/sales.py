@@ -272,3 +272,34 @@ def get_meli_invoice_pdf_endpoint(order_id: int):
         f.write(pdf_bytes)
         
     return FileResponse(filepath, media_type="application/pdf", filename=f"meli_factura_{order_id}.pdf")
+
+class MessageManualRequest(BaseModel):
+    message_type: str  # 'purchase' | 'shipping' | 'invoice'
+    custom_text: Optional[str] = None
+
+@router.post("/{order_id}/send-message")
+def send_manual_message(order_id: str, req: MessageManualRequest):
+    # Retrieve message text based on type
+    if req.message_type == 'purchase':
+        msg_text = req.custom_text or database.get_setting('meli_msg_purchase', '¡Hola! Gracias por tu compra. Nos pondremos en contacto a la brevedad para coordinar. ¡Saludos!')
+    elif req.message_type == 'shipping':
+        msg_text = req.custom_text or database.get_setting('meli_msg_shipping', 'Hola, te informamos que tu pedido está en camino. Puedes realizar el seguimiento desde el detalle de tu compra. ¡Gracias por confiar en nosotros!')
+    elif req.message_type == 'invoice':
+        msg_text = req.custom_text or database.get_setting('meli_msg_invoice', 'Hola, te informamos que ya adjuntamos tu factura digital a los detalles de tu compra. ¡Saludos!')
+    else:
+        raise HTTPException(status_code=400, detail="Tipo de mensaje inválido")
+
+    if not msg_text.strip():
+        raise HTTPException(status_code=400, detail="El contenido del mensaje no puede estar vacío")
+
+    ok, err = meli_api.send_post_sale_message(order_id, msg_text)
+    if not ok:
+        raise HTTPException(status_code=400, detail=err)
+
+    # If it was a shipping message, update state to avoid resending automatically
+    if req.message_type == 'shipping':
+        with database.get_connection() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute("UPDATE orders_cache SET shipping_msg_sent = 1 WHERE order_id = %s", (order_id,))
+
+    return {"success": True, "message": "Mensaje enviado exitosamente"}

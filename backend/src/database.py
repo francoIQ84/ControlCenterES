@@ -101,6 +101,7 @@ def init_db():
             cursor.execute('ALTER TABLE orders_cache ADD COLUMN IF NOT EXISTS afip_cae TEXT;')
             cursor.execute('ALTER TABLE orders_cache ADD COLUMN IF NOT EXISTS afip_cae_exp TEXT;')
             cursor.execute('ALTER TABLE orders_cache ADD COLUMN IF NOT EXISTS meli_invoice_attached INTEGER DEFAULT 0;')
+            cursor.execute('ALTER TABLE orders_cache ADD COLUMN IF NOT EXISTS shipping_msg_sent INTEGER DEFAULT 0;')
 
             # Customers table
             cursor.execute('''

@@ -13,6 +13,9 @@ class SetupRequest(BaseModel):
     client_secret: str
     redirect_uri: str
     demo_mode: bool
+    meli_msg_purchase: Optional[str] = ""
+    meli_msg_shipping: Optional[str] = ""
+    meli_msg_invoice: Optional[str] = ""
 
 class CodeRequest(BaseModel):
     code: str
@@ -43,7 +46,10 @@ def get_config(_=Depends(require_permission("settings"))):
         "client_id": database.get_setting('meli_client_id', ''),
         "client_secret": database.get_setting('meli_client_secret', ''),
         "redirect_uri": database.get_setting('meli_redirect_uri', 'https://lvh.me:8090/meli_callback'),
-        "demo_mode": database.get_setting('demo_mode', '1') == '1'
+        "demo_mode": database.get_setting('demo_mode', '1') == '1',
+        "meli_msg_purchase": database.get_setting('meli_msg_purchase', '¡Hola! Gracias por tu compra. Nos pondremos en contacto a la brevedad para coordinar. ¡Saludos!'),
+        "meli_msg_shipping": database.get_setting('meli_msg_shipping', 'Hola, te informamos que tu pedido está en camino. Puedes realizar el seguimiento desde el detalle de tu compra. ¡Gracias por confiar en nosotros!'),
+        "meli_msg_invoice": database.get_setting('meli_msg_invoice', 'Hola, te informamos que ya adjuntamos tu factura digital a los detalles de tu compra. ¡Saludos!')
     }
 
 @router.post("/setup")
@@ -58,6 +64,9 @@ def save_setup(req: SetupRequest, _=Depends(require_permission("settings"))):
     database.set_setting('meli_client_secret', req.client_secret)
     database.set_setting('meli_redirect_uri', req.redirect_uri)
     database.set_setting('demo_mode', '1' if req.demo_mode else '0')
+    database.set_setting('meli_msg_purchase', (req.meli_msg_purchase or '').strip())
+    database.set_setting('meli_msg_shipping', (req.meli_msg_shipping or '').strip())
+    database.set_setting('meli_msg_invoice', (req.meli_msg_invoice or '').strip())
     return {"success": True}
 
 @router.post("/exchange-code")

@@ -2,7 +2,15 @@ import React, { useState, useEffect } from 'react'
 import MediaBrowser from '../components/MediaBrowser'
 
 export default function Settings() {
-  const [config, setConfig] = useState({ client_id: '', client_secret: '', redirect_uri: '', demo_mode: true })
+  const [config, setConfig] = useState({ 
+    client_id: '', 
+    client_secret: '', 
+    redirect_uri: '', 
+    demo_mode: true,
+    meli_msg_purchase: '',
+    meli_msg_shipping: '',
+    meli_msg_invoice: ''
+  })
   const [status, setStatus] = useState({ is_authenticated: false, user_id: null })
   const [code, setCode] = useState("")
   
@@ -632,50 +640,86 @@ export default function Settings() {
 
       {/* Tab 1: Connection settings */}
       {activeTab === 'connection' && (
-        <div style={{display: 'flex', gap: 20, alignItems: 'flex-start'}}>
-          <div className="card" style={{flex: 1}}>
-            <h3>API de Mercado Libre</h3>
-            <div style={{display: 'flex', flexDirection: 'column', gap: 15}}>
-              <label>App ID (Client ID)
-                <input type="text" value={config.client_id} onChange={e => setConfig({...config, client_id: e.target.value})} style={{width: '100%', marginTop: 5}}/>
-              </label>
-              <label>Client Secret
-                <input type="password" value={config.client_secret} onChange={e => setConfig({...config, client_secret: e.target.value})} style={{width: '100%', marginTop: 5}}/>
-              </label>
-              <label>Redirect URI
-                <input type="text" value={config.redirect_uri} onChange={e => setConfig({...config, redirect_uri: e.target.value})} style={{width: '100%', marginTop: 5}}/>
-              </label>
-              <label style={{display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.9rem', cursor: 'pointer', marginTop: 5}}>
-                <input type="checkbox" checked={config.demo_mode} onChange={e => setConfig({...config, demo_mode: e.target.checked})} style={{width: 'auto'}}/>
-                Activar Modo Demo (Datos de prueba ficticios)
-              </label>
-              <button className="btn" onClick={handleSave}>Guardar API Config</button>
+        <div style={{display: 'flex', flexDirection: 'column', gap: 20}}>
+          <div style={{display: 'flex', gap: 20, alignItems: 'flex-start', flexWrap: 'wrap'}}>
+            <div className="card" style={{flex: 1, minWidth: 300}}>
+              <h3>API de Mercado Libre</h3>
+              <div style={{display: 'flex', flexDirection: 'column', gap: 15}}>
+                <label>App ID (Client ID)
+                  <input type="text" value={config.client_id} onChange={e => setConfig({...config, client_id: e.target.value})} style={{width: '100%', marginTop: 5}}/>
+                </label>
+                <label>Client Secret
+                  <input type="password" value={config.client_secret} onChange={e => setConfig({...config, client_secret: e.target.value})} style={{width: '100%', marginTop: 5}}/>
+                </label>
+                <label>Redirect URI
+                  <input type="text" value={config.redirect_uri} onChange={e => setConfig({...config, redirect_uri: e.target.value})} style={{width: '100%', marginTop: 5}}/>
+                </label>
+                <label style={{display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.9rem', cursor: 'pointer', marginTop: 5}}>
+                  <input type="checkbox" checked={config.demo_mode} onChange={e => setConfig({...config, demo_mode: e.target.checked})} style={{width: 'auto'}}/>
+                  Activar Modo Demo (Datos de prueba ficticios)
+                </label>
+                <button className="btn" onClick={handleSave}>Guardar API Config</button>
+              </div>
+            </div>
+
+            <div className="card" style={{flex: 1, minWidth: 300}}>
+              <h3>Estado de Conexión</h3>
+              {status.is_authenticated ? (
+                <div style={{color: 'var(--accent-emerald)', fontWeight: 'bold'}}>
+                  ✓ Conectado a Mercado Libre (Usuario ID: {status.user_id})
+                </div>
+              ) : (
+                <div style={{color: 'var(--accent-red)', fontWeight: 'bold'}}>
+                  ✗ No autenticado
+                </div>
+              )}
+
+              <div style={{marginTop: 20}}>
+                <p style={{fontSize: '0.9rem'}}>1. Haz clic aquí para autorizar la app:</p>
+                <button className="btn" style={{backgroundColor: '#ffe600', color: '#333'}} onClick={handleAuth}>
+                  Autorizar en Mercado Libre
+                </button>
+                
+                <p style={{fontSize: '0.9rem', marginTop: 20}}>2. Pega el código de la URL (TG-xxx):</p>
+                <div style={{display: 'flex', gap: 10}}>
+                  <input type="text" value={code} onChange={e => setCode(e.target.value)} placeholder="TG-..." style={{flex: 1}}/>
+                  <button className="btn" onClick={handleCode}>Vincular</button>
+                </div>
+              </div>
             </div>
           </div>
 
-          <div className="card" style={{flex: 1}}>
-            <h3>Estado de Conexión</h3>
-            {status.is_authenticated ? (
-              <div style={{color: 'var(--accent-emerald)', fontWeight: 'bold'}}>
-                ✓ Conectado a Mercado Libre (Usuario ID: {status.user_id})
-              </div>
-            ) : (
-              <div style={{color: 'var(--accent-red)', fontWeight: 'bold'}}>
-                ✗ No autenticado
-              </div>
-            )}
-
-            <div style={{marginTop: 20}}>
-              <p style={{fontSize: '0.9rem'}}>1. Haz clic aquí para autorizar la app:</p>
-              <button className="btn" style={{backgroundColor: '#ffe600', color: '#333'}} onClick={handleAuth}>
-                Autorizar en Mercado Libre
-              </button>
-              
-              <p style={{fontSize: '0.9rem', marginTop: 20}}>2. Pega el código de la URL (TG-xxx):</p>
-              <div style={{display: 'flex', gap: 10}}>
-                <input type="text" value={code} onChange={e => setCode(e.target.value)} placeholder="TG-..." style={{flex: 1}}/>
-                <button className="btn" onClick={handleCode}>Vincular</button>
-              </div>
+          <div className="card">
+            <h3>Mensajería Automática (Mercado Libre)</h3>
+            <p style={{fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: 15}}>
+              Configura los mensajes predeterminados que se enviarán de forma automática a los compradores en las diferentes etapas de la venta.
+            </p>
+            <div style={{display: 'flex', flexDirection: 'column', gap: 15}}>
+              <label style={{fontSize: '0.85rem'}}>Mensaje Automático de Compra (Se envía al crearse la venta)
+                <textarea 
+                  value={config.meli_msg_purchase || ""} 
+                  onChange={e => setConfig({...config, meli_msg_purchase: e.target.value})} 
+                  placeholder="ej. ¡Hola! Gracias por tu compra. Nos pondremos en contacto a la brevedad para coordinar. ¡Saludos!"
+                  style={{width: '100%', marginTop: 5, minHeight: 70, padding: 8, backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)', border: '1px solid var(--border-color)', borderRadius: 4}}
+                />
+              </label>
+              <label style={{fontSize: '0.85rem'}}>Mensaje de Seguimiento de Envío (Se envía cuando el paquete figura en camino)
+                <textarea 
+                  value={config.meli_msg_shipping || ""} 
+                  onChange={e => setConfig({...config, meli_msg_shipping: e.target.value})} 
+                  placeholder="ej. Hola, te informamos que tu pedido está en camino. Puedes realizar el seguimiento desde el detalle de tu compra. ¡Gracias por confiar en nosotros!"
+                  style={{width: '100%', marginTop: 5, minHeight: 70, padding: 8, backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)', border: '1px solid var(--border-color)', borderRadius: 4}}
+                />
+              </label>
+              <label style={{fontSize: '0.85rem'}}>Mensaje al Adjuntar Factura (Se envía al subir la factura digital)
+                <textarea 
+                  value={config.meli_msg_invoice || ""} 
+                  onChange={e => setConfig({...config, meli_msg_invoice: e.target.value})} 
+                  placeholder="ej. Hola, te informamos que ya adjuntamos tu factura digital a los detalles de tu compra. ¡Saludos!"
+                  style={{width: '100%', marginTop: 5, minHeight: 70, padding: 8, backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)', border: '1px solid var(--border-color)', borderRadius: 4}}
+                />
+              </label>
+              <button className="btn" onClick={handleSave} style={{alignSelf: 'flex-start'}}>Guardar Cambios de Mensajes</button>
             </div>
           </div>
         </div>

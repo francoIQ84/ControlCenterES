@@ -59,6 +59,24 @@ export default function Sales() {
     }
   }
 
+  const handleSendMeliMessage = async (orderId, type) => {
+    try {
+      const res = await fetch(`/api/sales/${orderId}/send-message`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message_type: type })
+      })
+      const data = await res.json()
+      if (res.ok) {
+        alert("Mensaje enviado exitosamente")
+      } else {
+        alert("Error al enviar mensaje: " + (data.detail || "Error desconocido"))
+      }
+    } catch(err) {
+      alert("Error de conexión: " + err.message)
+    }
+  }
+
   const fetchInventory = () => {
     fetch('/api/inventory/')
       .then(res => res.json())
@@ -489,6 +507,34 @@ export default function Sales() {
                             {invoicingStates[o.order_id] ? 'Facturando...' : 'Facturar (AFIP)'}
                           </button>
                         )}
+                      </div>
+                    )}
+                    {o.source_platform === 'MERCADOLIBRE' && (
+                      <div style={{display: 'flex', gap: 4, marginTop: 5, justifyContent: 'center', width: '100%'}}>
+                        <button 
+                          onClick={() => handleSendMeliMessage(o.order_id, 'purchase')} 
+                          className="btn" 
+                          title="Enviar mensaje de compra predeterminado" 
+                          style={{padding: '3px 6px', fontSize: '0.65rem', backgroundColor: 'var(--bg-dark)', color: 'var(--text-primary)', border: '1px solid var(--border-color)', width: 'auto'}}
+                        >
+                          ✉️ Compra
+                        </button>
+                        <button 
+                          onClick={() => handleSendMeliMessage(o.order_id, 'shipping')} 
+                          className="btn" 
+                          title="Enviar mensaje de seguimiento de envío predeterminado" 
+                          style={{padding: '3px 6px', fontSize: '0.65rem', backgroundColor: 'var(--bg-dark)', color: 'var(--text-primary)', border: '1px solid var(--border-color)', width: 'auto'}}
+                        >
+                          🚚 Envío
+                        </button>
+                        <button 
+                          onClick={() => handleSendMeliMessage(o.order_id, 'invoice')} 
+                          className="btn" 
+                          title="Enviar mensaje de factura predeterminado" 
+                          style={{padding: '3px 6px', fontSize: '0.65rem', backgroundColor: 'var(--bg-dark)', color: 'var(--text-primary)', border: '1px solid var(--border-color)', width: 'auto'}}
+                        >
+                          📄 Factura
+                        </button>
                       </div>
                     )}
                   </td>

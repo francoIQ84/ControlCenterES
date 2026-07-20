@@ -504,7 +504,46 @@ def sync_orders(limit=50, date_from=None, date_to=None):
         with ThreadPoolExecutor(max_workers=5) as executor:
             orders = list(executor.map(check_invoice, orders))
             
+        # Check which orders are new, and which orders transitioned to shipped
+        new_order_ids = []
+        shipped_order_ids = []
+        with database.get_connection() as conn:
+            with conn.cursor() as cursor:
+                for o in orders:
+                    cursor.execute("SELECT shipping_status, shipping_msg_sent FROM orders_cache WHERE order_id = %s", (o['order_id'],))
+                    row = cursor.fetchone()
+                    if not row:
+                        new_order_ids.append(o['order_id'])
+                        if o['shipping_status'] == 'shipped':
+                            shipped_order_ids.append(o['order_id'])
+                    else:
+                        old_status = row['shipping_status']
+                        msg_sent = row['shipping_msg_sent']
+                        if o['shipping_status'] == 'shipped' and old_status != 'shipped' and not msg_sent:
+                            shipped_order_ids.append(o['order_id'])
+
         database.save_orders_and_customers(orders)
+
+        # Send automatic post-sale purchase message for new orders
+        purchase_msg = database.get_setting('meli_msg_purchase', '')
+        if purchase_msg:
+            for order_id in new_order_ids:
+                ok_msg, info_msg = send_post_sale_message(order_id, purchase_msg)
+                if not ok_msg:
+                    print(f"[Sync] Error al enviar mensaje de compra para {order_id}: {info_msg}")
+
+        # Send automatic shipping tracking message for transitioned orders
+        shipping_msg = database.get_setting('meli_msg_shipping', '')
+        if shipping_msg:
+            for order_id in shipped_order_ids:
+                ok_msg, info_msg = send_post_sale_message(order_id, shipping_msg)
+                if ok_msg:
+                    with database.get_connection() as conn:
+                        with conn.cursor() as cursor:
+                            cursor.execute("UPDATE orders_cache SET shipping_msg_sent = 1 WHERE order_id = %s", (order_id,))
+                else:
+                    print(f"[Sync] Error al enviar mensaje de envío para {order_id}: {info_msg}")
+
         update_progress(status="completed", progress=100, message="Sincronización finalizada con éxito.")
         return True, len(orders)
     except Exception as e:
@@ -741,7 +780,12 @@ def upload_invoice_to_meli(order_id, pdf_path):
         if response.status_code == 400:
             try:
                 err_data = response.json()
-                if err_data.get('error') == 'order_belong_pack':
+                is_pack_error = (
+                    err_data.get('error') == 'order_belong_pack' or
+                    'order_belong_pack' in response.text or
+                    'order belong to a pack' in response.text
+                )
+                if is_pack_error:
                     # Fetch the order details to get the pack_id
                     order_res = api_request("GET", f"/orders/{order_id}")
                     if order_res and order_res.status_code == 200:
@@ -755,6 +799,11 @@ def upload_invoice_to_meli(order_id, pdf_path):
                                     'fiscal_document': (os.path.basename(pdf_path), f, 'application/pdf')
                                 }
                                 response = requests.post(url_pack, headers=headers, files=files_pack, timeout=30)
+                        else:
+                            print(f"[Pack Retry] pack_id not found in order {order_id}")
+                    else:
+                        status_code = order_res.status_code if order_res else "No response"
+                        print(f"[Pack Retry] Failed to get order {order_id} details, status={status_code}")
             except Exception as e:
                 print(f"Error trying to fetch pack_id for order {order_id}: {e}")
 
@@ -767,7 +816,7 @@ def upload_invoice_to_meli(order_id, pdf_path):
                         (order_id,)
                     )
             # Send post-sale message
-            msg_text = "Hola, gracias por tu compra. Te informamos que ya adjuntamos tu factura digital a los detalles de tu compra. ¡Saludos!"
+            msg_text = database.get_setting('meli_msg_invoice', 'Hola, gracias por tu compra. Te informamos que ya adjuntamos tu factura digital a los detalles de tu compra. ¡Saludos!')
             ok_msg, info_msg = send_post_sale_message(order_id, msg_text)
             if not ok_msg:
                 print(f"Advertencia: No se pudo enviar el mensaje posventa para order {order_id}: {info_msg}")
