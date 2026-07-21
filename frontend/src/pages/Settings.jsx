@@ -102,6 +102,63 @@ export default function Settings() {
   const [creatingBackup, setCreatingBackup] = useState(false)
   const [diskSpace, setDiskSpace] = useState(null)
 
+  // WhatsApp Chatbot State
+  const [waConfig, setWaConfig] = useState({
+    enabled: false,
+    gemini_api_key: '',
+    bot_instructions: '',
+    status: 'disconnected',
+    phone: '',
+    qr: ''
+  })
+
+  const fetchWaConfig = () => {
+    fetch('/api/whatsapp/config')
+      .then(r => {
+        if (r.ok) return r.json()
+        throw new Error("Failed to fetch WhatsApp config")
+      })
+      .then(setWaConfig)
+      .catch(err => console.error(err))
+  }
+
+  const handleSaveWaConfig = async (e) => {
+    e.preventDefault()
+    try {
+      const res = await fetch('/api/whatsapp/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          enabled: waConfig.enabled,
+          gemini_api_key: waConfig.gemini_api_key,
+          bot_instructions: waConfig.bot_instructions
+        })
+      })
+      if (res.ok) {
+        alert("Configuración de WhatsApp guardada con éxito.")
+        fetchWaConfig()
+      } else {
+        alert("Error al guardar la configuración.")
+      }
+    } catch(err) {
+      alert("Error de conexión: " + err.message)
+    }
+  }
+
+  // Polling WhatsApp status when on tab
+  useEffect(() => {
+    if (activeTab === 'whatsapp') {
+      fetchWaConfig()
+      const interval = setInterval(() => {
+        fetch('/api/whatsapp/config')
+          .then(r => r.json())
+          .then(setWaConfig)
+          .catch(err => console.error("Error polling WhatsApp config:", err))
+      }, 4000)
+      return () => clearInterval(interval)
+    }
+  }, [activeTab])
+
   useEffect(() => {
     fetch('/api/settings/config').then(r=>r.json()).then(setConfig)
     fetch('/api/settings/status').then(r=>r.json()).then(setStatus)
@@ -640,6 +697,20 @@ export default function Settings() {
           onClick={() => setActiveTab('backups')}
         >
           Respaldos
+        </button>
+        <button 
+          style={{
+            padding: '10px 15px',
+            background: 'none',
+            border: 'none',
+            borderBottom: activeTab === 'whatsapp' ? '3px solid var(--accent-blue)' : 'none',
+            color: activeTab === 'whatsapp' ? 'var(--text-primary)' : 'var(--text-secondary)',
+            fontWeight: activeTab === 'whatsapp' ? 'bold' : 'normal',
+            cursor: 'pointer'
+          }}
+          onClick={() => setActiveTab('whatsapp')}
+        >
+          🤖 Asistente WhatsApp (IA)
         </button>
       </div>
 
@@ -1670,6 +1741,135 @@ export default function Settings() {
                 <p style={{fontSize: '0.85rem', color: 'var(--text-secondary)'}}>Cargando información de disco...</p>
               )}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Tab 6: WhatsApp Agent Settings */}
+      {activeTab === 'whatsapp' && (
+        <div style={{display: 'flex', flexDirection: 'column', gap: 20}}>
+          <div style={{display: 'flex', gap: 20, alignItems: 'flex-start', flexWrap: 'wrap'}}>
+            
+            {/* API Config Panel */}
+            <div className="card" style={{flex: 2, minWidth: 320}}>
+              <h3>Asistente de WhatsApp con Gemini AI</h3>
+              <p style={{fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: 20}}>
+                Configura tu agente inteligente para responder de forma automática consultas de clientes en WhatsApp, incluyendo stock, precios y estado de sus pedidos.
+              </p>
+              
+              <form onSubmit={handleSaveWaConfig} style={{display: 'flex', flexDirection: 'column', gap: 15}}>
+                
+                <label style={{display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.95rem', cursor: 'pointer', marginBottom: 5}}>
+                  <input 
+                    type="checkbox" 
+                    checked={waConfig.enabled || false} 
+                    onChange={e => setWaConfig({...waConfig, enabled: e.target.checked})} 
+                    style={{width: 'auto'}}
+                  />
+                  <strong>Activar Asistente Virtual en WhatsApp</strong>
+                </label>
+
+                <label>Google Gemini API Key (Capa Gratuita o Pago)
+                  <input 
+                    type="password" 
+                    value={waConfig.gemini_api_key || ""} 
+                    onChange={e => setWaConfig({...waConfig, gemini_api_key: e.target.value})} 
+                    placeholder="AIzaSy..." 
+                    style={{width: '100%', marginTop: 5}}
+                    required={waConfig.enabled}
+                  />
+                  <small style={{display: 'block', marginTop: 4, color: 'var(--text-secondary)', fontSize: '0.75rem'}}>
+                    Obtén una clave gratuita de API en <a href="https://aistudio.google.com/" target="_blank" rel="noopener noreferrer" style={{color: 'var(--accent-blue)', textDecoration: 'underline'}}>Google AI Studio</a>.
+                  </small>
+                </label>
+
+                <label>Instrucciones de Personalización (System Instructions)
+                  <textarea 
+                    value={waConfig.bot_instructions || ""} 
+                    onChange={e => setWaConfig({...waConfig, bot_instructions: e.target.value})} 
+                    placeholder="ej. Eres un asistente virtual experto..."
+                    style={{
+                      width: '100%', 
+                      marginTop: 5, 
+                      minHeight: 180, 
+                      padding: 10, 
+                      backgroundColor: 'var(--bg-card)', 
+                      color: 'var(--text-primary)', 
+                      border: '1px solid var(--border-color)', 
+                      borderRadius: 4,
+                      fontFamily: 'inherit',
+                      fontSize: '0.85rem'
+                    }}
+                    required
+                  />
+                  <small style={{display: 'block', marginTop: 4, color: 'var(--text-secondary)', fontSize: '0.75rem'}}>
+                    Define el tono del bot, reglas de cortesía, y cómo debe responder a preguntas frecuentes. El catálogo y stock vigentes de tu web se anexarán automáticamente a su memoria.
+                  </small>
+                </label>
+
+                <button type="submit" className="btn" style={{alignSelf: 'flex-start'}}>Guardar Configuración</button>
+              </form>
+            </div>
+
+            {/* Connection Status Panel */}
+            <div className="card" style={{flex: 1, minWidth: 280, display: 'flex', flexDirection: 'column', gap: 15, alignItems: 'center', textAlign: 'center'}}>
+              <h3>Estado del Servicio</h3>
+              
+              {waConfig.status === 'connected' && (
+                <div style={{width: '100%'}}>
+                  <div style={{display: 'inline-flex', alignItems: 'center', gap: 6, padding: '5px 10px', borderRadius: 20, backgroundColor: 'rgba(16, 185, 129, 0.15)', color: 'var(--accent-emerald)', fontWeight: 600, fontSize: '0.8rem', marginBottom: 15}}>
+                    ● CONECTADO
+                  </div>
+                  <p style={{fontSize: '0.9rem', margin: '0 0 10px 0'}}>
+                    El asistente virtual está respondiendo activamente consultas.
+                  </p>
+                  <div style={{fontSize: '0.85rem', padding: '10px 15px', backgroundColor: 'var(--bg-dark)', borderRadius: 6, display: 'inline-block', fontFamily: 'monospace'}}>
+                    Línea Vinculada: +{waConfig.phone}
+                  </div>
+                </div>
+              )}
+
+              {waConfig.status === 'connecting' && (
+                <div>
+                  <div style={{display: 'inline-flex', alignItems: 'center', gap: 6, padding: '5px 10px', borderRadius: 20, backgroundColor: 'rgba(59, 130, 246, 0.15)', color: 'var(--accent-blue)', fontWeight: 600, fontSize: '0.8rem', marginBottom: 15}}>
+                    ● CONECTANDO...
+                  </div>
+                  <p style={{fontSize: '0.85rem', color: 'var(--text-secondary)'}}>
+                    Iniciando el cliente de WhatsApp en el servidor. Por favor, aguarda.
+                  </p>
+                </div>
+              )}
+
+              {waConfig.status === 'qrcode' && waConfig.qr && (
+                <div style={{display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%'}}>
+                  <div style={{display: 'inline-flex', alignItems: 'center', gap: 6, padding: '5px 10px', borderRadius: 20, backgroundColor: 'rgba(245, 158, 11, 0.15)', color: '#d97706', fontWeight: 600, fontSize: '0.8rem', marginBottom: 15}}>
+                    ● CÓDIGO QR LISTO
+                  </div>
+                  <p style={{fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: 15}}>
+                    Escanea este código desde la sección <strong>Dispositivos Vinculados</strong> en tu celular para conectar el bot.
+                  </p>
+                  <div style={{padding: 10, backgroundColor: '#fff', borderRadius: 8, display: 'inline-block'}}>
+                    <img 
+                      src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(waConfig.qr)}`} 
+                      alt="WhatsApp QR Code" 
+                      style={{display: 'block', width: 200, height: 200}}
+                    />
+                  </div>
+                </div>
+              )}
+
+              {waConfig.status === 'disconnected' && (
+                <div>
+                  <div style={{display: 'inline-flex', alignItems: 'center', gap: 6, padding: '5px 10px', borderRadius: 20, backgroundColor: 'rgba(239, 68, 68, 0.15)', color: 'var(--accent-red)', fontWeight: 600, fontSize: '0.8rem', marginBottom: 15}}>
+                    ● DESCONECTADO
+                  </div>
+                  <p style={{fontSize: '0.85rem', color: 'var(--text-secondary)'}}>
+                    El bot de WhatsApp no se encuentra iniciado. Asegúrate de que el servicio está activo en el servidor.
+                  </p>
+                </div>
+              )}
+            </div>
+
           </div>
         </div>
       )}

@@ -182,6 +182,18 @@ def init_db():
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             ''')
+            
+            # WhatsApp chat history table
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS whatsapp_chat_history (
+                    id SERIAL PRIMARY KEY,
+                    sender TEXT NOT NULL,
+                    message TEXT NOT NULL,
+                    reply TEXT NOT NULL,
+                    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+
             cursor.execute('ALTER TABLE fixed_expenses ADD COLUMN IF NOT EXISTS month INT;')
             cursor.execute('ALTER TABLE fixed_expenses ADD COLUMN IF NOT EXISTS year INT;')
             cursor.execute('ALTER TABLE login_history ADD COLUMN IF NOT EXISTS username VARCHAR(100);')
@@ -940,3 +952,27 @@ def create_manual_order(order_id: int, date_created: str, buyer_nickname: str, b
                 source_platform,
                 payment_method
             ))
+
+# --- WhatsApp Operations ---
+
+def get_whatsapp_chat_history(sender: str, limit: int = 10):
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute('''
+                SELECT message, reply, timestamp 
+                FROM whatsapp_chat_history 
+                WHERE sender = %s 
+                ORDER BY timestamp DESC 
+                LIMIT %s
+            ''', (sender, limit))
+            history = cursor.fetchall()
+            history.reverse()
+            return history
+
+def add_whatsapp_chat_message(sender: str, message: str, reply: str):
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute('''
+                INSERT INTO whatsapp_chat_history (sender, message, reply)
+                VALUES (%s, %s, %s)
+            ''', (sender, message, reply))

@@ -10,6 +10,7 @@ from .auth import router as auth_router, verify_session, require_permission
 from .categories import router as categories_router
 from .expenses import router as expenses_router
 from .backup import router as backup_router
+from .whatsapp import router as whatsapp_router
 
 api_router = APIRouter()
 
@@ -27,3 +28,4 @@ api_router.include_router(media_router, prefix="/media", tags=["media"], depende
 api_router.include_router(categories_router, prefix="/categories", tags=["categories"], dependencies=[Depends(verify_session), Depends(require_permission("inventory"))])
 api_router.include_router(expenses_router, prefix="/expenses", tags=["expenses"], dependencies=[Depends(verify_session), Depends(require_permission("expenses"))])
 api_router.include_router(backup_router, prefix="/backup", tags=["backup"], dependencies=[Depends(verify_session), Depends(require_permission("settings"))])
+api_router.include_router(whatsapp_router, prefix="/whatsapp", tags=["whatsapp"])
