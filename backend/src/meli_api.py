@@ -319,6 +319,23 @@ def sync_products():
         update_progress(status="failed", message=f"Excepción en sincronización de productos: {str(e)}")
         return False, f"Excepción en sincronización: {str(e)}"
 
+def is_recent_order(date_str, max_hours=24):
+    """
+    Checks if the order was created within the last max_hours.
+    Supports standard ISO format dates with timezone offsets or 'Z'.
+    """
+    try:
+        from datetime import timezone
+        # Clean up timezone suffix Z to parse with fromisoformat
+        cleaned = date_str.replace('Z', '+00:00')
+        created_dt = datetime.fromisoformat(cleaned)
+        now = datetime.now(created_dt.tzinfo or timezone.utc)
+        age = now - created_dt
+        return age.total_seconds() < max_hours * 3600
+    except Exception as e:
+        print(f"[Sync] Error parsing order date '{date_str}': {e}")
+        return True # Default to True to avoid skipping messages if parsing fails
+
 def sync_orders(limit=50, date_from=None, date_to=None):
     """Synchronizes sales orders from Meli to SQLite cache."""
     if is_demo_mode():
@@ -529,6 +546,11 @@ def sync_orders(limit=50, date_from=None, date_to=None):
         purchase_msg = database.get_setting('meli_msg_purchase', '')
         if send_purchase_enabled and purchase_msg:
             for order_id in new_order_ids:
+                # Find the order in the synced list to check its creation date
+                order_info = next((ord for ord in orders if ord['order_id'] == order_id), None)
+                if order_info and not is_recent_order(order_info['date_created'], max_hours=24):
+                    print(f"[Sync] Evitando enviar mensaje automático de compra para orden antigua {order_id} ({order_info['date_created']})")
+                    continue
                 ok_msg, info_msg = send_post_sale_message(order_id, purchase_msg)
                 if not ok_msg:
                     print(f"[Sync] Error al enviar mensaje de compra para {order_id}: {info_msg}")
@@ -538,6 +560,11 @@ def sync_orders(limit=50, date_from=None, date_to=None):
         shipping_msg = database.get_setting('meli_msg_shipping', '')
         if send_shipping_enabled and shipping_msg:
             for order_id in shipped_order_ids:
+                # Find the order in the synced list to check its creation date
+                order_info = next((ord for ord in orders if ord['order_id'] == order_id), None)
+                if order_info and not is_recent_order(order_info['date_created'], max_hours=72):
+                    print(f"[Sync] Evitando enviar mensaje automático de envío para orden antigua {order_id} ({order_info['date_created']})")
+                    continue
                 ok_msg, info_msg = send_post_sale_message(order_id, shipping_msg)
                 if ok_msg:
                     with database.get_connection() as conn:

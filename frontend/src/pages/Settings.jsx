@@ -7,6 +7,7 @@ export default function Settings() {
     client_secret: '', 
     redirect_uri: '', 
     demo_mode: true,
+    meli_sync_interval: 30,
     meli_msg_purchase: '',
     meli_msg_shipping: '',
     meli_msg_invoice: '',
@@ -661,6 +662,19 @@ export default function Settings() {
                 <label style={{display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.9rem', cursor: 'pointer', marginTop: 5}}>
                   <input type="checkbox" checked={config.demo_mode} onChange={e => setConfig({...config, demo_mode: e.target.checked})} style={{width: 'auto'}}/>
                   Activar Modo Demo (Datos de prueba ficticios)
+                </label>
+                <label style={{display: 'flex', flexDirection: 'column', gap: 5, fontSize: '0.9rem', marginTop: 5}}>
+                  Intervalo de Sincronización Automática
+                  <select 
+                    value={config.meli_sync_interval || 30} 
+                    onChange={e => setConfig({...config, meli_sync_interval: parseInt(e.target.value)})}
+                    style={{width: '100%', marginTop: 5, padding: '8px', borderRadius: '4px', border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)'}}
+                  >
+                    <option value={15}>Cada 15 minutos</option>
+                    <option value={30}>Cada 30 minutos</option>
+                    <option value={60}>Cada 60 minutos (1 hora)</option>
+                    <option value={120}>Cada 120 minutos (2 horas)</option>
+                  </select>
                 </label>
                 <button className="btn" onClick={handleSave}>Guardar API Config</button>
               </div>
