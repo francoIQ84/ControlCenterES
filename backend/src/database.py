@@ -600,9 +600,9 @@ def get_all_customers():
         with conn.cursor() as cursor:
             cursor.execute('''
                 SELECT 
-                    c.buyer_id, c.nickname, c.full_name, c.email, c.phone, c.document_type, c.document_number, c.source_platform,
+                    c.buyer_id, c.nickname, c.full_name, c.email, c.phone, c.document_type, c.document_number, c.address, c.source_platform,
                     COUNT(o.order_id) as total_orders,
-                    SUM(o.total_amount) as total_spent
+                    COALESCE(SUM(o.total_amount), 0) as total_spent
                 FROM customers c
                 LEFT JOIN orders_cache o ON c.buyer_id = o.buyer_id
                 GROUP BY c.buyer_id
@@ -620,11 +620,68 @@ def get_all_customers():
                     'phone': r['phone'],
                     'document_type': r['document_type'],
                     'document_number': r['document_number'],
+                    'address': r.get('address', ''),
                     'total_orders': r['total_orders'] or 0,
                     'total_spent': r['total_spent'] or 0.0,
                     'source_platform': r['source_platform']
                 })
             return customers
+
+def create_customer(customer_data):
+    import time
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            buyer_id = customer_data.get('buyer_id')
+            if not buyer_id:
+                buyer_id = int(time.time() * 1000)
+            
+            nickname = customer_data.get('nickname') or ''
+            full_name = customer_data.get('full_name') or ''
+            email = customer_data.get('email') or ''
+            phone = customer_data.get('phone') or ''
+            document_type = customer_data.get('document_type') or ''
+            document_number = customer_data.get('document_number') or ''
+            address = customer_data.get('address') or ''
+            source_platform = customer_data.get('source_platform') or 'MANUAL'
+
+            cursor.execute('''
+                INSERT INTO customers (buyer_id, nickname, full_name, email, phone, document_type, document_number, address, source_platform)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                RETURNING buyer_id
+            ''', (buyer_id, nickname, full_name, email, phone, document_type, document_number, address, source_platform))
+            row = cursor.fetchone()
+            return row['buyer_id']
+
+def update_customer(buyer_id, customer_data):
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute('''
+                UPDATE customers
+                SET nickname = %s,
+                    full_name = %s,
+                    email = %s,
+                    phone = %s,
+                    document_type = %s,
+                    document_number = %s,
+                    address = %s
+                WHERE buyer_id = %s
+            ''', (
+                customer_data.get('nickname', ''),
+                customer_data.get('full_name', ''),
+                customer_data.get('email', ''),
+                customer_data.get('phone', ''),
+                customer_data.get('document_type', ''),
+                customer_data.get('document_number', ''),
+                customer_data.get('address', ''),
+                buyer_id
+            ))
+            return True
+
+def delete_customer(buyer_id):
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute("DELETE FROM customers WHERE buyer_id = %s", (buyer_id,))
+            return True
 
 # --- Metrics Operations ---
 
