@@ -201,3 +201,86 @@ def update_product(ml_id: str, payload: UpdateProductRequest):
         }
         
     return {"success": True, "message": "Updated and synced"}
+
+class QuickStockRequest(BaseModel):
+    ml_id: str
+    qty: Optional[int] = None
+    delta: Optional[int] = None
+    price: Optional[float] = None
+    price_web: Optional[float] = None
+
+@router.get("/scan/{code}")
+def scan_product_by_code(code: str):
+    # Extract ml_id from CC-PROD-{ml_id} or raw code
+    raw_code = code.strip()
+    if raw_code.startswith("CC-PROD-"):
+        target_id = raw_code.replace("CC-PROD-", "")
+    else:
+        target_id = raw_code
+        
+    product = database.get_product_by_ml_id(target_id)
+    if not product:
+        # Try searching by exact ml_id or partial title/ml_id
+        prods = database.get_all_products(query=target_id)
+        if prods:
+            product = prods[0]
+            
+    if not product:
+        raise HTTPException(status_code=404, detail=f"No se encontró ningún producto con el código: {raw_code}")
+        
+    return {"product": product}
+
+@router.post("/quick-stock")
+def quick_adjust_stock(payload: QuickStockRequest):
+    # Fetch product first
+    product = database.get_product_by_ml_id(payload.ml_id)
+    if not product:
+        raise HTTPException(status_code=404, detail="Producto no encontrado")
+        
+    current_qty = product.get('available_quantity', 0)
+    
+    if payload.qty is not None:
+        new_qty = max(0, payload.qty)
+    elif payload.delta is not None:
+        new_qty = max(0, current_qty + payload.delta)
+    else:
+        new_qty = current_qty
+        
+    new_price = float(payload.price) if payload.price is not None else float(product.get('price', 0.0))
+    new_price_web = float(payload.price_web) if payload.price_web is not None else float(product.get('price_web', 0.0))
+    
+    # Update local DB stock and price
+    database.update_product_stock_price(payload.ml_id, new_qty, new_price)
+    
+    if payload.price_web is not None:
+        database.update_product_web_details(
+            payload.ml_id,
+            new_price_web,
+            product.get('images', ''),
+            product.get('description', ''),
+            product.get('is_web_active', 1),
+            product.get('category_id'),
+            product.get('sync_meli', 1),
+            product.get('min_stock', 0)
+        )
+    
+    # Sync with Mercado Libre if applicable
+    db_status = product.get('status', 'active')
+    sync_meli = product.get('sync_meli', 1)
+    is_local = payload.ml_id.startswith('LOCAL-') or payload.ml_id.startswith('WEB-')
+    
+    warning = None
+    if db_status in ('active', 'paused') and not is_local and sync_meli == 1:
+        ok, msg = meli_api.update_stock_and_price(payload.ml_id, new_qty, new_price)
+        if not ok:
+            warning = f"Cambios guardados localmente. Error al sincronizar con Mercado Libre: {msg}"
+            
+    # Fetch updated product
+    updated_product = database.get_product_by_ml_id(payload.ml_id)
+    return {
+        "success": True, 
+        "product": updated_product,
+        "new_qty": new_qty,
+        "new_price": new_price,
+        "warning": warning
+    }

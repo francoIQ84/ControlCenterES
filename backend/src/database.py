@@ -52,6 +52,12 @@ def init_db():
             cursor.execute('ALTER TABLE products_cache ADD COLUMN IF NOT EXISTS visits_web INTEGER DEFAULT 0;')
             cursor.execute('ALTER TABLE products_cache ADD COLUMN IF NOT EXISTS min_stock INTEGER DEFAULT 0;')
             cursor.execute('ALTER TABLE products_cache ADD COLUMN IF NOT EXISTS cost_meli REAL DEFAULT 0.0;')
+            cursor.execute('ALTER TABLE products_cache ADD COLUMN IF NOT EXISTS last_modified TEXT;')
+            cursor.execute('ALTER TABLE products_cache ADD COLUMN IF NOT EXISTS prev_stock INTEGER;')
+            cursor.execute('ALTER TABLE products_cache ADD COLUMN IF NOT EXISTS prev_price REAL;')
+            cursor.execute('ALTER TABLE products_cache ADD COLUMN IF NOT EXISTS prev_cost_price REAL;')
+            cursor.execute('ALTER TABLE products_cache ADD COLUMN IF NOT EXISTS prev_cost_meli REAL;')
+            cursor.execute('ALTER TABLE products_cache ADD COLUMN IF NOT EXISTS prev_price_web REAL;')
 
             # Categories table
             cursor.execute('''
@@ -294,8 +300,8 @@ def create_product(product_data):
         with conn.cursor() as cursor:
             cursor.execute('''
                 INSERT INTO products_cache 
-                (ml_id, title, price, available_quantity, cost_price, cost_meli, permalink, thumbnail, status, last_sync, price_web, images, description, is_web_active, visits_meli, visits_web, category_id, sync_meli, min_stock)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                (ml_id, title, price, available_quantity, cost_price, cost_meli, permalink, thumbnail, status, last_sync, price_web, images, description, is_web_active, visits_meli, visits_web, category_id, sync_meli, min_stock, last_modified)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             ''', (
                 product_data['ml_id'],
                 product_data['title'],
@@ -315,27 +321,55 @@ def create_product(product_data):
                 product_data.get('visits_web', 0),
                 product_data.get('category_id'),
                 product_data.get('sync_meli', 1),
-                product_data.get('min_stock', 0)
+                product_data.get('min_stock', 0),
+                now
             ))
 
 def update_product_cost(ml_id, cost_price, cost_meli):
+    now = datetime.now().isoformat()
     with get_connection() as conn:
         with conn.cursor() as cursor:
-            cursor.execute("UPDATE products_cache SET cost_price = %s, cost_meli = %s WHERE ml_id = %s", (cost_price, cost_meli, ml_id))
+            cursor.execute("SELECT cost_price, cost_meli, prev_cost_price, prev_cost_meli FROM products_cache WHERE ml_id = %s", (ml_id,))
+            row = cursor.fetchone()
+            p_cost = row['prev_cost_price'] if row else None
+            p_meli = row['prev_cost_meli'] if row else None
+            if row:
+                if float(cost_price) != float(row['cost_price'] or 0.0):
+                    p_cost = row['cost_price']
+                if float(cost_meli) != float(row['cost_meli'] or 0.0):
+                    p_meli = row['cost_meli']
+            cursor.execute("UPDATE products_cache SET cost_price = %s, cost_meli = %s, prev_cost_price = %s, prev_cost_meli = %s, last_modified = %s WHERE ml_id = %s", (cost_price, cost_meli, p_cost, p_meli, now, ml_id))
 
 def update_product_stock_price(ml_id, quantity, price):
+    now = datetime.now().isoformat()
     with get_connection() as conn:
         with conn.cursor() as cursor:
-            cursor.execute("UPDATE products_cache SET available_quantity = %s, price = %s WHERE ml_id = %s", (quantity, price, ml_id))
+            cursor.execute("SELECT available_quantity, price, prev_stock, prev_price FROM products_cache WHERE ml_id = %s", (ml_id,))
+            row = cursor.fetchone()
+            p_stock = row['prev_stock'] if row else None
+            p_price = row['prev_price'] if row else None
+            if row:
+                if int(quantity) != int(row['available_quantity'] or 0):
+                    p_stock = row['available_quantity']
+                if float(price) != float(row['price'] or 0.0):
+                    p_price = row['price']
+            cursor.execute("UPDATE products_cache SET available_quantity = %s, price = %s, prev_stock = %s, prev_price = %s, last_modified = %s WHERE ml_id = %s", (quantity, price, p_stock, p_price, now, ml_id))
 
 def update_product_web_details(ml_id, price_web, images, description, is_web_active, category_id=None, sync_meli=1, min_stock=0):
+    now = datetime.now().isoformat()
     with get_connection() as conn:
         with conn.cursor() as cursor:
+            cursor.execute("SELECT price_web, prev_price_web FROM products_cache WHERE ml_id = %s", (ml_id,))
+            row = cursor.fetchone()
+            p_web = row['prev_price_web'] if row else None
+            if row:
+                if float(price_web) != float(row['price_web'] or 0.0):
+                    p_web = row['price_web']
             cursor.execute('''
                 UPDATE products_cache 
-                SET price_web = %s, images = %s, description = %s, is_web_active = %s, category_id = %s, sync_meli = %s, min_stock = %s
+                SET price_web = %s, images = %s, description = %s, is_web_active = %s, category_id = %s, sync_meli = %s, min_stock = %s, prev_price_web = %s, last_modified = %s
                 WHERE ml_id = %s
-            ''', (price_web, images, description, is_web_active, category_id, sync_meli, min_stock, ml_id))
+            ''', (price_web, images, description, is_web_active, category_id, sync_meli, min_stock, p_web, now, ml_id))
 
 def get_all_products(query=None, status_filter=None, is_web_active=None, category_slug=None):
     with get_connection() as conn:
@@ -343,7 +377,9 @@ def get_all_products(query=None, status_filter=None, is_web_active=None, categor
             sql = """
                 SELECT p.ml_id, p.title, p.price, p.available_quantity, p.cost_price, p.cost_meli, p.permalink, p.thumbnail, 
                        p.status, p.last_sync, p.price_web, p.images, p.description, p.is_web_active, 
-                       p.visits_meli, p.visits_web, p.category_id, p.sync_meli, p.min_stock, c.name as category_name, c.slug as category_slug
+                       p.visits_meli, p.visits_web, p.category_id, p.sync_meli, p.min_stock, p.last_modified,
+                       p.prev_stock, p.prev_price, p.prev_cost_price, p.prev_cost_meli, p.prev_price_web,
+                       c.name as category_name, c.slug as category_slug
                  FROM products_cache p
                  LEFT JOIN categories c ON p.category_id = c.id
                  WHERE 1=1
@@ -369,6 +405,22 @@ def get_all_products(query=None, status_filter=None, is_web_active=None, categor
             cursor.execute(sql, params)
             rows = cursor.fetchall()
             return [dict(r) for r in rows]
+
+def get_product_by_ml_id(ml_id: str):
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute("""
+                SELECT p.ml_id, p.title, p.price, p.available_quantity, p.cost_price, p.cost_meli, p.permalink, p.thumbnail, 
+                       p.status, p.last_sync, p.price_web, p.images, p.description, p.is_web_active, 
+                       p.visits_meli, p.visits_web, p.category_id, p.sync_meli, p.min_stock, p.last_modified,
+                       p.prev_stock, p.prev_price, p.prev_cost_price, p.prev_cost_meli, p.prev_price_web,
+                       c.name as category_name, c.slug as category_slug
+                 FROM products_cache p
+                 LEFT JOIN categories c ON p.category_id = c.id
+                 WHERE p.ml_id = %s
+            """, (ml_id,))
+            row = cursor.fetchone()
+            return dict(row) if row else None
 
 # --- Orders & Customers Operations ---
 

@@ -309,7 +309,17 @@ WantedBy=multi-user.target
 
 ---
 
-### 6. Automatizaciones de Mensajería Posventa en Mercado Libre
+### 6. Sistema de Códigos QR y Control de Inventario por Cámara
+
+La plataforma cuenta con un módulo autónomo de trazabilidad e identificación de productos mediante códigos QR y control por visión computacional en vivo desde smartphones:
+
+- **Generación de QR y Etiquetas Comercial (`CC-PROD-{ml_id}`):** Cada producto (tanto sincronizado de Mercado Libre como creado exclusivamente para la Tienda Web) genera un código de referencia único e irrepetible. Desde la tabla de inventario se puede previsualizar e imprimir su etiqueta adhesiva profesional en impresoras térmicas o estándar.
+- **Escáner por Cámara de Celular en Vivo:** Mediante la librería `html5-qrcode`, el panel administrativo permite activar directamente la cámara trasera de cualquier celular o tablet. Al enfocar la etiqueta de un producto, la cámara decodifica el código QR en tiempo real y abre la tarjeta del producto.
+- **Ajuste Rápido de Stock y Precios:** Al escanear un artículo, la aplicación ofrece botones de un toque (`-5`, `-1`, `+1`, `+5`, `+10`), campo para fijar el stock exacto y edición simultánea de los **Precios de Mercado Libre y Tienda Web**, sincronizando los cambios con PostgreSQL y Mercado Libre automáticamente.
+- **Registro de Última Modificación (`last_modified`):** Cada producto almacena la marca temporal exacta de la última vez que se actualizaron sus unidades de stock, precios o costos base. Esta fecha y hora se muestra en letra pequeña (`🕒 Modificado: DD/MM/AAAA, HH:MM`) debajo del título de cada artículo en el inventario.
+- **Historial de Valores Anteriores (`ant: ...`):** Debajo de cada campo editable de inventario (**Stock**, **Precio ML**, **Costo Base**, **Costo ML** y **Precio Web**) se visualiza automáticamente en letra chica gris la cifra anterior previa al último cambio (ejemplo: `ant: $12.500` o `ant: 15`).
+
+### 7. Automatizaciones de Mensajería Posventa en Mercado Libre
 
 En **Configuración > Conexión Mercado Libre** se incluyen interruptores para controlar la automatización de la mensajería con los compradores:
 - **Mensaje automático de compra:** Enviado inmediatamente al detectar una nueva orden de venta.

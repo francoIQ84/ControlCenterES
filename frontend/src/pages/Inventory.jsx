@@ -1,5 +1,6 @@
-import React, { useState, useEffect } from 'react'
-import { Package, CloudOff, Cloud, RefreshCw, Save } from 'lucide-react'
+import React, { useState, useEffect, useRef } from 'react'
+import { Package, CloudOff, Cloud, RefreshCw, Save, QrCode, Camera } from 'lucide-react'
+import { Html5QrcodeScanner } from 'html5-qrcode'
 import MediaBrowser from '../components/MediaBrowser'
 
 export default function Inventory() {
@@ -9,6 +10,11 @@ export default function Inventory() {
   const [sortConfig, setSortConfig] = useState({ key: null, direction: 'asc' })
   const [drafts, setDrafts] = useState({})
   const [viewMode, setViewMode] = useState('detailed') // 'detailed' o 'compact'
+  
+  // QR Modals state
+  const [showQrScanModal, setShowQrScanModal] = useState(false)
+  const [showQrPrintModal, setShowQrPrintModal] = useState(false)
+  const [selectedProductForQr, setSelectedProductForQr] = useState(null)
   
   // Categories State
   const [categories, setCategories] = useState([])
@@ -367,6 +373,9 @@ export default function Inventory() {
           <button className="btn" style={{backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)', border: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', gap: 5}} onClick={() => setShowCategoriesModal(true)}>
             📁 Gestionar Categorías
           </button>
+          <button className="btn" style={{backgroundColor: 'var(--accent-emerald)', color: '#fff', border: 'none', display: 'flex', alignItems: 'center', gap: 6}} onClick={() => setShowQrScanModal(true)}>
+            <QrCode size={16} /> Escanear QR
+          </button>
           <button className="btn" onClick={() => setShowAddModal(true)}>
             + Agregar Producto
           </button>
@@ -520,7 +529,19 @@ export default function Inventory() {
               </thead>
               <tbody>
                 {sortedProducts.map(p => (
-                  <ProductRow key={p.ml_id} p={p} onSave={handleUpdate} onOpenGallery={openGallery} onDraftChange={handleDraftChange} categories={categories} viewMode={viewMode} />
+                  <ProductRow 
+                    key={p.ml_id} 
+                    p={p} 
+                    onSave={handleUpdate} 
+                    onOpenGallery={openGallery} 
+                    onDraftChange={handleDraftChange} 
+                    categories={categories} 
+                    viewMode={viewMode}
+                    onOpenQrModal={(prod) => {
+                      setSelectedProductForQr(prod)
+                      setShowQrPrintModal(true)
+                    }}
+                  />
                 ))}
               </tbody>
             </table>
@@ -645,11 +666,24 @@ export default function Inventory() {
           </div>
         </div>
       )}
+
+      {showQrPrintModal && (
+        <QRPrintModal product={selectedProductForQr} onClose={() => setShowQrPrintModal(false)} />
+      )}
+
+      {showQrScanModal && (
+        <QRScannerModal 
+          onClose={() => setShowQrScanModal(false)} 
+          onStockUpdated={(updatedProd) => {
+            setProducts(prev => prev.map(item => item.ml_id === updatedProd.ml_id ? updatedProd : item))
+          }}
+        />
+      )}
     </div>
   )
 }
 
-function ProductRow({ p, onSave, onOpenGallery, onDraftChange, categories, viewMode }) {
+function ProductRow({ p, onSave, onOpenGallery, onDraftChange, categories, viewMode, onOpenQrModal }) {
   const [qty, setQty] = useState(p.available_quantity)
   const [price, setPrice] = useState(p.price)
   const [cost, setCost] = useState(p.cost_price)
@@ -733,6 +767,9 @@ function ProductRow({ p, onSave, onOpenGallery, onDraftChange, categories, viewM
           <td data-label="Detalle" style={{padding: '5px 8px'}}>
             <div style={{fontWeight: 600, fontSize: '0.85rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '280px'}} title={p.title}>{p.title}</div>
             <div style={{color: 'var(--text-secondary)', fontSize: '0.7rem', fontFamily: 'monospace'}}>{p.ml_id}</div>
+            <div style={{color: 'var(--text-secondary)', fontSize: '0.68rem', marginTop: 2}}>
+              🕒 Modif: {p.last_modified ? new Date(p.last_modified).toLocaleString('es-AR', { dateStyle: 'short', timeStyle: 'short' }) : 'Sin cambios'}
+            </div>
           </td>
           <td data-label="Estado" style={{padding: '5px 8px'}}>
             <span style={{
@@ -745,18 +782,33 @@ function ProductRow({ p, onSave, onOpenGallery, onDraftChange, categories, viewM
           </td>
           <td data-label="Stock" style={{padding: '5px 8px'}}>
             <input type="number" value={qty} onChange={e => setQty(e.target.value)} style={{width: 55, padding: '3px 5px', fontSize: '0.8rem', border: '1px solid var(--border-color)', borderRadius: 4, backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)'}}/>
+            {p.prev_stock !== null && p.prev_stock !== undefined && (
+              <div style={{fontSize: '0.65rem', color: 'var(--text-secondary)', marginTop: 1}}>ant: {p.prev_stock}</div>
+            )}
           </td>
           <td data-label="P. ML" style={{padding: '5px 8px'}}>
             <input type="number" value={price} onChange={e => setPrice(e.target.value)} style={{width: 75, padding: '3px 5px', fontSize: '0.8rem', border: '1px solid var(--border-color)', borderRadius: 4, backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)'}} disabled={p.status === 'local'}/>
+            {p.prev_price !== null && p.prev_price !== undefined && (
+              <div style={{fontSize: '0.65rem', color: 'var(--text-secondary)', marginTop: 1}}>ant: ${p.prev_price.toLocaleString('es-AR')}</div>
+            )}
           </td>
           <td data-label="C. Base" style={{padding: '5px 8px'}}>
             <input type="number" value={cost} onChange={e => setCost(e.target.value)} style={{width: 75, padding: '3px 5px', fontSize: '0.8rem', border: '1px solid var(--border-color)', borderRadius: 4, backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)'}}/>
+            {p.prev_cost_price !== null && p.prev_cost_price !== undefined && (
+              <div style={{fontSize: '0.65rem', color: 'var(--text-secondary)', marginTop: 1}}>ant: ${p.prev_cost_price.toLocaleString('es-AR')}</div>
+            )}
           </td>
           <td data-label="C. ML" style={{padding: '5px 8px'}}>
             <input type="number" value={costMeli} onChange={e => setCostMeli(e.target.value)} style={{width: 65, padding: '3px 5px', fontSize: '0.8rem', border: '1px solid var(--border-color)', borderRadius: 4, backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)'}}/>
+            {p.prev_cost_meli !== null && p.prev_cost_meli !== undefined && (
+              <div style={{fontSize: '0.65rem', color: 'var(--text-secondary)', marginTop: 1}}>ant: ${p.prev_cost_meli.toLocaleString('es-AR')}</div>
+            )}
           </td>
           <td data-label="P. Web" style={{padding: '5px 8px'}}>
             <input type="number" value={priceWeb} onChange={e => setPriceWeb(e.target.value)} style={{width: 75, padding: '3px 5px', fontSize: '0.8rem', border: '1px solid var(--border-color)', borderRadius: 4, backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)'}}/>
+            {p.prev_price_web !== null && p.prev_price_web !== undefined && (
+              <div style={{fontSize: '0.65rem', color: 'var(--text-secondary)', marginTop: 1}}>ant: ${p.prev_price_web.toLocaleString('es-AR')}</div>
+            )}
           </td>
           <td data-label="Web" style={{padding: '5px 8px', textAlign: 'center'}}>
             <input type="checkbox" checked={isWebActive} onChange={e => setIsWebActive(e.target.checked)} style={{width: 'auto', cursor: 'pointer'}}/>
@@ -765,6 +817,9 @@ function ProductRow({ p, onSave, onOpenGallery, onDraftChange, categories, viewM
             <div style={{display: 'flex', gap: 6, alignItems: 'center'}}>
               <button className="btn-icon" onClick={() => onSave(p.ml_id, qty, price, cost, costMeli, priceWeb, getCombinedImages(), description, isWebActive, categoryId, syncMeli, minStock)} title="Guardar Todo" style={{padding: 4}}>
                 <Save size={14} className="text-blue-500" />
+              </button>
+              <button type="button" className="btn-icon" onClick={() => onOpenQrModal(p)} title="Ver / Imprimir QR" style={{padding: 4, color: 'var(--accent-blue)'}}>
+                <QrCode size={14} />
               </button>
               <button type="button" className="btn" style={{padding: '3px 6px', fontSize: '0.7rem', backgroundColor: 'var(--bg-hover)', color: 'var(--text-primary)', border: 'none', borderRadius: 4, cursor: 'pointer'}} onClick={() => setShowWebDetails(!showWebDetails)}>
                 Web {showWebDetails ? '▲' : '▼'}
@@ -860,6 +915,9 @@ function ProductRow({ p, onSave, onOpenGallery, onDraftChange, categories, viewM
         <td data-label="Detalle">
           <div style={{fontWeight: 600, fontSize: '0.9rem'}}>{p.title}</div>
           <div style={{color: 'var(--text-secondary)', fontSize: '0.75rem', fontFamily: 'monospace'}}>{p.ml_id}</div>
+          <div style={{color: 'var(--text-secondary)', fontSize: '0.68rem', marginTop: 3}}>
+            🕒 Modificado: {p.last_modified ? new Date(p.last_modified).toLocaleString('es-AR', { dateStyle: 'short', timeStyle: 'short' }) : 'Sin cambios'}
+          </div>
         </td>
         <td data-label="Estado ML">
           {p.status === 'active' ? 
@@ -876,15 +934,19 @@ function ProductRow({ p, onSave, onOpenGallery, onDraftChange, categories, viewM
           <div style={{display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center'}}>
             <label style={{fontSize: '0.8rem', color: 'var(--text-secondary)'}}>Stock:
               <input type="number" value={qty} onChange={e => setQty(e.target.value)} style={{width: 60, marginLeft: 5, padding: 4}}/>
+              {p.prev_stock !== null && p.prev_stock !== undefined && <div style={{fontSize: '0.65rem', color: 'var(--text-secondary)', marginTop: 2, textAlign: 'center'}}>ant: {p.prev_stock}</div>}
             </label>
             <label style={{fontSize: '0.8rem', color: 'var(--text-secondary)'}}>Precio ML:
               <input type="number" value={price} onChange={e => setPrice(e.target.value)} style={{width: 80, marginLeft: 5, padding: 4}} disabled={p.status === 'local'}/>
+              {p.prev_price !== null && p.prev_price !== undefined && <div style={{fontSize: '0.65rem', color: 'var(--text-secondary)', marginTop: 2, textAlign: 'center'}}>ant: ${p.prev_price.toLocaleString('es-AR')}</div>}
             </label>
             <label style={{fontSize: '0.8rem', color: 'var(--text-secondary)'}}>Costo Base:
               <input type="number" value={cost} onChange={e => setCost(e.target.value)} style={{width: 80, marginLeft: 5, padding: 4}}/>
+              {p.prev_cost_price !== null && p.prev_cost_price !== undefined && <div style={{fontSize: '0.65rem', color: 'var(--text-secondary)', marginTop: 2, textAlign: 'center'}}>ant: ${p.prev_cost_price.toLocaleString('es-AR')}</div>}
             </label>
             <label style={{fontSize: '0.8rem', color: 'var(--text-secondary)'}}>Costo ML:
               <input type="number" value={costMeli} onChange={e => setCostMeli(e.target.value)} style={{width: 70, marginLeft: 5, padding: 4}}/>
+              {p.prev_cost_meli !== null && p.prev_cost_meli !== undefined && <div style={{fontSize: '0.65rem', color: 'var(--text-secondary)', marginTop: 2, textAlign: 'center'}}>ant: ${p.prev_cost_meli.toLocaleString('es-AR')}</div>}
             </label>
             <label style={{fontSize: '0.8rem', color: 'var(--text-secondary)'}}>Alerta Mín:
               <input type="number" value={minStock} onChange={e => setMinStock(e.target.value)} style={{width: 50, marginLeft: 5, padding: 4}}/>
@@ -909,6 +971,7 @@ function ProductRow({ p, onSave, onOpenGallery, onDraftChange, categories, viewM
             </label>
             <label style={{fontSize: '0.8rem', color: 'var(--text-secondary)'}}>Precio Web:
               <input type="number" value={priceWeb} onChange={e => setPriceWeb(e.target.value)} style={{width: 80, marginLeft: 5, padding: 4}}/>
+              {p.prev_price_web !== null && p.prev_price_web !== undefined && <div style={{fontSize: '0.65rem', color: 'var(--text-secondary)', marginTop: 2}}>ant: ${p.prev_price_web.toLocaleString('es-AR')}</div>}
             </label>
             <button className="btn" style={{padding: '4px 8px', fontSize: '0.75rem', marginTop: 5}} onClick={() => setShowWebDetails(!showWebDetails)}>
               Editar Contenido Web
@@ -916,9 +979,14 @@ function ProductRow({ p, onSave, onOpenGallery, onDraftChange, categories, viewM
           </div>
         </td>
         <td data-label="Acción">
-          <button className="btn-icon" onClick={() => onSave(p.ml_id, qty, price, cost, costMeli, priceWeb, getCombinedImages(), description, isWebActive, categoryId, syncMeli, minStock)} title="Guardar Todo">
-            <Save size={18} className="text-blue-500" />
-          </button>
+          <div style={{display: 'flex', gap: 6, alignItems: 'center'}}>
+            <button className="btn-icon" onClick={() => onSave(p.ml_id, qty, price, cost, costMeli, priceWeb, getCombinedImages(), description, isWebActive, categoryId, syncMeli, minStock)} title="Guardar Todo">
+              <Save size={18} className="text-blue-500" />
+            </button>
+            <button type="button" className="btn-icon" onClick={() => onOpenQrModal(p)} title="Ver / Imprimir QR" style={{color: 'var(--accent-blue)'}}>
+              <QrCode size={18} />
+            </button>
+          </div>
         </td>
       </tr>
       {showWebDetails && (
@@ -1030,3 +1098,378 @@ function ProductRow({ p, onSave, onOpenGallery, onDraftChange, categories, viewM
     </React.Fragment>
   )
 }
+
+function QRPrintModal({ product, onClose }) {
+  if (!product) return null
+  const qrPayload = `CC-PROD-${product.ml_id}`
+  const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(qrPayload)}`
+
+  const handlePrint = () => {
+    const printWindow = window.open('', '_blank', 'width=400,height=400')
+    printWindow.document.write(`
+      <html>
+        <head>
+          <title>Etiqueta ${product.ml_id}</title>
+          <style>
+            body { font-family: sans-serif; text-align: center; padding: 10px; margin: 0; }
+            .label-box { border: 2px dashed #000; border-radius: 8px; padding: 12px; width: 220px; margin: 0 auto; box-sizing: border-box; }
+            .title { font-size: 12px; font-weight: bold; margin-bottom: 6px; word-wrap: break-word; line-height: 1.2; }
+            .price { font-size: 16px; font-weight: bold; color: #000; margin-top: 4px; }
+            .sku { font-size: 10px; font-family: monospace; color: #555; margin-top: 2px; }
+            img { width: 140px; height: 140px; }
+          </style>
+        </head>
+        <body>
+          <div class="label-box">
+            <div class="title">${product.title}</div>
+            <img src="${qrUrl}" />
+            <div class="price">$ ${(product.price_web || product.price || 0).toLocaleString('es-AR')}</div>
+            <div class="sku">REF: ${product.ml_id}</div>
+          </div>
+          <script>
+            window.onload = function() {
+              window.print();
+              setTimeout(function() { window.close(); }, 500);
+            }
+          </script>
+        </body>
+      </html>
+    `)
+    printWindow.document.close()
+  }
+
+  return (
+    <div style={{
+      position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+      backgroundColor: 'rgba(0, 0, 0, 0.75)',
+      display: 'flex', justifyContent: 'center', alignItems: 'center',
+      zIndex: 1200
+    }}>
+      <div className="card" style={{
+        width: 380, maxWidth: '90%', padding: 25,
+        backgroundColor: 'var(--bg-card)', border: '1px solid var(--border-color)',
+        borderRadius: 12, textAlign: 'center'
+      }}>
+        <h3 style={{ marginTop: 0, marginBottom: 15 }}>🏷️ Etiqueta de Producto QR</h3>
+
+        <div style={{
+          border: '2px dashed var(--border-color)', borderRadius: 10,
+          padding: 15, backgroundColor: '#fff', color: '#000', margin: '0 auto 20px',
+          maxWidth: 240
+        }}>
+          <div style={{ fontSize: '0.85rem', fontWeight: 'bold', marginBottom: 8, minHeight: 36, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+            {product.title}
+          </div>
+          <img src={qrUrl} alt="QR Code" style={{ width: 150, height: 150, objectFit: 'contain' }} />
+          <div style={{ fontSize: '1.2rem', fontWeight: 'bold', color: '#10b981', marginTop: 5 }}>
+            $ {(product.price_web || product.price || 0).toLocaleString('es-AR')}
+          </div>
+          <div style={{ fontSize: '0.75rem', fontFamily: 'monospace', color: '#666', marginTop: 2 }}>
+            CODE: {qrPayload}
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', gap: 10, justifyContent: 'center' }}>
+          <button className="btn" style={{ backgroundColor: 'var(--accent-blue)', color: '#fff', flex: 1 }} onClick={handlePrint}>
+            🖨️ Imprimir Etiqueta
+          </button>
+          <button className="btn" style={{ backgroundColor: 'transparent', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }} onClick={onClose}>
+            Cerrar
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function QRScannerModal({ onClose, onStockUpdated }) {
+  const [scannedProduct, setScannedProduct] = useState(null)
+  const [newQty, setNewQty] = useState(0)
+  const [newPrice, setNewPrice] = useState(0)
+  const [newPriceWeb, setNewPriceWeb] = useState(0)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState("")
+  const [adjusting, setAdjusting] = useState(false)
+  const [manualCode, setManualCode] = useState("")
+  const scannerInstanceRef = useRef(null)
+
+  const processProductLookup = async (codeToSearch) => {
+    if (!codeToSearch || !codeToSearch.trim()) return
+    setLoading(true)
+    setError("")
+
+    try {
+      const res = await fetch(`/api/inventory/scan/${encodeURIComponent(codeToSearch.trim())}`)
+      if (res.ok) {
+        const data = await res.json()
+        setScannedProduct(data.product)
+        setNewQty(data.product.available_quantity || 0)
+        setNewPrice(data.product.price || 0)
+        setNewPriceWeb(data.product.price_web || 0)
+        // Pause camera scanner when product is found
+        if (scannerInstanceRef.current) {
+          try { scannerInstanceRef.current.pause(true) } catch(e) {}
+        }
+      } else {
+        const errData = await res.json()
+        setError(errData.detail || "Producto no encontrado con el código escaneado")
+      }
+    } catch (err) {
+      setError("Error de conexión al buscar producto")
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    // Render camera scanner
+    let scanner = null
+    try {
+      scanner = new Html5QrcodeScanner(
+        "qr-camera-viewfinder",
+        {
+          fps: 10,
+          qrbox: { width: 220, height: 220 },
+          aspectRatio: 1.0,
+          showTorchButtonIfSupported: true,
+          rememberLastUsedCamera: true
+        },
+        /* verbose= */ false
+      )
+
+      scannerInstanceRef.current = scanner
+
+      scanner.render(
+        (decodedText) => {
+          processProductLookup(decodedText)
+        },
+        (errorMessage) => {
+          // ignore scan frame misses
+        }
+      )
+    } catch(err) {
+      console.warn("Could not initialize camera scanner:", err)
+    }
+
+    return () => {
+      if (scannerInstanceRef.current) {
+        try {
+          scannerInstanceRef.current.clear().catch(() => {})
+        } catch(e) {}
+      }
+    }
+  }, [])
+
+  const resumeCamera = () => {
+    setScannedProduct(null)
+    setError("")
+    setManualCode("")
+    if (scannerInstanceRef.current) {
+      try { scannerInstanceRef.current.resume() } catch(e) {}
+    }
+  }
+
+  const handleQuickStockSave = async (qtyToSave) => {
+    if (!scannedProduct) return
+    setAdjusting(true)
+    try {
+      const res = await fetch('/api/inventory/quick-stock', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          ml_id: scannedProduct.ml_id, 
+          qty: qtyToSave,
+          price: parseFloat(newPrice) || 0,
+          price_web: parseFloat(newPriceWeb) || 0
+        })
+      })
+      if (res.ok) {
+        const data = await res.json()
+        setScannedProduct(data.product)
+        setNewQty(data.product.available_quantity)
+        setNewPrice(data.product.price)
+        setNewPriceWeb(data.product.price_web)
+        onStockUpdated(data.product)
+        if (data.warning) {
+          alert(data.warning)
+        }
+      } else {
+        alert("Error al actualizar datos del producto")
+      }
+    } catch (err) {
+      alert("Error de red al actualizar datos")
+    } finally {
+      setAdjusting(false)
+    }
+  }
+
+  return (
+    <div style={{
+      position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+      backgroundColor: 'rgba(0, 0, 0, 0.8)',
+      display: 'flex', justifyContent: 'center', alignItems: 'center',
+      zIndex: 1200
+    }}>
+      <div className="card" style={{
+        width: 520, maxWidth: '94%', maxHeight: '92vh', overflowY: 'auto',
+        padding: 20, backgroundColor: 'var(--bg-card)', border: '1px solid var(--border-color)',
+        borderRadius: 14
+      }}>
+        {/* Header */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15, borderBottom: '1px solid var(--border-color)', paddingBottom: 12 }}>
+          <h3 style={{ margin: 0, fontSize: '1.1rem', display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Camera size={20} color="var(--accent-emerald)" /> Escáner por Cámara de Celular
+          </h3>
+          <button className="btn" style={{ backgroundColor: 'transparent', border: '1px solid var(--border-color)', color: 'var(--text-primary)', padding: '4px 10px', fontSize: '0.8rem' }} onClick={onClose}>
+            Cerrar
+          </button>
+        </div>
+
+        {/* Live Camera Viewfinder */}
+        <div style={{ display: scannedProduct ? 'none' : 'block', marginBottom: 15 }}>
+          <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', textAlign: 'center', marginTop: 0, marginBottom: 10 }}>
+            Apunte la cámara de su celular al código QR del producto:
+          </p>
+          
+          <div 
+            id="qr-camera-viewfinder" 
+            style={{ 
+              width: '100%', 
+              borderRadius: 10, 
+              overflow: 'hidden', 
+              border: '2px solid var(--accent-emerald)',
+              backgroundColor: '#000' 
+            }} 
+          />
+
+          {/* Manual entry fallback */}
+          <form onSubmit={(e) => { e.preventDefault(); processProductLookup(manualCode); }} style={{ marginTop: 15, display: 'flex', gap: 8 }}>
+            <input 
+              type="text"
+              placeholder="O ingrese código / SKU manualmente..."
+              value={manualCode}
+              onChange={e => setManualCode(e.target.value)}
+              style={{ flex: 1, padding: '6px 10px', fontSize: '0.85rem' }}
+            />
+            <button type="submit" className="btn" disabled={loading} style={{ backgroundColor: 'var(--accent-blue)', color: '#fff', fontSize: '0.8rem' }}>
+              {loading ? "Buscando..." : "Buscar"}
+            </button>
+          </form>
+        </div>
+
+        {/* Error message */}
+        {error && (
+          <div style={{ backgroundColor: 'rgba(239, 68, 68, 0.15)', color: 'var(--accent-red)', padding: 12, borderRadius: 8, fontSize: '0.85rem', marginBottom: 15, textAlign: 'center', fontWeight: 600 }}>
+            ❌ {error}
+          </div>
+        )}
+
+        {/* Scanned product detail & quick stock/price controls */}
+        {scannedProduct && (
+          <div style={{ border: '1px solid var(--border-color)', borderRadius: 12, padding: 16, backgroundColor: 'rgba(0,0,0,0.02)', display: 'flex', flexDirection: 'column', gap: 15 }}>
+            <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+              <img
+                src={scannedProduct.thumbnail || 'https://via.placeholder.com/60'}
+                alt="Product"
+                style={{ width: 65, height: 65, objectFit: 'contain', borderRadius: 8, border: '1px solid var(--border-color)', backgroundColor: '#fff' }}
+              />
+              <div style={{ flex: 1 }}>
+                <div style={{ fontWeight: 'bold', fontSize: '1rem', color: 'var(--text-primary)' }}>{scannedProduct.title}</div>
+                <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontFamily: 'monospace', marginTop: 2 }}>
+                  REF: {scannedProduct.ml_id}
+                </div>
+              </div>
+            </div>
+
+            <div style={{ backgroundColor: 'var(--bg-card)', padding: 15, borderRadius: 10, border: '1px solid var(--border-color)' }}>
+              {/* Stock controls */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                <span style={{ fontSize: '0.9rem', fontWeight: 600 }}>Stock Disponible:</span>
+                <span style={{ fontSize: '1.3rem', fontWeight: 'bold', color: scannedProduct.available_quantity > 0 ? 'var(--accent-emerald)' : 'var(--accent-red)' }}>
+                  {scannedProduct.available_quantity} unidades
+                </span>
+              </div>
+
+              {/* Incremental / Decremental Buttons */}
+              <div style={{ display: 'flex', gap: 6, justifyContent: 'center', marginBottom: 15, flexWrap: 'wrap' }}>
+                <button type="button" className="btn" style={{ padding: '8px 14px', fontSize: '0.85rem', fontWeight: 'bold', backgroundColor: 'rgba(239,68,68,0.15)', color: 'var(--accent-red)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 6 }} onClick={() => handleQuickStockSave(Math.max(0, scannedProduct.available_quantity - 5))}>
+                  -5
+                </button>
+                <button type="button" className="btn" style={{ padding: '8px 14px', fontSize: '0.85rem', fontWeight: 'bold', backgroundColor: 'rgba(239,68,68,0.15)', color: 'var(--accent-red)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 6 }} onClick={() => handleQuickStockSave(Math.max(0, scannedProduct.available_quantity - 1))}>
+                  -1
+                </button>
+                <button type="button" className="btn" style={{ padding: '8px 14px', fontSize: '0.85rem', fontWeight: 'bold', backgroundColor: 'rgba(16,185,129,0.15)', color: 'var(--accent-emerald)', border: '1px solid rgba(16,185,129,0.3)', borderRadius: 6 }} onClick={() => handleQuickStockSave(scannedProduct.available_quantity + 1)}>
+                  +1
+                </button>
+                <button type="button" className="btn" style={{ padding: '8px 14px', fontSize: '0.85rem', fontWeight: 'bold', backgroundColor: 'rgba(16,185,129,0.15)', color: 'var(--accent-emerald)', border: '1px solid rgba(16,185,129,0.3)', borderRadius: 6 }} onClick={() => handleQuickStockSave(scannedProduct.available_quantity + 5)}>
+                  +5
+                </button>
+                <button type="button" className="btn" style={{ padding: '8px 14px', fontSize: '0.85rem', fontWeight: 'bold', backgroundColor: 'rgba(16,185,129,0.15)', color: 'var(--accent-emerald)', border: '1px solid rgba(16,185,129,0.3)', borderRadius: 6 }} onClick={() => handleQuickStockSave(scannedProduct.available_quantity + 10)}>
+                  +10
+                </button>
+              </div>
+
+              {/* Exact Stock Direct Input */}
+              <div style={{ display: 'flex', gap: 10, alignItems: 'center', borderTop: '1px dashed var(--border-color)', paddingTop: 12, marginBottom: 12 }}>
+                <label style={{ fontSize: '0.85rem', fontWeight: 600, flex: 1 }}>Fijar Stock Exacto:</label>
+                <input
+                  type="number"
+                  min="0"
+                  value={newQty}
+                  onChange={e => setNewQty(parseInt(e.target.value) || 0)}
+                  style={{ width: 90, padding: '6px 8px', fontSize: '0.95rem', textAlign: 'center', fontWeight: 'bold' }}
+                />
+              </div>
+
+              {/* Price Editors Section */}
+              <div style={{ display: 'flex', gap: 12, borderTop: '1px dashed var(--border-color)', paddingTop: 12 }}>
+                <label style={{ flex: 1, fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                  Precio Mercado Libre ($):
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={newPrice}
+                    onChange={e => setNewPrice(e.target.value)}
+                    disabled={scannedProduct.status === 'local'}
+                    style={{ width: '100%', marginTop: 4, padding: '6px 8px', fontSize: '0.9rem', fontWeight: 'bold' }}
+                  />
+                </label>
+                <label style={{ flex: 1, fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                  Precio Tienda Web ($):
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={newPriceWeb}
+                    onChange={e => setNewPriceWeb(e.target.value)}
+                    style={{ width: '100%', marginTop: 4, padding: '6px 8px', fontSize: '0.9rem', fontWeight: 'bold' }}
+                  />
+                </label>
+              </div>
+
+              {/* Main Save Button */}
+              <button
+                type="button"
+                className="btn"
+                disabled={adjusting}
+                onClick={() => handleQuickStockSave(newQty)}
+                style={{ backgroundColor: 'var(--accent-blue)', color: '#fff', padding: '10px 14px', fontSize: '0.9rem', width: '100%', marginTop: 15, fontWeight: 'bold' }}
+              >
+                {adjusting ? "Guardando Cambios..." : "💾 Guardar Stock y Precios"}
+              </button>
+            </div>
+
+            <button 
+              type="button" 
+              className="btn" 
+              onClick={resumeCamera}
+              style={{ backgroundColor: 'var(--accent-emerald)', color: '#fff', padding: '10px 15px', fontSize: '0.9rem', width: '100%', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 8 }}
+            >
+              <Camera size={18} /> Escanear Otro Producto
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
