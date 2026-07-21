@@ -3,12 +3,16 @@ import time
 import traceback
 from datetime import datetime
 from src import meli_api, config
+from src.api.backup import check_and_run_monthly_auto_backup
 
 def background_sync_loop():
     # Delay first run by 15 seconds to let the server start cleanly
     time.sleep(15)
     while True:
         try:
+            # Check and run monthly automatic backup if due
+            check_and_run_monthly_auto_backup()
+
             # Check if Meli credentials are configured
             if config.is_configured():
                 print("[Scheduler] Iniciando sincronización automática en segundo plano...")

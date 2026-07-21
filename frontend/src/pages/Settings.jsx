@@ -1654,11 +1654,28 @@ export default function Settings() {
 
       {/* Tab 6: Backups */}
       {activeTab === 'backups' && (
-        <div style={{display: 'flex', gap: 20, alignItems: 'flex-start'}}>
-          <div className="card" style={{flex: 2}}>
+        <div style={{display: 'flex', gap: 20, alignItems: 'flex-start', flexDirection: 'column'}}>
+          <div style={{
+            backgroundColor: 'rgba(59, 130, 246, 0.1)',
+            border: '1px solid var(--accent-blue)',
+            borderRadius: '8px',
+            padding: '15px 20px',
+            width: '100%',
+            fontSize: '0.9rem',
+            lineHeight: '1.5'
+          }}>
+            <div style={{fontWeight: 'bold', color: 'var(--accent-blue)', marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '8px'}}>
+              🕒 Respaldos Automáticos Programados Activos
+            </div>
+            <div>
+              El sistema realiza un respaldo automático completo <strong>1 vez al mes</strong> y conserva <strong>1 año de historial (los últimos 12 respaldos automáticos)</strong>. Los respaldos que crees manualmente se conservan indefinidamente.
+            </div>
+          </div>
+
+          <div className="card" style={{width: '100%'}}>
             <h3>Respaldos del Sistema (Backups)</h3>
             <p style={{fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: 15}}>
-              Descarga un archivo ZIP completo con la base de datos, configuraciones e imágenes de la tienda.
+              Descarga un archivo ZIP completo con la base de datos PostgreSQL, configuraciones (.env), imágenes y facturas de la tienda.
             </p>
             
             <button 
@@ -1667,7 +1684,7 @@ export default function Settings() {
               disabled={creatingBackup}
               style={{marginBottom: 20, backgroundColor: 'var(--accent-emerald)', color: '#fff'}}
             >
-              {creatingBackup ? 'Creando respaldo (puede demorar)...' : 'Crear Nuevo Respaldo'}
+              {creatingBackup ? 'Creando respaldo (puede demorar)...' : 'Crear Nuevo Respaldo Manual'}
             </button>
             
             {backupsLoading ? <p>Cargando respaldos...</p> : (
@@ -1675,37 +1692,54 @@ export default function Settings() {
                 <thead>
                   <tr>
                     <th style={{textAlign: 'left', padding: '12px 10px'}}>Archivo</th>
+                    <th style={{textAlign: 'left', padding: '12px 10px'}}>Tipo</th>
                     <th style={{textAlign: 'left', padding: '12px 10px'}}>Fecha de Creación</th>
                     <th style={{textAlign: 'left', padding: '12px 10px'}}>Tamaño</th>
                     <th style={{textAlign: 'left', padding: '12px 10px'}}>Acciones</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {backups.map(b => (
-                    <tr key={b.filename} style={{borderBottom: '1px solid var(--border-color)'}}>
-                      <td style={{padding: '12px 10px', fontSize: '0.85rem', fontWeight: 600}}>
-                        {b.filename}
-                      </td>
-                      <td style={{padding: '12px 10px', fontSize: '0.85rem'}}>
-                        {new Date(b.created_at).toLocaleString()}
-                      </td>
-                      <td style={{padding: '12px 10px', fontSize: '0.85rem'}}>
-                        {(b.size_bytes / (1024 * 1024)).toFixed(2)} MB
-                      </td>
-                      <td style={{padding: '12px 10px', fontSize: '0.85rem'}}>
-                        <button 
-                          onClick={() => handleDownloadBackup(b.filename)}
-                          className="btn"
-                          style={{padding: '4px 12px', fontSize: '0.75rem', backgroundColor: 'var(--accent-blue)', color: '#fff', border: 'none', cursor: 'pointer', display: 'inline-block'}}
-                        >
-                          Descargar
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
+                  {backups.map(b => {
+                    const isAuto = b.type === 'auto' || b.filename.startsWith('backup_auto_')
+                    return (
+                      <tr key={b.filename} style={{borderBottom: '1px solid var(--border-color)'}}>
+                        <td style={{padding: '12px 10px', fontSize: '0.85rem', fontWeight: 600}}>
+                          {b.filename}
+                        </td>
+                        <td style={{padding: '12px 10px', fontSize: '0.85rem'}}>
+                          <span style={{
+                            padding: '3px 8px',
+                            borderRadius: '4px',
+                            fontSize: '0.75rem',
+                            fontWeight: '600',
+                            backgroundColor: isAuto ? 'rgba(139, 92, 246, 0.15)' : 'rgba(16, 185, 129, 0.15)',
+                            color: isAuto ? 'var(--accent-purple)' : 'var(--accent-emerald)',
+                            border: `1px solid ${isAuto ? 'rgba(139, 92, 246, 0.3)' : 'rgba(16, 185, 129, 0.3)'}`
+                          }}>
+                            {isAuto ? 'Automático' : 'Manual'}
+                          </span>
+                        </td>
+                        <td style={{padding: '12px 10px', fontSize: '0.85rem'}}>
+                          {new Date(b.created_at).toLocaleString()}
+                        </td>
+                        <td style={{padding: '12px 10px', fontSize: '0.85rem'}}>
+                          {(b.size_bytes / (1024 * 1024)).toFixed(2)} MB
+                        </td>
+                        <td style={{padding: '12px 10px', fontSize: '0.85rem'}}>
+                          <button 
+                            onClick={() => handleDownloadBackup(b.filename)}
+                            className="btn"
+                            style={{padding: '4px 12px', fontSize: '0.75rem', backgroundColor: 'var(--accent-blue)', color: '#fff', border: 'none', cursor: 'pointer', display: 'inline-block'}}
+                          >
+                            Descargar
+                          </button>
+                        </td>
+                      </tr>
+                    )
+                  })}
                   {backups.length === 0 && (
                     <tr>
-                      <td colSpan="4" style={{padding: '20px', textAlign: 'center', color: 'var(--text-secondary)'}}>
+                      <td colSpan="5" style={{padding: '20px', textAlign: 'center', color: 'var(--text-secondary)'}}>
                         No hay respaldos creados aún.
                       </td>
                     </tr>
@@ -1715,7 +1749,7 @@ export default function Settings() {
             )}
           </div>
 
-          <div style={{flex: 1, display: 'flex', flexDirection: 'column', gap: 20}}>
+          <div style={{width: '100%', display: 'flex', flexDirection: 'column', gap: 20}}>
             <div className="card">
               <h3>Espacio en la VPS</h3>
               {diskSpace ? (

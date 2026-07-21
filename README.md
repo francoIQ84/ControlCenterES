@@ -325,4 +325,18 @@ En **Configuración > Conexión Mercado Libre** se incluyen interruptores para c
 - **Mensaje automático de compra:** Enviado inmediatamente al detectar una nueva orden de venta.
 - **Mensaje automático de seguimiento:** Enviado cuando el paquete se encuentra despachado.
 - **Mensaje automático de factura:** Enviado al adjuntar el comprobante fiscal.
-- **Mensajería manual:** Interruptor para mostrar u ocultar los botones de envío directo de mensajes en la tabla de Ventas.```
+- **Mensajería manual:** Interruptor para mostrar u ocultar los botones de envío directo de mensajes en la tabla de Ventas.
+
+### 8. Cartera de Clientes y Gestión Manual
+La sección **Cartera de Clientes** permite consolidar y administrar la información de compradores:
+- **Creación y Edición Manual:** Se pueden dar de alta nuevos clientes directamente desde la interfaz con su Razón Social/Nombre completo, Alias/Nickname, Email, Teléfono, Tipo/Número de Documento (DNI, CUIT, etc.) y Dirección.
+- **Modificación de Datos:** Permite actualizar en cualquier momento la información de clientes existentes (tanto creados manualmente como importados de ventas de Mercado Libre).
+- **Distinción de Origen:** La tabla identifica con insignias claras si el cliente proviene de una compra de Mercado Libre (`MeLi`) o de un alta realizada en la plataforma (`Manual`).
+- **Buscador en Tiempo Real:** Barra de filtrado dinámico por cualquier campo (DNI, CUIT, Nombre, Email, Teléfono o Dirección).
+
+### 9. Respaldos Automáticos Mensuales y Retención de 1 Año
+El backend incluye una rutina automatizada de copias de seguridad completa del sistema:
+- **Respaldo Mensual Automático:** Una vez al mes, el programador en segundo plano (`scheduler.py`) genera de forma transparente un archivo `backup_auto_YYYYMMDD_HHMMSS.zip` con la base de datos PostgreSQL completa (`pg_dump`), configuraciones `.env`, directorio de imágenes `uploads/` y facturas PDF `invoices/`.
+- **Política de Retención de 12 Meses (1 Año):** Al generarse un nuevo respaldo automático, el sistema purga los archivos automáticos más antiguos manteniendo únicamente los 12 respaldos automáticos más recientes.
+- **Protección de Respaldos Manuales:** Los respaldos generados manualmente por el usuario mediante el botón "Crear Nuevo Respaldo Manual" se conservan indefinidamente y no son afectados por las reglas de limpieza automática.
+- **Visualización en el Panel:** En **Configuración > Respaldos (Backups)** se visualiza el estado del programador automático y etiquetas distintivas (`Automático` / `Manual`) para cada archivo disponible para descarga.```
