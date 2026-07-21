@@ -255,7 +255,51 @@ Una vez que hayas subido el certificado y delegado las relaciones en el portal d
 2. Haz clic en **Guardar Configuración ARCA**.
 3. Escribe tu CUIT en el campo correspondiente y haz clic en **Buscar AFIP** para comprobar la conectividad en producción. El sistema consultará los registros reales de AFIP y autocompletará tu Razón Social e Ingresos Brutos de inmediato.
 
+---
 
+### 5. Asistente Virtual de WhatsApp con Gemini AI
 
+La plataforma integra un chatbot inteligente autónomo auto-hospedado para atención al cliente y ventas por WhatsApp, que utiliza el modelo **Google Gemini 1.5 Flash**.
 
+#### Arquitectura de la Integración:
+- **Pasarela WhatsApp (`/backend/whatsapp`):** Servicio Node.js que ejecuta la librería `@whiskeysockets/baileys` de forma totalmente nativa y liviana (sin necesidad de navegador Chrome/Selenium). Se ejecuta de forma aislada y auto-hospedada en la VPS bajo el servicio de systemd `controlcenter-whatsapp.service`.
+- **Integración con FastAPI y Base de Datos:** Cuando entra un mensaje a la línea de WhatsApp:
+  1. El gateway Node.js envía la consulta al endpoint interno `POST /api/whatsapp/webhook` en FastAPI.
+  2. El backend en Python consulta en tiempo real la base de datos de PostgreSQL para armar el catálogo de productos disponibles y stock actualizado.
+  3. Si la consulta incluye un número de pedido (9-12 dígitos), busca la orden en `orders_cache` e inyecta el estado de pago y envío en el contexto.
+  4. Mantiene memoria del hilo de conversación leyendo las últimas interacciones almacenadas en la tabla `whatsapp_chat_history`.
+  5. Envía la consulta enriquecida a la API de **Gemini 1.5 Flash** (Google AI Studio).
+  6. Devuelve la respuesta generada a la pasarela Node.js, la cual emite el mensaje de texto al cliente en WhatsApp.
 
+#### Servicio Systemd (`/etc/systemd/system/controlcenter-whatsapp.service`):
+```ini
+[Unit]
+Description=ControlCenterES WhatsApp Bot Gateway
+After=network.target controlcenter-backend.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/var/www/controlcenter/backend/whatsapp
+ExecStart=/usr/bin/node index.js
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+```
+
+#### Vinculación por Código QR:
+- En el panel de control (**Configuración > Asistente WhatsApp (IA)**), el sistema sondea el estado del bot.
+- Si el cliente no está autenticado, la pantalla mostrará dinámicamente un **código QR**.
+- Escanear el código QR desde WhatsApp (*Dispositivos vinculados*) enlaza automáticamente la sesión y actualiza el estado a `● CONECTADO` sin requerir reinicios manuales.
+
+---
+
+### 6. Automatizaciones de Mensajería Posventa en Mercado Libre
+
+En **Configuración > Conexión Mercado Libre** se incluyen interruptores para controlar la automatización de la mensajería con los compradores:
+- **Mensaje automático de compra:** Enviado inmediatamente al detectar una nueva orden de venta.
+- **Mensaje automático de seguimiento:** Enviado cuando el paquete se encuentra despachado.
+- **Mensaje automático de factura:** Enviado al adjuntar el comprobante fiscal.
+- **Mensajería manual:** Interruptor para mostrar u ocultar los botones de envío directo de mensajes en la tabla de Ventas.```
