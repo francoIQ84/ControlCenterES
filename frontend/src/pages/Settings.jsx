@@ -1478,6 +1478,7 @@ export default function Settings() {
                   >
                     <option value={11}>Factura C (Monotributo)</option>
                     <option value={6}>Factura B (Consumidor Final)</option>
+                    <option value={1}>Factura A (Responsable Inscripto a CUIT)</option>
                   </select>
                 </label>
               </div>

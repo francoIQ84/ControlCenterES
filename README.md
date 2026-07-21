@@ -257,6 +257,19 @@ Una vez que hayas subido el certificado y delegado las relaciones en el portal d
 
 ---
 
+### Soporte Multicondición Fiscal (Facturas A, B y C)
+
+La plataforma admite la emisión automatizada de comprobantes para **Monotributistas** y **Responsables Inscriptos**:
+
+- **Factura C (Monotributo - CbteTipo 11):** Emisión con monto final no discriminado, apta para pequeños contribuyentes.
+- **Factura B (Responsable Inscripto - CbteTipo 6):** Emisión a Consumidores Finales o Monotributistas.
+- **Factura A (Responsable Inscripto a CUIT - CbteTipo 1):** 
+  - Generación automática del desglose fiscal de **Neto Gravado + IVA 21%** en la estructura XML (`<AlicIva>`, `ImpNeto`, `ImpIVA`) enviada a ARCA/AFIP.
+  - Generación de PDF oficial A con letra **A** (`COD. 001`) y desglose de IVA de acuerdo a la normativa legal.
+- **Fallback Automático (Consumidor Final):** Si el contribuyente tiene configurado el emisor como *Factura A*, pero ingresa una venta a un comprador sin CUIT (*Consumidor Final / DNI*), el sistema emite **automáticamente una Factura B (`COD. 006`)** para esa transacción, evitando rechazos de la AFIP por inconsistencia de documento.
+
+---
+
 ### 5. Asistente Virtual de WhatsApp con Gemini AI
 
 La plataforma integra un chatbot inteligente autónomo auto-hospedado para atención al cliente y ventas por WhatsApp, que utiliza el modelo **Google Gemini 1.5 Flash**.

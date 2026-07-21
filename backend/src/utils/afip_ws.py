@@ -207,6 +207,22 @@ def get_last_invoice_number(token: str, sign: str, cuit: str, pto_vta: int, cbte
 def request_cae(token: str, sign: str, cuit: str, pto_vta: int, cbte_tipo: int, invoice_number: int, doc_tipo: int, doc_nro: int, amount: float, env: str, concept: int = 1):
     today_str = datetime.now().strftime("%Y%m%d")
     
+    # Calculate IVA breakdown for Factura A (CbteTipo 1)
+    if cbte_tipo == 1:
+        imp_neto = round(amount / 1.21, 2)
+        imp_iva = round(amount - imp_neto, 2)
+        iva_xml = f"""<Iva>
+              <AlicIva>
+                <Id>5</Id>
+                <BaseImp>{imp_neto:.2f}</BaseImp>
+                <Importe>{imp_iva:.2f}</Importe>
+              </AlicIva>
+            </Iva>"""
+    else:
+        imp_neto = amount
+        imp_iva = 0.0
+        iva_xml = ""
+
     body = f"""<FECAESolicitar xmlns="http://ar.gov.afip.dif.FEV1/">
       <Auth>
         <Token>{token}</Token>
@@ -227,14 +243,15 @@ def request_cae(token: str, sign: str, cuit: str, pto_vta: int, cbte_tipo: int, 
             <CbteDesde>{invoice_number}</CbteDesde>
             <CbteHasta>{invoice_number}</CbteHasta>
             <CbteFch>{today_str}</CbteFch>
-            <ImpTotal>{amount}</ImpTotal>
+            <ImpTotal>{amount:.2f}</ImpTotal>
             <ImpTotConc>0</ImpTotConc>
-            <ImpNeto>{amount}</ImpNeto>
+            <ImpNeto>{imp_neto:.2f}</ImpNeto>
             <ImpOpEx>0</ImpOpEx>
             <ImpTrib>0</ImpTrib>
-            <ImpIVA>0</ImpIVA>
+            <ImpIVA>{imp_iva:.2f}</ImpIVA>
             <MonId>PES</MonId>
             <MonCotiz>1</MonCotiz>
+            {iva_xml}
           </FECAEDetRequest>
         </FeDetReq>
       </FeCAEReq>
@@ -392,7 +409,6 @@ def create_invoice(order: dict):
         doc_tipo = 99  # Consumidor final by default
         doc_nro = 0
 
-        
         if doc_num_str:
             clean_num = "".join([c for c in str(doc_num_str) if c.isdigit()])
             if clean_num:
@@ -402,8 +418,13 @@ def create_invoice(order: dict):
                 else:
                     doc_tipo = 96  # DNI
                     
+        # Check automatic fallback for Factura A if buyer is Consumidor Final (DocTipo != 80)
+        actual_cbte_tipo = cbte_tipo
+        if cbte_tipo == 1 and doc_tipo != 80:
+            actual_cbte_tipo = 6  # Issue Factura B if buyer is not a CUIT
+
         # Obtain next invoice number
-        last_num = get_last_invoice_number(token, sign, cuit, pto_vta, cbte_tipo, env)
+        last_num = get_last_invoice_number(token, sign, cuit, pto_vta, actual_cbte_tipo, env)
         new_num = last_num + 1
         
         # Request CAE from WSFE
@@ -412,7 +433,7 @@ def create_invoice(order: dict):
             sign=sign,
             cuit=cuit,
             pto_vta=pto_vta,
-            cbte_tipo=cbte_tipo,
+            cbte_tipo=actual_cbte_tipo,
             invoice_number=new_num,
             doc_tipo=doc_tipo,
             doc_nro=doc_nro,
@@ -427,6 +448,7 @@ def create_invoice(order: dict):
         order['invoice_number'] = formatted_invoice_number
         order['afip_cae'] = cae
         order['afip_cae_exp'] = cae_exp
+        order['cbte_tipo'] = actual_cbte_tipo
         
         # Regenerate reportlab invoice PDF with real AFIP values
         from src.utils.invoice_gen import generate_invoice_pdf

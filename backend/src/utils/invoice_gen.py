@@ -293,9 +293,15 @@ def _build_invoice_page(order, copy_type, usable_w):
     merchant_start_date = database.get_setting('merchant_start_date', '01/01/2020')
 
     pto_vta_val = int(database.get_setting('afip_pto_vta', '1'))
-    tipo_cmp_val = int(database.get_setting('afip_type_cmp', '11'))
+    tipo_cmp_val = int(order.get('cbte_tipo') or database.get_setting('afip_type_cmp', '11'))
 
-    letter_char = "C" if tipo_cmp_val == 11 else "B"
+    if tipo_cmp_val == 1:
+        letter_char = "A"
+    elif tipo_cmp_val == 6:
+        letter_char = "B"
+    else:
+        letter_char = "C"
+
     cod_cmp = f"COD. {tipo_cmp_val:03d}"
 
     invoice_number = order.get('invoice_number', f"{pto_vta_val:04d}-00000001")
@@ -524,14 +530,28 @@ def _build_invoice_page(order, copy_type, usable_w):
     # 4. TOTALS TABLE (right-aligned)
     # ══════════════════════════════════════════
     total_amount = float(order.get('total_amount', 0))
-    totals_data = [
-        [Paragraph('Subtotal:', style('tl', size=9, bold=True, align=TA_RIGHT)),
-         Paragraph(f"$ {total_amount:,.2f}", style('tv', size=9, align=TA_RIGHT))],
-        [Paragraph('Importe Otros Tributos:', style('tl2', size=9, bold=True, align=TA_RIGHT)),
-         Paragraph("$ 0,00", style('tv2', size=9, align=TA_RIGHT))],
-        [Paragraph('Importe Total:', style('tl3', size=10, bold=True, align=TA_RIGHT)),
-         Paragraph(f"$ {total_amount:,.2f}", style('tv3', size=10, bold=True, align=TA_RIGHT))],
-    ]
+    if letter_char == "A":
+        imp_neto = round(total_amount / 1.21, 2)
+        imp_iva = round(total_amount - imp_neto, 2)
+        totals_data = [
+            [Paragraph('Importe Neto Gravado:', style('tl', size=8.5, bold=True, align=TA_RIGHT)),
+             Paragraph(f"$ {imp_neto:,.2f}", style('tv', size=8.5, align=TA_RIGHT))],
+            [Paragraph('IVA 21%:', style('tl2', size=8.5, bold=True, align=TA_RIGHT)),
+             Paragraph(f"$ {imp_iva:,.2f}", style('tv2', size=8.5, align=TA_RIGHT))],
+            [Paragraph('Importe Otros Tributos:', style('tl3', size=8.5, bold=True, align=TA_RIGHT)),
+             Paragraph("$ 0,00", style('tv3', size=8.5, align=TA_RIGHT))],
+            [Paragraph('Importe Total:', style('tl4', size=10, bold=True, align=TA_RIGHT)),
+             Paragraph(f"$ {total_amount:,.2f}", style('tv4', size=10, bold=True, align=TA_RIGHT))],
+        ]
+    else:
+        totals_data = [
+            [Paragraph('Subtotal:', style('tl', size=9, bold=True, align=TA_RIGHT)),
+             Paragraph(f"$ {total_amount:,.2f}", style('tv', size=9, align=TA_RIGHT))],
+            [Paragraph('Importe Otros Tributos:', style('tl2', size=9, bold=True, align=TA_RIGHT)),
+             Paragraph("$ 0,00", style('tv2', size=9, align=TA_RIGHT))],
+            [Paragraph('Importe Total:', style('tl3', size=10, bold=True, align=TA_RIGHT)),
+             Paragraph(f"$ {total_amount:,.2f}", style('tv3', size=10, bold=True, align=TA_RIGHT))],
+        ]
 
     totals_table = Table(totals_data, colWidths=[usable_w * 0.7, usable_w * 0.3])
     totals_table.setStyle(TableStyle([
