@@ -111,6 +111,50 @@ export default function Settings() {
     phone: '',
     qr: ''
   })
+  const [testingKey, setTestingKey] = useState(false)
+  const [testResult, setTestResult] = useState(null)
+
+  const handleTestGeminiKey = async () => {
+    if (!waConfig.gemini_api_key) {
+      alert("Por favor ingresa una API Key de Gemini primero.")
+      return
+    }
+    setTestingKey(true)
+    setTestResult(null)
+    try {
+      const res = await fetch('/api/whatsapp/test-key', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ gemini_api_key: waConfig.gemini_api_key })
+      })
+      const data = await res.json()
+      if (data.success) {
+        setTestResult({ success: true, message: data.message || "Conexión exitosa" })
+      } else {
+        setTestResult({ success: false, message: data.error || data.detail || "Error al conectar" })
+      }
+    } catch (err) {
+      setTestResult({ success: false, message: "Error de red: " + err.message })
+    } finally {
+      setTestingKey(false)
+    }
+  }
+
+  const [inquiriesSummary, setInquiriesSummary] = useState(null)
+  const [inquiriesList, setInquiriesList] = useState([])
+  const [inquiriesLoading, setInquiriesLoading] = useState(false)
+
+  const fetchInquiries = () => {
+    setInquiriesLoading(true)
+    Promise.all([
+      fetch('/api/whatsapp/inquiries/summary').then(r => r.ok ? r.json() : null),
+      fetch('/api/whatsapp/inquiries/list').then(r => r.ok ? r.json() : [])
+    ]).then(([summaryData, listData]) => {
+      if (summaryData) setInquiriesSummary(summaryData)
+      if (listData) setInquiriesList(listData)
+    }).catch(err => console.error(err))
+    .finally(() => setInquiriesLoading(false))
+  }
 
   const fetchWaConfig = () => {
     fetch('/api/whatsapp/config')
@@ -120,6 +164,7 @@ export default function Settings() {
       })
       .then(setWaConfig)
       .catch(err => console.error(err))
+    fetchInquiries()
   }
 
   const handleSaveWaConfig = async (e) => {
@@ -1805,14 +1850,41 @@ export default function Settings() {
                 </label>
 
                 <label>Google Gemini API Key (Capa Gratuita o Pago)
-                  <input 
-                    type="password" 
-                    value={waConfig.gemini_api_key || ""} 
-                    onChange={e => setWaConfig({...waConfig, gemini_api_key: e.target.value})} 
-                    placeholder="AIzaSy..." 
-                    style={{width: '100%', marginTop: 5}}
-                    required={waConfig.enabled}
-                  />
+                  <div style={{display: 'flex', gap: 10, alignItems: 'center', marginTop: 5}}>
+                    <input 
+                      type="password" 
+                      value={waConfig.gemini_api_key || ""} 
+                      onChange={e => {
+                        setWaConfig({...waConfig, gemini_api_key: e.target.value})
+                        setTestResult(null)
+                      }} 
+                      placeholder="AIzaSy..." 
+                      style={{flex: 1}}
+                      required={waConfig.enabled}
+                    />
+                    <button 
+                      type="button" 
+                      onClick={handleTestGeminiKey} 
+                      className="btn btn-secondary" 
+                      disabled={testingKey || !waConfig.gemini_api_key}
+                      style={{whiteSpace: 'nowrap'}}
+                    >
+                      {testingKey ? 'Probando...' : 'Probar Clave'}
+                    </button>
+                  </div>
+                  {testResult && (
+                    <div style={{
+                      marginTop: 8, 
+                      padding: '8px 12px', 
+                      borderRadius: 4, 
+                      fontSize: '0.82rem',
+                      backgroundColor: testResult.success ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+                      color: testResult.success ? 'var(--accent-emerald)' : 'var(--accent-red)',
+                      border: `1px solid ${testResult.success ? 'var(--accent-emerald)' : 'var(--accent-red)'}`
+                    }}>
+                      {testResult.success ? '✓ ' : '✕ '} {testResult.message}
+                    </div>
+                  )}
                   <small style={{display: 'block', marginTop: 4, color: 'var(--text-secondary)', fontSize: '0.75rem'}}>
                     Obtén una clave gratuita de API en <a href="https://aistudio.google.com/" target="_blank" rel="noopener noreferrer" style={{color: 'var(--accent-blue)', textDecoration: 'underline'}}>Google AI Studio</a>.
                   </small>
@@ -1902,6 +1974,91 @@ export default function Settings() {
                     El bot de WhatsApp no se encuentra iniciado. Asegúrate de que el servicio está activo en el servidor.
                   </p>
                 </div>
+              )}
+            </div>
+
+            {/* Demand & Inquiries Analytics Panel */}
+            <div className="card" style={{width: '100%', marginTop: 10}}>
+              <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15, flexWrap: 'wrap', gap: 10}}>
+                <div>
+                  <h3 style={{margin: 0}}>📊 Demanda & Productos Solicitados por Clientes</h3>
+                  <p style={{fontSize: '0.85rem', color: 'var(--text-secondary)', margin: '4px 0 0 0'}}>
+                    Monitoreo en tiempo real del interés y productos más preguntados en WhatsApp por tus clientes.
+                  </p>
+                </div>
+                <button onClick={fetchInquiries} type="button" className="btn btn-secondary" style={{fontSize: '0.8rem', padding: '6px 12px'}}>
+                  {inquiriesLoading ? 'Cargando...' : '🔄 Actualizar Demanda'}
+                </button>
+              </div>
+
+              {/* KPI Cards */}
+              <div style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 15, marginBottom: 20}}>
+                <div style={{padding: '15px', borderRadius: 8, backgroundColor: 'var(--bg-dark)', border: '1px solid var(--border-color)'}}>
+                  <div style={{fontSize: '0.8rem', color: 'var(--text-secondary)'}}>Total Consultas Registradas</div>
+                  <div style={{fontSize: '1.6rem', fontWeight: 'bold', color: 'var(--accent-blue)', marginTop: 4}}>
+                    {inquiriesSummary?.total_inquiries || 0}
+                  </div>
+                </div>
+
+                <div style={{padding: '15px', borderRadius: 8, backgroundColor: 'var(--bg-dark)', border: '1px solid var(--border-color)'}}>
+                  <div style={{fontSize: '0.8rem', color: 'var(--text-secondary)'}}>Consultas Con Stock</div>
+                  <div style={{fontSize: '1.6rem', fontWeight: 'bold', color: 'var(--accent-emerald)', marginTop: 4}}>
+                    {inquiriesSummary?.total_in_stock || 0}
+                  </div>
+                </div>
+
+                <div style={{padding: '15px', borderRadius: 8, backgroundColor: 'var(--bg-dark)', border: '1px solid var(--border-color)'}}>
+                  <div style={{fontSize: '0.8rem', color: 'var(--text-secondary)'}}>Sin Stock (Oportunidades Perdidas)</div>
+                  <div style={{fontSize: '1.6rem', fontWeight: 'bold', color: 'var(--accent-red)', marginTop: 4}}>
+                    {inquiriesSummary?.total_out_of_stock || 0}
+                  </div>
+                </div>
+              </div>
+
+              {/* Top Requested Products Table */}
+              <h4 style={{marginBottom: 10, fontSize: '0.95rem'}}>🔥 Top Productos Más Consultados por Clientes</h4>
+              {inquiriesSummary?.top_products && inquiriesSummary.top_products.length > 0 ? (
+                <div style={{overflowX: 'auto', marginBottom: 20}}>
+                  <table style={{width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.85rem'}}>
+                    <thead>
+                      <tr style={{borderBottom: '1px solid var(--border-color)', color: 'var(--text-secondary)'}}>
+                        <th style={{padding: '8px 12px'}}>Producto Consultado</th>
+                        <th style={{padding: '8px 12px', textAlign: 'center'}}>Total Consultas</th>
+                        <th style={{padding: '8px 12px', textAlign: 'center'}}>Con Stock</th>
+                        <th style={{padding: '8px 12px', textAlign: 'center'}}>Sin Stock</th>
+                        <th style={{padding: '8px 12px'}}>Estado / Oportunidad</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {inquiriesSummary.top_products.map((p, idx) => {
+                        const hasOutOfStock = p.out_of_stock_count > 0;
+                        return (
+                          <tr key={idx} style={{borderBottom: '1px solid var(--border-color)'}}>
+                            <td style={{padding: '10px 12px', fontWeight: 600}}>{p.product_name}</td>
+                            <td style={{padding: '10px 12px', textAlign: 'center', fontWeight: 'bold'}}>{p.count}</td>
+                            <td style={{padding: '10px 12px', textAlign: 'center', color: 'var(--accent-emerald)'}}>{p.in_stock_count}</td>
+                            <td style={{padding: '10px 12px', textAlign: 'center', color: hasOutOfStock ? 'var(--accent-red)' : 'var(--text-secondary)'}}>{p.out_of_stock_count}</td>
+                            <td style={{padding: '10px 12px'}}>
+                              {hasOutOfStock ? (
+                                <span style={{padding: '3px 8px', borderRadius: 12, backgroundColor: 'rgba(239, 68, 68, 0.15)', color: 'var(--accent-red)', fontSize: '0.75rem', fontWeight: 600}}>
+                                  ⚠️ Oportunidad (Sin Stock)
+                                </span>
+                              ) : (
+                                <span style={{padding: '3px 8px', borderRadius: 12, backgroundColor: 'rgba(16, 185, 129, 0.15)', color: 'var(--accent-emerald)', fontSize: '0.75rem', fontWeight: 600}}>
+                                  ✓ En Stock
+                                </span>
+                              )}
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <p style={{fontSize: '0.85rem', color: 'var(--text-secondary)', padding: '10px 0'}}>
+                  Aún no hay consultas registradas. A medida que los clientes pregunten por productos en WhatsApp, la IA los registrará y mostrará aquí automáticamente.
+                </p>
               )}
             </div>
 

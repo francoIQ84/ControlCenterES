@@ -200,6 +200,17 @@ def init_db():
                 )
             ''')
 
+            # WhatsApp product inquiries table
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS whatsapp_product_inquiries (
+                    id SERIAL PRIMARY KEY,
+                    sender TEXT NOT NULL,
+                    product_name TEXT NOT NULL,
+                    in_stock BOOLEAN NOT NULL DEFAULT FALSE,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+
             cursor.execute('ALTER TABLE fixed_expenses ADD COLUMN IF NOT EXISTS month INT;')
             cursor.execute('ALTER TABLE fixed_expenses ADD COLUMN IF NOT EXISTS year INT;')
             cursor.execute('ALTER TABLE login_history ADD COLUMN IF NOT EXISTS username VARCHAR(100);')
@@ -1065,23 +1076,93 @@ def create_manual_order(order_id: int, date_created: str, buyer_nickname: str, b
 # --- WhatsApp Operations ---
 
 def get_whatsapp_chat_history(sender: str, limit: int = 10):
-    with get_connection() as conn:
-        with conn.cursor() as cursor:
-            cursor.execute('''
-                SELECT message, reply, timestamp 
-                FROM whatsapp_chat_history 
-                WHERE sender = %s 
-                ORDER BY timestamp DESC 
-                LIMIT %s
-            ''', (sender, limit))
-            history = cursor.fetchall()
-            history.reverse()
-            return history
+    try:
+        with get_connection() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute('''
+                    SELECT message, reply, timestamp 
+                    FROM whatsapp_chat_history 
+                    WHERE sender = %s 
+                    ORDER BY timestamp DESC 
+                    LIMIT %s
+                ''', (sender, limit))
+                history = cursor.fetchall()
+                history.reverse()
+                return history
+    except Exception as e:
+        print(f"[get_whatsapp_chat_history error] {e}")
+        return []
 
 def add_whatsapp_chat_message(sender: str, message: str, reply: str):
-    with get_connection() as conn:
-        with conn.cursor() as cursor:
-            cursor.execute('''
-                INSERT INTO whatsapp_chat_history (sender, message, reply)
-                VALUES (%s, %s, %s)
-            ''', (sender, message, reply))
+    try:
+        with get_connection() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute('''
+                    INSERT INTO whatsapp_chat_history (sender, message, reply)
+                    VALUES (%s, %s, %s)
+                ''', (sender, message, reply))
+    except Exception as e:
+        print(f"[add_whatsapp_chat_message error] {e}")
+
+def add_whatsapp_inquiry(sender: str, product_name: str, in_stock: bool):
+    try:
+        with get_connection() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute('''
+                    INSERT INTO whatsapp_product_inquiries (sender, product_name, in_stock)
+                    VALUES (%s, %s, %s)
+                ''', (sender, product_name, in_stock))
+    except Exception as e:
+        print(f"[add_whatsapp_inquiry error] {e}")
+
+def get_whatsapp_inquiries_summary():
+    try:
+        with get_connection() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute('''
+                    SELECT 
+                        INITCAP(LOWER(TRIM(product_name))) as product_name,
+                        COUNT(*) as count,
+                        SUM(CASE WHEN in_stock THEN 1 ELSE 0 END) as in_stock_count,
+                        SUM(CASE WHEN NOT in_stock THEN 1 ELSE 0 END) as out_of_stock_count,
+                        MAX(created_at) as last_inquired
+                    FROM whatsapp_product_inquiries
+                    GROUP BY INITCAP(LOWER(TRIM(product_name)))
+                    ORDER BY count DESC
+                    LIMIT 20
+                ''')
+                top_products = cursor.fetchall()
+
+                cursor.execute('''
+                    SELECT 
+                        COUNT(*) as total_inquiries,
+                        SUM(CASE WHEN in_stock THEN 1 ELSE 0 END) as total_in_stock,
+                        SUM(CASE WHEN NOT in_stock THEN 1 ELSE 0 END) as total_out_of_stock
+                    FROM whatsapp_product_inquiries
+                ''')
+                totals = cursor.fetchone() or {'total_inquiries': 0, 'total_in_stock': 0, 'total_out_of_stock': 0}
+
+                return {
+                    "total_inquiries": totals['total_inquiries'] or 0,
+                    "total_in_stock": totals['total_in_stock'] or 0,
+                    "total_out_of_stock": totals['total_out_of_stock'] or 0,
+                    "top_products": top_products
+                }
+    except Exception as e:
+        print(f"[get_whatsapp_inquiries_summary error] {e}")
+        return {"total_inquiries": 0, "total_in_stock": 0, "total_out_of_stock": 0, "top_products": []}
+
+def get_whatsapp_inquiries_list(limit: int = 50):
+    try:
+        with get_connection() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute('''
+                    SELECT id, sender, product_name, in_stock, created_at 
+                    FROM whatsapp_product_inquiries 
+                    ORDER BY created_at DESC 
+                    LIMIT %s
+                ''', (limit,))
+                return cursor.fetchall()
+    except Exception as e:
+        print(f"[get_whatsapp_inquiries_list error] {e}")
+        return []
