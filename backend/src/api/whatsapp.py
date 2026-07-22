@@ -99,6 +99,10 @@ def test_gemini_key(req: TestKeyReq, _=Depends(verify_session)):
 
     return {"success": False, "error": f"No se pudo conectar con los modelos de Gemini ({first_error})."}
 
+@router.get("/token-usage")
+def get_token_usage(_=Depends(verify_session)):
+    return database.get_whatsapp_token_usage()
+
 @router.get("/inquiries/summary")
 def get_inquiries_summary(_=Depends(verify_session)):
     return database.get_whatsapp_inquiries_summary()
@@ -223,8 +227,15 @@ def whatsapp_webhook(req: WebhookReq, _=Depends(verify_internal_only)):
                 # Clean tag lines before sending reply to user
                 clean_reply_text = re.sub(r'\[INQUIRY:\s*.*?\s*\|\s*IN_STOCK:\s*(?:true|false)\]', '', reply_text, flags=re.IGNORECASE).strip()
 
-                # Save history
-                database.add_whatsapp_chat_message(req.sender, user_text, clean_reply_text)
+                # Extract token usage metadata
+                usage = res_data.get('usageMetadata', {})
+                prompt_tokens = usage.get('promptTokenCount', 0)
+                reply_tokens = usage.get('candidatesTokenCount', 0)
+                total_tokens = usage.get('totalTokenCount', 0)
+                print(f"[Gemini Usage - {model_name}] Prompt: {prompt_tokens}, Reply: {reply_tokens}, Total: {total_tokens}")
+
+                # Save history with tokens
+                database.add_whatsapp_chat_message(req.sender, user_text, clean_reply_text, prompt_tokens, reply_tokens, total_tokens)
                 return {"reply": clean_reply_text}
             else:
                 try:

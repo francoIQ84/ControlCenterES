@@ -143,6 +143,14 @@ export default function Settings() {
   const [inquiriesSummary, setInquiriesSummary] = useState(null)
   const [inquiriesList, setInquiriesList] = useState([])
   const [inquiriesLoading, setInquiriesLoading] = useState(false)
+  const [tokenUsage, setTokenUsage] = useState(null)
+
+  const fetchTokenUsage = () => {
+    fetch('/api/whatsapp/token-usage')
+      .then(r => r.ok ? r.json() : null)
+      .then(setTokenUsage)
+      .catch(err => console.error(err))
+  }
 
   const fetchInquiries = () => {
     setInquiriesLoading(true)
@@ -165,6 +173,7 @@ export default function Settings() {
       .then(setWaConfig)
       .catch(err => console.error(err))
     fetchInquiries()
+    fetchTokenUsage()
   }
 
   const handleSaveWaConfig = async (e) => {
@@ -1975,6 +1984,72 @@ export default function Settings() {
                   </p>
                 </div>
               )}
+            </div>
+
+            {/* Token Usage & API Key Quota Card */}
+            <div className="card" style={{width: '100%', marginTop: 10}}>
+              <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15, flexWrap: 'wrap', gap: 10}}>
+                <div>
+                  <h3 style={{margin: 0}}>⚡ Consumo de Tokens & Cuota de API Key</h3>
+                  <p style={{fontSize: '0.85rem', color: 'var(--text-secondary)', margin: '4px 0 0 0'}}>
+                    Monitoreo en tiempo real de tokens utilizados y limite diario de la cuota gratuita de Google AI Studio.
+                  </p>
+                </div>
+                <button onClick={fetchTokenUsage} type="button" className="btn btn-secondary" style={{fontSize: '0.8rem', padding: '6px 12px'}}>
+                  🔄 Actualizar Tokens
+                </button>
+              </div>
+
+              {/* Daily Quota Progress Bar */}
+              <div style={{marginBottom: 20}}>
+                <div style={{display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem', marginBottom: 6}}>
+                  <span>Cuota Diaria Gratuita Usada (Consultas Hoy): <strong>{tokenUsage?.requests_today || 0} / {tokenUsage?.daily_limit_requests || 1500}</strong></span>
+                  <span style={{fontWeight: 600, color: (tokenUsage?.quota_used_percent || 0) > 80 ? 'var(--accent-red)' : 'var(--accent-emerald)'}}>
+                    {tokenUsage?.quota_used_percent || 0}%
+                  </span>
+                </div>
+                <div style={{width: '100%', height: 10, backgroundColor: 'var(--bg-dark)', borderRadius: 5, overflow: 'hidden', border: '1px solid var(--border-color)'}}>
+                  <div style={{
+                    width: `${tokenUsage?.quota_used_percent || 0}%`, 
+                    height: '100%', 
+                    backgroundColor: (tokenUsage?.quota_used_percent || 0) > 80 ? 'var(--accent-red)' : 'var(--accent-emerald)',
+                    transition: 'width 0.3s ease'
+                  }} />
+                </div>
+              </div>
+
+              {/* KPI Tokens Breakdown */}
+              <div style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 15}}>
+                <div style={{padding: '12px 15px', borderRadius: 8, backgroundColor: 'var(--bg-dark)', border: '1px solid var(--border-color)'}}>
+                  <div style={{fontSize: '0.78rem', color: 'var(--text-secondary)'}}>Tokens Usados Hoy (Entrada + Salida)</div>
+                  <div style={{fontSize: '1.4rem', fontWeight: 'bold', color: 'var(--accent-blue)', marginTop: 4}}>
+                    {(tokenUsage?.total_tokens_today || 0).toLocaleString()}
+                  </div>
+                  <small style={{fontSize: '0.72rem', color: 'var(--text-secondary)'}}>
+                    Prompt: {(tokenUsage?.prompt_tokens_today || 0).toLocaleString()} | Resp.: {(tokenUsage?.reply_tokens_today || 0).toLocaleString()}
+                  </small>
+                </div>
+
+                <div style={{padding: '12px 15px', borderRadius: 8, backgroundColor: 'var(--bg-dark)', border: '1px solid var(--border-color)'}}>
+                  <div style={{fontSize: '0.78rem', color: 'var(--text-secondary)'}}>Tokens Acumulados Este Mes</div>
+                  <div style={{fontSize: '1.4rem', fontWeight: 'bold', color: '#a855f7', marginTop: 4}}>
+                    {(tokenUsage?.total_tokens_month || 0).toLocaleString()}
+                  </div>
+                  <small style={{fontSize: '0.72rem', color: 'var(--text-secondary)'}}>
+                    {(tokenUsage?.requests_month || 0)} consultas (Est. en Plan Pago: ${tokenUsage?.cost_month_usd || 0} USD)
+                  </small>
+                </div>
+
+                <div style={{padding: '12px 15px', borderRadius: 8, backgroundColor: 'var(--bg-dark)', border: '1px solid var(--border-color)'}}>
+                  <div style={{fontSize: '0.78rem', color: 'var(--text-secondary)'}}>Promedio por Consulta</div>
+                  <div style={{fontSize: '1.4rem', fontWeight: 'bold', color: 'var(--accent-emerald)', marginTop: 4}}>
+                    {tokenUsage?.requests_today > 0 ? Math.round(tokenUsage.total_tokens_today / tokenUsage.requests_today) : 0} tokens
+                  </div>
+                  <small style={{fontSize: '0.72rem', color: 'var(--text-secondary)'}}>
+                    Costo est. hoy en Plan Pago: ${tokenUsage?.cost_today_usd || 0} USD
+                  </small>
+                </div>
+              </div>
             </div>
 
             {/* Demand & Inquiries Analytics Panel */}

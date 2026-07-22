@@ -214,6 +214,9 @@ def init_db():
             cursor.execute('ALTER TABLE fixed_expenses ADD COLUMN IF NOT EXISTS month INT;')
             cursor.execute('ALTER TABLE fixed_expenses ADD COLUMN IF NOT EXISTS year INT;')
             cursor.execute('ALTER TABLE login_history ADD COLUMN IF NOT EXISTS username VARCHAR(100);')
+            cursor.execute('ALTER TABLE whatsapp_chat_history ADD COLUMN IF NOT EXISTS prompt_tokens INT DEFAULT 0;')
+            cursor.execute('ALTER TABLE whatsapp_chat_history ADD COLUMN IF NOT EXISTS reply_tokens INT DEFAULT 0;')
+            cursor.execute('ALTER TABLE whatsapp_chat_history ADD COLUMN IF NOT EXISTS total_tokens INT DEFAULT 0;')
 
             # Seed default admin user if no users exist
             cursor.execute("SELECT COUNT(*) as count FROM users")
@@ -1093,14 +1096,14 @@ def get_whatsapp_chat_history(sender: str, limit: int = 10):
         print(f"[get_whatsapp_chat_history error] {e}")
         return []
 
-def add_whatsapp_chat_message(sender: str, message: str, reply: str):
+def add_whatsapp_chat_message(sender: str, message: str, reply: str, prompt_tokens: int = 0, reply_tokens: int = 0, total_tokens: int = 0):
     try:
         with get_connection() as conn:
             with conn.cursor() as cursor:
                 cursor.execute('''
-                    INSERT INTO whatsapp_chat_history (sender, message, reply)
-                    VALUES (%s, %s, %s)
-                ''', (sender, message, reply))
+                    INSERT INTO whatsapp_chat_history (sender, message, reply, prompt_tokens, reply_tokens, total_tokens)
+                    VALUES (%s, %s, %s, %s, %s, %s)
+                ''', (sender, message, reply, prompt_tokens, reply_tokens, total_tokens))
     except Exception as e:
         print(f"[add_whatsapp_chat_message error] {e}")
 
@@ -1166,3 +1169,65 @@ def get_whatsapp_inquiries_list(limit: int = 50):
     except Exception as e:
         print(f"[get_whatsapp_inquiries_list error] {e}")
         return []
+
+def get_whatsapp_token_usage():
+    try:
+        with get_connection() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute('''
+                    SELECT 
+                        COUNT(*) as requests_today,
+                        COALESCE(SUM(prompt_tokens), 0) as prompt_tokens_today,
+                        COALESCE(SUM(reply_tokens), 0) as reply_tokens_today,
+                        COALESCE(SUM(total_tokens), 0) as total_tokens_today
+                    FROM whatsapp_chat_history
+                    WHERE DATE(timestamp) = CURRENT_DATE
+                ''')
+                today = cursor.fetchone() or {}
+
+                cursor.execute('''
+                    SELECT 
+                        COUNT(*) as requests_month,
+                        COALESCE(SUM(prompt_tokens), 0) as prompt_tokens_month,
+                        COALESCE(SUM(reply_tokens), 0) as reply_tokens_month,
+                        COALESCE(SUM(total_tokens), 0) as total_tokens_month
+                    FROM whatsapp_chat_history
+                    WHERE DATE_TRUNC('month', timestamp) = DATE_TRUNC('month', CURRENT_DATE)
+                ''')
+                month = cursor.fetchone() or {}
+
+                requests_today = int(today.get('requests_today') or 0)
+                daily_limit = 1500
+                quota_used_percent = min(100.0, round((requests_today / daily_limit) * 100, 1))
+
+                prompt_today = int(today.get('prompt_tokens_today') or 0)
+                reply_today = int(today.get('reply_tokens_today') or 0)
+                prompt_month = int(month.get('prompt_tokens_month') or 0)
+                reply_month = int(month.get('reply_tokens_month') or 0)
+
+                # Estimated cost in USD if using paid tier ($0.075 / 1M input tokens, $0.30 / 1M output tokens)
+                cost_today_usd = round((prompt_today * 0.000000075) + (reply_today * 0.0000003), 4)
+                cost_month_usd = round((prompt_month * 0.000000075) + (reply_month * 0.0000003), 4)
+
+                return {
+                    "requests_today": requests_today,
+                    "daily_limit_requests": daily_limit,
+                    "quota_used_percent": quota_used_percent,
+                    "prompt_tokens_today": prompt_today,
+                    "reply_tokens_today": reply_today,
+                    "total_tokens_today": int(today.get('total_tokens_today') or 0),
+                    "requests_month": int(month.get('requests_month') or 0),
+                    "total_tokens_month": int(month.get('total_tokens_month') or 0),
+                    "cost_today_usd": cost_today_usd,
+                    "cost_month_usd": cost_month_usd,
+                    "free_tier_rpm_limit": 15,
+                    "free_tier_tpm_limit": 1000000
+                }
+    except Exception as e:
+        print(f"[get_whatsapp_token_usage error] {e}")
+        return {
+            "requests_today": 0, "daily_limit_requests": 1500, "quota_used_percent": 0.0,
+            "prompt_tokens_today": 0, "reply_tokens_today": 0, "total_tokens_today": 0,
+            "requests_month": 0, "total_tokens_month": 0,
+            "free_tier_rpm_limit": 15, "free_tier_tpm_limit": 1000000
+        }
