@@ -486,8 +486,13 @@ export default function Settings() {
   }
 
   const handleAuth = () => {
-    const url = `https://auth.mercadolibre.com.ar/authorization?response_type=code&client_id=${config.client_id}&redirect_uri=${config.redirect_uri}`
-    window.open(url, '_blank')
+    if (!config.client_id) {
+      alert("Por favor ingresa primero tu App ID (Client ID) y presiona 'Guardar API Config'.")
+      return
+    }
+    const redirectUri = config.redirect_uri || (window.location.origin + '/settings')
+    const url = `https://auth.mercadolibre.com.ar/authorization?response_type=code&client_id=${config.client_id}&redirect_uri=${encodeURIComponent(redirectUri)}`
+    window.location.href = url
   }
 
   const handleCode = async () => {
@@ -782,7 +787,18 @@ export default function Settings() {
                   <input type="password" value={config.client_secret} onChange={e => setConfig({...config, client_secret: e.target.value})} style={{width: '100%', marginTop: 5}}/>
                 </label>
                 <label>Redirect URI
-                  <input type="text" value={config.redirect_uri} onChange={e => setConfig({...config, redirect_uri: e.target.value})} style={{width: '100%', marginTop: 5}}/>
+                  <div style={{display: 'flex', gap: 8, marginTop: 5}}>
+                    <input type="text" value={config.redirect_uri} onChange={e => setConfig({...config, redirect_uri: e.target.value})} style={{flex: 1}}/>
+                    <button 
+                      type="button" 
+                      className="btn" 
+                      style={{fontSize: '0.75rem', padding: '6px 10px', whiteSpace: 'nowrap'}} 
+                      onClick={() => setConfig({...config, redirect_uri: window.location.origin + '/settings'})}
+                      title="Usar la URL actual de tu navegador"
+                    >
+                      Usar URL actual
+                    </button>
+                  </div>
                 </label>
                 <label style={{display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.9rem', cursor: 'pointer', marginTop: 5}}>
                   <input type="checkbox" checked={config.demo_mode} onChange={e => setConfig({...config, demo_mode: e.target.checked})} style={{width: 'auto'}}/>
@@ -808,26 +824,37 @@ export default function Settings() {
             <div className="card" style={{flex: 1, minWidth: 300}}>
               <h3>Estado de Conexión</h3>
               {status.is_authenticated ? (
-                <div style={{color: 'var(--accent-emerald)', fontWeight: 'bold'}}>
+                <div style={{color: 'var(--accent-emerald)', fontWeight: 'bold', padding: '8px 12px', borderRadius: '6px', backgroundColor: 'rgba(16, 185, 129, 0.1)', border: '1px solid var(--accent-emerald)'}}>
                   ✓ Conectado a Mercado Libre (Usuario ID: {status.user_id})
                 </div>
               ) : (
-                <div style={{color: 'var(--accent-red)', fontWeight: 'bold'}}>
+                <div style={{color: 'var(--accent-red)', fontWeight: 'bold', padding: '8px 12px', borderRadius: '6px', backgroundColor: 'rgba(239, 68, 68, 0.1)', border: '1px solid var(--accent-red)'}}>
                   ✗ No autenticado
                 </div>
               )}
 
               <div style={{marginTop: 20}}>
-                <p style={{fontSize: '0.9rem'}}>1. Haz clic aquí para autorizar la app:</p>
-                <button className="btn" style={{backgroundColor: '#ffe600', color: '#333'}} onClick={handleAuth}>
+                <div style={{fontSize: '0.85rem', color: 'var(--text-secondary)', backgroundColor: 'var(--bg-hover)', padding: '10px 12px', borderRadius: '6px', marginBottom: 15}}>
+                  💡 <strong>Vinculación en 1-Clic:</strong> Haz clic en <strong>Autorizar en Mercado Libre</strong>. Si tu Redirect URI coincide con la URL de esta aplicación, la vinculación se realiza automáticamente de forma transparente sin tener que copiar códigos.
+                </div>
+
+                <p style={{fontSize: '0.9rem', fontWeight: 600}}>1. Autorizar aplicación:</p>
+                <button className="btn" style={{backgroundColor: '#ffe600', color: '#333', fontWeight: 'bold', width: '100%', padding: '10px 15px'}} onClick={handleAuth}>
                   Autorizar en Mercado Libre
                 </button>
                 
-                <p style={{fontSize: '0.9rem', marginTop: 20}}>2. Pega el código de la URL (TG-xxx):</p>
-                <div style={{display: 'flex', gap: 10}}>
-                  <input type="text" value={code} onChange={e => setCode(e.target.value)} placeholder="TG-..." style={{flex: 1}}/>
-                  <button className="btn" onClick={handleCode}>Vincular</button>
-                </div>
+                <details style={{marginTop: 20, fontSize: '0.85rem', color: 'var(--text-secondary)'}}>
+                  <summary style={{cursor: 'pointer', fontWeight: 600, color: 'var(--text-primary)'}}>
+                    Opción manual: Pegar código TG-xxx
+                  </summary>
+                  <div style={{marginTop: 10}}>
+                    <p style={{fontSize: '0.85rem', marginBottom: 5}}>Pega el código de la URL (TG-xxx):</p>
+                    <div style={{display: 'flex', gap: 10}}>
+                      <input type="text" value={code} onChange={e => setCode(e.target.value)} placeholder="TG-..." style={{flex: 1}}/>
+                      <button className="btn" onClick={handleCode}>Vincular</button>
+                    </div>
+                  </div>
+                </details>
               </div>
             </div>
           </div>

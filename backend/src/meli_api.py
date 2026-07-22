@@ -4,6 +4,7 @@ import json
 from datetime import datetime, timedelta
 import random
 import os
+import threading
 
 from src import config
 from src import database
@@ -47,6 +48,8 @@ MOCK_BUYERS = [
     {"id": 10141516, "nickname": "LUCAS_SILVA", "name": "Lucas Silva", "email": "lucas.silva@example.com", "phone": "351-777-9999", "document_type": "DNI", "document_number": "40123456"}
 ]
 
+_token_refresh_lock = threading.Lock()
+
 def is_demo_mode():
     """Returns True if the app is configured in Demo Mode or lacks API keys."""
     demo_setting = database.get_setting('demo_mode', '1')
@@ -57,7 +60,8 @@ def validate_token():
     if is_demo_mode():
         return True
     access_token = config.get_access_token()
-    if not access_token:
+    refresh_token = config.get_refresh_token()
+    if not access_token and not refresh_token:
         return False
     try:
         return check_and_refresh_token()
@@ -123,48 +127,61 @@ def authenticate_with_code(code):
         return False, f"Excepción de conexión: {str(e)}"
 
 def refresh_access_token():
-    """Refreshes the access token using the refresh token."""
+    """Refreshes the access token using the refresh token in a thread-safe manner."""
     if is_demo_mode():
         config.set_token_expiry(time.time() + 21600)
         return True
 
-    client_id = config.get_client_id()
-    client_secret = config.get_client_secret()
-    refresh_token = config.get_refresh_token()
-
-    if not refresh_token:
-        return False
-
-    url = f"{API_BASE_URL}/oauth/token"
-    headers = {
-        'Accept': 'application/json',
-        'Content-Type': 'application/x-www-form-urlencoded'
-    }
-    data = {
-        'grant_type': 'refresh_token',
-        'client_id': client_id,
-        'client_secret': client_secret,
-        'refresh_token': refresh_token
-    }
-
-    try:
-        response = requests.post(url, headers=headers, data=data)
-        if response.status_code == 200:
-            res_data = response.json()
-            config.set_access_token(res_data['access_token'])
-            config.set_refresh_token(res_data['refresh_token'])
-            config.set_token_expiry(time.time() + res_data['expires_in'])
+    with _token_refresh_lock:
+        # Re-check expiry after acquiring lock (in case another thread refreshed it while waiting)
+        expiry = config.get_token_expiry()
+        if (expiry - time.time() >= 300) and config.get_access_token():
             return True
-        else:
+
+        client_id = config.get_client_id()
+        client_secret = config.get_client_secret()
+        refresh_token = config.get_refresh_token()
+
+        if not refresh_token:
             return False
-    except Exception:
+
+        url = f"{API_BASE_URL}/oauth/token"
+        headers = {
+            'Accept': 'application/json',
+            'Content-Type': 'application/x-www-form-urlencoded'
+        }
+        data = {
+            'grant_type': 'refresh_token',
+            'client_id': client_id,
+            'client_secret': client_secret,
+            'refresh_token': refresh_token
+        }
+
+        for attempt in range(3):
+            try:
+                response = requests.post(url, headers=headers, data=data, timeout=10)
+                if response.status_code == 200:
+                    res_data = response.json()
+                    config.set_access_token(res_data['access_token'])
+                    config.set_refresh_token(res_data.get('refresh_token', refresh_token))
+                    config.set_token_expiry(time.time() + res_data.get('expires_in', 21600))
+                    return True
+                elif response.status_code >= 500:
+                    time.sleep(1)
+                    continue
+                else:
+                    print(f"[Meli API] Error al refrescar token ({response.status_code}): {response.text}")
+                    return False
+            except Exception as e:
+                print(f"[Meli API] Excepción al refrescar token (intento {attempt+1}): {e}")
+                time.sleep(1)
         return False
 
 def check_and_refresh_token():
-    """Checks if the token is close to expiry and refreshes if needed."""
+    """Checks if the token is close to expiry or missing and refreshes if needed."""
     expiry = config.get_token_expiry()
-    # Refresh if token expires in less than 5 minutes
-    if expiry - time.time() < 300:
+    access_token = config.get_access_token()
+    if (expiry - time.time() < 300) or not access_token:
         return refresh_access_token()
     return True
 
@@ -186,7 +203,13 @@ def api_request(method, path, headers=None, params=None, json_data=None):
         req_headers.update(headers)
         
     try:
-        response = requests.request(method, url, headers=req_headers, params=params, json=json_data)
+        response = requests.request(method, url, headers=req_headers, params=params, json=json_data, timeout=15)
+        # If response is 401 Unauthorized, try refreshing token once and retrying
+        if response.status_code == 401:
+            print("[Meli API] Respuesta 401 Unauthorized. Intentando refrescar token...")
+            if refresh_access_token():
+                req_headers['Authorization'] = f"Bearer {config.get_access_token()}"
+                response = requests.request(method, url, headers=req_headers, params=params, json=json_data, timeout=15)
         return response
     except Exception as e:
         raise ConnectionError(f"Error al conectar con la API de Mercado Libre: {str(e)}")

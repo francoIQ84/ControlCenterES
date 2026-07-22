@@ -69,11 +69,15 @@ def get_config(_=Depends(require_permission("settings"))):
 
 @router.post("/setup")
 def save_setup(req: SetupRequest, _=Depends(require_permission("settings"))):
-    # Clear active session tokens to force clean re-authentication with new settings
-    database.delete_setting('meli_access_token')
-    database.delete_setting('meli_refresh_token')
-    database.delete_setting('meli_user_id')
-    database.delete_setting('meli_token_expiry')
+    # Only clear active session tokens if client_id or client_secret changed
+    old_client_id = database.get_setting('meli_client_id', '')
+    old_client_secret = database.get_setting('meli_client_secret', '')
+
+    if (req.client_id and req.client_id != old_client_id) or (req.client_secret and req.client_secret != old_client_secret):
+        database.delete_setting('meli_access_token')
+        database.delete_setting('meli_refresh_token')
+        database.delete_setting('meli_user_id')
+        database.delete_setting('meli_token_expiry')
     
     database.set_setting('meli_client_id', req.client_id)
     database.set_setting('meli_client_secret', req.client_secret)
