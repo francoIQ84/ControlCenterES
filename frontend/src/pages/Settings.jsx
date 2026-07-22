@@ -685,7 +685,7 @@ export default function Settings() {
           }}
           onClick={() => setActiveTab('connection')}
         >
-          Conexión Mercado Libre
+          Conexión ML / MP
         </button>
         <button 
           style={{
@@ -778,7 +778,7 @@ export default function Settings() {
         <div style={{display: 'flex', flexDirection: 'column', gap: 20}}>
           <div style={{display: 'flex', gap: 20, alignItems: 'flex-start', flexWrap: 'wrap'}}>
             <div className="card" style={{flex: 1, minWidth: 300}}>
-              <h3>API de Mercado Libre</h3>
+              <h3>API de Mercado Libre / Mercado Pago (ML / MP)</h3>
               <div style={{display: 'flex', flexDirection: 'column', gap: 15}}>
                 <label>App ID (Client ID)
                   <input type="text" value={config.client_id} onChange={e => setConfig({...config, client_id: e.target.value})} style={{width: '100%', marginTop: 5}}/>
@@ -822,10 +822,10 @@ export default function Settings() {
             </div>
 
             <div className="card" style={{flex: 1, minWidth: 300}}>
-              <h3>Estado de Conexión</h3>
+              <h3>Estado de Conexión ML / MP</h3>
               {status.is_authenticated ? (
                 <div style={{color: 'var(--accent-emerald)', fontWeight: 'bold', padding: '8px 12px', borderRadius: '6px', backgroundColor: 'rgba(16, 185, 129, 0.1)', border: '1px solid var(--accent-emerald)'}}>
-                  ✓ Conectado a Mercado Libre (Usuario ID: {status.user_id})
+                  ✓ Conectado a Mercado Libre / Mercado Pago (Usuario ID: {status.user_id})
                 </div>
               ) : (
                 <div style={{color: 'var(--accent-red)', fontWeight: 'bold', padding: '8px 12px', borderRadius: '6px', backgroundColor: 'rgba(239, 68, 68, 0.1)', border: '1px solid var(--accent-red)'}}>
@@ -835,12 +835,12 @@ export default function Settings() {
 
               <div style={{marginTop: 20}}>
                 <div style={{fontSize: '0.85rem', color: 'var(--text-secondary)', backgroundColor: 'var(--bg-hover)', padding: '10px 12px', borderRadius: '6px', marginBottom: 15}}>
-                  💡 <strong>Vinculación en 1-Clic:</strong> Haz clic en <strong>Autorizar en Mercado Libre</strong>. Si tu Redirect URI coincide con la URL de esta aplicación, la vinculación se realiza automáticamente de forma transparente sin tener que copiar códigos.
+                  💡 <strong>Vinculación en 1-Clic:</strong> Haz clic en <strong>Autorizar Mercado Libre / Pago</strong>. Otorga permiso único para ambas plataformas de forma transparente sin copiar códigos.
                 </div>
 
                 <p style={{fontSize: '0.9rem', fontWeight: 600}}>1. Autorizar aplicación:</p>
                 <button className="btn" style={{backgroundColor: '#ffe600', color: '#333', fontWeight: 'bold', width: '100%', padding: '10px 15px'}} onClick={handleAuth}>
-                  Autorizar en Mercado Libre
+                  Autorizar Mercado Libre / Mercado Pago
                 </button>
                 
                 <details style={{marginTop: 20, fontSize: '0.85rem', color: 'var(--text-secondary)'}}>
