@@ -303,3 +303,49 @@ def send_manual_message(order_id: str, req: MessageManualRequest):
                 cursor.execute("UPDATE orders_cache SET shipping_msg_sent = 1 WHERE order_id = %s", (order_id,))
 
     return {"success": True, "message": "Mensaje enviado exitosamente"}
+
+class LinkInventoryItem(BaseModel):
+    ml_id: str
+    quantity: int = 1
+
+class LinkInventoryRequest(BaseModel):
+    items: List[LinkInventoryItem]
+
+@router.post("/{order_id}/link-inventory")
+def link_order_inventory_endpoint(order_id: int, req: LinkInventoryRequest):
+    order = database.get_order_by_id(order_id)
+    if not order:
+        raise HTTPException(status_code=404, detail="Venta/Cobro no encontrado")
+
+    if not req.items:
+        raise HTTPException(status_code=400, detail="Debes especificar al menos un producto a vincular")
+
+    formatted_items = []
+    total_cost = 0.0
+
+    for item in req.items:
+        prod = database.get_product_by_id(item.ml_id)
+        if not prod:
+            raise HTTPException(status_code=404, detail=f"Producto {item.ml_id} no encontrado en el inventario")
+
+        qty = max(1, item.quantity)
+        prod_cost = float(prod.get('cost_price', 0.0))
+        total_cost += (prod_cost * qty)
+
+        formatted_items.append({
+            'item_id': prod['ml_id'],
+            'title': prod['title'],
+            'quantity': qty,
+            'unit_price': float(prod.get('price', 0.0)),
+            'thumbnail': prod.get('thumbnail', '')
+        })
+
+        # Deduct quantity from inventory
+        current_stock = int(prod.get('available_quantity', 0))
+        new_stock = max(0, current_stock - qty)
+        with database.get_connection() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute("UPDATE products_cache SET available_quantity = %s WHERE ml_id = %s", (new_stock, prod['ml_id']))
+
+    database.link_order_inventory(order_id, formatted_items, total_cost)
+    return {"success": True, "message": "Inventario vinculado y stock actualizado correctamente"}

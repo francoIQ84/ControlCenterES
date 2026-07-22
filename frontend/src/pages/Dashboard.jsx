@@ -6,6 +6,7 @@ export default function Dashboard() {
   const [stats, setStats] = useState(null)
   const [orders, setOrders] = useState([])
   const [period, setPeriod] = useState('total')
+  const [mpBalance, setMpBalance] = useState(null)
 
   useEffect(() => {
     fetch(`/api/dashboard/metrics?period=${period}`)
@@ -17,6 +18,11 @@ export default function Dashboard() {
     fetch('/api/sales/')
       .then(res => res.json())
       .then(data => setOrders(data.orders || []))
+
+    fetch('/api/mercadopago/balance')
+      .then(res => res.ok ? res.json() : null)
+      .then(setMpBalance)
+      .catch(err => console.error(err))
   }, [])
 
   if (!stats) return <div>Cargando...</div>
@@ -119,6 +125,13 @@ export default function Dashboard() {
           <div className="kpi-title">Visitas Mercado Libre <Eye size={18} color="var(--accent-amber)"/></div>
           <div className="kpi-value">{(stats.total_visits_meli || 0).toLocaleString()}</div>
           <div className="kpi-subtitle">Total acumulado en Meli</div>
+        </div>
+        <div className="card kpi-card" style={{borderLeft: '4px solid #009ee3'}}>
+          <div className="kpi-title">Saldo Mercado Pago <DollarSign size={18} color="#009ee3"/></div>
+          <div className="kpi-value">${Math.round(mpBalance?.available_balance || 0).toLocaleString()}</div>
+          <div className="kpi-subtitle">
+            Disponible | A liberar: ${Math.round(mpBalance?.unavailable_balance || 0).toLocaleString()}
+          </div>
         </div>
         <div className="card kpi-card" style={{borderLeft: '4px solid var(--accent-cyan)'}}>
           <div className="kpi-title">Visitas Tienda Web <Globe size={18} color="var(--accent-cyan)"/></div>

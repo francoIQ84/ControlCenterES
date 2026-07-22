@@ -108,6 +108,12 @@ def init_db():
             cursor.execute('ALTER TABLE orders_cache ADD COLUMN IF NOT EXISTS afip_cae_exp TEXT;')
             cursor.execute('ALTER TABLE orders_cache ADD COLUMN IF NOT EXISTS meli_invoice_attached INTEGER DEFAULT 0;')
             cursor.execute('ALTER TABLE orders_cache ADD COLUMN IF NOT EXISTS shipping_msg_sent INTEGER DEFAULT 0;')
+            cursor.execute('ALTER TABLE orders_cache ADD COLUMN IF NOT EXISTS mp_payment_id BIGINT;')
+            cursor.execute('ALTER TABLE orders_cache ADD COLUMN IF NOT EXISTS mp_fee_amount REAL DEFAULT 0.0;')
+            cursor.execute('ALTER TABLE orders_cache ADD COLUMN IF NOT EXISTS inventory_linked INTEGER DEFAULT 1;')
+            cursor.execute('ALTER TABLE orders_cache ADD COLUMN IF NOT EXISTS cost_amount REAL DEFAULT 0.0;')
+            cursor.execute('ALTER TABLE variable_expenses ADD COLUMN IF NOT EXISTS mp_payment_id BIGINT;')
+            cursor.execute('ALTER TABLE variable_expenses ADD COLUMN IF NOT EXISTS is_auto_mp INTEGER DEFAULT 0;')
 
             # Customers table
             cursor.execute('''
@@ -449,19 +455,24 @@ def save_orders_and_customers(orders_list):
 
                 cursor.execute('''
                     INSERT INTO orders_cache 
-                    (order_id, date_created, buyer_id, buyer_nickname, buyer_name, total_amount, currency_id, status, payment_status, shipping_status, items_json, invoice_generated, source_platform, payment_method, meli_invoice_attached)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    (order_id, date_created, buyer_id, buyer_nickname, buyer_name, total_amount, currency_id, status, payment_status, shipping_status, items_json, invoice_generated, source_platform, payment_method, meli_invoice_attached, mp_payment_id, mp_fee_amount, inventory_linked, cost_amount)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     ON CONFLICT (order_id) DO UPDATE SET
                         status = EXCLUDED.status,
                         payment_status = EXCLUDED.payment_status,
                         shipping_status = EXCLUDED.shipping_status,
                         payment_method = EXCLUDED.payment_method,
-                        meli_invoice_attached = EXCLUDED.meli_invoice_attached
+                        meli_invoice_attached = EXCLUDED.meli_invoice_attached,
+                        mp_payment_id = COALESCE(EXCLUDED.mp_payment_id, orders_cache.mp_payment_id),
+                        mp_fee_amount = CASE WHEN EXCLUDED.mp_fee_amount > 0 THEN EXCLUDED.mp_fee_amount ELSE orders_cache.mp_fee_amount END,
+                        inventory_linked = CASE WHEN orders_cache.inventory_linked = 1 THEN 1 ELSE EXCLUDED.inventory_linked END,
+                        cost_amount = CASE WHEN EXCLUDED.cost_amount > 0 THEN EXCLUDED.cost_amount ELSE orders_cache.cost_amount END
                 ''', (
                     o['order_id'], o['date_created'], o['buyer']['id'], o['buyer']['nickname'], o['buyer']['name'],
                     o['total_amount'], o['currency_id'], o['status'], o['payment_status'], o['shipping_status'],
                     json.dumps(o['items']), invoice_generated, source_platform, o.get('payment_method'),
-                    o.get('meli_invoice_attached', 0)
+                    o.get('meli_invoice_attached', 0), o.get('mp_payment_id'), o.get('mp_fee_amount', 0.0),
+                    o.get('inventory_linked', 1), o.get('cost_amount', 0.0)
                 ))
                 
                 cursor.execute('''
@@ -1229,5 +1240,39 @@ def get_whatsapp_token_usage():
             "requests_today": 0, "daily_limit_requests": 1500, "quota_used_percent": 0.0,
             "prompt_tokens_today": 0, "reply_tokens_today": 0, "total_tokens_today": 0,
             "requests_month": 0, "total_tokens_month": 0,
+            "cost_today_usd": 0.0, "cost_month_usd": 0.0,
             "free_tier_rpm_limit": 15, "free_tier_tpm_limit": 1000000
         }
+
+# --- Mercado Pago Helpers ---
+
+def save_auto_mp_expense(date_str, description, amount, category, mp_payment_id):
+    """Inserts or updates an automatically generated Mercado Pago fee/expense."""
+    if amount <= 0:
+        return
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute("SELECT id FROM variable_expenses WHERE mp_payment_id = %s AND category = %s", (mp_payment_id, category))
+            existing = cursor.fetchone()
+            if existing:
+                cursor.execute("""
+                    UPDATE variable_expenses 
+                    SET amount = %s, description = %s, date = %s
+                    WHERE id = %s
+                """, (amount, description, date_str, existing['id']))
+            else:
+                cursor.execute("""
+                    INSERT INTO variable_expenses (date, description, amount, category, mp_payment_id, is_auto_mp)
+                    VALUES (%s, %s, %s, %s, %s, 1)
+                """, (date_str, description, amount, category, mp_payment_id))
+
+def link_order_inventory(order_id, items_list, cost_amount):
+    """Updates order items, costs, and marks inventory_linked = 1."""
+    import json
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute("""
+                UPDATE orders_cache 
+                SET items_json = %s, cost_amount = %s, inventory_linked = 1
+                WHERE order_id = %s
+            """, (json.dumps(items_list), cost_amount, order_id))

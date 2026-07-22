@@ -2,7 +2,7 @@ import threading
 import time
 import traceback
 from datetime import datetime
-from src import meli_api, config
+from src import meli_api, mp_api, config
 from src.api.backup import check_and_run_monthly_auto_backup
 
 def background_sync_loop():
@@ -22,7 +22,8 @@ def background_sync_loop():
                 
                 ok_p, count_p = meli_api.sync_products()
                 ok_s, count_s = meli_api.sync_orders(limit=100, date_from=date_from)
-                print(f"[Scheduler] Sincronización automática finalizada. Productos: {count_p} (ok: {ok_p}), Ventas: {count_s} (ok: {ok_s})")
+                ok_mp, count_mp = mp_api.sync_mp_payments(date_from=date_from, limit=100)
+                print(f"[Scheduler] Sincronización automática finalizada. Productos: {count_p} (ok: {ok_p}), Ventas MeLi: {count_s} (ok: {ok_s}), Cobros MP: {count_mp} (ok: {ok_mp})")
             else:
                 # In demo mode, we also sync to generate mock data if cache is empty
                 if config.get_setting("demo_mode") == "true":

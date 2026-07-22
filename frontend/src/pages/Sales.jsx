@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { ShoppingBag, Globe, Store, Check, Clock, Plus, Trash2, ShoppingCart } from 'lucide-react'
+import { ShoppingBag, Globe, Store, Check, Clock, Plus, Trash2, ShoppingCart, DollarSign, Link } from 'lucide-react'
 
 export default function Sales() {
   const [orders, setOrders] = useState([])
@@ -10,6 +10,13 @@ export default function Sales() {
   const [showModal, setShowModal] = useState(false)
   const [inventory, setInventory] = useState([])
   const [meliEnableManualMsg, setMeliEnableManualMsg] = useState(false)
+
+  // Inventory Linking Modal State
+  const [linkModalOrder, setLinkModalOrder] = useState(null)
+  const [selectedProdId, setSelectedProdId] = useState('')
+  const [selectedQty, setSelectedQty] = useState(1)
+  const [linkingLoading, setLinkingLoading] = useState(false)
+
   const [newOrder, setNewOrder] = useState({
     buyer_nickname: "",
     buyer_name: "",
@@ -264,7 +271,31 @@ export default function Sales() {
 
   // Helper renderers
   const renderPlatformBadge = (platform) => {
-    switch (platform?.toUpperCase()) {
+    const p = platform?.toUpperCase() || ''
+    if (p.startsWith('MERCADOPAGO')) {
+      let sublabel = 'Mercado Pago'
+      if (p.includes('TRANSFER')) sublabel = 'MP Transferencia'
+      else if (p.includes('QR')) sublabel = 'MP QR / Point'
+      else if (p.includes('LINK')) sublabel = 'MP Link'
+
+      return (
+        <span style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: 4,
+          padding: '4px 8px',
+          borderRadius: 6,
+          fontSize: '0.75rem',
+          fontWeight: 600,
+          backgroundColor: 'rgba(0, 158, 227, 0.15)',
+          color: '#009ee3'
+        }}>
+          <DollarSign size={12} /> {sublabel}
+        </span>
+      )
+    }
+
+    switch (p) {
       case 'MERCADOLIBRE':
         return (
           <span style={{
@@ -436,6 +467,25 @@ export default function Sales() {
                         <li key={i.id}>{i.quantity}x {i.title.substring(0,30)}{i.title.length > 30 ? '...' : ''}</li>
                       ))}
                     </ul>
+                    {o.inventory_linked === 0 && (
+                      <div style={{marginTop: 6}}>
+                        <span style={{fontSize: '0.7rem', color: '#d97706', display: 'block', marginBottom: 3, fontWeight: 600}}>
+                          ⚠️ Sin vincular a inventario
+                        </span>
+                        <button
+                          type="button"
+                          className="btn"
+                          style={{fontSize: '0.72rem', padding: '3px 8px', backgroundColor: '#f59e0b', color: '#fff', border: 'none', borderRadius: 4, cursor: 'pointer', fontWeight: 600}}
+                          onClick={() => {
+                            setLinkModalOrder(o)
+                            setSelectedProdId('')
+                            setSelectedQty(1)
+                          }}
+                        >
+                          🔗 Vincular a Inventario
+                        </button>
+                      </div>
+                    )}
                   </td>
                   <td style={{fontWeight: 600}}>${o.total_amount.toLocaleString()}</td>
                   <td>
@@ -754,6 +804,110 @@ export default function Sales() {
                 </div>
                 <button type="submit" className="btn" style={{padding: '10px 20px'}}>
                   Registrar Venta
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Inventory Link Modal */}
+      {linkModalOrder && (
+        <div style={{
+          position: 'fixed',
+          top: 0, left: 0, right: 0, bottom: 0,
+          backgroundColor: 'rgba(0,0,0,0.6)',
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          zIndex: 1000
+        }}>
+          <div className="card" style={{width: '90%', maxWidth: 500, maxHeight: '90vh', overflowY: 'auto'}}>
+            <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15, borderBottom: '1px solid var(--border-color)', paddingBottom: 10}}>
+              <h3>🔗 Vincular Cobro a Inventario</h3>
+              <button 
+                className="btn" 
+                style={{padding: '4px 10px', backgroundColor: 'transparent', color: 'var(--text-secondary)'}}
+                onClick={() => setLinkModalOrder(null)}
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={async (e) => {
+              e.preventDefault()
+              if (!selectedProdId) {
+                alert("Por favor selecciona un producto")
+                return
+              }
+              setLinkingLoading(true)
+              try {
+                const res = await fetch(`/api/sales/${linkModalOrder.order_id}/link-inventory`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    items: [{ ml_id: selectedProdId, quantity: selectedQty }]
+                  })
+                })
+                const data = await res.json()
+                if (res.ok) {
+                  alert("¡Inventario vinculado y stock actualizado con éxito!")
+                  setLinkModalOrder(null)
+                  fetchOrders()
+                  fetchInventory()
+                } else {
+                  alert("Error al vincular inventario: " + (data.detail || "Error desconocido"))
+                }
+              } catch(err) {
+                alert("Error de conexión: " + err.message)
+              } finally {
+                setLinkingLoading(false)
+              }
+            }}>
+              <p style={{fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: 15}}>
+                Este cobro de <strong>${linkModalOrder.total_amount?.toLocaleString()}</strong> ({linkModalOrder.source_platform}) no tiene producto asignado. Selecciona el producto vendido para descontar stock y calcular ganancias netas:
+              </p>
+
+              <div style={{display: 'flex', flexDirection: 'column', gap: 15}}>
+                <label>Producto del Inventario
+                  <select 
+                    required 
+                    value={selectedProdId} 
+                    onChange={e => setSelectedProdId(e.target.value)}
+                    style={{width: '100%', marginTop: 5, padding: '8px', borderRadius: 6, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)'}}
+                  >
+                    <option value="">Selecciona un producto...</option>
+                    {inventory.map(p => (
+                      <option key={p.ml_id} value={p.ml_id}>
+                        {p.title} (Stock: {p.available_quantity} u.) - Costo: ${p.cost_price || 0}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <label>Cantidad Vendida
+                  <input 
+                    type="number" 
+                    required 
+                    min="1" 
+                    value={selectedQty} 
+                    onChange={e => setSelectedQty(parseInt(e.target.value) || 1)}
+                    style={{width: '100%', marginTop: 5, padding: '8px', borderRadius: 6, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)'}}
+                  />
+                </label>
+              </div>
+
+              <div style={{display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 20, borderTop: '1px solid var(--border-color)', paddingTop: 15}}>
+                <button 
+                  type="button" 
+                  className="btn" 
+                  style={{backgroundColor: 'var(--bg-hover)', color: 'var(--text-secondary)'}}
+                  onClick={() => setLinkModalOrder(null)}
+                >
+                  Cancelar
+                </button>
+                <button type="submit" className="btn" disabled={linkingLoading}>
+                  {linkingLoading ? "Viculando..." : "Vincular y Descontar Stock"}
                 </button>
               </div>
             </form>
