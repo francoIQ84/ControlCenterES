@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException, BackgroundTasks, File, UploadFile,
 from pydantic import BaseModel
 import os
 from typing import Optional
-from src import database, meli_api, config
+from src import database, meli_api, mp_api, config
 from src.progress import get_progress, update_progress
 from src.api.auth import require_permission
 
@@ -157,13 +157,18 @@ def run_background_sync(limit: int, date_from: Optional[str]):
         if not ok_products:
             raise Exception(f"Fallo en la sincronización de productos: {count_or_msg}")
             
-        # Step 2: Sales Sync
+        # Step 2: MeLi Sales Sync
         ok_sales, count_or_msg = meli_api.sync_orders(limit=limit, date_from=date_from)
         if not ok_sales:
-            raise Exception(f"Fallo en la sincronización de ventas: {count_or_msg}")
+            raise Exception(f"Fallo en la sincronización de ventas de Mercado Libre: {count_or_msg}")
+
+        # Step 3: Mercado Pago Payments Sync
+        ok_mp, count_or_msg = mp_api.sync_mp_payments(date_from=date_from, limit=limit)
+        if not ok_mp:
+            print(f"[Warning] Sincronización Mercado Pago: {count_or_msg}")
             
         # Finalized successfully
-        update_progress(status="completed", progress=100, message="Sincronización histórica finalizada exitosamente.")
+        update_progress(status="completed", progress=100, message="Sincronización histórica (Mercado Libre + Mercado Pago) finalizada exitosamente.")
     except Exception as e:
         update_progress(status="failed", message=str(e))
 
