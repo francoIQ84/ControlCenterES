@@ -314,6 +314,12 @@ def save_products(products_list):
                 ''', (p['ml_id'], p['title'], p['price'], p['available_quantity'], cost_price, cost_meli, 
                       p.get('permalink'), p.get('thumbnail'), p.get('status'), now, price_web, images, description, is_web_active, visits_meli, visits_web))
 
+def get_product_by_id(ml_id):
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute("SELECT * FROM products_cache WHERE ml_id = %s", (ml_id,))
+            return cursor.fetchone()
+
 def create_product(product_data):
     now = datetime.now().isoformat()
     with get_connection() as conn:
