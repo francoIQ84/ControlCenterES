@@ -11,6 +11,12 @@ export default function Sales() {
   const [inventory, setInventory] = useState([])
   const [meliEnableManualMsg, setMeliEnableManualMsg] = useState(false)
 
+  // Inventory Linking Modal State
+  const [linkModalOrder, setLinkModalOrder] = useState(null)
+  const [selectedProdId, setSelectedProdId] = useState('')
+  const [selectedQty, setSelectedQty] = useState(1)
+  const [linkingLoading, setLinkingLoading] = useState(false)
+
   // Mercado Pago QR / Link Charge State
   const [generatedCharge, setGeneratedCharge] = useState(null)
   const [chargeLoading, setChargeLoading] = useState(false)
