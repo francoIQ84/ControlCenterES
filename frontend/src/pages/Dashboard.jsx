@@ -127,10 +127,25 @@ export default function Dashboard() {
           <div className="kpi-subtitle">Total acumulado en Meli</div>
         </div>
         <div className="card kpi-card" style={{borderLeft: '4px solid #009ee3'}}>
-          <div className="kpi-title">Saldo Mercado Pago <DollarSign size={18} color="#009ee3"/></div>
+          <div className="kpi-title" style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
+            <span>Cobros Mercado Pago</span>
+            <a 
+              href="https://www.mercadopago.com.ar/summary" 
+              target="_blank" 
+              rel="noopener noreferrer" 
+              style={{fontSize: '0.75rem', color: '#009ee3', textDecoration: 'none', fontWeight: 'bold'}}
+              title="Abrir resumen oficial en Mercado Pago"
+            >
+              Ver en MP ↗
+            </a>
+          </div>
           <div className="kpi-value">${Math.round(mpBalance?.available_balance || 0).toLocaleString()}</div>
           <div className="kpi-subtitle">
-            Disponible | A liberar: ${Math.round(mpBalance?.unavailable_balance || 0).toLocaleString()}
+            {mpBalance?.is_calculated ? (
+              <span>Facturado (30d) | Hoy: <strong>${Math.round(mpBalance?.today_sales || 0).toLocaleString()}</strong></span>
+            ) : (
+              <span>Disponible | A liberar: ${Math.round(mpBalance?.unavailable_balance || 0).toLocaleString()}</span>
+            )}
           </div>
         </div>
         <div className="card kpi-card" style={{borderLeft: '4px solid var(--accent-cyan)'}}>

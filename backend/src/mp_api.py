@@ -332,13 +332,46 @@ def get_mp_balance():
                 'total_amount': float(data.get('total_amount', 0.0)),
                 'available_balance': float(data.get('available_balance', 0.0)),
                 'unavailable_balance': float(data.get('unavailable_balance', 0.0)),
-                'currency_id': data.get('currency_id', 'ARS')
+                'currency_id': data.get('currency_id', 'ARS'),
+                'is_calculated': False
             }
         else:
-            print(f"[MP Balance] Error {response.status_code}: {response.text}")
-            return None
+            print(f"[MP Balance] API status {response.status_code}, using calculated sales fallback...")
     except Exception as e:
         print(f"[MP Balance] Excepción: {e}")
+
+    # Fallback: Calculate MP volume collected in last 30 days and today
+    try:
+        with database.get_connection() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute("""
+                    SELECT COALESCE(SUM(total_amount), 0) as month_sales
+                    FROM orders_cache 
+                    WHERE source_platform LIKE 'MERCADOPAGO%'
+                      AND date_created >= (CURRENT_DATE - INTERVAL '30 days')
+                """)
+                row_m = cursor.fetchone()
+                month_sales = float(row_m['month_sales']) if row_m else 0.0
+
+                cursor.execute("""
+                    SELECT COALESCE(SUM(total_amount), 0) as today_sales
+                    FROM orders_cache 
+                    WHERE source_platform LIKE 'MERCADOPAGO%'
+                      AND date_created::date = CURRENT_DATE
+                """)
+                row_t = cursor.fetchone()
+                today_sales = float(row_t['today_sales']) if row_t else 0.0
+
+                return {
+                    'total_amount': month_sales,
+                    'available_balance': month_sales,
+                    'unavailable_balance': 0.0,
+                    'currency_id': 'ARS',
+                    'is_calculated': True,
+                    'today_sales': today_sales
+                }
+    except Exception as e_fb:
+        print(f"[MP Balance Fallback] Error: {e_fb}")
         return None
 
 def create_payment_preference(items: list, buyer_name: str = "", buyer_email: str = ""):
