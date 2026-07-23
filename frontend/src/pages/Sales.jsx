@@ -79,12 +79,68 @@ export default function Sales() {
       })
   }
 
-  const handleCreateInvoice = async (orderId) => {
-    setInvoicingStates(prev => ({ ...prev, [orderId]: true }))
+  // AFIP Invoicing Modal State
+  const [invoiceModalOrder, setInvoiceModalOrder] = useState(null)
+  const [customInvoiceDocType, setCustomInvoiceDocType] = useState('99') // '99' or 'CUIT'
+  const [customCuit, setCustomCuit] = useState('')
+  const [customName, setCustomName] = useState('')
+  const [cuitLookupLoading, setCuitLookupLoading] = useState(false)
+
+  const handleOpenInvoiceModal = (order) => {
+    setInvoiceModalOrder(order)
+    const buyerDoc = order.buyer?.document_number || ''
+    const buyerDocType = order.buyer?.document_type || ''
+    if (buyerDocType === 'CUIT' || buyerDoc.length === 11) {
+      setCustomInvoiceDocType('CUIT')
+      setCustomCuit(buyerDoc)
+      setCustomName(order.buyer?.name || '')
+    } else {
+      setCustomInvoiceDocType('99')
+      setCustomCuit('')
+      setCustomName('')
+    }
+  }
+
+  const handleLookupAFIP = async () => {
+    if (!customCuit || customCuit.trim().length < 8) {
+      alert("Por favor ingresa un CUIT / CUIL válido.")
+      return
+    }
+    setCuitLookupLoading(true)
     try {
+      const res = await fetch(`/api/sales/lookup-cuit/${customCuit.trim()}`)
+      const data = await res.json()
+      if (res.ok && data.success) {
+        setCustomName(data.razon_social || '')
+        alert(`¡Razón Social encontrada!: ${data.razon_social}`)
+      } else {
+        alert("Error AFIP Padrón: " + (data.detail || "No se encontró el CUIT"))
+      }
+    } catch(err) {
+      alert("Error al consultar CUIT: " + err.message)
+    } finally {
+      setCuitLookupLoading(false)
+    }
+  }
+
+  const handleConfirmInvoice = async () => {
+    if (!invoiceModalOrder) return
+    const orderId = invoiceModalOrder.order_id
+    setInvoicingStates(prev => ({ ...prev, [orderId]: true }))
+
+    try {
+      const bodyPayload = {
+        doc_type: customInvoiceDocType,
+        cuit: customInvoiceDocType === 'CUIT' ? customCuit : null,
+        name: customInvoiceDocType === 'CUIT' ? customName : null
+      }
+
       const res = await fetch(`/api/sales/${orderId}/invoice`, {
-        method: 'POST'
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(bodyPayload)
       })
+
       if (res.ok) {
         const data = await res.json()
         let msg = `Factura generada con éxito: ${data.invoice_number}`
@@ -92,6 +148,7 @@ export default function Sales() {
            msg += data.meli_uploaded ? ` | Adjuntada en ML ✓` : ` | Error ML: ${data.meli_msg}`
         }
         alert(msg)
+        setInvoiceModalOrder(null)
         fetchOrders()
       } else {
         const err = await res.json()
@@ -101,6 +158,30 @@ export default function Sales() {
       alert("Error de conexión: " + err.message)
     } finally {
       setInvoicingStates(prev => ({ ...prev, [orderId]: false }))
+    }
+  }
+
+  const handleCreateInvoice = async (orderId) => {
+    const targetOrder = orders.find(o => o.order_id === orderId)
+    if (targetOrder) {
+      handleOpenInvoiceModal(targetOrder)
+    } else {
+      setInvoicingStates(prev => ({ ...prev, [orderId]: true }))
+      try {
+        const res = await fetch(`/api/sales/${orderId}/invoice`, { method: 'POST' })
+        if (res.ok) {
+          const data = await res.json()
+          alert(`Factura generada con éxito: ${data.invoice_number}`)
+          fetchOrders()
+        } else {
+          const err = await res.json()
+          alert("Error al facturar: " + (err.detail || "Error desconocido"))
+        }
+      } catch (err) {
+        alert("Error: " + err.message)
+      } finally {
+        setInvoicingStates(prev => ({ ...prev, [orderId]: false }))
+      }
     }
   }
 
@@ -1223,6 +1304,109 @@ export default function Sales() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+      {/* AFIP / ARCA Invoicing Custom Modal */}
+      {invoiceModalOrder && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+          backgroundColor: 'rgba(0,0,0,0.75)', display: 'flex',
+          justifyContent: 'center', alignItems: 'center', zIndex: 1100, padding: 20
+        }}>
+          <div className="card shadow-2xl" style={{width: 520, maxWidth: '100%', padding: 25, borderRadius: 12}}>
+            <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15, borderBottom: '1px solid var(--border-color)', paddingBottom: 10}}>
+              <h3 style={{margin: 0, color: 'var(--accent-blue)', display: 'flex', alignItems: 'center', gap: 8}}>
+                📄 Emitir Factura AFIP / ARCA
+              </h3>
+              <button 
+                className="btn" 
+                style={{padding: '4px 10px', backgroundColor: 'transparent', color: 'var(--text-secondary)'}}
+                onClick={() => setInvoiceModalOrder(null)}
+              >
+                ✕
+              </button>
+            </div>
+
+            <div style={{marginBottom: 15, fontSize: '0.9rem', color: 'var(--text-secondary)'}}>
+              Pedido: <strong>#{invoiceModalOrder.order_id}</strong> | Plataforma: <strong>{invoiceModalOrder.source_platform}</strong> | Total: <strong>${invoiceModalOrder.total_amount?.toLocaleString()}</strong>
+            </div>
+
+            <div style={{marginBottom: 20, display: 'flex', flexDirection: 'column', gap: 12}}>
+              <label style={{display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', fontWeight: 'bold'}}>
+                <input 
+                  type="radio" 
+                  name="invoiceDocType" 
+                  value="99" 
+                  checked={customInvoiceDocType === '99'} 
+                  onChange={() => setCustomInvoiceDocType('99')} 
+                />
+                <span>Factura B / C - Consumidor Final (Sin DNI / Anónimo)</span>
+              </label>
+
+              <label style={{display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', fontWeight: 'bold'}}>
+                <input 
+                  type="radio" 
+                  name="invoiceDocType" 
+                  value="CUIT" 
+                  checked={customInvoiceDocType === 'CUIT'} 
+                  onChange={() => setCustomInvoiceDocType('CUIT')} 
+                />
+                <span>Factura A / B con CUIT Personalizado (Empresas / Monotributo)</span>
+              </label>
+
+              {customInvoiceDocType === 'CUIT' && (
+                <div style={{
+                  backgroundColor: 'var(--bg-hover)', padding: 15, borderRadius: 8, marginTop: 5,
+                  display: 'flex', flexDirection: 'column', gap: 10, border: '1px solid var(--border-color)'
+                }}>
+                  <label style={{fontSize: '0.85rem'}}>CUIT / CUIL de la Empresa / Cliente:
+                    <div style={{display: 'flex', gap: 8, marginTop: 5}}>
+                      <input 
+                        type="text" 
+                        placeholder="ej. 30-71234567-9" 
+                        value={customCuit} 
+                        onChange={e => setCustomCuit(e.target.value)} 
+                        style={{flex: 1}}
+                      />
+                      <button 
+                        type="button" 
+                        className="btn" 
+                        disabled={cuitLookupLoading}
+                        style={{padding: '6px 12px', backgroundColor: 'var(--accent-blue)', color: '#fff', fontSize: '0.8rem'}}
+                        onClick={handleLookupAFIP}
+                      >
+                        {cuitLookupLoading ? 'Buscando...' : '🔍 Buscar AFIP'}
+                      </button>
+                    </div>
+                  </label>
+
+                  <label style={{fontSize: '0.85rem'}}>Razón Social / Nombre Oficial:
+                    <input 
+                      type="text" 
+                      placeholder="Razón Social devuelta por AFIP o tipear manualmente..." 
+                      value={customName} 
+                      onChange={e => setCustomName(e.target.value)} 
+                      style={{width: '100%', marginTop: 5}}
+                    />
+                  </label>
+                </div>
+              )}
+            </div>
+
+            <div style={{display: 'flex', justifyContent: 'flex-end', gap: 10, borderTop: '1px solid var(--border-color)', paddingTop: 15}}>
+              <button className="btn" style={{backgroundColor: 'var(--bg-dark)'}} onClick={() => setInvoiceModalOrder(null)}>
+                Cancelar
+              </button>
+              <button 
+                className="btn" 
+                disabled={invoicingStates[invoiceModalOrder.order_id]} 
+                style={{padding: '10px 20px', fontWeight: 'bold'}}
+                onClick={handleConfirmInvoice}
+              >
+                {invoicingStates[invoiceModalOrder.order_id] ? "Facturando..." : "⚡ Confirmar y Emitir Factura"}
+              </button>
+            </div>
           </div>
         </div>
       )}

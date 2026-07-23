@@ -229,12 +229,37 @@ def create_order(req: ManualOrderRequest):
     )
     return {"success": True, "order_id": order_id}
 
+class InvoiceOptionsRequest(BaseModel):
+    doc_type: Optional[str] = '99' # '99' for Consumidor Final, 'CUIT' for CUIT
+    cuit: Optional[str] = None
+    name: Optional[str] = None
+
+@router.get("/lookup-cuit/{cuit}")
+def lookup_cuit_endpoint(cuit: str):
+    from src.utils.afip_ws import lookup_cuit
+    try:
+        res = lookup_cuit(cuit)
+        return res
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
 @router.post("/{order_id}/invoice")
-def create_invoice_endpoint(order_id: int):
+def create_invoice_endpoint(order_id: int, req: Optional[InvoiceOptionsRequest] = None):
     order = database.get_order_by_id(order_id)
     if not order:
         raise HTTPException(status_code=404, detail="Pedido no encontrado")
         
+    if req and req.doc_type == 'CUIT' and req.cuit:
+        buyer = order.get('buyer', {})
+        if not isinstance(buyer, dict):
+            buyer = {}
+        clean_cuit = "".join([c for c in str(req.cuit) if c.isdigit()])
+        buyer['document_type'] = 'CUIT'
+        buyer['document_number'] = clean_cuit
+        if req.name:
+            buyer['name'] = req.name
+        order['buyer'] = buyer
+
     from src.utils.afip_ws import create_invoice
     res = create_invoice(order)
     if not res.get("success"):
