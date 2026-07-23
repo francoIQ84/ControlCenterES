@@ -340,13 +340,13 @@ def _build_invoice_page(order, copy_type, usable_w):
         buyer_condition = 'Responsable Inscripto'
 
     # Format doc number
-    buyer_doc_display = ''
+    buyer_doc_display = 'S/D (Consumidor Final)'
     if buyer_doc_number:
         clean = "".join([c for c in str(buyer_doc_number) if c.isdigit()])
         if buyer_doc_type in ('CUIT', 'CUIL') and len(clean) == 11:
             buyer_doc_display = f"{clean[0:2]}-{clean[2:10]}-{clean[10]}"
-        else:
-            buyer_doc_display = buyer_doc_number
+        elif clean:
+            buyer_doc_display = str(buyer_doc_number)
 
     # ---- Styles ----
     BORDER = colors.HexColor('#333333')

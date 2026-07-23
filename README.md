@@ -339,4 +339,30 @@ El backend incluye una rutina automatizada de copias de seguridad completa del s
 - **Respaldo Mensual Automático:** Una vez al mes, el programador en segundo plano (`scheduler.py`) genera de forma transparente un archivo `backup_auto_YYYYMMDD_HHMMSS.zip` con la base de datos PostgreSQL completa (`pg_dump`), configuraciones `.env`, directorio de imágenes `uploads/` y facturas PDF `invoices/`.
 - **Política de Retención de 12 Meses (1 Año):** Al generarse un nuevo respaldo automático, el sistema purga los archivos automáticos más antiguos manteniendo únicamente los 12 respaldos automáticos más recientes.
 - **Protección de Respaldos Manuales:** Los respaldos generados manualmente por el usuario mediante el botón "Crear Nuevo Respaldo Manual" se conservan indefinidamente y no son afectados por las reglas de limpieza automática.
-- **Visualización en el Panel:** En **Configuración > Respaldos (Backups)** se visualiza el estado del programador automático y etiquetas distintivas (`Automático` / `Manual`) para cada archivo disponible para descarga.```
+- **Visualización en el Panel:** En **Configuración > Respaldos (Backups)** se visualiza el estado del programador automático y etiquetas distintivas (`Automático` / `Manual`) para cada archivo disponible para descarga.
+
+### 10. Integración Mercado Pago, Cobro con QR/Link, Buscador y Facturación ARCA (AFIP)
+
+Se incorporaron mejoras integrales en el módulo de ventas, cobros y facturación electrónica:
+
+- **Integración Mercado Pago (ML / MP):**
+  - Discriminación estricta entre **Cobros/Ventas entrantes** (`collector_id == user_id`) y **Egresos/Gastos salientes** (`payer_id == user_id` o `collector_id != user_id`).
+  - Extracción automática de comisiones, impuestos y retenciones de MP en **Gastos Variables**.
+  - Clasificación de egresos por tarjeta de crédito, compras e insumos y transferencias salientes sin contaminar el registro de ventas.
+  - Widget de **Saldo Mercado Pago** en el Dashboard (Dinero disponible vs A liberar).
+
+- **Terminal de Cobro Dinámico con QR y Link MP en Ventas:**
+  - En la ventana de **Registrar Venta**, se puede presionar el botón `📱 Cobrar con QR / Link MP`.
+  - Genera al instante un **código QR de 300x300 px** en pantalla para que el cliente lo escanee en el acto desde su app de Mercado Pago.
+  - Genera y copia enlaces directos de pago y botón para compartir por **WhatsApp**.
+
+- **Buscador de Productos con Autocompletado y Escáner de Código de Barras / QR:**
+  - El selector de productos en **Registrar Venta** cuenta con autocompletado en tiempo real por Nombre, Modelo o SKU/ID.
+  - Compatible con **lectores de código de barras USB/inalámbricos**: al escanear el código físico o QR de un producto, se autocompleta el título, precio e ID al instante.
+  - Los campos de comprador en mostrador son opcionales y por defecto se asignan como "Consumidor Final (Sin DNI)".
+
+- **Facturación Electrónica ARCA (ex AFIP) para Consumidor Final y CUIT:**
+  - **Soporte Consumidor Final sin DNI:** Envío automático del código de documento oficial AFIP `DocTipo = 99` y `DocNumero = 0` para emitir Factura B / C anónima de mostrador.
+  - **Facturación con CUIT a Pedido:** Modal interactivo al hacer clic en "Emitir Factura AFIP" en cualquier venta de Mercado Libre o Local.
+  - **Consulta en Tiempo Real al Padrón AFIP (`PersonaServiceA5`):** Al ingresar un CUIT, el sistema consulta en tiempo real los servidores de AFIP, obtiene la Razón Social y Domicilio Fiscal oficialmente registrados y los completa en el comprobante.
+  - **Monotributistas & Responsables Inscriptos:** Cumplimiento normativo para Monotributo (emisión de Factura C nominada al CUIT ingresado) y Responsables Inscriptos (Factura A / B).```
