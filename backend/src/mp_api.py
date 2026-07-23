@@ -215,6 +215,61 @@ def sync_mp_payments(date_from=None, limit=2000):
             if offset >= total_count or synced_count >= max_records:
                 break
 
+        # Part 2: Sync Outgoing Payments / Purchases / Transfers Sent (where merchant is the payer)
+        user_id = config.get_user_id()
+        if user_id:
+            try:
+                offset_p = 0
+                while True:
+                    url_p = f"{API_BASE_URL}/v1/payments/search"
+                    params_p = {
+                        'payer.id': user_id,
+                        'sort': 'date_created',
+                        'criteria': 'desc',
+                        'limit': 50,
+                        'offset': offset_p
+                    }
+                    if date_from:
+                        params_p['begin_date'] = date_from
+
+                    resp_p = requests.get(url_p, headers=headers, params=params_p, timeout=15)
+                    if resp_p.status_code == 200:
+                        res_p_data = resp_p.json()
+                        p_results = res_p_data.get('results', [])
+                        if not p_results:
+                            break
+
+                        for p in p_results:
+                            if p.get('status') != 'approved':
+                                continue
+                            
+                            payment_id = p.get('id')
+                            date_created = p.get('date_created', '')
+                            total_amount = float(p.get('transaction_amount', 0.0))
+                            op_type = p.get('operation_type', '')
+                            desc = p.get('description') or ''
+
+                            fee_date = date_created[:10] if len(date_created) >= 10 else datetime.now().strftime('%Y-%m-%d')
+
+                            # Determine category for outgoing payment/transfer
+                            if op_type == 'money_transfer':
+                                cat = 'Transferencias Salientes MP'
+                                fee_desc = f"Transferencia enviada #{payment_id}: {desc or 'Varios'}"
+                            else:
+                                cat = 'Compras / Insumos MP'
+                                fee_desc = f"Compra MP #{payment_id}: {desc or 'Pago a proveedor/servicio'}"
+
+                            database.save_auto_mp_expense(fee_date, fee_desc, total_amount, cat, payment_id)
+
+                        offset_p += 50
+                        p_total = res_p_data.get('paging', {}).get('total', 0)
+                        if offset_p >= p_total or offset_p >= max_records:
+                            break
+                    else:
+                        break
+            except Exception as e_p:
+                print(f"[Warning] Sync outgoing MP payments error: {e_p}")
+
         return True, synced_count
 
     except Exception as e:
