@@ -1227,8 +1227,7 @@ function QRPrintModal({ product, onClose }) {
             body { font-family: sans-serif; text-align: center; padding: 10px; margin: 0; }
             .label-box { border: 2px dashed #000; border-radius: 8px; padding: 12px; width: 220px; margin: 0 auto; box-sizing: border-box; }
             .title { font-size: 12px; font-weight: bold; margin-bottom: 6px; word-wrap: break-word; line-height: 1.2; }
-            .price { font-size: 16px; font-weight: bold; color: #000; margin-top: 4px; }
-            .sku { font-size: 10px; font-family: monospace; color: #555; margin-top: 2px; }
+            .sku { font-size: 10px; font-family: monospace; color: #555; margin-top: 6px; }
             img { width: 140px; height: 140px; }
           </style>
         </head>
@@ -1236,7 +1235,6 @@ function QRPrintModal({ product, onClose }) {
           <div class="label-box">
             <div class="title">${product.title}</div>
             <img src="${qrUrl}" />
-            <div class="price">$ ${(product.price_web || product.price || 0).toLocaleString('es-AR')}</div>
             <div class="sku">REF: ${product.ml_id}</div>
           </div>
           <script>
@@ -1274,10 +1272,7 @@ function QRPrintModal({ product, onClose }) {
             {product.title}
           </div>
           <img src={qrUrl} alt="QR Code" style={{ width: 150, height: 150, objectFit: 'contain' }} />
-          <div style={{ fontSize: '1.2rem', fontWeight: 'bold', color: '#10b981', marginTop: 5 }}>
-            $ {(product.price_web || product.price || 0).toLocaleString('es-AR')}
-          </div>
-          <div style={{ fontSize: '0.75rem', fontFamily: 'monospace', color: '#666', marginTop: 2 }}>
+          <div style={{ fontSize: '0.75rem', fontFamily: 'monospace', color: '#666', marginTop: 8 }}>
             CODE: {qrPayload}
           </div>
         </div>
