@@ -8,20 +8,22 @@ API_BASE_URL = "https://api.mercadopago.com"
 
 def sync_mp_payments(date_from=None, limit=2000):
     """
-    Fetches approved payments from Mercado Pago API using pagination, maps standalone MP payments 
-    (transfers, QR, Point, Links) to orders_cache, registers buyer info into customers table, 
-    extracts fee_details into variable_expenses for ALL payments (including MeLi sales),
-    and handles automatic inventory stock deduction if products/items are specified.
+    Fetches approved payments from Mercado Pago API using pagination.
+    Distinguishes INCOMING payments (Sales/Ventas where collector_id == user_id) 
+    from OUTGOING payments (Expenses/Gastos where payer_id == user_id or collector_id != user_id, 
+    such as Credit Card Payments, supplier transfers, or purchases).
     """
     if meli_api.is_demo_mode():
         return True, 0
 
     access_token = config.get_access_token()
+    user_id = config.get_user_id()
     if not access_token:
         return False, "No hay token de acceso configurado."
 
     meli_api.check_and_refresh_token()
     access_token = config.get_access_token()
+    user_id_str = str(user_id or '')
 
     offset = 0
     limit_per_page = 50
@@ -29,6 +31,7 @@ def sync_mp_payments(date_from=None, limit=2000):
     synced_count = 0
 
     try:
+        # Part 1: Sync Incoming Payments (Sincronización de VENTAS donde el comercio es el cobrador)
         while True:
             url = f"{API_BASE_URL}/v1/payments/search"
             headers = {
@@ -70,6 +73,9 @@ def sync_mp_payments(date_from=None, limit=2000):
                 operation_type = p.get('operation_type', '')
                 order_info = p.get('order') or {}
 
+                collector_id = str(p.get('collector_id') or p.get('collector', {}).get('id') or '')
+                payer_id = str(p.get('payer_id') or p.get('payer', {}).get('id') or '')
+
                 # Fee details extraction (Commissions & Retentions for ALL payments)
                 fee_details = p.get('fee_details', [])
                 total_fee = 0.0
@@ -85,6 +91,14 @@ def sync_mp_payments(date_from=None, limit=2000):
                     fee_date = date_created[:10] if len(date_created) >= 10 else datetime.now().strftime('%Y-%m-%d')
                     fee_desc = f"Comisión MP Pago #{payment_id} ({fee_type})"
                     database.save_auto_mp_expense(fee_date, fee_desc, fee_amount, cat, payment_id)
+
+                # CRITICAL FILTER: If merchant is NOT the collector OR is the payer, this is an EGRESO/GASTO (Pago de tarjeta, compra, egreso)
+                if user_id_str and ((collector_id and collector_id != user_id_str) or (payer_id and payer_id == user_id_str)):
+                    # Remove from orders_cache if previously inserted
+                    with database.get_connection() as conn:
+                        with conn.cursor() as cursor:
+                            cursor.execute("DELETE FROM orders_cache WHERE order_id = %s AND source_platform LIKE 'MERCADOPAGO%%'", (str(payment_id),))
+                    continue
 
                 # Check if this payment belongs to a Mercado Libre order
                 if order_info.get('type') == 'mercadolibre':
@@ -216,7 +230,6 @@ def sync_mp_payments(date_from=None, limit=2000):
                 break
 
         # Part 2: Sync Outgoing Payments / Purchases / Transfers Sent (where merchant is the payer)
-        user_id = config.get_user_id()
         if user_id:
             try:
                 offset_p = 0
@@ -248,11 +261,20 @@ def sync_mp_payments(date_from=None, limit=2000):
                             total_amount = float(p.get('transaction_amount', 0.0))
                             op_type = p.get('operation_type', '')
                             desc = p.get('description') or ''
+                            ext_ref = str(p.get('external_reference') or '')
 
                             fee_date = date_created[:10] if len(date_created) >= 10 else datetime.now().strftime('%Y-%m-%d')
 
+                            # Remove from orders_cache if previously inserted as a sale
+                            with database.get_connection() as conn:
+                                with conn.cursor() as cursor:
+                                    cursor.execute("DELETE FROM orders_cache WHERE order_id = %s AND source_platform LIKE 'MERCADOPAGO%%'", (str(payment_id),))
+
                             # Determine category for outgoing payment/transfer
-                            if op_type == 'money_transfer':
+                            if 'ccpaymentprod' in ext_ref.lower() or 'tarjeta' in desc.lower() or 'tarjeta' in ext_ref.lower():
+                                cat = 'Pago de Tarjeta MP'
+                                fee_desc = f"Pago de Tarjeta de Crédito #{payment_id}"
+                            elif op_type == 'money_transfer':
                                 cat = 'Transferencias Salientes MP'
                                 fee_desc = f"Transferencia enviada #{payment_id}: {desc or 'Varios'}"
                             else:
