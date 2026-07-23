@@ -6,13 +6,19 @@ export default function Dashboard() {
   const [stats, setStats] = useState(null)
   const [orders, setOrders] = useState([])
   const [period, setPeriod] = useState('total')
+  const [startDate, setStartDate] = useState('')
+  const [endDate, setEndDate] = useState('')
   const [mpBalance, setMpBalance] = useState(null)
 
   useEffect(() => {
-    fetch(`/api/dashboard/metrics?period=${period}`)
+    let url = `/api/dashboard/metrics?period=${period}`
+    if (period === 'custom' && startDate) url += `&start_date=${startDate}`
+    if (period === 'custom' && endDate) url += `&end_date=${endDate}`
+
+    fetch(url)
       .then(res => res.json())
       .then(data => setStats(data))
-  }, [period])
+  }, [period, startDate, endDate])
 
   useEffect(() => {
     fetch('/api/sales/')
@@ -29,25 +35,30 @@ export default function Dashboard() {
 
   // Prepare chart data with client-side filtering based on selected period
   const now = new Date();
-  let dateThreshold = null;
+  let dateMin = null;
+  let dateMax = null;
+
   if (period === 'day') {
-    dateThreshold = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+    dateMin = new Date(now.getTime() - 24 * 60 * 60 * 1000);
   } else if (period === 'week') {
-    dateThreshold = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    dateMin = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
   } else if (period === 'month') {
-    dateThreshold = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+    dateMin = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
   } else if (period === 'year') {
-    dateThreshold = new Date(now.getTime() - 365 * 24 * 60 * 60 * 1000);
+    dateMin = new Date(now.getTime() - 365 * 24 * 60 * 60 * 1000);
+  } else if (period === 'custom') {
+    if (startDate) dateMin = new Date(startDate + 'T00:00:00');
+    if (endDate) dateMax = new Date(endDate + 'T23:59:59');
   }
 
   const salesByDate = {}
   orders.forEach(o => {
     if (o.status === 'paid') {
       const orderDate = new Date(o.date_created);
-      if (!dateThreshold || orderDate >= dateThreshold) {
-        const d = o.date_created.split('T')[0]
-        salesByDate[d] = (salesByDate[d] || 0) + o.total_amount
-      }
+      if (dateMin && orderDate < dateMin) return;
+      if (dateMax && orderDate > dateMax) return;
+      const d = o.date_created.split('T')[0]
+      salesByDate[d] = (salesByDate[d] || 0) + o.total_amount
     }
   })
   const chartData = Object.keys(salesByDate).sort().map(d => ({ date: d, amount: salesByDate[d] }))
@@ -61,37 +72,81 @@ export default function Dashboard() {
         </div>
         
         {/* Period Selector Group */}
-        <div style={{
-          display: 'flex',
-          backgroundColor: 'var(--bg-card)',
-          border: '1px solid var(--border-color)',
-          borderRadius: '8px',
-          padding: '4px',
-          gap: '4px'
-        }}>
-          {['day', 'week', 'month', 'year', 'total'].map((p) => (
-            <button
-              key={p}
-              onClick={() => setPeriod(p)}
-              style={{
-                padding: '6px 14px',
-                borderRadius: '6px',
-                fontSize: '0.85rem',
-                fontWeight: '600',
-                border: 'none',
-                cursor: 'pointer',
-                backgroundColor: period === p ? 'var(--accent-blue)' : 'transparent',
-                color: period === p ? '#fff' : 'var(--text-secondary)',
-                transition: 'all 0.2s'
-              }}
-            >
-              {p === 'day' && 'Hoy'}
-              {p === 'week' && '7 Días'}
-              {p === 'month' && 'Mes'}
-              {p === 'year' && 'Año'}
-              {p === 'total' && 'Histórico'}
-            </button>
-          ))}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+          <div style={{
+            display: 'flex',
+            backgroundColor: 'var(--bg-card)',
+            border: '1px solid var(--border-color)',
+            borderRadius: '8px',
+            padding: '4px',
+            gap: '4px'
+          }}>
+            {['day', 'week', 'month', 'year', 'total', 'custom'].map((p) => (
+              <button
+                key={p}
+                onClick={() => setPeriod(p)}
+                style={{
+                  padding: '6px 14px',
+                  borderRadius: '6px',
+                  fontSize: '0.85rem',
+                  fontWeight: '600',
+                  border: 'none',
+                  cursor: 'pointer',
+                  backgroundColor: period === p ? 'var(--accent-blue)' : 'transparent',
+                  color: period === p ? '#fff' : 'var(--text-secondary)',
+                  transition: 'all 0.2s'
+                }}
+              >
+                {p === 'day' && 'Hoy'}
+                {p === 'week' && '7 Días'}
+                {p === 'month' && 'Mes'}
+                {p === 'year' && 'Año'}
+                {p === 'total' && 'Histórico'}
+                {p === 'custom' && 'Personalizado'}
+              </button>
+            ))}
+          </div>
+
+          {period === 'custom' && (
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              backgroundColor: 'var(--bg-card)',
+              border: '1px solid var(--border-color)',
+              borderRadius: '8px',
+              padding: '4px 10px'
+            }}>
+              <label style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: '600' }}>Desde:</label>
+              <input
+                type="date"
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+                style={{
+                  backgroundColor: 'var(--bg-dark)',
+                  color: 'var(--text-primary)',
+                  border: '1px solid var(--border-color)',
+                  borderRadius: '4px',
+                  padding: '4px 8px',
+                  fontSize: '0.8rem'
+                }}
+              />
+              <label style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: '600' }}>Hasta:</label>
+              <input
+                type="date"
+                value={endDate}
+                onChange={(e) => setEndDate(e.target.value)}
+                style={{
+                  backgroundColor: 'var(--bg-dark)',
+                  color: 'var(--text-primary)',
+                  border: '1px solid var(--border-color)',
+                  borderRadius: '4px',
+                  padding: '4px 8px',
+                  fontSize: '0.8rem'
+                }}
+              />
+            </div>
+          )}
         </div>
       </div>
 

@@ -757,13 +757,25 @@ def increment_product_web_visits(ml_id, domain=None, ip_address=None):
                 (ml_id, domain or "hidroponiarosario.com", ip_address or "127.0.0.1", country)
             )
 
-def get_dashboard_metrics(period="total"):
+def get_dashboard_metrics(period="total", start_date_str=None, end_date_str=None):
     from datetime import datetime, timedelta
-    date_filter = ""
-    params = []
     start_date = None
+    end_date = None
     
-    if period != "total":
+    if period == "custom" and start_date_str:
+        try:
+            start_date = datetime.fromisoformat(start_date_str.replace("Z", ""))
+        except Exception:
+            pass
+        if end_date_str:
+            try:
+                ed = datetime.fromisoformat(end_date_str.replace("Z", ""))
+                if ed.hour == 0 and ed.minute == 0 and ed.second == 0:
+                    ed = ed.replace(hour=23, minute=59, second=59, microsecond=999999)
+                end_date = ed
+            except Exception:
+                pass
+    elif period != "total":
         now = datetime.now()
         if period == "day":
             start_date = now - timedelta(days=1)
@@ -773,15 +785,22 @@ def get_dashboard_metrics(period="total"):
             start_date = now - timedelta(days=30)
         elif period == "year":
             start_date = now - timedelta(days=365)
-            
-        if start_date:
-            date_filter = " AND date_created >= %s"
-            params.append(start_date.isoformat())
+
+    orders_conditions = ["status = 'paid'"]
+    orders_params = []
+    if start_date:
+        orders_conditions.append("date_created >= %s")
+        orders_params.append(start_date.isoformat())
+    if end_date:
+        orders_conditions.append("date_created <= %s")
+        orders_params.append(end_date.isoformat())
+
+    orders_where = " WHERE " + " AND ".join(orders_conditions)
 
     with get_connection() as conn:
         with conn.cursor() as cursor:
-            sales_query = "SELECT COUNT(order_id) as count, SUM(total_amount) as total FROM orders_cache WHERE status = 'paid'" + date_filter
-            cursor.execute(sales_query, tuple(params))
+            sales_query = "SELECT COUNT(order_id) as count, SUM(total_amount) as total FROM orders_cache" + orders_where
+            cursor.execute(sales_query, tuple(orders_params))
             sales_row = cursor.fetchone()
             total_sales = sales_row['count'] or 0
             total_revenue = sales_row['total'] or 0.0
@@ -789,8 +808,8 @@ def get_dashboard_metrics(period="total"):
             cursor.execute("SELECT COUNT(ml_id) as count FROM products_cache WHERE status = 'active'")
             total_active_products = cursor.fetchone()['count'] or 0
             
-            items_query = "SELECT items_json, source_platform FROM orders_cache WHERE status = 'paid'" + date_filter
-            cursor.execute(items_query, tuple(params))
+            items_query = "SELECT items_json, source_platform FROM orders_cache" + orders_where
+            cursor.execute(items_query, tuple(orders_params))
             orders_items = cursor.fetchall()
             
             cursor.execute("SELECT ml_id, cost_price, cost_meli FROM products_cache")
@@ -814,11 +833,16 @@ def get_dashboard_metrics(period="total"):
                     
             # --- EXPENSES CALCULATION ---
             # Variable expenses for the period
-            var_query = "SELECT SUM(amount) as total FROM variable_expenses"
+            var_conditions = []
             var_params = []
             if start_date:
-                var_query += " WHERE date >= %s"
-                var_params.append(start_date.date().isoformat())
+                var_conditions.append("date >= %s")
+                var_params.append(start_date.strftime("%Y-%m-%d"))
+            if end_date:
+                var_conditions.append("date <= %s")
+                var_params.append(end_date.strftime("%Y-%m-%d"))
+            var_where = (" WHERE " + " AND ".join(var_conditions)) if var_conditions else ""
+            var_query = f"SELECT SUM(amount) as total FROM variable_expenses{var_where}"
             cursor.execute(var_query, tuple(var_params))
             var_row = cursor.fetchone()
             total_var_expenses = var_row['total'] if var_row and var_row['total'] else 0.0
@@ -835,6 +859,9 @@ def get_dashboard_metrics(period="total"):
                 if period in ["month", "week", "day"]:
                     fixed_query += " AND month = %s"
                     fixed_params.append(now.month)
+            elif period == "custom" and start_date and end_date:
+                fixed_query += " WHERE (year > %s OR (year = %s AND month >= %s)) AND (year < %s OR (year = %s AND month <= %s))"
+                fixed_params.extend([start_date.year, start_date.year, start_date.month, end_date.year, end_date.year, end_date.month])
             
             cursor.execute(fixed_query, tuple(fixed_params))
             fixed_row = cursor.fetchone()
@@ -845,6 +872,9 @@ def get_dashboard_metrics(period="total"):
                 total_fixed_expenses = total_fixed_raw / 30.0
             elif period == "week":
                 total_fixed_expenses = total_fixed_raw / 4.333
+            elif period == "custom" and start_date and end_date:
+                days_diff = max(1, (end_date - start_date).days + 1)
+                total_fixed_expenses = (total_fixed_raw / 30.0) * days_diff
 
             total_expenses = total_var_expenses + total_fixed_expenses
             
@@ -868,24 +898,39 @@ def get_dashboard_metrics(period="total"):
             visits_row = cursor.fetchone()
             total_visits_meli = (visits_row['meli'] if visits_row else 0) or 0
             
-            # (Rest of queries...)
-            visit_where = ""
+            visit_conditions = []
             visit_params = []
-            if period != "total" and start_date:
-                visit_where = " WHERE timestamp >= %s"
+            if start_date:
+                visit_conditions.append("timestamp >= %s")
                 visit_params.append(start_date)
+            if end_date:
+                visit_conditions.append("timestamp <= %s")
+                visit_params.append(end_date)
+                
+            visit_where = (" WHERE " + " AND ".join(visit_conditions)) if visit_conditions else ""
                 
             cursor.execute(f"SELECT COUNT(*) as count FROM web_visits_log{visit_where}", tuple(visit_params))
             logged_visits_web = cursor.fetchone()['count'] or 0
             
-            if logged_visits_web > 0 or period != "total":
+            if logged_visits_web > 0 or period != "total" or start_date or end_date:
                 total_visits_web = logged_visits_web
             else:
                 cursor.execute("SELECT SUM(visits_web) as web FROM products_cache")
                 total_visits_web = cursor.fetchone()['web'] or 0
 
-            cursor.execute("SELECT ml_id, title, visits_meli, visits_web FROM products_cache ORDER BY (visits_meli + visits_web) DESC LIMIT 20")
-            top_products = [dict(r) for r in cursor.fetchall()]
+            web_log_counts = {}
+            if period != "total" or start_date or end_date:
+                cursor.execute(f"SELECT ml_id, COUNT(*) as count FROM web_visits_log{visit_where} GROUP BY ml_id", tuple(visit_params))
+                web_log_counts = {r['ml_id']: r['count'] for r in cursor.fetchall() if r['ml_id']}
+
+            cursor.execute("SELECT ml_id, title, visits_meli, visits_web FROM products_cache")
+            all_prods = [dict(r) for r in cursor.fetchall()]
+            for p in all_prods:
+                if period != "total" or start_date or end_date:
+                    p['visits_web'] = web_log_counts.get(p['ml_id'], 0)
+
+            all_prods.sort(key=lambda x: (x['visits_meli'] + x['visits_web']), reverse=True)
+            top_products = all_prods[:20]
 
             cursor.execute(f"SELECT domain, COUNT(*) as count FROM web_visits_log{visit_where} GROUP BY domain ORDER BY count DESC", tuple(visit_params))
             visits_by_domain = [dict(r) for r in cursor.fetchall()]
