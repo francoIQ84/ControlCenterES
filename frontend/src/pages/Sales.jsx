@@ -180,12 +180,40 @@ export default function Sales() {
   }
 
   const handleItemChange = (index, field, value) => {
-    const updatedItems = [...newOrder.items]
-    updatedItems[index] = {
-      ...updatedItems[index],
-      [field]: field === 'quantity' ? parseInt(value) || 0 : field === 'price' ? parseFloat(value) || 0 : value
-    }
-    setNewOrder(prev => ({ ...prev, items: updatedItems }))
+    setNewOrder(prev => {
+      const updatedItems = [...prev.items]
+      updatedItems[index] = {
+        ...updatedItems[index],
+        [field]: field === 'quantity' ? parseInt(value) || 0 : field === 'price' ? parseFloat(value) || 0 : value
+      }
+      return { ...prev, items: updatedItems }
+    })
+  }
+
+  const handleProductSelect = (index, prodId) => {
+    const selectedProduct = inventory.find(p => p.ml_id === prodId)
+    setNewOrder(prev => {
+      const updatedItems = [...prev.items]
+      if (selectedProduct) {
+        const price = prev.source_platform === 'LOCAL' 
+          ? selectedProduct.price 
+          : (selectedProduct.price_web || selectedProduct.price)
+        updatedItems[index] = {
+          ...updatedItems[index],
+          id: prodId,
+          title: selectedProduct.title,
+          price: price
+        }
+      } else {
+        updatedItems[index] = {
+          ...updatedItems[index],
+          id: `manual-${Date.now()}`,
+          title: "",
+          price: 0
+        }
+      }
+      return { ...prev, items: updatedItems }
+    })
   }
 
   const handleCreateManualOrder = async (e) => {
@@ -786,21 +814,8 @@ export default function Sales() {
                     <label style={{flex: 3}}>Nombre del Producto
                       <select
                         required
-                        value={item.id.startsWith('manual-') ? "" : item.id}
-                        onChange={e => {
-                          const prodId = e.target.value
-                          const selectedProduct = inventory.find(p => p.ml_id === prodId)
-                          const title = selectedProduct ? selectedProduct.title : ""
-                          let price = 0
-                          if (selectedProduct) {
-                            price = newOrder.source_platform === 'LOCAL' 
-                              ? selectedProduct.price 
-                              : (selectedProduct.price_web || selectedProduct.price)
-                          }
-                          handleItemChange(idx, 'title', title)
-                          handleItemChange(idx, 'id', prodId)
-                          handleItemChange(idx, 'price', price)
-                        }}
+                        value={item.id && !item.id.startsWith('manual-') ? item.id : ""}
+                        onChange={e => handleProductSelect(idx, e.target.value)}
                         style={{width: '100%', marginTop: 5}}
                       >
                         <option value="">Seleccione un producto...</option>
