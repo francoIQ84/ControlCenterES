@@ -845,8 +845,23 @@ function ProductRow({ p, onSave, onOpenGallery, onDraftChange, categories, viewM
   }
   const [additionalUrls, setAdditionalUrls] = useState(getInitialAdditional())
   
-  const profit = price - (cost + costMeli)
-  const margin = price > 0 ? (profit / price) * 100 : 0
+  const parseNum = (val, isInt = false) => {
+    if (val === null || val === undefined || val === "") return 0
+    const parsed = isInt ? parseInt(val, 10) : parseFloat(val)
+    return isNaN(parsed) ? 0 : parsed
+  }
+
+  const numPrice = parseNum(price)
+  const numCost = parseNum(cost)
+  const numCostMeli = parseNum(costMeli)
+  const numPriceWeb = parseNum(priceWeb)
+
+  const totalCostMeli = numCost + numCostMeli
+  const profitMeli = numPrice > 0 ? numPrice - totalCostMeli : 0
+  const marginMeli = numPrice > 0 ? (profitMeli / numPrice) * 100 : 0
+
+  const profitWeb = numPriceWeb > 0 ? numPriceWeb - numCost : 0
+  const marginWeb = numPriceWeb > 0 ? (profitWeb / numPriceWeb) * 100 : 0
 
   const getCombinedImages = () => {
     const cleanAdd = additionalUrls.split(',').map(s => s.trim()).filter(Boolean)
@@ -860,12 +875,6 @@ function ProductRow({ p, onSave, onOpenGallery, onDraftChange, categories, viewM
       }
       return [cleanMain, ...cleanAdd].join(',')
     }
-  }
-
-  const parseNum = (val, isInt = false) => {
-    if (val === null || val === undefined || val === "") return 0
-    const parsed = isInt ? parseInt(val, 10) : parseFloat(val)
-    return isNaN(parsed) ? 0 : parsed
   }
 
   useEffect(() => {
@@ -1018,8 +1027,17 @@ function ProductRow({ p, onSave, onOpenGallery, onDraftChange, categories, viewM
                 </div>
               </div>
               <div style={{display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', color: 'var(--text-secondary)', borderTop: '1px solid var(--border-color)', paddingTop: 8, marginTop: 8}}>
-                <div style={{fontSize: '0.75rem', color: profit >= 0 ? 'var(--accent-emerald)' : 'var(--accent-red)', fontWeight: 600}}>
-                  Costo Total ML: ${(cost + costMeli).toFixed(2)} | Margen ML: {margin.toFixed(1)}% (Beneficio: ${profit.toFixed(2)})
+                <div style={{fontSize: '0.75rem', fontWeight: 600, display: 'flex', gap: 15, flexWrap: 'wrap'}}>
+                  {p.status !== 'local' && (
+                    <span style={{color: profitMeli >= 0 ? 'var(--accent-emerald)' : 'var(--accent-red)'}}>
+                      Costo Total ML: ${totalCostMeli.toFixed(2)} | Margen ML: {marginMeli.toFixed(1)}% (Beneficio: ${profitMeli.toFixed(2)})
+                    </span>
+                  )}
+                  {numPriceWeb > 0 && (
+                    <span style={{color: profitWeb >= 0 ? 'var(--accent-emerald)' : 'var(--accent-red)'}}>
+                      Margen Web: {marginWeb.toFixed(1)}% (Beneficio: ${profitWeb.toFixed(2)})
+                    </span>
+                  )}
                 </div>
                 {p.available_quantity <= (p.min_stock || 3) && p.status === 'active' && (
                   <div style={{color: 'var(--accent-orange)', fontWeight: 'bold'}}>
@@ -1089,9 +1107,9 @@ function ProductRow({ p, onSave, onOpenGallery, onDraftChange, categories, viewM
               ⚠️ Stock Bajo (Límite: {p.min_stock || 3})
             </div>
           )}
-          {p.status !== 'local' && (
-            <div style={{fontSize: '0.75rem', color: profit >= 0 ? 'var(--accent-emerald)' : 'var(--accent-red)', marginTop: 5, fontWeight: 600}}>
-              Margen ML: {margin.toFixed(1)}% (Beneficio: ${profit.toFixed(2)})
+          {p.status !== 'local' && numPrice > 0 && (
+            <div style={{fontSize: '0.75rem', color: profitMeli >= 0 ? 'var(--accent-emerald)' : 'var(--accent-red)', marginTop: 5, fontWeight: 600}}>
+              Margen ML: {marginMeli.toFixed(1)}% (Beneficio: ${profitMeli.toFixed(2)})
             </div>
           )}
         </td>
@@ -1105,6 +1123,11 @@ function ProductRow({ p, onSave, onOpenGallery, onDraftChange, categories, viewM
               <input type="number" value={priceWeb} onChange={e => setPriceWeb(e.target.value)} style={{width: 80, marginLeft: 5, padding: 4}}/>
               {p.prev_price_web !== null && p.prev_price_web !== undefined && <div style={{fontSize: '0.65rem', color: 'var(--text-secondary)', marginTop: 2}}>ant: ${p.prev_price_web.toLocaleString('es-AR')}</div>}
             </label>
+            {numPriceWeb > 0 && (
+              <div style={{fontSize: '0.75rem', color: profitWeb >= 0 ? 'var(--accent-emerald)' : 'var(--accent-red)', marginTop: 2, fontWeight: 600}}>
+                Margen Web: {marginWeb.toFixed(1)}% (Beneficio: ${profitWeb.toFixed(2)})
+              </div>
+            )}
             <button className="btn" style={{padding: '4px 8px', fontSize: '0.75rem', marginTop: 5}} onClick={() => setShowWebDetails(!showWebDetails)}>
               Editar Contenido Web
             </button>
