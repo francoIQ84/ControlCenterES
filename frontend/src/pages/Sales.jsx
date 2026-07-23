@@ -410,6 +410,15 @@ export default function Sales() {
     document.body.removeChild(link);
   };
 
+  const isNewOrder = (dateStr) => {
+    if (!dateStr) return false
+    const orderDate = new Date(dateStr)
+    const now = new Date()
+    const diffHours = (now - orderDate) / (1000 * 60 * 60)
+    const isSameDay = orderDate.toDateString() === now.toDateString()
+    return isSameDay || (diffHours >= 0 && diffHours <= 24)
+  }
+
   return (
     <div>
       <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20}}>
@@ -452,9 +461,32 @@ export default function Sales() {
               </tr>
             </thead>
             <tbody>
-              {sortedOrders.map(o => (
-                <tr key={o.order_id}>
-                  <td>{new Date(o.date_created).toLocaleString()}</td>
+              {sortedOrders.map(o => {
+                const isNew = isNewOrder(o.date_created)
+                return (
+                  <tr key={o.order_id} style={{backgroundColor: isNew ? 'rgba(16, 185, 129, 0.06)' : 'transparent'}}>
+                    <td>
+                      <div style={{display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap'}}>
+                        <span>{new Date(o.date_created).toLocaleString()}</span>
+                        {isNew && (
+                          <span style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 3,
+                            padding: '2px 7px',
+                            borderRadius: 10,
+                            fontSize: '0.68rem',
+                            fontWeight: 700,
+                            backgroundColor: '#10b981',
+                            color: '#ffffff',
+                            boxShadow: '0 0 8px rgba(16, 185, 129, 0.4)',
+                            whiteSpace: 'nowrap'
+                          }}>
+                            ✨ NUEVA
+                          </span>
+                        )}
+                      </div>
+                    </td>
                   <td style={{fontFamily: 'monospace', fontSize: '0.8rem'}}>{o.order_id}</td>
                   <td>{renderPlatformBadge(o.source_platform)}</td>
                   <td>
@@ -599,7 +631,7 @@ export default function Sales() {
                     )}
                   </td>
                 </tr>
-              ))}
+              )})}
             </tbody>
           </table>
         )}
