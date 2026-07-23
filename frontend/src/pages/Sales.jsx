@@ -144,7 +144,7 @@ export default function Sales() {
       if (res.ok) {
         const data = await res.json()
         let msg = `Factura generada con éxito: ${data.invoice_number}`
-        if (data.meli_uploaded !== undefined) {
+        if (data.meli_uploaded !== undefined && data.meli_uploaded !== null) {
            msg += data.meli_uploaded ? ` | Adjuntada en ML ✓` : ` | Error ML: ${data.meli_msg}`
         }
         alert(msg)
