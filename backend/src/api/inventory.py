@@ -284,3 +284,96 @@ def quick_adjust_stock(payload: QuickStockRequest):
         "new_price": new_price,
         "warning": warning
     }
+
+@router.get("/export-excel")
+def export_inventory_excel():
+    import csv
+    import io
+    import time
+    from fastapi.responses import Response
+
+    products = database.get_all_products()
+    
+    output = io.StringIO()
+    output.write('\ufeff')
+    
+    writer = csv.writer(output, delimiter=';', quoting=csv.QUOTE_MINIMAL)
+    
+    headers = [
+        "ID / SKU",
+        "Título del Producto",
+        "Categoría",
+        "Stock Actual",
+        "Stock Mínimo",
+        "Alerta Stock",
+        "Costo Base ($)",
+        "Costo ML ($)",
+        "Costo Total ($)",
+        "Precio ML ($)",
+        "Precio Web ($)",
+        "Ganancia Est. ML ($)",
+        "Margen ML (%)",
+        "Ganancia Est. Web ($)",
+        "Margen Web (%)",
+        "Visitas ML",
+        "Visitas Web",
+        "Visitas Totales",
+        "Activo en Web",
+        "Sincronizar ML",
+        "Estado ML",
+        "Última Modificación"
+    ]
+    writer.writerow(headers)
+    
+    for p in products:
+        cost_base = p.get('cost_price') or 0.0
+        cost_ml = p.get('cost_meli') or 0.0
+        cost_total = cost_base + cost_ml
+        price_ml = p.get('price') or 0.0
+        price_web = p.get('price_web') or 0.0
+        
+        profit_ml = price_ml - cost_total if price_ml else 0.0
+        margin_ml = (profit_ml / price_ml * 100) if price_ml > 0 else 0.0
+        
+        profit_web = price_web - cost_base if price_web else 0.0
+        margin_web = (profit_web / price_web * 100) if price_web > 0 else 0.0
+        
+        min_stock = p.get('min_stock') or 3
+        qty = p.get('available_quantity') or 0
+        
+        visits_meli = p.get('visits_meli') or 0
+        visits_web = p.get('visits_web') or 0
+        
+        writer.writerow([
+            p.get('ml_id') or '',
+            p.get('title') or '',
+            p.get('category_name') or 'Sin categoría',
+            qty,
+            min_stock,
+            'CRÍTICO' if qty <= min_stock else 'OK',
+            f"{cost_base:.2f}".replace('.', ','),
+            f"{cost_ml:.2f}".replace('.', ','),
+            f"{cost_total:.2f}".replace('.', ','),
+            f"{price_ml:.2f}".replace('.', ','),
+            f"{price_web:.2f}".replace('.', ','),
+            f"{profit_ml:.2f}".replace('.', ','),
+            f"{margin_ml:.1f}".replace('.', ','),
+            f"{profit_web:.2f}".replace('.', ','),
+            f"{margin_web:.1f}".replace('.', ','),
+            visits_meli,
+            visits_web,
+            visits_meli + visits_web,
+            'Sí' if p.get('is_web_active') else 'No',
+            'Sí' if p.get('sync_meli') != 0 else 'No',
+            p.get('status') or '',
+            str(p.get('last_modified')) if p.get('last_modified') else ''
+        ])
+        
+    csv_bytes = output.getvalue().encode('utf-8')
+    filename = f"inventario_{time.strftime('%Y%m%d_%H%M%S')}.csv"
+    return Response(
+        content=csv_bytes,
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f"attachment; filename={filename}"}
+    )
+

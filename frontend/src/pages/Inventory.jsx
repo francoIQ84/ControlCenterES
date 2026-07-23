@@ -110,6 +110,131 @@ export default function Inventory() {
     }
   }
 
+  const exportToExcel = () => {
+    const listToExport = sortedProducts && sortedProducts.length > 0 ? sortedProducts : products;
+    if (!listToExport || listToExport.length === 0) {
+      alert("No hay productos en el inventario para exportar.");
+      return;
+    }
+
+    const headers = [
+      "ID / SKU",
+      "Título del Producto",
+      "Categoría",
+      "Stock Actual",
+      "Stock Mínimo",
+      "Alerta Stock",
+      "Costo Base ($)",
+      "Costo ML ($)",
+      "Costo Total ($)",
+      "Precio ML ($)",
+      "Precio Web ($)",
+      "Ganancia Est. ML ($)",
+      "Margen ML (%)",
+      "Ganancia Est. Web ($)",
+      "Margen Web (%)",
+      "Visitas ML",
+      "Visitas Web",
+      "Visitas Totales",
+      "Activo en Web",
+      "Sincronizar ML",
+      "Estado ML",
+      "Última Modificación"
+    ];
+
+    let html = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
+<head>
+<meta charset="utf-8">
+<!--[if gte mso 9]><xml>
+<x:ExcelWorkbook>
+<x:ExcelWorksheets>
+<x:ExcelWorksheet>
+<x:Name>Inventario</x:Name>
+<x:WorksheetOptions>
+<x:DisplayGridlines/>
+</x:WorksheetOptions>
+</x:ExcelWorksheet>
+</x:ExcelWorksheets>
+</x:ExcelWorkbook>
+</xml><![endif]-->
+<style>
+  table { border-collapse: collapse; width: 100%; font-family: Arial, sans-serif; font-size: 10pt; }
+  th { background-color: #107c41; color: #ffffff; font-weight: bold; border: 1px solid #999999; padding: 8px; text-align: left; }
+  td { border: 1px solid #cccccc; padding: 6px; vertical-align: middle; }
+  .text { mso-number-format:"\\@"; }
+  .num { text-align: right; }
+  .critical { color: #d9534f; font-weight: bold; text-align: center; }
+  .ok { color: #5cb85c; font-weight: bold; text-align: center; }
+</style>
+</head>
+<body>
+<table>
+<thead>
+  <tr>${headers.map(h => `<th>${h}</th>`).join('')}</tr>
+</thead>
+<tbody>`;
+
+    const escapeHtml = (str) => String(str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+    listToExport.forEach(p => {
+      const cost_base = p.cost_price || 0;
+      const cost_ml = p.cost_meli || 0;
+      const cost_total = cost_base + cost_ml;
+      const price_ml = p.price || 0;
+      const price_web = p.price_web || 0;
+
+      const profit_ml = price_ml > 0 ? price_ml - cost_total : 0;
+      const margin_ml = price_ml > 0 ? (profit_ml / price_ml * 100) : 0;
+
+      const profit_web = price_web > 0 ? price_web - cost_base : 0;
+      const margin_web = price_web > 0 ? (profit_web / price_web * 100) : 0;
+
+      const qty = p.available_quantity || 0;
+      const min_stock = p.min_stock || 3;
+      const isCritical = qty <= min_stock;
+
+      const visits_meli = p.visits_meli || 0;
+      const visits_web = p.visits_web || 0;
+
+      html += `<tr>
+        <td class="text">${escapeHtml(p.ml_id)}</td>
+        <td>${escapeHtml(p.title)}</td>
+        <td>${escapeHtml(p.category_name || 'Sin categoría')}</td>
+        <td class="num">${qty}</td>
+        <td class="num">${min_stock}</td>
+        <td class="${isCritical ? 'critical' : 'ok'}">${isCritical ? 'CRÍTICO' : 'OK'}</td>
+        <td class="num">$${cost_base.toFixed(2)}</td>
+        <td class="num">$${cost_ml.toFixed(2)}</td>
+        <td class="num">$${cost_total.toFixed(2)}</td>
+        <td class="num">$${price_ml.toFixed(2)}</td>
+        <td class="num">$${price_web.toFixed(2)}</td>
+        <td class="num">$${profit_ml.toFixed(2)}</td>
+        <td class="num">${margin_ml.toFixed(1)}%</td>
+        <td class="num">$${profit_web.toFixed(2)}</td>
+        <td class="num">${margin_web.toFixed(1)}%</td>
+        <td class="num">${visits_meli}</td>
+        <td class="num">${visits_web}</td>
+        <td class="num">${visits_meli + visits_web}</td>
+        <td>${p.is_web_active ? 'Sí' : 'No'}</td>
+        <td>${p.sync_meli !== 0 ? 'Sí' : 'No'}</td>
+        <td>${escapeHtml(p.status)}</td>
+        <td>${p.last_modified ? new Date(p.last_modified).toLocaleString('es-AR') : ''}</td>
+      </tr>`;
+    });
+
+    html += `</tbody></table></body></html>`;
+
+    const blob = new Blob(['\uFEFF' + html], { type: 'application/vnd.ms-excel;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", `inventario_${new Date().toISOString().slice(0, 10)}.xls`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+
   const fetchProducts = () => {
     setLoading(true)
     fetch(`/api/inventory/?query=${query}`)
@@ -343,32 +468,20 @@ export default function Inventory() {
               Guardar {modifiedCount} cambios
             </button>
           )}
-          <button className="btn" style={{backgroundColor: 'var(--bg-dark)', color: 'var(--text-secondary)', border: 'none'}} onClick={() => {
-            if (!sortedProducts || sortedProducts.length === 0) return;
-            const headers = ["ml_id", "Título", "Precio", "Stock Actual", "Costo Base", "Costo ML (Adicional)", "Precio Web", "Estado (ML)", "Sincronizar ML", "Stock Mínimo"];
-            const rows = sortedProducts.map(p => [
-              p.ml_id,
-              p.title,
-              p.price,
-              p.available_quantity,
-              p.cost_price,
-              p.cost_meli || 0,
-              p.price_web || 0,
-              p.status,
-              p.sync_meli !== 0 ? 'Sí' : 'No',
-              p.min_stock || 0
-            ]);
-            const csvContent = "data:text/csv;charset=utf-8,\uFEFF" 
-              + [headers.join(","), ...rows.map(e => e.map(val => `"${String(val).replace(/"/g, '""')}"`).join(","))].join("\n");
-            const encodedUri = encodeURI(csvContent);
-            const link = document.createElement("a");
-            link.setAttribute("href", encodedUri);
-            link.setAttribute("download", `inventario_${new Date().toISOString().slice(0,10)}.csv`);
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-          }}>
-            Exportar a CSV
+          <button 
+            className="btn" 
+            style={{
+              backgroundColor: '#107c41', 
+              color: '#ffffff', 
+              border: 'none', 
+              display: 'flex', 
+              alignItems: 'center', 
+              gap: 6,
+              fontWeight: '600'
+            }} 
+            onClick={exportToExcel}
+          >
+            📊 Exportar a Excel
           </button>
           <button className="btn" style={{backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)', border: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', gap: 5}} onClick={() => setShowCategoriesModal(true)}>
             📁 Gestionar Categorías
