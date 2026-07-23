@@ -339,3 +339,86 @@ def get_mp_balance():
     except Exception as e:
         print(f"[MP Balance] Excepción: {e}")
         return None
+
+def create_payment_preference(items: list, buyer_name: str = "", buyer_email: str = ""):
+    """
+    Creates a Mercado Pago Checkout Preference for in-person QR scanning or Payment Links.
+    Returns init_point, preference_id, and qr_code_url.
+    """
+    if meli_api.is_demo_mode():
+        return True, {
+            "preference_id": "DEMO-PREF-12345",
+            "init_point": "https://www.mercadopago.com.ar",
+            "qr_code_url": "https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=https%3A%2F%2Fwww.mercadopago.com.ar",
+            "total_amount": sum(float(i.get('price', 0)) * int(i.get('quantity', 1)) for i in items) or 5000.0
+        }
+
+    access_token = config.get_access_token()
+    if not access_token:
+        return False, "No hay token de Mercado Pago configurado."
+
+    meli_api.check_and_refresh_token()
+    access_token = config.get_access_token()
+
+    url = f"{API_BASE_URL}/checkout/preferences"
+    headers = {
+        'Authorization': f"Bearer {access_token}",
+        'Content-Type': 'application/json'
+    }
+
+    formatted_items = []
+    total_amount = 0.0
+
+    for it in items:
+        title = it.get('title') or "Producto Hidroponia"
+        qty = int(it.get('quantity', 1))
+        price = float(it.get('price', 0.0))
+        total_amount += (price * qty)
+        formatted_items.append({
+            "title": title[:256],
+            "quantity": qty,
+            "currency_id": "ARS",
+            "unit_price": price
+        })
+
+    if not formatted_items:
+        formatted_items = [{
+            "title": "Cobro Hidroponia Rosario",
+            "quantity": 1,
+            "currency_id": "ARS",
+            "unit_price": 100.0
+        }]
+
+    body = {
+        "items": formatted_items,
+        "payer": {
+            "name": buyer_name or "Cliente Mostrador",
+            "email": buyer_email or "cliente@hidroponiarosario.com"
+        },
+        "back_urls": {
+            "success": "https://admin.hidroponiarosario.com/sales",
+            "failure": "https://admin.hidroponiarosario.com/sales",
+            "pending": "https://admin.hidroponiarosario.com/sales"
+        },
+        "auto_return": "approved",
+        "statement_descriptor": "HIDROPONIA ROSARIO"
+    }
+
+    try:
+        response = requests.post(url, headers=headers, json=body, timeout=15)
+        if response.status_code in [200, 201]:
+            data = response.json()
+            init_point = data.get('init_point')
+            pref_id = data.get('id')
+            encoded_url = requests.utils.quote(init_point, safe='')
+            qr_code_url = f"https://api.qrserver.com/v1/create-qr-code/?size=300x300&data={encoded_url}"
+            return True, {
+                "preference_id": pref_id,
+                "init_point": init_point,
+                "qr_code_url": qr_code_url,
+                "total_amount": total_amount
+            }
+        else:
+            return False, f"Error Mercado Pago ({response.status_code}): {response.text}"
+    except Exception as e:
+        return False, f"Excepción al conectar con Mercado Pago: {str(e)}"

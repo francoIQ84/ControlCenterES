@@ -11,11 +11,37 @@ export default function Sales() {
   const [inventory, setInventory] = useState([])
   const [meliEnableManualMsg, setMeliEnableManualMsg] = useState(false)
 
-  // Inventory Linking Modal State
-  const [linkModalOrder, setLinkModalOrder] = useState(null)
-  const [selectedProdId, setSelectedProdId] = useState('')
-  const [selectedQty, setSelectedQty] = useState(1)
-  const [linkingLoading, setLinkingLoading] = useState(false)
+  // Mercado Pago QR / Link Charge State
+  const [generatedCharge, setGeneratedCharge] = useState(null)
+  const [chargeLoading, setChargeLoading] = useState(false)
+
+  const handleGenerateMPCharge = async () => {
+    if (!newOrder.items || newOrder.items.length === 0) {
+      alert("Por favor añade al menos un producto.")
+      return
+    }
+    setChargeLoading(true)
+    try {
+      const res = await fetch('/api/mercadopago/create-charge', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          items: newOrder.items,
+          buyer_name: newOrder.buyer_name || "Cliente Mostrador"
+        })
+      })
+      const data = await res.json()
+      if (res.ok && data.success) {
+        setGeneratedCharge(data.charge)
+      } else {
+        alert("Error al generar cobro: " + (data.detail || "Error desconocido"))
+      }
+    } catch(err) {
+      alert("Error de conexión: " + err.message)
+    } finally {
+      setChargeLoading(false)
+    }
+  }
 
   const [newOrder, setNewOrder] = useState({
     buyer_nickname: "",
@@ -829,16 +855,121 @@ export default function Sales() {
                 alignItems: 'center', 
                 borderTop: '1px solid var(--border-color)', 
                 paddingTop: 15,
-                marginTop: 10
+                marginTop: 10,
+                flexWrap: 'wrap',
+                gap: 10
               }}>
                 <div style={{fontSize: '1.1rem'}}>
                   Total estimado: <strong>${newOrder.items.reduce((sum, item) => sum + (item.price * item.quantity), 0).toLocaleString()}</strong>
                 </div>
-                <button type="submit" className="btn" style={{padding: '10px 20px'}}>
-                  Registrar Venta
-                </button>
+                <div style={{display: 'flex', gap: 10}}>
+                  <button 
+                    type="button" 
+                    className="btn" 
+                    disabled={chargeLoading}
+                    style={{padding: '10px 16px', backgroundColor: '#009ee3', color: '#fff', border: 'none', borderRadius: 6, fontWeight: 'bold'}}
+                    onClick={handleGenerateMPCharge}
+                  >
+                    {chargeLoading ? "Generando..." : "📱 Cobrar con QR / Link MP"}
+                  </button>
+                  <button type="submit" className="btn" style={{padding: '10px 20px'}}>
+                    Registrar Venta
+                  </button>
+                </div>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Generated Mercado Pago QR & Payment Link Modal */}
+      {generatedCharge && (
+        <div style={{
+          position: 'fixed',
+          top: 0, left: 0, right: 0, bottom: 0,
+          backgroundColor: 'rgba(0,0,0,0.75)',
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          zIndex: 1100,
+          padding: 20
+        }}>
+          <div className="card shadow-2xl" style={{width: 480, maxWidth: '100%', textAlign: 'center', padding: 25, borderRadius: 12}}>
+            <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-color)', paddingBottom: 10, marginBottom: 15}}>
+              <h3 style={{margin: 0, color: '#009ee3', display: 'flex', alignItems: 'center', gap: 8}}>
+                📱 Cobro con Mercado Pago
+              </h3>
+              <button 
+                className="btn" 
+                style={{padding: '4px 10px', backgroundColor: 'transparent', color: 'var(--text-secondary)'}}
+                onClick={() => setGeneratedCharge(null)}
+              >
+                ✕
+              </button>
+            </div>
+
+            <p style={{fontSize: '0.9rem', color: 'var(--text-secondary)', marginBottom: 15}}>
+              Monto a Cobrar: <strong style={{fontSize: '1.4rem', color: 'var(--text-primary)'}}>${generatedCharge.total_amount?.toLocaleString()}</strong>
+            </p>
+
+            <div style={{
+              backgroundColor: '#ffffff',
+              padding: 15,
+              borderRadius: 12,
+              display: 'inline-block',
+              boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+              marginBottom: 15
+            }}>
+              <img 
+                src={generatedCharge.qr_code_url} 
+                alt="QR Mercado Pago" 
+                style={{width: 240, height: 240, display: 'block'}}
+              />
+            </div>
+
+            <p style={{fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: 20}}>
+              📲 <strong>El cliente debe abrir su app de Mercado Pago o cámara</strong> y escanear este código QR para abonar en el acto.
+            </p>
+
+            <div style={{display: 'flex', flexDirection: 'column', gap: 10}}>
+              <div style={{display: 'flex', gap: 10}}>
+                <button 
+                  type="button" 
+                  className="btn" 
+                  style={{flex: 1, padding: '10px', backgroundColor: 'var(--bg-hover)', color: 'var(--text-primary)'}}
+                  onClick={() => {
+                    navigator.clipboard.writeText(generatedCharge.init_point)
+                    alert("¡Link de Pago copiado al portapapeles!")
+                  }}
+                >
+                  🔗 Copiar Link de Pago
+                </button>
+                <button 
+                  type="button" 
+                  className="btn" 
+                  style={{flex: 1, padding: '10px', backgroundColor: '#25D366', color: '#fff', border: 'none', fontWeight: 'bold'}}
+                  onClick={() => {
+                    const text = encodeURIComponent(`Hola! Aquí tienes el link para abonar tu compra de $${generatedCharge.total_amount?.toLocaleString()} por Mercado Pago: ${generatedCharge.init_point}`)
+                    window.open(`https://wa.me/?text=${text}`, '_blank')
+                  }}
+                >
+                  💬 Enviar por WhatsApp
+                </button>
+              </div>
+
+              <button 
+                type="button" 
+                className="btn" 
+                style={{width: '100%', padding: '12px', marginTop: 10, fontSize: '1rem', fontWeight: 'bold'}}
+                onClick={() => {
+                  setGeneratedCharge(null)
+                  setShowModal(false)
+                  alert("Venta procesada. En cuanto el cliente complete el pago por QR o Link, se sincronizará automáticamente.")
+                }}
+              >
+                ✓ Confirmar y Finalizar
+              </button>
+            </div>
           </div>
         </div>
       )}

@@ -29,3 +29,16 @@ def sync_payments(req: SyncMPRequest, _=Depends(require_permission("sales"))):
         return {"success": True, "count": count_or_err}
     else:
         raise HTTPException(status_code=400, detail=str(count_or_err))
+
+class CreateChargeRequest(BaseModel):
+    items: list
+    buyer_name: Optional[str] = ""
+    buyer_email: Optional[str] = ""
+
+@router.post("/create-charge")
+def create_charge(req: CreateChargeRequest, _=Depends(require_permission("sales"))):
+    ok, result_or_err = mp_api.create_payment_preference(req.items, req.buyer_name, req.buyer_email)
+    if ok:
+        return {"success": True, "charge": result_or_err}
+    else:
+        raise HTTPException(status_code=400, detail=str(result_or_err))
