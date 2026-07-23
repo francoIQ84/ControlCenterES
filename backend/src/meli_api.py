@@ -550,7 +550,8 @@ def sync_orders(limit=50, date_from=None, date_to=None):
                     if s_res.status_code == 200:
                         s_data = s_res.json()
                         st = s_data.get('status')
-                        if st in ('shipped', 'in_transit', 'active', 'out_for_delivery'):
+                        subst = s_data.get('substatus')
+                        if st in ('shipped', 'in_transit', 'active', 'out_for_delivery') or subst in ('dropped_off', 'shipped'):
                             order_dict['shipping_status'] = 'shipped'
                         elif st == 'delivered':
                             order_dict['shipping_status'] = 'delivered'
