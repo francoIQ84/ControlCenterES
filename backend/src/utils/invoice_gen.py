@@ -330,7 +330,9 @@ def _build_invoice_page(order, copy_type, usable_w):
     if not isinstance(buyer, dict):
         buyer = {}
 
-    buyer_name = buyer.get('name') or buyer.get('nickname') or 'Consumidor Final'
+    buyer_name = (buyer.get('name') or buyer.get('nickname') or 'Consumidor Final').strip()
+    if not buyer_name or buyer_name == "None None":
+        buyer_name = 'Consumidor Final'
     buyer_doc_number = buyer.get('document_number', '')
     buyer_doc_type = buyer.get('document_type', 'DNI')
     buyer_address = buyer.get('address', '') or ''

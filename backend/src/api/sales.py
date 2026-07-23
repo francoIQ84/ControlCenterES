@@ -249,16 +249,25 @@ def create_invoice_endpoint(order_id: int, req: Optional[InvoiceOptionsRequest] 
     if not order:
         raise HTTPException(status_code=404, detail="Pedido no encontrado")
         
-    if req and req.doc_type == 'CUIT' and req.cuit:
+    if req:
         buyer = order.get('buyer', {})
         if not isinstance(buyer, dict):
             buyer = {}
-        clean_cuit = "".join([c for c in str(req.cuit) if c.isdigit()])
-        buyer['document_type'] = 'CUIT'
-        buyer['document_number'] = clean_cuit
-        if req.name:
-            buyer['name'] = req.name
-        order['buyer'] = buyer
+
+        if req.doc_type == '99':
+            # Clear pre-existing CUIT/DNI for Consumidor Final Anónimo
+            buyer['document_type'] = ''
+            buyer['document_number'] = ''
+            buyer['name'] = 'Consumidor Final'
+            buyer['address'] = ''
+            order['buyer'] = buyer
+        elif req.doc_type == 'CUIT' and req.cuit:
+            clean_cuit = "".join([c for c in str(req.cuit) if c.isdigit()])
+            buyer['document_type'] = 'CUIT'
+            buyer['document_number'] = clean_cuit
+            if req.name and req.name != "None None":
+                buyer['name'] = req.name
+            order['buyer'] = buyer
 
     from src.utils.afip_ws import create_invoice
     res = create_invoice(order)

@@ -128,10 +128,11 @@ def sync_mp_payments(date_from=None, limit=2000):
                 # Payer details
                 payer = p.get('payer') or {}
                 buyer_id = payer.get('id') or (int(payment_id) if str(payment_id).isdigit() else 999000)
-                email = payer.get('email', '')
-                first_name = payer.get('first_name', '')
-                last_name = payer.get('last_name', '')
-                full_name = f"{first_name} {last_name}".strip() or email.split('@')[0] or f"Cliente MP #{payment_id}"
+                first_name = (payer.get('first_name') or '').strip()
+                last_name = (payer.get('last_name') or '').strip()
+                full_name = f"{first_name} {last_name}".strip()
+                if not full_name or full_name == "None None":
+                    full_name = email.split('@')[0] if (email and '@' in email) else f"Cliente MP #{payment_id}"
                 
                 identification = payer.get('identification') or {}
                 doc_type = identification.get('type', 'DNI')
