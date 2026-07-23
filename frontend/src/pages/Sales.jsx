@@ -241,11 +241,8 @@ export default function Sales() {
   const handleCreateManualOrder = async (e) => {
     e.preventDefault()
     
-    // Validations
-    if (!newOrder.buyer_nickname || !newOrder.buyer_name) {
-      alert("Todos los datos del comprador son obligatorios")
-      return
-    }
+    const finalBuyerName = newOrder.buyer_name || "Consumidor Final"
+    const finalBuyerNickname = newOrder.buyer_nickname || "consumidor_final"
     
     const invalidItems = newOrder.items.some(item => !item.title || item.quantity <= 0 || item.price < 0)
     if (invalidItems) {
@@ -262,6 +259,8 @@ export default function Sales() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           ...newOrder,
+          buyer_name: finalBuyerName,
+          buyer_nickname: finalBuyerNickname,
           total_amount
         })
       })
@@ -804,22 +803,20 @@ export default function Sales() {
               </div>
 
               <div style={{display: 'flex', gap: 15}}>
-                <label style={{flex: 1}}>Apodo / Nickname Comprador
+                <label style={{flex: 1}}>Apodo / ID (Opcional)
                   <input 
                     type="text" 
-                    required 
-                    placeholder="ej. franco_84"
+                    placeholder="Consumidor Final"
                     value={newOrder.buyer_nickname}
                     onChange={e => setNewOrder({ ...newOrder, buyer_nickname: e.target.value })}
                     style={{width: '100%', marginTop: 5}}
                   />
                 </label>
                 
-                <label style={{flex: 1}}>Nombre Completo Comprador
+                <label style={{flex: 1}}>Nombre Comprador (Opcional)
                   <input 
                     type="text" 
-                    required 
-                    placeholder="ej. Franco Di Picar"
+                    placeholder="Consumidor Final (Sin DNI)"
                     value={newOrder.buyer_name}
                     onChange={e => setNewOrder({ ...newOrder, buyer_name: e.target.value })}
                     style={{width: '100%', marginTop: 5}}
