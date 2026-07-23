@@ -533,16 +533,38 @@ def sync_orders(limit=50, date_from=None, date_to=None):
                 'meli_invoice_attached': 0
             })
             
-        # Check attached invoices in parallel
+        # Check attached invoices and real shipment statuses in parallel
         from concurrent.futures import ThreadPoolExecutor
-        update_progress(status="syncing_sales", progress=95, message="Verificando facturas adjuntas en Mercado Libre...")
+        update_progress(status="syncing_sales", progress=95, message="Verificando envío y facturas en Mercado Libre...")
         
-        def check_invoice(order_dict):
+        def enrich_order(pair):
+            order_dict, raw_order = pair
             order_dict['meli_invoice_attached'] = 1 if check_meli_invoice_exists(order_dict['order_id']) else 0
+
+            # Check real shipment status from Mercado Libre /shipments API
+            shipping_info = raw_order.get('shipping') or {}
+            ship_id = shipping_info.get('id')
+            if ship_id:
+                try:
+                    s_res = api_request("GET", f"/shipments/{ship_id}")
+                    if s_res.status_code == 200:
+                        s_data = s_res.json()
+                        st = s_data.get('status')
+                        if st in ('shipped', 'in_transit', 'active', 'out_for_delivery'):
+                            order_dict['shipping_status'] = 'shipped'
+                        elif st == 'delivered':
+                            order_dict['shipping_status'] = 'delivered'
+                        elif st in ('ready_to_ship', 'handling'):
+                            order_dict['shipping_status'] = 'ready_to_ship'
+                        elif st:
+                            order_dict['shipping_status'] = st
+                except Exception as e_ship:
+                    print(f"[Sync Shipment] Error fetching shipment {ship_id}: {e_ship}")
+
             return order_dict
             
         with ThreadPoolExecutor(max_workers=5) as executor:
-            orders = list(executor.map(check_invoice, orders))
+            orders = list(executor.map(enrich_order, zip(orders, all_results)))
             
         # Check which orders are new, and which orders transitioned to shipped
         new_order_ids = []

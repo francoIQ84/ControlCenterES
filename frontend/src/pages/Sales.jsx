@@ -520,36 +520,64 @@ export default function Sales() {
   }
 
   const renderShippingBadge = (order) => {
-    const isDelivered = order.shipping_status === 'delivered'
-    return (
-      <button
-        onClick={() => handleToggleShipping(order.order_id, order.shipping_status)}
-        title="Haz clic para cambiar el estado de entrega"
-        style={{
-          display: 'inline-flex',
-          alignItems: 'center',
-          gap: 4,
-          padding: '4px 8px',
-          borderRadius: 6,
-          fontSize: '0.75rem',
-          fontWeight: 600,
-          border: 'none',
-          cursor: 'pointer',
-          transition: 'all 0.2s',
-          backgroundColor: isDelivered ? 'rgba(16, 185, 129, 0.15)' : 'rgba(245, 158, 11, 0.15)',
-          color: isDelivered ? 'var(--accent-emerald)' : '#d97706'
-        }}
-        onMouseEnter={(e) => {
-          e.currentTarget.style.transform = 'scale(1.05)'
-        }}
-        onMouseLeave={(e) => {
-          e.currentTarget.style.transform = 'none'
-        }}
-      >
-        {isDelivered ? <Check size={12} /> : <Clock size={12} />}
-        {isDelivered ? 'Entregado' : 'Pendiente'}
-      </button>
-    )
+    const status = order.shipping_status
+    if (status === 'delivered') {
+      return (
+        <span 
+          onClick={() => handleToggleShipping(order.order_id, order.shipping_status)}
+          title="Haz clic para cambiar estado"
+          style={{
+            display: 'inline-flex', alignItems: 'center', gap: 4, padding: '4px 8px',
+            borderRadius: 6, fontSize: '0.75rem', fontWeight: 600, cursor: 'pointer',
+            backgroundColor: 'rgba(16, 185, 129, 0.15)', color: 'var(--accent-emerald)'
+          }}
+        >
+          <Check size={12} /> Entregado
+        </span>
+      )
+    } else if (status === 'shipped' || status === 'in_transit' || status === 'active' || status === 'out_for_delivery') {
+      return (
+        <span 
+          onClick={() => handleToggleShipping(order.order_id, order.shipping_status)}
+          title="Haz clic para cambiar estado"
+          style={{
+            display: 'inline-flex', alignItems: 'center', gap: 4, padding: '4px 8px',
+            borderRadius: 6, fontSize: '0.75rem', fontWeight: 600, cursor: 'pointer',
+            backgroundColor: 'rgba(37, 99, 235, 0.15)', color: '#2563eb'
+          }}
+        >
+          🚚 En camino
+        </span>
+      )
+    } else if (status === 'ready_to_ship' || status === 'handling') {
+      return (
+        <span 
+          onClick={() => handleToggleShipping(order.order_id, order.shipping_status)}
+          title="Haz clic para cambiar estado"
+          style={{
+            display: 'inline-flex', alignItems: 'center', gap: 4, padding: '4px 8px',
+            borderRadius: 6, fontSize: '0.75rem', fontWeight: 600, cursor: 'pointer',
+            backgroundColor: 'rgba(168, 85, 247, 0.15)', color: '#9333ea'
+          }}
+        >
+          📦 Listo p/ enviar
+        </span>
+      )
+    } else {
+      return (
+        <button
+          onClick={() => handleToggleShipping(order.order_id, order.shipping_status)}
+          title="Haz clic para cambiar el estado de entrega"
+          style={{
+            display: 'inline-flex', alignItems: 'center', gap: 4, padding: '4px 8px',
+            borderRadius: 6, fontSize: '0.75rem', fontWeight: 600, border: 'none',
+            cursor: 'pointer', backgroundColor: 'rgba(245, 158, 11, 0.15)', color: '#d97706'
+          }}
+        >
+          <Clock size={12} /> Pendiente
+        </button>
+      )
+    }
   }
 
   const exportToCSV = () => {
