@@ -246,6 +246,25 @@ export default function Inventory() {
       })
   }
 
+  const handleSyncCosts = async () => {
+    try {
+      setLoading(true)
+      const res = await fetch('/api/inventory/sync-costs', { method: 'POST' })
+      if (res.ok) {
+        const data = await res.json()
+        alert(data.message || "Costos de Mercado Libre actualizados correctamente desde la API")
+        fetchProducts()
+      } else {
+        const err = await res.json()
+        alert("Error al actualizar costos MeLi: " + (err.detail || 'Ocurrió un error'))
+        setLoading(false)
+      }
+    } catch(e) {
+      alert("Error de conexión: " + e.message)
+      setLoading(false)
+    }
+  }
+
   const fetchCategories = () => {
     fetch('/api/categories/')
       .then(res => res.json())
@@ -624,7 +643,7 @@ export default function Inventory() {
                     <th style={{width: 60}}>Stock</th>
                     <th style={{width: 80}}>P. ML</th>
                     <th style={{width: 80}}>C. Base</th>
-                    <th style={{width: 80}}>C. ML</th>
+                    <th style={{width: 80}} title="Costo total de Mercado Libre obtenido desde la API (Comisión de venta + Envío gratis si aplica)">C. ML ⓘ</th>
                     <th style={{width: 80}}>P. Web</th>
                     <th style={{width: 50, textAlign: 'center'}}>Web</th>
                     <th style={{width: 110}}>Acciones</th>
@@ -1057,7 +1076,7 @@ function ProductRow({ p, onSave, onOpenGallery, onDraftChange, categories, viewM
               <input type="number" value={cost} onChange={e => setCost(e.target.value)} style={{width: 80, marginLeft: 5, padding: 4}}/>
               {p.prev_cost_price !== null && p.prev_cost_price !== undefined && <div style={{fontSize: '0.65rem', color: 'var(--text-secondary)', marginTop: 2, textAlign: 'center'}}>ant: ${p.prev_cost_price.toLocaleString('es-AR')}</div>}
             </label>
-            <label style={{fontSize: '0.8rem', color: 'var(--text-secondary)'}}>Costo ML:
+            <label style={{fontSize: '0.8rem', color: 'var(--text-secondary)'}} title="Costo total de Mercado Libre obtenido desde la API (Comisión de venta + Envío gratis si aplica)">Costo ML ⓘ:
               <input type="number" value={costMeli} onChange={e => setCostMeli(e.target.value)} style={{width: 70, marginLeft: 5, padding: 4}}/>
               {p.prev_cost_meli !== null && p.prev_cost_meli !== undefined && <div style={{fontSize: '0.65rem', color: 'var(--text-secondary)', marginTop: 2, textAlign: 'center'}}>ant: ${p.prev_cost_meli.toLocaleString('es-AR')}</div>}
             </label>

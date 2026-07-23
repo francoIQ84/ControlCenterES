@@ -288,7 +288,7 @@ def save_products(products_list):
                 cursor.execute("SELECT cost_price, cost_meli, price_web, images, description, is_web_active, visits_web FROM products_cache WHERE ml_id = %s", (p['ml_id'],))
                 row = cursor.fetchone()
                 cost_price = row['cost_price'] if row else 0.0
-                cost_meli = row['cost_meli'] if row else 0.0
+                cost_meli = p.get('cost_meli') if (p.get('cost_meli') is not None and p.get('cost_meli') > 0) else (row['cost_meli'] if row else 0.0)
                 price_web = row['price_web'] if row else 0.0
                 images = row['images'] if (row and row['images']) else p.get('images', '')
                 description = row['description'] if row else ''
@@ -305,6 +305,8 @@ def save_products(products_list):
                         title = EXCLUDED.title,
                         price = EXCLUDED.price,
                         available_quantity = EXCLUDED.available_quantity,
+                        cost_meli = CASE WHEN EXCLUDED.cost_meli > 0 THEN EXCLUDED.cost_meli ELSE products_cache.cost_meli END,
+                        prev_cost_meli = CASE WHEN EXCLUDED.cost_meli > 0 AND products_cache.cost_meli != EXCLUDED.cost_meli THEN products_cache.cost_meli ELSE products_cache.prev_cost_meli END,
                         permalink = EXCLUDED.permalink,
                         thumbnail = EXCLUDED.thumbnail,
                         status = EXCLUDED.status,

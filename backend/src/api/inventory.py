@@ -48,6 +48,14 @@ def sync_products():
     else:
         raise HTTPException(status_code=500, detail=f"Failed to sync: {count}")
 
+@router.post("/sync-costs")
+def sync_product_costs():
+    ok, count = meli_api.sync_product_costs()
+    if ok:
+        return {"success": True, "count": count, "message": f"Costos de Mercado Libre actualizados desde la API para {count} publicaciones."}
+    else:
+        raise HTTPException(status_code=500, detail=f"Error al actualizar costos: {count}")
+
 @router.post("/")
 def create_product(payload: CreateProductRequest):
     # Determine ml_id based on publish_to_meli and demo mode

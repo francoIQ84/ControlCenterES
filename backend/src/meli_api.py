@@ -214,6 +214,77 @@ def api_request(method, path, headers=None, params=None, json_data=None):
     except Exception as e:
         raise ConnectionError(f"Error al conectar con la API de Mercado Libre: {str(e)}")
 
+# --- Mercado Libre Costs API ---
+
+def fetch_single_item_cost(item):
+    """
+    Obtiene el costo total real de Mercado Libre para una publicación (comisión de venta + envío gratis si aplica).
+    """
+    if not isinstance(item, dict):
+        return 0.0
+
+    item_id = item.get('id')
+    price = float(item.get('price') or 0.0)
+    category_id = item.get('category_id')
+    listing_type_id = item.get('listing_type_id')
+    site_id = item.get('site_id') or 'MLA'
+
+    if not item_id or price <= 0:
+        return 0.0
+
+    if is_demo_mode():
+        commission_pct = 0.135 if price > 10000 else 0.14
+        fixed_fee = 800.0 if price < 10000 else 0.0
+        free_shipping_cost = 4500.0 if price >= 25000 else 0.0
+        return round((price * commission_pct) + fixed_fee + free_shipping_cost, 2)
+
+    sale_fee = 0.0
+    shipping_cost = 0.0
+
+    # 1. Consultar la comisión de venta en la API oficial de Mercado Libre
+    # GET /sites/{site_id}/listing_prices?price={price}&category_id={category_id}&listing_type_id={listing_type_id}
+    try:
+        params = {'price': price}
+        if category_id:
+            params['category_id'] = category_id
+        if listing_type_id:
+            params['listing_type_id'] = listing_type_id
+
+        fee_res = api_request("GET", f"/sites/{site_id}/listing_prices", params=params)
+        if fee_res is not None and fee_res.status_code == 200:
+            fee_list = fee_res.json()
+            if isinstance(fee_list, list) and len(fee_list) > 0:
+                matched = next((x for x in fee_list if x.get('listing_type_id') == listing_type_id), fee_list[0])
+                sale_fee = float(matched.get('sale_fee_amount') or matched.get('sale_fee') or matched.get('fee_amount') or 0.0)
+            elif isinstance(fee_list, dict):
+                sale_fee = float(fee_list.get('sale_fee_amount') or fee_list.get('sale_fee') or fee_list.get('fee_amount') or 0.0)
+    except Exception as e:
+        print(f"[Meli API] Error al obtener comisión por venta para {item_id}: {e}")
+
+    # Fallback si sale_fee dio 0 pero tenemos precio positivo
+    if sale_fee <= 0 and price > 0:
+        pct = 0.135 if listing_type_id == 'gold_special' else (0.155 if listing_type_id == 'gold_pro' else 0.14)
+        fixed = 800.0 if price < 15000 else 0.0
+        sale_fee = round((price * pct) + fixed, 2)
+
+    # 2. Consultar costo de envío si la publicación ofrece envío gratis a cargo del vendedor
+    shipping_info = item.get('shipping', {})
+    if shipping_info.get('free_shipping') is True:
+        try:
+            ship_res = api_request("GET", f"/items/{item_id}/shipping_options")
+            if ship_res is not None and ship_res.status_code == 200:
+                ship_data = ship_res.json()
+                options = ship_data.get('options', [])
+                if options and isinstance(options, list):
+                    shipping_cost = float(options[0].get('list_cost') or options[0].get('cost') or 0.0)
+                elif isinstance(ship_data, dict) and 'coverage' in ship_data:
+                    all_c = ship_data.get('coverage', {}).get('all_country', {})
+                    shipping_cost = float(all_c.get('list_cost') or all_c.get('cost') or 0.0)
+        except Exception as e:
+            print(f"[Meli API] Error al obtener costo de envío para {item_id}: {e}")
+
+    return round(sale_fee + shipping_cost, 2)
+
 # --- Sync Data Functions ---
 
 def sync_products():
@@ -223,13 +294,19 @@ def sync_products():
         products = []
         for i, title in enumerate(MOCK_TITLES):
             ml_id = f"MLA{987654321 + i}"
-            # Standard prices in local currency
             price = float(random.randint(1500, 85000))
             qty = random.randint(0, 25)
+            # Costo simulado de MeLi (comisión ~13.5% + cargo fijo/envío)
+            commission_pct = 0.135 if price > 10000 else 0.14
+            fixed_fee = 800.0 if price < 10000 else 0.0
+            free_shipping_cost = 4500.0 if price >= 25000 else 0.0
+            cost_meli = round((price * commission_pct) + fixed_fee + free_shipping_cost, 2)
+
             products.append({
                 'ml_id': ml_id,
                 'title': title,
                 'price': price,
+                'cost_meli': cost_meli,
                 'available_quantity': qty,
                 'permalink': f"https://articulo.mercadolibre.com.ar/{ml_id.replace('MLA', 'MLA-')}-articulo-demo",
                 'thumbnail': MOCK_THUMBNAILS[i % len(MOCK_THUMBNAILS)],
@@ -289,14 +366,15 @@ def sync_products():
             update_progress(
                 status="syncing_products",
                 progress=current_progress,
-                message=f"Sincronizando detalles y visitas de productos ({i}/{total_items})...",
+                message=f"Sincronizando detalles, visitas y costos de comisiones MeLi ({i}/{total_items})...",
                 current=i,
                 total=total_items
             )
             details_response = api_request("GET", "/items", params={'ids': ",".join(chunk)})
             
-            # Fetch visits for the same item IDs. Since /visits/items only supports 1 item per request, we query them in parallel.
+            # Fetch visits and real MeLi costs for the same item IDs in parallel
             visits_dict = {}
+            costs_dict = {}
             from concurrent.futures import ThreadPoolExecutor
             
             def fetch_single_visit(item_id):
@@ -316,24 +394,35 @@ def sync_products():
             
             if details_response.status_code == 200:
                 results = details_response.json()
+                items_to_process = []
                 for item_wrapper in results:
                     item = item_wrapper.get('body', {})
                     if item.get('id'):
-                        pictures = item.get('pictures', [])
-                        images_list = [pic.get('secure_url') or pic.get('url') for pic in pictures if pic.get('secure_url') or pic.get('url')]
-                        images_str = ",".join(images_list)
-                        
-                        products.append({
-                            'ml_id': item['id'],
-                            'title': item['title'],
-                            'price': float(item['price']),
-                            'available_quantity': int(item['available_quantity']),
-                            'permalink': item.get('permalink'),
-                            'thumbnail': item.get('thumbnail'),
-                            'status': item.get('status'),
-                            'visits_meli': visits_dict.get(item['id'], 0),
-                            'images': images_str
-                        })
+                        items_to_process.append(item)
+
+                # Obtenemos comisiones y costos de envío reales en paralelo
+                with ThreadPoolExecutor(max_workers=5) as executor:
+                    res_costs = executor.map(lambda it: (it['id'], fetch_single_item_cost(it)), items_to_process)
+                    for item_id, cost_val in res_costs:
+                        costs_dict[item_id] = cost_val
+
+                for item in items_to_process:
+                    pictures = item.get('pictures', [])
+                    images_list = [pic.get('secure_url') or pic.get('url') for pic in pictures if pic.get('secure_url') or pic.get('url')]
+                    images_str = ",".join(images_list)
+                    
+                    products.append({
+                        'ml_id': item['id'],
+                        'title': item['title'],
+                        'price': float(item['price']),
+                        'cost_meli': costs_dict.get(item['id'], 0.0),
+                        'available_quantity': int(item['available_quantity']),
+                        'permalink': item.get('permalink'),
+                        'thumbnail': item.get('thumbnail'),
+                        'status': item.get('status'),
+                        'visits_meli': visits_dict.get(item['id'], 0),
+                        'images': images_str
+                    })
                         
         database.save_products(products)
         update_progress(status="syncing_products", progress=40, message=f"Productos sincronizados: {len(products)} guardados")
@@ -341,6 +430,53 @@ def sync_products():
     except Exception as e:
         update_progress(status="failed", message=f"Excepción en sincronización de productos: {str(e)}")
         return False, f"Excepción en sincronización: {str(e)}"
+
+def sync_product_costs():
+    """
+    Recalcula y actualiza exclusivamente los costos reales de Mercado Libre (comisiones + envíos) para todos los productos.
+    """
+    if is_demo_mode():
+        products = database.get_all_products()
+        updated_count = 0
+        for p in products:
+            price = p.get('price', 0.0)
+            commission_pct = 0.135 if price > 10000 else 0.14
+            fixed_fee = 800.0 if price < 10000 else 0.0
+            free_shipping_cost = 4500.0 if price >= 25000 else 0.0
+            cost_meli = round((price * commission_pct) + fixed_fee + free_shipping_cost, 2)
+            database.update_product_cost(p['ml_id'], p.get('cost_price', 0.0), cost_meli)
+            updated_count += 1
+        return True, updated_count
+
+    user_id = config.get_user_id()
+    if not user_id:
+        return False, "Usuario no autenticado"
+
+    products = database.get_all_products()
+    ml_products = [p for p in products if p.get('ml_id') and not p['ml_id'].startswith(('LOCAL-', 'WEB-'))]
+    if not ml_products:
+        return True, 0
+
+    item_ids = [p['ml_id'] for p in ml_products]
+    updated_count = 0
+    from concurrent.futures import ThreadPoolExecutor
+
+    for i in range(0, len(item_ids), 20):
+        chunk = item_ids[i:i+20]
+        details_response = api_request("GET", "/items", params={'ids': ",".join(chunk)})
+        if details_response is not None and details_response.status_code == 200:
+            results = details_response.json()
+            items_to_process = [w.get('body', {}) for w in results if w.get('body', {}).get('id')]
+            
+            with ThreadPoolExecutor(max_workers=5) as executor:
+                res_costs = executor.map(lambda item: (item['id'], fetch_single_item_cost(item)), items_to_process)
+                for item_id, c_val in res_costs:
+                    orig_p = next((p for p in ml_products if p['ml_id'] == item_id), None)
+                    if orig_p:
+                        database.update_product_cost(item_id, orig_p.get('cost_price', 0.0), c_val)
+                        updated_count += 1
+
+    return True, updated_count
 
 def is_recent_order(date_str, max_hours=24):
     """
