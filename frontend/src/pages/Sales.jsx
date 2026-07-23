@@ -49,12 +49,17 @@ export default function Sales() {
     }
   }
 
+  // Active product search index for dropdown autocomplete
+  const [activeSearchIdx, setActiveSearchIdx] = useState(null)
+
   const [newOrder, setNewOrder] = useState({
     buyer_nickname: "",
     buyer_name: "",
     source_platform: "LOCAL", // "LOCAL" or "WEB"
     shipping_status: "pending", // "pending" or "delivered"
     payment_method: "Efectivo",
+    auto_invoice: false,
+    invoice_type: "B",
     items: [{ id: "manual-1", title: "", quantity: 1, price: 0 }]
   })
 
@@ -216,6 +221,23 @@ export default function Sales() {
     })
   }
 
+  const handleBarcodeScanOrSearch = (index, text) => {
+    handleItemChange(index, 'title', text)
+    if (!text || text.trim().length < 2) return
+
+    const cleanText = text.trim().toLowerCase()
+    // Check exact match by ml_id, title, or barcode
+    const exactMatch = inventory.find(p => 
+      String(p.ml_id).toLowerCase() === cleanText || 
+      String(p.title).toLowerCase() === cleanText
+    )
+
+    if (exactMatch) {
+      handleProductSelect(index, exactMatch.ml_id)
+      setActiveSearchIdx(null)
+    }
+  }
+
   const handleCreateManualOrder = async (e) => {
     e.preventDefault()
     
@@ -244,17 +266,26 @@ export default function Sales() {
         })
       })
       if (res.ok) {
+        const createdData = await res.json()
+        const createdOrderId = createdData.order_id
         alert("Venta registrada con éxito")
         setShowModal(false)
+        const shouldInvoice = newOrder.auto_invoice
         setNewOrder({
           buyer_nickname: "",
           buyer_name: "",
           source_platform: "LOCAL",
           shipping_status: "pending",
           payment_method: "Efectivo",
+          auto_invoice: false,
+          invoice_type: "B",
           items: [{ id: "manual-1", title: "", quantity: 1, price: 0 }]
         })
         fetchOrders()
+
+        if (shouldInvoice && createdOrderId) {
+          handleCreateInvoice(createdOrderId)
+        }
       } else {
         alert("Error al registrar la venta")
       }
@@ -809,65 +840,165 @@ export default function Sales() {
                   </button>
                 </div>
 
-                {newOrder.items.map((item, idx) => (
-                  <div key={item.id} style={{display: 'flex', gap: 10, alignItems: 'flex-end', marginBottom: 10}}>
-                    <label style={{flex: 3}}>Nombre del Producto
-                      <select
-                        required
-                        value={item.id && !item.id.startsWith('manual-') ? item.id : ""}
-                        onChange={e => handleProductSelect(idx, e.target.value)}
-                        style={{width: '100%', marginTop: 5}}
+                {newOrder.items.map((item, idx) => {
+                  const filteredProducts = inventory.filter(p => {
+                    const q = (item.title || "").toLowerCase()
+                    return p.title.toLowerCase().includes(q) || String(p.ml_id).toLowerCase().includes(q)
+                  })
+
+                  return (
+                    <div key={item.id} style={{display: 'flex', gap: 10, alignItems: 'flex-end', marginBottom: 10}}>
+                      <div style={{flex: 3, position: 'relative'}}>
+                        <label style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
+                          <span>🔍 Producto (Buscar / Escanear QR o Código)</span>
+                        </label>
+
+                        <input
+                          type="text"
+                          required
+                          placeholder="Escribe o escanea código con lector..."
+                          value={item.title || ""}
+                          onFocus={() => setActiveSearchIdx(idx)}
+                          onChange={e => {
+                            setActiveSearchIdx(idx)
+                            handleBarcodeScanOrSearch(idx, e.target.value)
+                          }}
+                          onKeyDown={e => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault()
+                              if (filteredProducts.length > 0) {
+                                handleProductSelect(idx, filteredProducts[0].ml_id)
+                                setActiveSearchIdx(null)
+                              }
+                            }
+                          }}
+                          style={{width: '100%', marginTop: 5}}
+                        />
+
+                        {/* Autocomplete Dropdown List */}
+                        {activeSearchIdx === idx && (item.title || "").length > 0 && (
+                          <div style={{
+                            position: 'absolute', top: '100%', left: 0, right: 0,
+                            backgroundColor: 'var(--bg-card)', border: '1px solid var(--border-color)',
+                            borderRadius: 8, zIndex: 1000, maxHeight: 220, overflowY: 'auto',
+                            boxShadow: '0 8px 24px rgba(0,0,0,0.25)', marginTop: 2
+                          }}>
+                            {filteredProducts.length > 0 ? (
+                              filteredProducts.map(prod => (
+                                <div
+                                  key={prod.ml_id}
+                                  style={{
+                                    padding: '8px 12px', 
+                                    cursor: 'pointer', 
+                                    borderBottom: '1px solid var(--border-color)',
+                                    display: 'flex',
+                                    justifyContent: 'space-between',
+                                    alignItems: 'center'
+                                  }}
+                                  onMouseDown={(e) => {
+                                    e.preventDefault()
+                                    handleProductSelect(idx, prod.ml_id)
+                                    setActiveSearchIdx(null)
+                                  }}
+                                >
+                                  <div>
+                                    <div style={{fontWeight: 'bold', fontSize: '0.85rem'}}>{prod.title}</div>
+                                    <div style={{fontSize: '0.75rem', color: 'var(--text-secondary)'}}>SKU/ID: {prod.ml_id}</div>
+                                  </div>
+                                  <div style={{fontWeight: 'bold', color: 'var(--accent-green)', fontSize: '0.85rem'}}>
+                                    ${newOrder.source_platform === 'LOCAL' ? prod.price?.toLocaleString() : (prod.price_web || prod.price)?.toLocaleString()}
+                                  </div>
+                                </div>
+                              ))
+                            ) : (
+                              <div style={{padding: 10, fontSize: '0.8rem', color: 'var(--text-secondary)', textAlign: 'center'}}>
+                                Se registrará como producto personalizado: "{item.title}"
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                      
+                      <label style={{width: 80}}>Cant.
+                        <input 
+                          type="number" 
+                          required 
+                          min="1"
+                          value={item.quantity}
+                          onChange={e => handleItemChange(idx, 'quantity', e.target.value)}
+                          style={{width: '100%', marginTop: 5}}
+                        />
+                      </label>
+
+                      <label style={{width: 120}}>Precio Unitario
+                        <input 
+                          type="number" 
+                          required 
+                          min="0" 
+                          step="0.01"
+                          placeholder="0.00"
+                          value={item.price || ""}
+                          onChange={e => handleItemChange(idx, 'price', e.target.value)}
+                          style={{width: '100%', marginTop: 5}}
+                        />
+                      </label>
+
+                      <button
+                        type="button"
+                        disabled={newOrder.items.length === 1}
+                        onClick={() => handleRemoveItem(idx)}
+                        style={{
+                          padding: 10,
+                          backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                          color: 'var(--accent-red)',
+                          border: 'none',
+                          borderRadius: 6,
+                          cursor: newOrder.items.length === 1 ? 'not-allowed' : 'pointer'
+                        }}
                       >
-                        <option value="">Seleccione un producto...</option>
-                        {inventory.map(prod => (
-                          <option key={prod.ml_id} value={prod.ml_id}>
-                            {prod.title} (${newOrder.source_platform === 'LOCAL' ? prod.price : (prod.price_web || prod.price)})
-                          </option>
-                        ))}
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
+                  )
+                })}
+              </div>
+
+              {/* Facturación Electrónica ARCA (ex AFIP) */}
+              <div style={{
+                backgroundColor: 'var(--bg-hover)', 
+                padding: '12px 16px', 
+                borderRadius: 8, 
+                border: '1px solid var(--border-color)',
+                display: 'flex', 
+                alignItems: 'center', 
+                justifyContent: 'space-between',
+                flexWrap: 'wrap',
+                gap: 12
+              }}>
+                <label style={{display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', margin: 0, fontWeight: 'bold', fontSize: '0.9rem'}}>
+                  <input 
+                    type="checkbox"
+                    checked={newOrder.auto_invoice}
+                    onChange={e => setNewOrder({ ...newOrder, auto_invoice: e.target.checked })}
+                    style={{width: 18, height: 18, accentColor: 'var(--accent-blue)', cursor: 'pointer'}}
+                  />
+                  📄 Emitir Factura Electrónica ARCA (AFIP) al finalizar
+                </label>
+
+                {newOrder.auto_invoice && (
+                  <div style={{display: 'flex', gap: 10, alignItems: 'center'}}>
+                    <label style={{fontSize: '0.85rem', fontWeight: 'normal'}}>Tipo:
+                      <select 
+                        value={newOrder.invoice_type}
+                        onChange={e => setNewOrder({ ...newOrder, invoice_type: e.target.value })}
+                        style={{marginLeft: 6, padding: '4px 8px', borderRadius: 4}}
+                      >
+                        <option value="B">Factura B / C (Consumidor Final)</option>
+                        <option value="A">Factura A (Con CUIT)</option>
                       </select>
                     </label>
-                    
-                    <label style={{width: 80}}>Cant.
-                      <input 
-                        type="number" 
-                        required 
-                        min="1"
-                        value={item.quantity}
-                        onChange={e => handleItemChange(idx, 'quantity', e.target.value)}
-                        style={{width: '100%', marginTop: 5}}
-                      />
-                    </label>
-
-                    <label style={{width: 120}}>Precio Unitario
-                      <input 
-                        type="number" 
-                        required 
-                        min="0" 
-                        step="0.01"
-                        placeholder="0.00"
-                        value={item.price || ""}
-                        onChange={e => handleItemChange(idx, 'price', e.target.value)}
-                        style={{width: '100%', marginTop: 5}}
-                      />
-                    </label>
-
-                    <button
-                      type="button"
-                      disabled={newOrder.items.length === 1}
-                      onClick={() => handleRemoveItem(idx)}
-                      style={{
-                        padding: 10,
-                        backgroundColor: 'rgba(239, 68, 68, 0.1)',
-                        color: 'var(--accent-red)',
-                        border: 'none',
-                        borderRadius: 6,
-                        cursor: newOrder.items.length === 1 ? 'not-allowed' : 'pointer'
-                      }}
-                    >
-                      <Trash2 size={16} />
-                    </button>
                   </div>
-                ))}
+                )}
               </div>
 
               <div style={{
