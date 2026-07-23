@@ -1341,7 +1341,7 @@ export default function Sales() {
                   checked={customInvoiceDocType === '99'} 
                   onChange={() => setCustomInvoiceDocType('99')} 
                 />
-                <span>Factura B / C - Consumidor Final (Sin DNI / Anónimo)</span>
+                <span>Consumidor Final (Sin DNI / Anónimo)</span>
               </label>
 
               <label style={{display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', fontWeight: 'bold'}}>
@@ -1352,7 +1352,7 @@ export default function Sales() {
                   checked={customInvoiceDocType === 'CUIT'} 
                   onChange={() => setCustomInvoiceDocType('CUIT')} 
                 />
-                <span>Factura A / B con CUIT Personalizado (Empresas / Monotributo)</span>
+                <span>Facturar a CUIT (Factura A / B / C con CUIT)</span>
               </label>
 
               {customInvoiceDocType === 'CUIT' && (
@@ -1360,7 +1360,10 @@ export default function Sales() {
                   backgroundColor: 'var(--bg-hover)', padding: 15, borderRadius: 8, marginTop: 5,
                   display: 'flex', flexDirection: 'column', gap: 10, border: '1px solid var(--border-color)'
                 }}>
-                  <label style={{fontSize: '0.85rem'}}>CUIT / CUIL de la Empresa / Cliente:
+                  <div style={{fontSize: '0.8rem', color: 'var(--accent-blue)', fontWeight: 'bold'}}>
+                    💡 Si eres Monotributista se emitirá Factura C a nombre de este CUIT. Si eres Resp. Inscripto se emitirá Factura A.
+                  </div>
+                  <label style={{fontSize: '0.85rem'}}>CUIT / CUIL del Comprador / Empresa:
                     <div style={{display: 'flex', gap: 8, marginTop: 5}}>
                       <input 
                         type="text" 
