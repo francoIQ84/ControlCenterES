@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react'
-import { Package, CloudOff, Cloud, RefreshCw, Save, QrCode, Camera } from 'lucide-react'
+import { Package, CloudOff, Cloud, RefreshCw, Save, QrCode, Camera, ExternalLink } from 'lucide-react'
 import { Html5QrcodeScanner } from 'html5-qrcode'
 import MediaBrowser from '../components/MediaBrowser'
 
@@ -907,7 +907,53 @@ function ProductRow({ p, onSave, onOpenGallery, onDraftChange, categories, viewM
           </td>
           <td data-label="Detalle" style={{padding: '5px 8px'}}>
             <div style={{fontWeight: 600, fontSize: '0.85rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '280px'}} title={p.title}>{p.title}</div>
-            <div style={{color: 'var(--text-secondary)', fontSize: '0.7rem', fontFamily: 'monospace'}}>{p.ml_id}</div>
+            <div style={{display: 'flex', alignItems: 'center', gap: 6, marginTop: 2, flexWrap: 'wrap'}}>
+              <span style={{color: 'var(--text-secondary)', fontSize: '0.7rem', fontFamily: 'monospace'}}>{p.ml_id}</span>
+              {p.status !== 'local' && (
+                <a 
+                  href={p.permalink || `https://articulo.mercadolibre.com.ar/${p.ml_id.replace('MLA', 'MLA-')}`} 
+                  target="_blank" 
+                  rel="noopener noreferrer"
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 2,
+                    padding: '1px 5px',
+                    fontSize: '0.65rem',
+                    fontWeight: 600,
+                    borderRadius: 3,
+                    backgroundColor: 'rgba(245, 158, 11, 0.15)',
+                    color: '#d97706',
+                    textDecoration: 'none'
+                  }}
+                  title="Ver publicación en Mercado Libre"
+                >
+                  <ExternalLink size={10} /> MeLi
+                </a>
+              )}
+              {isWebActive && (
+                <a 
+                  href={`https://${window.location.hostname.replace('admin.', '')}/product/${p.ml_id}`} 
+                  target="_blank" 
+                  rel="noopener noreferrer"
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 2,
+                    padding: '1px 5px',
+                    fontSize: '0.65rem',
+                    fontWeight: 600,
+                    borderRadius: 3,
+                    backgroundColor: 'rgba(59, 130, 246, 0.15)',
+                    color: '#2563eb',
+                    textDecoration: 'none'
+                  }}
+                  title="Ver producto en la Tienda Web"
+                >
+                  <ExternalLink size={10} /> Web
+                </a>
+              )}
+            </div>
             <div style={{color: 'var(--text-secondary)', fontSize: '0.68rem', marginTop: 2}}>
               🕒 Modif: {p.last_modified ? new Date(p.last_modified).toLocaleString('es-AR', { dateStyle: 'short', timeStyle: 'short' }) : 'Sin cambios'}
             </div>
@@ -1064,8 +1110,56 @@ function ProductRow({ p, onSave, onOpenGallery, onDraftChange, categories, viewM
         </td>
         <td data-label="Detalle">
           <div style={{fontWeight: 600, fontSize: '0.9rem'}}>{p.title}</div>
-          <div style={{color: 'var(--text-secondary)', fontSize: '0.75rem', fontFamily: 'monospace'}}>{p.ml_id}</div>
-          <div style={{color: 'var(--text-secondary)', fontSize: '0.68rem', marginTop: 3}}>
+          <div style={{display: 'flex', alignItems: 'center', gap: 8, marginTop: 4, flexWrap: 'wrap'}}>
+            <span style={{color: 'var(--text-secondary)', fontSize: '0.75rem', fontFamily: 'monospace'}}>{p.ml_id}</span>
+            {p.status !== 'local' && (
+              <a 
+                href={p.permalink || `https://articulo.mercadolibre.com.ar/${p.ml_id.replace('MLA', 'MLA-')}`} 
+                target="_blank" 
+                rel="noopener noreferrer"
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 4,
+                  padding: '2px 8px',
+                  fontSize: '0.72rem',
+                  fontWeight: 600,
+                  borderRadius: 4,
+                  backgroundColor: 'rgba(245, 158, 11, 0.15)',
+                  color: '#d97706',
+                  textDecoration: 'none',
+                  border: '1px solid rgba(245, 158, 11, 0.3)'
+                }}
+                title="Ver publicación en Mercado Libre"
+              >
+                <ExternalLink size={12} /> MeLi ↗
+              </a>
+            )}
+            {isWebActive && (
+              <a 
+                href={`https://${window.location.hostname.replace('admin.', '')}/product/${p.ml_id}`} 
+                target="_blank" 
+                rel="noopener noreferrer"
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 4,
+                  padding: '2px 8px',
+                  fontSize: '0.72rem',
+                  fontWeight: 600,
+                  borderRadius: 4,
+                  backgroundColor: 'rgba(59, 130, 246, 0.15)',
+                  color: '#2563eb',
+                  textDecoration: 'none',
+                  border: '1px solid rgba(59, 130, 246, 0.3)'
+                }}
+                title="Ver producto en la Tienda Web"
+              >
+                <ExternalLink size={12} /> Web ↗
+              </a>
+            )}
+          </div>
+          <div style={{color: 'var(--text-secondary)', fontSize: '0.68rem', marginTop: 4}}>
             🕒 Modificado: {p.last_modified ? new Date(p.last_modified).toLocaleString('es-AR', { dateStyle: 'short', timeStyle: 'short' }) : 'Sin cambios'}
           </div>
         </td>
