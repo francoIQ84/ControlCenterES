@@ -61,7 +61,7 @@ export default async function Home(props: {
       </div>
 
       {/* Category Navigation Bar */}
-      <div className="flex gap-2 mb-8 overflow-x-auto pb-2 scrollbar-none">
+      <div className="flex flex-wrap gap-2 mb-8">
         <Link
           href="/"
           className={`px-4 py-2 rounded-full text-sm font-semibold transition-all duration-200 border whitespace-nowrap ${
