@@ -194,6 +194,18 @@ def init_db():
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             ''')
+
+            # Incomes table
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS incomes (
+                    id SERIAL PRIMARY KEY,
+                    date DATE NOT NULL,
+                    description VARCHAR(255) NOT NULL,
+                    amount REAL NOT NULL,
+                    category VARCHAR(100),
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
             
             # WhatsApp chat history table
             cursor.execute('''

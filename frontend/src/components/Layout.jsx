@@ -233,7 +233,7 @@ export default function Layout() {
           {hasPermission('expenses') && (
             <NavLink to="/expenses" className={({isActive}) => `nav-link ${isActive ? 'active' : ''}`}>
               <Wallet size={20} style={{ minWidth: 20 }} />
-              <span className="nav-text">Gastos</span>
+              <span className="nav-text">Finanzas</span>
             </NavLink>
           )}
           {hasPermission('customers') && (
