@@ -42,20 +42,24 @@ def get_storefront_categories():
 def get_storefront_config():
     import json
     cfg_str = database.get_setting("web_config")
+    cfg = {}
     if cfg_str:
         try:
-            return json.loads(cfg_str)
+            cfg = json.loads(cfg_str)
         except Exception:
             pass
+            
+    contact_phone = cfg.get("contact_phone", "").strip() or database.get_setting("whatsapp_phone", "").strip()
+    
     return {
-        "store_name": "Tienda Oficial",
-        "logo_url": "",
-        "hero_title": "Nuestra Tienda Oficial",
-        "hero_subtitle": "Los mejores productos directo de fábrica, al mejor precio.",
-        "hero_image": "",
-        "contact_phone": "",
-        "address": "",
-        "footer_text": "© 2026 ControlCenterES. Todos los derechos reservados."
+        "store_name": cfg.get("store_name", "Tienda Oficial"),
+        "logo_url": cfg.get("logo_url", ""),
+        "hero_title": cfg.get("hero_title", "Nuestra Tienda Oficial"),
+        "hero_subtitle": cfg.get("hero_subtitle", "Los mejores productos directo de fábrica, al mejor precio."),
+        "hero_image": cfg.get("hero_image", ""),
+        "contact_phone": contact_phone,
+        "address": cfg.get("address", ""),
+        "footer_text": cfg.get("footer_text", "© 2026 ControlCenterES. Todos los derechos reservados.")
     }
 
 @router.post("/products/{product_id}/visit")

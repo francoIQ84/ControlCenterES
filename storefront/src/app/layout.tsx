@@ -4,6 +4,7 @@ import "./globals.css";
 import { CartProvider } from "../components/CartProvider";
 import NavBar from "../components/NavBar";
 import Footer from "../components/Footer";
+import WhatsAppFloatingButton from "../components/WhatsAppFloatingButton";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -51,6 +52,7 @@ export default function RootLayout({
             {children}
           </div>
           <Footer />
+          <WhatsAppFloatingButton />
         </CartProvider>
       </body>
     </html>
