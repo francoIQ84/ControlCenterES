@@ -55,6 +55,30 @@ def save_whatsapp_config(req: WhatsAppConfigReq, _=Depends(verify_session), _2=D
     database.set_setting("whatsapp_bot_instructions", req.bot_instructions.strip())
     return {"success": True}
 
+@router.post("/disconnect")
+def disconnect_whatsapp(_=Depends(verify_session), _2=Depends(require_permission("settings"))):
+    database.set_setting("whatsapp_status", "disconnected")
+    database.set_setting("whatsapp_phone", "")
+    database.set_setting("whatsapp_qr", "")
+
+    try:
+        requests.post("http://127.0.0.1:8091/disconnect", timeout=5)
+    except Exception as e:
+        print(f"[WhatsApp Disconnect Error] Node control server unreachable: {e}")
+
+    import os, shutil
+    auth_dir = os.path.join("backend", "whatsapp", "auth_state")
+    if not os.path.exists(auth_dir):
+        auth_dir = os.path.join("whatsapp", "auth_state")
+    if os.path.exists(auth_dir):
+        try:
+            shutil.rmtree(auth_dir, ignore_errors=True)
+        except Exception:
+            pass
+
+    return {"success": True}
+
+
 @router.post("/test-key")
 def test_gemini_key(req: TestKeyReq, _=Depends(verify_session)):
     key = req.gemini_api_key.strip()

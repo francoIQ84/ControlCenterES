@@ -199,6 +199,28 @@ export default function Settings() {
     }
   }
 
+  const [disconnectingWa, setDisconnectingWa] = useState(false)
+
+  const handleDisconnectWa = async () => {
+    if (!window.confirm("¿Seguro que deseas desvincular la línea de WhatsApp actual y generar un nuevo código QR?")) {
+      return
+    }
+    setDisconnectingWa(true)
+    try {
+      const res = await fetch('/api/whatsapp/disconnect', { method: 'POST' })
+      if (res.ok) {
+        alert("Línea desvinculada correctamente. Se generará un nuevo código QR en breve.")
+        fetchWaConfig()
+      } else {
+        alert("Error al desvincular la línea de WhatsApp.")
+      }
+    } catch(err) {
+      alert("Error de conexión: " + err.message)
+    } finally {
+      setDisconnectingWa(false)
+    }
+  }
+
   // Polling WhatsApp status when on tab
   useEffect(() => {
     if (activeTab === 'whatsapp') {
@@ -2009,6 +2031,29 @@ export default function Settings() {
                   <p style={{fontSize: '0.85rem', color: 'var(--text-secondary)'}}>
                     El bot de WhatsApp no se encuentra iniciado. Asegúrate de que el servicio está activo en el servidor.
                   </p>
+                </div>
+              )}
+
+              {(waConfig.status === 'connected' || waConfig.phone) && (
+                <div style={{width: '100%', marginTop: 10, paddingTop: 15, borderTop: '1px solid var(--border-color)'}}>
+                  <button 
+                    type="button"
+                    onClick={handleDisconnectWa}
+                    disabled={disconnectingWa}
+                    className="btn"
+                    style={{
+                      width: '100%',
+                      backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                      color: 'var(--accent-red)',
+                      border: '1px solid var(--accent-red)',
+                      fontSize: '0.82rem',
+                      fontWeight: 'bold',
+                      cursor: 'pointer',
+                      padding: '8px 12px'
+                    }}
+                  >
+                    {disconnectingWa ? "Desvinculando..." : "🔴 Desvincular Línea y Generar Nuevo QR"}
+                  </button>
                 </div>
               )}
             </div>

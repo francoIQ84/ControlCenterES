@@ -1,8 +1,13 @@
 const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion, Browsers } = require('@whiskeysockets/baileys');
 const pino = require('pino');
 const axios = require('axios');
+const http = require('http');
+const fs = require('fs');
 
 const BACKEND_URL = 'http://localhost:8090/api/whatsapp';
+
+let currentSock = null;
+let isDisconnecting = false;
 
 async function startBot() {
     const { state, saveCreds } = await useMultiFileAuthState('auth_state');
@@ -24,6 +29,8 @@ async function startBot() {
         browser: Browsers.ubuntu('Chrome')
     });
     
+    currentSock = sock;
+    
     sock.ev.on('creds.update', saveCreds);
     
     sock.ev.on('connection.update', async (update) => {
@@ -43,12 +50,13 @@ async function startBot() {
         
         if (connection === 'close') {
             const statusCode = lastDisconnect.error?.output?.statusCode;
-            const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
+            const shouldReconnect = !isDisconnecting && statusCode !== DisconnectReason.loggedOut;
             console.log(`Connection closed (status: ${statusCode}). Reconnecting:`, shouldReconnect);
             
             try {
                 await axios.post(`${BACKEND_URL}/status-update`, {
-                    status: statusCode === DisconnectReason.loggedOut ? 'disconnected' : 'connecting',
+                    status: (isDisconnecting || statusCode === DisconnectReason.loggedOut) ? 'disconnected' : 'connecting',
+                    phone: isDisconnecting ? '' : undefined,
                     qr: ''
                 });
             } catch (err) {}
@@ -106,4 +114,45 @@ async function startBot() {
     });
 }
 
+// HTTP control server for commands from FastAPI backend
+const server = http.createServer(async (req, res) => {
+    if (req.method === 'POST' && req.url === '/disconnect') {
+        console.log('Received disconnect request from admin panel...');
+        try {
+            isDisconnecting = true;
+            if (currentSock) {
+                try {
+                    await currentSock.logout();
+                } catch (e) {
+                    try { currentSock.end(undefined); } catch (_) {}
+                }
+                currentSock = null;
+            }
+            if (fs.existsSync('auth_state')) {
+                fs.rmSync('auth_state', { recursive: true, force: true });
+                console.log('Deleted auth_state credentials.');
+            }
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ success: true }));
+
+            setTimeout(() => {
+                isDisconnecting = false;
+                startBot();
+            }, 1000);
+        } catch (err) {
+            console.error('Error handling disconnect request:', err.message);
+            res.writeHead(500, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ success: false, error: err.message }));
+        }
+    } else {
+        res.writeHead(404);
+        res.end();
+    }
+});
+
+server.listen(8091, '127.0.0.1', () => {
+    console.log('WhatsApp control server listening on http://127.0.0.1:8091');
+});
+
 startBot();
+
