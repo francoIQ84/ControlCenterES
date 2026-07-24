@@ -272,16 +272,16 @@ La plataforma admite la emisión automatizada de comprobantes para **Monotributi
 
 ### 5. Asistente Virtual de WhatsApp con Gemini AI
 
-La plataforma integra un chatbot inteligente autónomo auto-hospedado para atención al cliente y ventas por WhatsApp, que utiliza el modelo **Google Gemini 1.5 Flash**.
+La plataforma integra un chatbot inteligente autónomo auto-hospedado para atención al cliente y ventas por WhatsApp, que utiliza los modelos de **Google Gemini AI** (con soporte predeterminado para **Gemini 3.6 Flash** y sistema de fallback automático a modelos alternativos).
 
 #### Arquitectura de la Integración:
-- **Pasarela WhatsApp (`/backend/whatsapp`):** Servicio Node.js que ejecuta la librería `@whiskeysockets/baileys` de forma totalmente nativa y liviana (sin necesidad de navegador Chrome/Selenium). Se ejecuta de forma aislada y auto-hospedada en la VPS bajo el servicio de systemd `controlcenter-whatsapp.service`.
-- **Integración con FastAPI y Base de Datos:** Cuando entra un mensaje a la línea de WhatsApp:
+- **Pasarela WhatsApp (`/backend/whatsapp`):** Servicio Node.js que ejecuta la librería `@whiskeysockets/baileys` de forma totalmente nativa y liviana (sin necesidad de navegador Chrome/Selenium). Se ejecuta de forma aislada y auto-hospedada en la VPS bajo el servicio de systemd `controlcenter-whatsapp.service`. Cuenta además con un servidor interno de control HTTP en el puerto `8091`.
+- **Integración con FastAPI y Base de Datos:** Cuando entra o sale un mensaje en la línea de WhatsApp:
   1. El gateway Node.js envía la consulta al endpoint interno `POST /api/whatsapp/webhook` en FastAPI.
   2. El backend en Python consulta en tiempo real la base de datos de PostgreSQL para armar el catálogo de productos disponibles y stock actualizado.
   3. Si la consulta incluye un número de pedido (9-12 dígitos), busca la orden en `orders_cache` e inyecta el estado de pago y envío en el contexto.
   4. Mantiene memoria del hilo de conversación leyendo las últimas interacciones almacenadas en la tabla `whatsapp_chat_history`.
-  5. Envía la consulta enriquecida a la API de **Gemini 1.5 Flash** (Google AI Studio).
+  5. Envía la consulta enriquecida a la API de **Gemini AI** (Google AI Studio).
   6. Devuelve la respuesta generada a la pasarela Node.js, la cual emite el mensaje de texto al cliente en WhatsApp.
 
 #### Servicio Systemd (`/etc/systemd/system/controlcenter-whatsapp.service`):
@@ -302,10 +302,30 @@ RestartSec=5
 WantedBy=multi-user.target
 ```
 
-#### Vinculación por Código QR:
-- En el panel de control (**Configuración > Asistente WhatsApp (IA)**), el sistema sondea el estado del bot.
-- Si el cliente no está autenticado, la pantalla mostrará dinámicamente un **código QR**.
-- Escanear el código QR desde WhatsApp (*Dispositivos vinculados*) enlaza automáticamente la sesión y actualiza el estado a `● CONECTADO` sin requerir reinicios manuales.
+#### Vinculación y Regeneración de Código QR:
+- **Vinculación por Código QR:** En el panel de control (**Configuración > Asistente WhatsApp (IA)**), el sistema sondea el estado del bot. Si no está autenticado, la pantalla muestra un código QR dinámico. Al escanearlo desde WhatsApp (*Dispositivos vinculados*), se conecta automáticamente actualizando el estado a `● CONECTADO`.
+- **Desvinculación y Regeneración de QR:** En la tarjeta *Estado del Servicio*, el botón **🔴 Desvincular Línea y Generar Nuevo QR** permite cerrar la sesión activa de Baileys, eliminar la carpeta de credenciales `auth_state` y forzar de inmediato la emisión de un nuevo Código QR para cambiar de número de teléfono.
+
+#### 👥 Sistema de Pausa Inteligente y Atención Humana (Human Takeover):
+
+Para evitar que la Inteligencia Artificial interfiera cuando un vendedor o representante humano toma el control de una conversación, el sistema integra tres mecanismos complementarios:
+
+1. **Auto-Pausa por Intervención de Vendedor (Opción 1):**
+   - Cuando un operador envía un mensaje directo a un cliente desde el celular o WhatsApp Web vinculado (`fromMe: true`), la pasarela de Node.js notifica automáticamente al backend.
+   - El backend registra la intervención en la tabla `whatsapp_paused_chats` y **pausa automáticamente las respuestas de IA para ese número de cliente durante 24 horas**.
+
+2. **Detección e Instrucción de Transferencia por IA (Opción 2):**
+   - El System Prompt incluye la regla `REGLA DE ATENCIÓN HUMANA`.
+   - Si el cliente solicita explícitamente hablar con una persona real o la consulta requiere atención personalizada, Gemini responderá amablemente confirmando la derivación e incluirá la etiqueta `[HUMAN_TAKEOVER]`.
+   - Al detectar dicha etiqueta, el backend pausa la IA para ese cliente por 24 horas y limpia la etiqueta antes de enviar el mensaje al cliente.
+
+3. **Comandos Rápidos por Chat (Opción 3):**
+   - **Pausar IA:** Escribir **`#pausa`**, **`#pausar`** o **`#humano`** en cualquier chat desactiva inmediatamente la IA para ese cliente y confirma con un mensaje de atención humana activada.
+   - **Reactivar IA:** Escribir **`#bot`**, **`#reactivar`** o **`#reanudar`** vuelve a activar las respuestas automáticas al instante.
+
+4. **Gestión desde el Panel de Administración:**
+   - En la pantalla de Configuración de WhatsApp se incluye la tarjeta **👤 Chats en Atención Humana (IA Pausada)**.
+   - Muestra la lista en tiempo real de clientes con IA pausada, el motivo (`👤 Respuesta de Vendedor`, `🤖 Solicitud de Cliente` o `⚙️ Comando de Chat`), la fecha de caducidad y un botón de un clic **`🟢 Reanudar IA`** para devolver la atención al bot en cualquier momento.
 
 ---
 
