@@ -164,6 +164,36 @@ export default function Settings() {
     .finally(() => setInquiriesLoading(false))
   }
 
+  const [pausedChats, setPausedChats] = useState([])
+  const [unpausingSender, setUnpausingSender] = useState(null)
+
+  const fetchPausedChats = () => {
+    fetch('/api/whatsapp/paused-chats')
+      .then(r => r.ok ? r.json() : [])
+      .then(setPausedChats)
+      .catch(err => console.error(err))
+  }
+
+  const handleUnpauseChat = async (sender) => {
+    setUnpausingSender(sender)
+    try {
+      const res = await fetch('/api/whatsapp/unpause-chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sender })
+      })
+      if (res.ok) {
+        fetchPausedChats()
+      } else {
+        alert("Error al reanudar la IA.")
+      }
+    } catch(err) {
+      alert("Error: " + err.message)
+    } finally {
+      setUnpausingSender(null)
+    }
+  }
+
   const fetchWaConfig = () => {
     fetch('/api/whatsapp/config')
       .then(r => {
@@ -174,6 +204,7 @@ export default function Settings() {
       .catch(err => console.error(err))
     fetchInquiries()
     fetchTokenUsage()
+    fetchPausedChats()
   }
 
   const handleSaveWaConfig = async (e) => {
@@ -230,6 +261,7 @@ export default function Settings() {
           .then(r => r.json())
           .then(setWaConfig)
           .catch(err => console.error("Error polling WhatsApp config:", err))
+        fetchPausedChats()
       }, 4000)
       return () => clearInterval(interval)
     }
@@ -2054,6 +2086,79 @@ export default function Settings() {
                   >
                     {disconnectingWa ? "Desvinculando..." : "🔴 Desvincular Línea y Generar Nuevo QR"}
                   </button>
+                </div>
+              )}
+            </div>
+
+            {/* Paused Chats / Human Takeover Card */}
+            <div className="card" style={{width: '100%', marginTop: 10}}>
+              <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15, flexWrap: 'wrap', gap: 10}}>
+                <div>
+                  <h3 style={{margin: 0}}>👤 Chats en Atención Humana (IA Pausada)</h3>
+                  <p style={{fontSize: '0.85rem', color: 'var(--text-secondary)', margin: '4px 0 0 0'}}>
+                    Clientes en los que la IA se ha pausado temporalmente (por respuesta directa de un vendedor o por solicitud del cliente).
+                  </p>
+                </div>
+                <button onClick={fetchPausedChats} type="button" className="btn btn-secondary" style={{fontSize: '0.8rem', padding: '6px 12px'}}>
+                  🔄 Actualizar Lista
+                </button>
+              </div>
+
+              {pausedChats.length > 0 ? (
+                <div style={{overflowX: 'auto'}}>
+                  <table style={{width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem'}}>
+                    <thead>
+                      <tr style={{borderBottom: '1px solid var(--border-color)', textAlign: 'left'}}>
+                        <th style={{padding: '8px'}}>Número de Cliente</th>
+                        <th style={{padding: '8px'}}>Motivo de Pausa</th>
+                        <th style={{padding: '8px'}}>Pausado Hasta</th>
+                        <th style={{padding: '8px', textAlign: 'right'}}>Acción</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {pausedChats.map((c, i) => (
+                        <tr key={i} style={{borderBottom: '1px solid var(--border-color)'}}>
+                          <td style={{padding: '8px', fontFamily: 'monospace', fontWeight: 600}}>+{c.sender}</td>
+                          <td style={{padding: '8px'}}>
+                            <span style={{
+                              padding: '2px 8px',
+                              borderRadius: 10,
+                              fontSize: '0.75rem',
+                              fontWeight: 600,
+                              backgroundColor: c.reason === 'intervencion_operador' ? 'rgba(59, 130, 246, 0.15)' : 'rgba(245, 158, 11, 0.15)',
+                              color: c.reason === 'intervencion_operador' ? 'var(--accent-blue)' : 'var(--accent-amber)'
+                            }}>
+                              {c.reason === 'intervencion_operador' ? '👤 Respuesta de Vendedor' : '🤖 Solicitud de Cliente'}
+                            </span>
+                          </td>
+                          <td style={{padding: '8px'}}>{new Date(c.paused_until).toLocaleString()}</td>
+                          <td style={{padding: '8px', textAlign: 'right'}}>
+                            <button
+                              type="button"
+                              onClick={() => handleUnpauseChat(c.sender)}
+                              disabled={unpausingSender === c.sender}
+                              className="btn"
+                              style={{
+                                padding: '4px 10px',
+                                fontSize: '0.75rem',
+                                backgroundColor: 'rgba(16, 185, 129, 0.15)',
+                                color: 'var(--accent-emerald)',
+                                border: '1px solid var(--accent-emerald)',
+                                borderRadius: 4,
+                                cursor: 'pointer'
+                              }}
+                            >
+                              {unpausingSender === c.sender ? "Reanudando..." : "🟢 Reanudar IA"}
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div style={{padding: '15px 0', color: 'var(--text-secondary)', fontSize: '0.85rem', fontStyle: 'italic'}}>
+                  No hay chats pausados en este momento. La IA está respondiendo a todas las conversaciones activas.
                 </div>
               )}
             </div>

@@ -82,8 +82,16 @@ async function startBot() {
     sock.ev.on('messages.upsert', async (m) => {
         if (m.type !== 'notify') return;
         const msg = m.messages[0];
-        if (!msg.message) return;
-        if (msg.key.fromMe) return; // Ignore own messages
+        if (msg.key.fromMe) {
+            const recipient = msg.key.remoteJid;
+            if (recipient && !recipient.endsWith('@g.us')) {
+                const cleanRecipient = recipient.split('@')[0];
+                console.log(`[Human Operator Message] Operator wrote to ${cleanRecipient}. Notifying backend to pause AI...`);
+                axios.post(`${BACKEND_URL}/human-activity`, { sender: cleanRecipient })
+                     .catch(err => console.error('Error posting human activity to backend:', err.message));
+            }
+            return;
+        }
         
         const sender = msg.key.remoteJid;
         // Ignore group messages (group JIDs end in @g.us)

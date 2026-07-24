@@ -25,6 +25,12 @@ class WebhookReq(BaseModel):
     sender: str
     text: str
 
+class HumanActivityReq(BaseModel):
+    sender: str
+
+class UnpauseChatReq(BaseModel):
+    sender: str
+
 def verify_internal_only(request: Request):
     # Allow local connections only
     client_host = request.client.host
@@ -135,6 +141,15 @@ def get_inquiries_summary(_=Depends(verify_session)):
 def get_inquiries_list(limit: int = 50, _=Depends(verify_session)):
     return database.get_whatsapp_inquiries_list(limit)
 
+@router.get("/paused-chats")
+def get_paused_chats(_=Depends(verify_session)):
+    return database.get_whatsapp_paused_chats()
+
+@router.post("/unpause-chat")
+def unpause_chat(req: UnpauseChatReq, _=Depends(verify_session), _2=Depends(require_permission("settings"))):
+    database.unpause_whatsapp_ai(req.sender)
+    return {"success": True}
+
 # Internal service endpoints (Only from localhost)
 @router.post("/status-update")
 def status_update(req: StatusUpdateReq, _=Depends(verify_internal_only)):
@@ -143,10 +158,21 @@ def status_update(req: StatusUpdateReq, _=Depends(verify_internal_only)):
     database.set_setting("whatsapp_qr", req.qr or "")
     return {"success": True}
 
+@router.post("/human-activity")
+def human_activity(req: HumanActivityReq, _=Depends(verify_internal_only)):
+    database.pause_whatsapp_ai(req.sender, duration_hours=24, reason="intervencion_operador")
+    print(f"[WhatsApp Human Takeover] Operator wrote to {req.sender}. AI paused for 24h.")
+    return {"success": True}
+
 @router.post("/webhook")
 def whatsapp_webhook(req: WebhookReq, _=Depends(verify_internal_only)):
     enabled = database.get_setting("whatsapp_enabled", "0") == "1"
     if not enabled:
+        return {"reply": None}
+
+    # Check if AI is paused for this sender due to human takeover
+    if database.is_whatsapp_ai_paused(req.sender):
+        print(f"[WhatsApp AI Paused] Skipping AI response for sender {req.sender} (Human operator active)")
         return {"reply": None}
 
     gemini_key = database.get_setting("gemini_api_key", "").strip()
@@ -203,11 +229,16 @@ def whatsapp_webhook(req: WebhookReq, _=Depends(verify_internal_only)):
         "[INQUIRY: Nombre del Producto | IN_STOCK: true/false]\n"
         "Usa true si el producto existe en el catálogo disponible y tiene stock > 0, o false si está agotado o no figura en el catálogo."
     )
+    human_transfer_instructions = (
+        "\n\nREGLA IMPORTANTE DE ATENCIÓN HUMANA:\n"
+        "Si el cliente solicita explícitamente hablar con una persona real, un asesor humano, o la consulta requiere atención personalizada que no puedes brindar con la información disponible, responde amablemente indicando que un representante humano tomará el caso a la brevedad, e incluye al final de tu respuesta la etiqueta exacta [HUMAN_TAKEOVER]."
+    )
     full_system_prompt = (
         f"{system_instructions}\n\n"
         f"STOCK Y CATÁLOGO DISPONIBLE:\n{catalog_context}\n"
         f"{order_context}"
         f"{inquiry_instructions}"
+        f"{human_transfer_instructions}"
     )
 
     # 5. Format Chat Contents for Gemini (ensuring alternating user/model turns and no empty texts)
@@ -241,6 +272,11 @@ def whatsapp_webhook(req: WebhookReq, _=Depends(verify_internal_only)):
                 res_data = res.json()
                 reply_text = res_data['candidates'][0]['content']['parts'][0]['text']
                 
+                # Check for human takeover request from AI
+                if re.search(r'\[HUMAN_TAKEOVER\]', reply_text, re.IGNORECASE):
+                    database.pause_whatsapp_ai(req.sender, duration_hours=24, reason="solicitud_cliente")
+                    print(f"[WhatsApp Human Takeover] AI requested transfer for sender {req.sender}. AI paused for 24h.")
+                
                 # Parse and extract product inquiries
                 inquiries = re.findall(r'\[INQUIRY:\s*(.*?)\s*\|\s*IN_STOCK:\s*(true|false)\]', reply_text, re.IGNORECASE)
                 for prod_name, is_stock in inquiries:
@@ -249,7 +285,8 @@ def whatsapp_webhook(req: WebhookReq, _=Depends(verify_internal_only)):
                         database.add_whatsapp_inquiry(req.sender, prod_name.strip(), in_stock_bool)
 
                 # Clean tag lines before sending reply to user
-                clean_reply_text = re.sub(r'\[INQUIRY:\s*.*?\s*\|\s*IN_STOCK:\s*(?:true|false)\]', '', reply_text, flags=re.IGNORECASE).strip()
+                clean_reply_text = re.sub(r'\[INQUIRY:\s*.*?\s*\|\s*IN_STOCK:\s*(?:true|false)\]', '', reply_text, flags=re.IGNORECASE)
+                clean_reply_text = re.sub(r'\[HUMAN_TAKEOVER\]', '', clean_reply_text, flags=re.IGNORECASE).strip()
 
                 # Extract token usage metadata
                 usage = res_data.get('usageMetadata', {})

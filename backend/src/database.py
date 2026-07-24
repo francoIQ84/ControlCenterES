@@ -229,6 +229,16 @@ def init_db():
                 )
             ''')
 
+            # WhatsApp paused chats table (Human Takeover)
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS whatsapp_paused_chats (
+                    sender VARCHAR(64) PRIMARY KEY,
+                    paused_until TIMESTAMP NOT NULL,
+                    reason VARCHAR(255) DEFAULT 'human_takeover',
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+
             # Blog posts table
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS blog_posts (
@@ -1411,4 +1421,63 @@ def delete_blog_post(post_id: int):
         with conn.cursor() as cursor:
             cursor.execute("DELETE FROM blog_posts WHERE id = %s", (post_id,))
             return True
+
+# --- WhatsApp Human Takeover & Paused Chats ---
+
+def pause_whatsapp_ai(sender: str, duration_hours: int = 24, reason: str = 'human_takeover'):
+    """Pauses WhatsApp AI responses for a specific sender phone for N hours."""
+    clean_sender = (sender or "").strip()
+    if not clean_sender:
+        return
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute("""
+                INSERT INTO whatsapp_paused_chats (sender, paused_until, reason, created_at)
+                VALUES (%s, CURRENT_TIMESTAMP + (%s || ' hours')::interval, %s, CURRENT_TIMESTAMP)
+                ON CONFLICT (sender) DO UPDATE 
+                SET paused_until = CURRENT_TIMESTAMP + (%s || ' hours')::interval, reason = EXCLUDED.reason, created_at = CURRENT_TIMESTAMP
+            """, (clean_sender, str(int(duration_hours)), reason, str(int(duration_hours))))
+
+def is_whatsapp_ai_paused(sender: str) -> bool:
+    """Checks if WhatsApp AI is currently paused for a sender."""
+    clean_sender = (sender or "").strip()
+    if not clean_sender:
+        return False
+    try:
+        with get_connection() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute("""
+                    SELECT 1 FROM whatsapp_paused_chats 
+                    WHERE sender = %s AND paused_until > CURRENT_TIMESTAMP
+                """, (clean_sender,))
+                return cursor.fetchone() is not None
+    except Exception as e:
+        print(f"[is_whatsapp_ai_paused error] {e}")
+        return False
+
+def unpause_whatsapp_ai(sender: str):
+    """Manually unpauses WhatsApp AI for a sender."""
+    clean_sender = (sender or "").strip()
+    if not clean_sender:
+        return
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute("DELETE FROM whatsapp_paused_chats WHERE sender = %s", (clean_sender,))
+
+def get_whatsapp_paused_chats():
+    """Fetches list of all active paused chats."""
+    try:
+        with get_connection() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute("""
+                    SELECT sender, paused_until, reason, created_at 
+                    FROM whatsapp_paused_chats 
+                    WHERE paused_until > CURRENT_TIMESTAMP 
+                    ORDER BY created_at DESC
+                """)
+                return cursor.fetchall()
+    except Exception as e:
+        print(f"[get_whatsapp_paused_chats error] {e}")
+        return []
+
 
