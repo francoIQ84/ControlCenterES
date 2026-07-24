@@ -86,8 +86,17 @@ async function startBot() {
             const recipient = msg.key.remoteJid;
             if (recipient && !recipient.endsWith('@g.us')) {
                 const cleanRecipient = recipient.split('@')[0];
-                console.log(`[Human Operator Message] Operator wrote to ${cleanRecipient}. Notifying backend to pause AI...`);
-                axios.post(`${BACKEND_URL}/human-activity`, { sender: cleanRecipient })
+                const text = (msg.message?.conversation || 
+                              msg.message?.extendedTextMessage?.text || 
+                              '').toLowerCase().trim();
+                
+                let commandAction = 'pause';
+                if (text.includes('#bot') || text.includes('#reactivar') || text.includes('#reanudar')) {
+                    commandAction = 'unpause';
+                }
+                
+                console.log(`[Human Operator Message] Operator wrote to ${cleanRecipient} (action: ${commandAction}). Notifying backend...`);
+                axios.post(`${BACKEND_URL}/human-activity`, { sender: cleanRecipient, action: commandAction })
                      .catch(err => console.error('Error posting human activity to backend:', err.message));
             }
             return;

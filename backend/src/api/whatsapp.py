@@ -27,6 +27,7 @@ class WebhookReq(BaseModel):
 
 class HumanActivityReq(BaseModel):
     sender: str
+    action: Optional[str] = "pause"
 
 class UnpauseChatReq(BaseModel):
     sender: str
@@ -83,7 +84,6 @@ def disconnect_whatsapp(_=Depends(verify_session), _2=Depends(require_permission
             pass
 
     return {"success": True}
-
 
 @router.post("/test-key")
 def test_gemini_key(req: TestKeyReq, _=Depends(verify_session)):
@@ -160,8 +160,12 @@ def status_update(req: StatusUpdateReq, _=Depends(verify_internal_only)):
 
 @router.post("/human-activity")
 def human_activity(req: HumanActivityReq, _=Depends(verify_internal_only)):
-    database.pause_whatsapp_ai(req.sender, duration_hours=24, reason="intervencion_operador")
-    print(f"[WhatsApp Human Takeover] Operator wrote to {req.sender}. AI paused for 24h.")
+    if req.action == "unpause":
+        database.unpause_whatsapp_ai(req.sender)
+        print(f"[WhatsApp Human Takeover] Operator unpaused AI for {req.sender} via command.")
+    else:
+        database.pause_whatsapp_ai(req.sender, duration_hours=24, reason="intervencion_operador")
+        print(f"[WhatsApp Human Takeover] Operator wrote to {req.sender}. AI paused for 24h.")
     return {"success": True}
 
 @router.post("/webhook")
@@ -169,6 +173,21 @@ def whatsapp_webhook(req: WebhookReq, _=Depends(verify_internal_only)):
     enabled = database.get_setting("whatsapp_enabled", "0") == "1"
     if not enabled:
         return {"reply": None}
+
+    user_text = (req.text or "").strip()
+    if not user_text:
+        return {"reply": None}
+
+    user_text_lower = user_text.lower()
+
+    # Quick chat commands (#pausa / #pausar / #humano / #bot / #reactivar / #reanudar)
+    if any(cmd in user_text_lower for cmd in ["#pausa", "#pausar", "#humano"]):
+        database.pause_whatsapp_ai(req.sender, duration_hours=24, reason="comando_chat")
+        return {"reply": "⚙️ *Atención Humana Activada:* El asistente virtual ha sido pausado para esta conversación. Un representante responderá a la brevedad."}
+
+    if any(cmd in user_text_lower for cmd in ["#bot", "#reactivar", "#reanudar"]):
+        database.unpause_whatsapp_ai(req.sender)
+        return {"reply": "🤖 *Asistente Virtual Reactivado:* La IA vuelve a estar activa para ayudarte. ¿En qué te puedo colaborar?"}
 
     # Check if AI is paused for this sender due to human takeover
     if database.is_whatsapp_ai_paused(req.sender):
