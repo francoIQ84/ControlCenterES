@@ -59,8 +59,36 @@ def get_storefront_config():
         "hero_image": cfg.get("hero_image", ""),
         "contact_phone": contact_phone,
         "address": cfg.get("address", ""),
-        "footer_text": cfg.get("footer_text", "© 2026 ControlCenterES. Todos los derechos reservados.")
+        "footer_text": cfg.get("footer_text", "© 2026 ControlCenterES. Todos los derechos reservados."),
+        "about_us_enabled": database.get_setting("about_us_enabled", "1") == "1",
+        "blog_enabled": database.get_setting("blog_enabled", "1") == "1"
     }
+
+@router.get("/about")
+def get_storefront_about():
+    return {
+        "enabled": database.get_setting("about_us_enabled", "1") == "1",
+        "title": database.get_setting("about_us_title", "Sobre Nosotros"),
+        "content": database.get_setting("about_us_content", "Somos una empresa especializada en insumos para cultivos tradicionales e hidropónicos en Rosario."),
+        "images": database.get_setting("about_us_images", "")
+    }
+
+@router.get("/blog")
+def get_storefront_blog():
+    if database.get_setting("blog_enabled", "1") != "1":
+        return []
+    return database.get_all_blog_posts(is_published_only=True)
+
+@router.get("/blog/{slug}")
+def get_storefront_blog_post(slug: str):
+    if database.get_setting("blog_enabled", "1") != "1":
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail="El blog se encuentra desactivado temporariamente")
+    post = database.get_blog_post_by_slug(slug)
+    if not post or post.get("is_published") != 1:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail="Artículo no encontrado")
+    return post
 
 @router.post("/products/{product_id}/visit")
 def record_product_visit(product_id: str, request: Request, domain: str = None, ip: str = None):

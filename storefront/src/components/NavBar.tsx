@@ -11,6 +11,8 @@ export default function NavBar() {
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [storeName, setStoreName] = useState("Tienda Oficial");
   const [logoUrl, setLogoUrl] = useState("");
+  const [aboutUsEnabled, setAboutUsEnabled] = useState(true);
+  const [blogEnabled, setBlogEnabled] = useState(true);
 
   const itemCount = items.reduce((acc, item) => acc + item.qty, 0);
 
@@ -23,6 +25,8 @@ export default function NavBar() {
       .then(data => {
         if (data.store_name) setStoreName(data.store_name);
         if (data.logo_url) setLogoUrl(data.logo_url);
+        if (data.about_us_enabled !== undefined) setAboutUsEnabled(data.about_us_enabled);
+        if (data.blog_enabled !== undefined) setBlogEnabled(data.blog_enabled);
       })
       .catch(err => console.error(err));
   }, []);
@@ -39,7 +43,39 @@ export default function NavBar() {
                 <span className="text-xl font-bold text-gray-900 tracking-tight">{storeName}</span>
               )}
             </Link>
-            <div className="flex items-center">
+
+            {/* Navigation links */}
+            <div className="hidden md:flex items-center gap-6 text-sm font-medium text-gray-600">
+              <Link href="/" className="hover:text-blue-600 transition-colors">
+                Productos
+              </Link>
+              {aboutUsEnabled && (
+                <Link href="/quienes-somos" className="hover:text-blue-600 transition-colors">
+                  Quiénes Somos
+                </Link>
+              )}
+              {blogEnabled && (
+                <Link href="/blog" className="hover:text-blue-600 transition-colors">
+                  Blog Informativo
+                </Link>
+              )}
+            </div>
+
+            <div className="flex items-center gap-4">
+              {/* Mobile links */}
+              <div className="flex md:hidden items-center gap-3 text-xs font-medium text-gray-600">
+                {aboutUsEnabled && (
+                  <Link href="/quienes-somos" className="hover:text-blue-600">
+                    Nosotros
+                  </Link>
+                )}
+                {blogEnabled && (
+                  <Link href="/blog" className="hover:text-blue-600">
+                    Blog
+                  </Link>
+                )}
+              </div>
+
               <button 
                 onClick={() => setIsCartOpen(true)}
                 className="relative p-2 text-gray-600 hover:text-blue-600 transition-colors"

@@ -217,6 +217,24 @@ def init_db():
                 )
             ''')
 
+            # Blog posts table
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS blog_posts (
+                    id SERIAL PRIMARY KEY,
+                    title VARCHAR(255) NOT NULL,
+                    slug VARCHAR(255) NOT NULL UNIQUE,
+                    category VARCHAR(100) DEFAULT 'General',
+                    summary TEXT,
+                    content TEXT NOT NULL,
+                    cover_image TEXT,
+                    published_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    is_published INT DEFAULT 1,
+                    author VARCHAR(100) DEFAULT 'Equipo Hidroponia Rosario',
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+
             cursor.execute('ALTER TABLE fixed_expenses ADD COLUMN IF NOT EXISTS month INT;')
             cursor.execute('ALTER TABLE fixed_expenses ADD COLUMN IF NOT EXISTS year INT;')
             cursor.execute('ALTER TABLE login_history ADD COLUMN IF NOT EXISTS username VARCHAR(100);')
@@ -1329,3 +1347,56 @@ def link_order_inventory(order_id, items_list, cost_amount):
                 SET items_json = %s, cost_amount = %s, inventory_linked = 1
                 WHERE order_id = %s
             """, (json.dumps(items_list), cost_amount, order_id))
+
+# --- Blog Operations ---
+
+def get_all_blog_posts(is_published_only=False):
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            query = "SELECT * FROM blog_posts"
+            if is_published_only:
+                query += " WHERE is_published = 1"
+            query += " ORDER BY published_at DESC"
+            cursor.execute(query)
+            return cursor.fetchall()
+
+def get_blog_post_by_id(post_id: int):
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute("SELECT * FROM blog_posts WHERE id = %s", (post_id,))
+            return cursor.fetchone()
+
+def get_blog_post_by_slug(slug: str):
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute("SELECT * FROM blog_posts WHERE slug = %s", (slug,))
+            return cursor.fetchone()
+
+def create_blog_post(title: str, slug: str, category: str, summary: str, content: str, cover_image: str, published_at: str, is_published: int, author: str):
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute("""
+                INSERT INTO blog_posts (title, slug, category, summary, content, cover_image, published_at, is_published, author)
+                VALUES (%s, %s, %s, %s, %s, %s, COALESCE(%s::timestamp, CURRENT_TIMESTAMP), %s, %s)
+                RETURNING *
+            """, (title, slug, category or 'General', summary or '', content, cover_image or '', published_at or None, is_published, author or 'Equipo Hidroponia Rosario'))
+            return cursor.fetchone()
+
+def update_blog_post(post_id: int, title: str, slug: str, category: str, summary: str, content: str, cover_image: str, published_at: str, is_published: int, author: str):
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute("""
+                UPDATE blog_posts 
+                SET title = %s, slug = %s, category = %s, summary = %s, content = %s, cover_image = %s,
+                    published_at = COALESCE(%s::timestamp, published_at), is_published = %s, author = %s, updated_at = CURRENT_TIMESTAMP
+                WHERE id = %s
+                RETURNING *
+            """, (title, slug, category or 'General', summary or '', content, cover_image or '', published_at or None, is_published, author or 'Equipo Hidroponia Rosario', post_id))
+            return cursor.fetchone()
+
+def delete_blog_post(post_id: int):
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute("DELETE FROM blog_posts WHERE id = %s", (post_id,))
+            return True
+

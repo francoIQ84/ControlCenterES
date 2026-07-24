@@ -10,6 +10,7 @@ import Expenses from './pages/Expenses'
 import MediaManager from './pages/MediaManager'
 import Login from './pages/Login'
 import Billing from './pages/Billing'
+import BlogCMS from './pages/BlogCMS'
 
 // Global fetch interceptor to append authorization token
 const originalFetch = window.fetch
@@ -112,6 +113,7 @@ function App() {
             <Route path="billing" element={<PermissionRoute permission="billing"><Billing /></PermissionRoute>} />
             <Route path="customers" element={<PermissionRoute permission="customers"><Customers /></PermissionRoute>} />
             <Route path="settings" element={<PermissionRoute permission="settings"><Settings /></PermissionRoute>} />
+            <Route path="cms" element={<PermissionRoute permission="settings"><BlogCMS /></PermissionRoute>} />
             <Route path="media" element={<PermissionRoute permission="media"><MediaManager /></PermissionRoute>} />
             <Route path="expenses" element={<PermissionRoute permission="expenses"><Expenses /></PermissionRoute>} />
             <Route path="*" element={<Navigate to="/" replace />} />

@@ -150,6 +150,32 @@ def save_web_config(req: WebConfigModel, _=Depends(require_permission("settings"
     database.set_setting("web_config", json.dumps(req.dict()))
     return {"success": True}
 
+class CmsConfigModel(BaseModel):
+    about_us_enabled: bool = True
+    blog_enabled: bool = True
+    about_us_title: str = "Sobre Nosotros"
+    about_us_content: str = ""
+    about_us_images: Optional[str] = ""
+
+@router.get("/cms-config")
+def get_cms_config(_=Depends(require_permission("settings"))):
+    return {
+        "about_us_enabled": database.get_setting("about_us_enabled", "1") == "1",
+        "blog_enabled": database.get_setting("blog_enabled", "1") == "1",
+        "about_us_title": database.get_setting("about_us_title", "Sobre Nosotros"),
+        "about_us_content": database.get_setting("about_us_content", "Somos una empresa especializada en insumos para cultivos tradicionales e hidropónicos en Rosario."),
+        "about_us_images": database.get_setting("about_us_images", "")
+    }
+
+@router.post("/cms-config")
+def save_cms_config(req: CmsConfigModel, _=Depends(require_permission("settings"))):
+    database.set_setting("about_us_enabled", "1" if req.about_us_enabled else "0")
+    database.set_setting("blog_enabled", "1" if req.blog_enabled else "0")
+    database.set_setting("about_us_title", req.about_us_title.strip())
+    database.set_setting("about_us_content", req.about_us_content.strip())
+    database.set_setting("about_us_images", req.about_us_images.strip() if req.about_us_images else "")
+    return {"success": True}
+
 def run_background_sync(limit: int, date_from: Optional[str]):
     try:
         # Step 1: Products Sync

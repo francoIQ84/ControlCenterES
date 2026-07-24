@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { Outlet, NavLink } from 'react-router-dom'
-import { LayoutDashboard, Package, Receipt, Users, Settings, Sun, Moon, RefreshCw, Zap, Image, LogOut, Menu, FileText, Wallet } from 'lucide-react'
+import { LayoutDashboard, Package, Receipt, Users, Settings, Sun, Moon, RefreshCw, Zap, Image, LogOut, Menu, FileText, Wallet, BookOpen } from 'lucide-react'
 
 export default function Layout() {
   const [lightMode, setLightMode] = useState(true)
@@ -246,6 +246,12 @@ export default function Layout() {
             <NavLink to="/media" className={({isActive}) => `nav-link ${isActive ? 'active' : ''}`}>
               <Image size={20} style={{ minWidth: 20 }} />
               <span className="nav-text">Imágenes</span>
+            </NavLink>
+          )}
+          {hasPermission('settings') && (
+            <NavLink to="/cms" className={({isActive}) => `nav-link ${isActive ? 'active' : ''}`}>
+              <BookOpen size={20} style={{ minWidth: 20 }} />
+              <span className="nav-text">Blog & Web</span>
             </NavLink>
           )}
           {hasPermission('settings') && (
