@@ -3,14 +3,16 @@ const pino = require('pino');
 const axios = require('axios');
 const http = require('http');
 const fs = require('fs');
+const path = require('path');
 
 const BACKEND_URL = 'http://localhost:8090/api/whatsapp';
+const AUTH_DIR = path.resolve(__dirname, 'auth_state');
 
 let currentSock = null;
 let isDisconnecting = false;
 
 async function startBot() {
-    const { state, saveCreds } = await useMultiFileAuthState('auth_state');
+    const { state, saveCreds } = await useMultiFileAuthState(AUTH_DIR);
     
     // Fetch latest WhatsApp version to avoid 405 WebSocket errors
     let version;
@@ -128,9 +130,9 @@ const server = http.createServer(async (req, res) => {
                 }
                 currentSock = null;
             }
-            if (fs.existsSync('auth_state')) {
-                fs.rmSync('auth_state', { recursive: true, force: true });
-                console.log('Deleted auth_state credentials.');
+            if (fs.existsSync(AUTH_DIR)) {
+                fs.rmSync(AUTH_DIR, { recursive: true, force: true });
+                console.log(`Deleted auth_state credentials at ${AUTH_DIR}`);
             }
             res.writeHead(200, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({ success: true }));
