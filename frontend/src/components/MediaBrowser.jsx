@@ -36,6 +36,23 @@ export default function MediaBrowser({ onSelectImage }) {
     fetchMedia()
   }, [currentPath])
 
+  // Helper to safely extract error message from HTTP responses (JSON or HTML)
+  const parseErrorResponse = async (res) => {
+    try {
+      const contentType = res.headers.get("content-type") || ""
+      if (contentType.includes("application/json")) {
+        const errorData = await res.json()
+        return errorData.detail || errorData.message || `Error (${res.status})`
+      }
+    } catch (e) {
+      // JSON parse failed
+    }
+    if (res.status === 413) {
+      return "El archivo es demasiado grande para el servidor (máximo 50MB)."
+    }
+    return `Error del servidor (Código ${res.status})`
+  }
+
   const handleCreateFolder = async (e) => {
     e.preventDefault()
     if (!newFolderName.trim()) return
@@ -52,8 +69,8 @@ export default function MediaBrowser({ onSelectImage }) {
         setShowFolderInput(false)
         fetchMedia()
       } else {
-        const errorData = await res.json()
-        alert("Error: " + (errorData.detail || "No se pudo crear la carpeta"))
+        const errorMsg = await parseErrorResponse(res)
+        alert("Error: " + errorMsg)
       }
     } catch(err) {
       alert("Error: " + err.message)
@@ -77,8 +94,8 @@ export default function MediaBrowser({ onSelectImage }) {
       if (res.ok) {
         fetchMedia()
       } else {
-        const errorData = await res.json()
-        alert("Error de subida: " + (errorData.detail || "Error desconocido"))
+        const errorMsg = await parseErrorResponse(res)
+        alert("Error de subida: " + errorMsg)
       }
     } catch(err) {
       alert("Error: " + err.message)
@@ -99,8 +116,8 @@ export default function MediaBrowser({ onSelectImage }) {
       if (res.ok) {
         fetchMedia()
       } else {
-        const errorData = await res.json()
-        alert("Error al borrar: " + (errorData.detail || "Error desconocido"))
+        const errorMsg = await parseErrorResponse(res)
+        alert("Error al borrar: " + errorMsg)
       }
     } catch(err) {
       alert("Error: " + err.message)
