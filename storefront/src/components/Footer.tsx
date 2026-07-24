@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Phone, MapPin } from "lucide-react";
+import { Phone, MapPin, ExternalLink } from "lucide-react";
 
 export default function Footer() {
   const [cfg, setCfg] = useState({
@@ -25,6 +25,10 @@ export default function Footer() {
   const cleanPhone = cfg.contact_phone ? cfg.contact_phone.replace(/\D/g, "") : "";
   const waUrl = cleanPhone ? `https://wa.me/${cleanPhone}` : null;
 
+  const mapsUrl = cfg.address 
+    ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(cfg.address)}` 
+    : null;
+
   return (
     <footer className="bg-white border-t border-gray-200 mt-20">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
@@ -47,10 +51,11 @@ export default function Footer() {
             <ul className="space-y-3">
               {cfg.contact_phone && (
                 <li className="flex items-center gap-2 text-sm text-gray-600">
-                  <Phone className="w-4 h-4 text-blue-600" />
+                  <Phone className="w-4 h-4 text-blue-600 flex-shrink-0" />
                   {waUrl ? (
-                    <a href={waUrl} target="_blank" rel="noopener noreferrer" className="hover:text-blue-600 hover:underline transition-colors">
-                      {cfg.contact_phone} (WhatsApp)
+                    <a href={waUrl} target="_blank" rel="noopener noreferrer" className="hover:text-blue-600 hover:underline transition-colors flex items-center gap-1.5 group">
+                      <span>{cfg.contact_phone} (WhatsApp)</span>
+                      <ExternalLink className="w-3 h-3 text-gray-400 group-hover:text-blue-600 transition-colors" />
                     </a>
                   ) : (
                     <span>{cfg.contact_phone}</span>
@@ -59,8 +64,21 @@ export default function Footer() {
               )}
               {cfg.address && (
                 <li className="flex items-start gap-2 text-sm text-gray-600">
-                  <MapPin className="w-4 h-4 text-blue-600 mt-0.5" />
-                  <span>{cfg.address}</span>
+                  <MapPin className="w-4 h-4 text-blue-600 mt-0.5 flex-shrink-0" />
+                  {mapsUrl ? (
+                    <a 
+                      href={mapsUrl} 
+                      target="_blank" 
+                      rel="noopener noreferrer" 
+                      className="hover:text-blue-600 hover:underline transition-colors flex items-center gap-1.5 group"
+                      title="Abrir ubicación en Google Maps"
+                    >
+                      <span>{cfg.address}</span>
+                      <ExternalLink className="w-3 h-3 text-gray-400 group-hover:text-blue-600 transition-colors" />
+                    </a>
+                  ) : (
+                    <span>{cfg.address}</span>
+                  )}
                 </li>
               )}
             </ul>
