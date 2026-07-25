@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Request, BackgroundTasks
 from pydantic import BaseModel
 from typing import List
 from src import database
@@ -106,3 +106,80 @@ def record_product_visit(product_id: str, request: Request, domain: str = None, 
         
     database.increment_product_web_visits(product_id, client_domain, client_ip)
     return {"status": "ok"}
+
+# --- Public Lead Magnet Endpoints ---
+
+class SubmitLeadRequest(BaseModel):
+    name: str = ""
+    email: str
+    country: str = "Argentina"
+
+@router.get("/popup")
+def get_public_lead_popup_config():
+    import json
+    cfg_str = database.get_setting("lead_popup_config")
+    if cfg_str:
+        try:
+            cfg = json.loads(cfg_str)
+            return {
+                "enabled": cfg.get("enabled", True),
+                "show_on": cfg.get("show_on", "all"),
+                "title": cfg.get("title", "¿Querés aprender hidroponía?"),
+                "description": cfg.get("description", 'Descargá gratis la guía "Cómo empezar una huerta hidropónica en casa" (PDF de 15 páginas).'),
+                "button_text": cfg.get("button_text", "Obtener guía gratis"),
+                "pdf_url": cfg.get("pdf_url", ""),
+                "delay_seconds": cfg.get("delay_seconds", 5)
+            }
+        except Exception:
+            pass
+
+    return {
+        "enabled": database.get_setting("lead_popup_enabled", "1") == "1",
+        "show_on": database.get_setting("lead_popup_show_on", "all"),
+        "title": database.get_setting("lead_popup_title", "¿Querés aprender hidroponía?"),
+        "description": database.get_setting("lead_popup_description", 'Descargá gratis la guía "Cómo empezar una huerta hidropónica en casa" (PDF de 15 páginas).'),
+        "button_text": database.get_setting("lead_popup_button_text", "Obtener guía gratis"),
+        "pdf_url": database.get_setting("lead_popup_pdf_url", ""),
+        "delay_seconds": int(database.get_setting("lead_popup_delay", "5"))
+    }
+
+def process_lead_email_dispatch(name: str, email: str, country: str):
+    from src.utils.email_sender import send_smtp_email
+    
+    pdf_url = database.get_setting("lead_popup_pdf_url", "")
+    subject = database.get_setting("lead_email_subject", "🌱 Tu guía gratuita: Cómo empezar una huerta hidropónica en casa")
+    template = database.get_setting(
+        "lead_email_body",
+        "<h2>¡Hola {name}! Gracias por sumarte.</h2><p>Acá tenés tu guía para empezar tu huerta hidropónica en casa:</p>"
+    )
+    
+    # Replace placeholder
+    name_display = name.strip() if name else "Amigo/a"
+    html_body = template.replace("{name}", name_display)
+    
+    ok, msg = send_smtp_email(email, subject, html_body, pdf_url=pdf_url)
+    if ok:
+        print(f"[Lead Manager] Email enviado exitosamente a {email}")
+    else:
+        print(f"[Lead Manager Warning] No se pudo enviar el mail: {msg}")
+
+@router.post("/lead")
+def submit_lead(req: SubmitLeadRequest, background_tasks: BackgroundTasks):
+    if not req.email or "@" not in req.email:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=400, detail="Dirección de email inválida")
+        
+    pdf_url = database.get_setting("lead_popup_pdf_url", "")
+    database.save_lead(
+        name=req.name,
+        email=req.email,
+        country=req.country,
+        source="popup_lead",
+        pdf_sent=pdf_url
+    )
+    
+    # Dispatch email sending in background
+    background_tasks.add_task(process_lead_email_dispatch, req.name, req.email, req.country)
+    
+    return {"success": True, "message": "Lead registrado y guía en camino por email"}
+

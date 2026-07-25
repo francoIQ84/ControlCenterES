@@ -245,7 +245,7 @@ export default function Layout() {
           {hasPermission('media') && (
             <NavLink to="/media" className={({isActive}) => `nav-link ${isActive ? 'active' : ''}`}>
               <Image size={20} style={{ minWidth: 20 }} />
-              <span className="nav-text">Imágenes</span>
+              <span className="nav-text">Archivos</span>
             </NavLink>
           )}
           {hasPermission('settings') && (

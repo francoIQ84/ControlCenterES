@@ -297,3 +297,120 @@ def arca_cuit_lookup(cuit: str, env: Optional[str] = None):
         return res
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+# --- Lead Popup & Leads Management ---
+
+class LeadPopupConfigModel(BaseModel):
+    enabled: bool = True
+    show_on: str = "all"
+    title: str = "¿Querés aprender hidroponía?"
+    description: str = 'Descargá gratis la guía "Cómo empezar una huerta hidropónica en casa" (PDF de 15 páginas).'
+    button_text: str = "Obtener guía gratis"
+    pdf_url: str = ""
+    delay_seconds: int = 5
+    email_subject: str = "🌱 Tu guía gratuita: Cómo empezar una huerta hidropónica en casa"
+    email_body: str = "<h2>¡Hola {name}! Gracias por sumarte.</h2><p>Acá tenés tu guía para empezar tu huerta hidropónica en casa:</p>"
+    smtp_host: str = "smtp.gmail.com"
+    smtp_port: int = 587
+    smtp_user: str = ""
+    smtp_password: str = ""
+    smtp_sender_name: str = "Hidroponia Rosario"
+
+class TestEmailRequest(BaseModel):
+    target_email: str
+
+@router.get("/lead-popup")
+def get_lead_popup_config(_=Depends(require_permission("settings"))):
+    import json
+    cfg_str = database.get_setting("lead_popup_config")
+    if cfg_str:
+        try:
+            return json.loads(cfg_str)
+        except Exception:
+            pass
+    return {
+        "enabled": database.get_setting("lead_popup_enabled", "1") == "1",
+        "show_on": database.get_setting("lead_popup_show_on", "all"),
+        "title": database.get_setting("lead_popup_title", "¿Querés aprender hidroponía?"),
+        "description": database.get_setting("lead_popup_description", 'Descargá gratis la guía "Cómo empezar una huerta hidropónica en casa" (PDF de 15 páginas).'),
+        "button_text": database.get_setting("lead_popup_button_text", "Obtener guía gratis"),
+        "pdf_url": database.get_setting("lead_popup_pdf_url", ""),
+        "delay_seconds": int(database.get_setting("lead_popup_delay", "5")),
+        "email_subject": database.get_setting("lead_email_subject", "🌱 Tu guía gratuita: Cómo empezar una huerta hidropónica en casa"),
+        "email_body": database.get_setting("lead_email_body", "<h2>¡Hola {name}! Gracias por sumarte.</h2><p>Acá tenés tu guía para empezar tu huerta hidropónica en casa.</p>"),
+        "smtp_host": database.get_setting("smtp_host", "smtp.gmail.com"),
+        "smtp_port": int(database.get_setting("smtp_port", "587")),
+        "smtp_user": database.get_setting("smtp_user", ""),
+        "smtp_password": database.get_setting("smtp_password", ""),
+        "smtp_sender_name": database.get_setting("smtp_sender_name", "Hidroponia Rosario")
+    }
+
+@router.post("/lead-popup")
+def save_lead_popup_config(req: LeadPopupConfigModel, _=Depends(require_permission("settings"))):
+    import json
+    database.set_setting("lead_popup_config", json.dumps(req.dict()))
+    database.set_setting("lead_popup_enabled", "1" if req.enabled else "0")
+    database.set_setting("lead_popup_show_on", req.show_on)
+    database.set_setting("lead_popup_title", req.title)
+    database.set_setting("lead_popup_description", req.description)
+    database.set_setting("lead_popup_button_text", req.button_text)
+    database.set_setting("lead_popup_pdf_url", req.pdf_url)
+    database.set_setting("lead_popup_delay", str(req.delay_seconds))
+    database.set_setting("lead_email_subject", req.email_subject)
+    database.set_setting("lead_email_body", req.email_body)
+    database.set_setting("smtp_host", req.smtp_host)
+    database.set_setting("smtp_port", str(req.smtp_port))
+    database.set_setting("smtp_user", req.smtp_user)
+    database.set_setting("smtp_password", req.smtp_password)
+    database.set_setting("smtp_sender_name", req.smtp_sender_name)
+    return {"success": True, "message": "Configuración del Pop-up y SMTP guardada correctamente"}
+
+@router.post("/test-email")
+def send_test_email(req: TestEmailRequest, _=Depends(require_permission("settings"))):
+    from src.utils.email_sender import send_smtp_email
+    subject = "Prueba de envío SMTP - ControlCenterES"
+    html_content = "<p>¡Hola! Esta es una prueba de envío automático desde tu configuración SMTP en ControlCenterES.</p>"
+    pdf_url = database.get_setting("lead_popup_pdf_url", "")
+    
+    ok, msg = send_smtp_email(req.target_email, subject, html_content, pdf_url=pdf_url)
+    if not ok:
+        raise HTTPException(status_code=400, detail=msg)
+    return {"success": True, "message": "Email de prueba enviado exitosamente"}
+
+@router.get("/leads")
+def get_leads(_=Depends(require_permission("settings"))):
+    return database.get_all_leads()
+
+@router.delete("/leads/{lead_id}")
+def delete_lead_endpoint(lead_id: int, _=Depends(require_permission("settings"))):
+    database.delete_lead(lead_id)
+    return {"success": True}
+
+@router.get("/leads/export")
+def export_leads_csv(_=Depends(require_permission("settings"))):
+    from fastapi.responses import Response
+    import csv
+    import io
+
+    leads = database.get_all_leads()
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["ID", "Nombre", "Email", "Pais", "Origen", "PDF Enviado", "Fecha Registro"])
+
+    for l in leads:
+        writer.writerow([
+            l.get("id"),
+            l.get("name", ""),
+            l.get("email", ""),
+            l.get("country", ""),
+            l.get("source", ""),
+            l.get("pdf_sent", ""),
+            str(l.get("created_at", ""))
+        ])
+
+    return Response(
+        content=output.getvalue(),
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=leads_contactos.csv"}
+    )
+

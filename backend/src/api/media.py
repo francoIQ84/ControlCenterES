@@ -50,16 +50,21 @@ def list_media(path: str = ""):
             mtime = datetime.fromtimestamp(stat.st_mtime).isoformat()
             size = stat.st_size
             
-            # Simple check if file is an image
-            is_image = entry.name.lower().endswith(('.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg'))
+            # Check allowed file types
+            lower_name = entry.name.lower()
+            is_image = lower_name.endswith(('.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg'))
+            is_pdf = lower_name.endswith('.pdf')
+            is_doc = lower_name.endswith(('.doc', '.docx', '.zip', '.txt'))
             
-            if is_image:
+            if is_image or is_pdf or is_doc:
+                file_type = "image" if is_image else ("pdf" if is_pdf else "document")
                 files.append({
                     "name": entry.name,
                     "path": rel_path,
                     "url": f"/uploads/{rel_path}",
                     "size": size,
-                    "date": mtime
+                    "date": mtime,
+                    "file_type": file_type
                 })
                 
     # Sort files by modification date (newest first)
@@ -94,11 +99,11 @@ def create_folder(payload: FolderRequest):
 
 @router.post("/upload")
 async def upload_file(path: str = "", file: UploadFile = File(...)):
-    # Validate that it is an image
-    allowed_extensions = ('.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg')
+    # Validate allowed extensions
+    allowed_extensions = ('.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg', '.pdf', '.doc', '.docx', '.zip', '.txt')
     ext = os.path.splitext(file.filename)[1].lower()
     if ext not in allowed_extensions:
-        raise HTTPException(status_code=400, detail="Solo se permiten archivos de imagen (png, jpg, jpeg, gif, webp, svg).")
+        raise HTTPException(status_code=400, detail="Tipo de archivo no permitido. Solo se permiten imágenes, PDF y documentos (png, jpg, pdf, doc, zip, etc).")
         
     target_dir = get_safe_path(path)
     # Ensure directory exists

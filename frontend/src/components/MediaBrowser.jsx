@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { Folder, File, Upload, Trash2, Copy, Plus, ChevronRight, CornerDownRight, Check } from 'lucide-react'
+import { Folder, File, Upload, Trash2, Copy, Plus, ChevronRight, CornerDownRight, Check, FileText } from 'lucide-react'
 
 export default function MediaBrowser({ onSelectImage }) {
   const [currentPath, setCurrentPath] = useState("")
@@ -197,8 +197,8 @@ export default function MediaBrowser({ onSelectImage }) {
             opacity: uploading ? 0.7 : 1
           }}>
             <Upload size={16} />
-            {uploading ? "Subiendo..." : "Subir Imagen"}
-            <input type="file" accept="image/*" onChange={handleUpload} style={{display: 'none'}} disabled={uploading} />
+            {uploading ? "Subiendo..." : "Subir Archivo / PDF"}
+            <input type="file" accept="image/*,.pdf,.doc,.docx,.zip,.txt" onChange={handleUpload} style={{display: 'none'}} disabled={uploading} />
           </label>
 
           <button 
@@ -285,12 +285,12 @@ export default function MediaBrowser({ onSelectImage }) {
 
           {/* Listado de Archivos */}
           <div>
-            <span style={{fontSize: '0.8rem', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block', marginBottom: 10}}>Imágenes</span>
+            <span style={{fontSize: '0.8rem', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block', marginBottom: 10}}>Archivos y Multimedia</span>
             
             {files.length === 0 ? (
               <div style={{textAlign: 'center', padding: 40, border: '2px dashed var(--border-color)', borderRadius: 12, color: 'var(--text-secondary)'}}>
                 <File size={32} style={{margin: '0 auto 10px', opacity: 0.5}} />
-                No hay imágenes en esta carpeta.
+                No hay archivos en esta carpeta.
               </div>
             ) : (
               <div style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 20}}>
@@ -309,7 +309,7 @@ export default function MediaBrowser({ onSelectImage }) {
                       position: 'relative'
                     }}
                   >
-                    {/* Contenedor de Imagen */}
+                    {/* Contenedor de Imagen o PDF */}
                     <div style={{
                       height: 140, 
                       display: 'flex', 
@@ -320,11 +320,23 @@ export default function MediaBrowser({ onSelectImage }) {
                       borderBottom: '1px solid var(--border-color)',
                       position: 'relative'
                     }}>
-                      <img 
-                        src={f.url} 
-                        alt={f.name} 
-                        style={{maxHeight: '100%', maxWidth: '100%', objectFit: 'contain'}} 
-                      />
+                      {f.file_type === 'pdf' || f.name.toLowerCase().endsWith('.pdf') ? (
+                        <div style={{display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, color: '#e11d48'}}>
+                          <FileText size={48} />
+                          <span style={{fontSize: '0.7rem', fontWeight: 700, backgroundColor: '#ffe4e6', color: '#be123c', padding: '2px 8px', borderRadius: 4}}>PDF DOCUMENT</span>
+                        </div>
+                      ) : f.file_type === 'document' ? (
+                        <div style={{display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, color: '#2563eb'}}>
+                          <File size={48} />
+                          <span style={{fontSize: '0.7rem', fontWeight: 700, backgroundColor: '#dbeafe', color: '#1d4ed8', padding: '2px 8px', borderRadius: 4}}>DOCUMENTO</span>
+                        </div>
+                      ) : (
+                        <img 
+                          src={f.url} 
+                          alt={f.name} 
+                          style={{maxHeight: '100%', maxWidth: '100%', objectFit: 'contain'}} 
+                        />
+                      )}
                     </div>
 
                     {/* Info */}

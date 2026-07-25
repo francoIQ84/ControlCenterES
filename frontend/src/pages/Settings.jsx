@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import MediaBrowser from '../components/MediaBrowser'
+import LeadMagnetSettings from '../components/LeadMagnetSettings'
 
 export default function Settings() {
   const [config, setConfig] = useState({ 
@@ -726,106 +727,56 @@ export default function Settings() {
       <p className="page-subtitle">Ajustes del sistema, seguridad, usuarios y personalización de la tienda web.</p>
 
       {/* Tabs Headers */}
-      <div style={{display: 'flex', gap: 15, borderBottom: '1px solid var(--border-color)', marginBottom: 25}}>
-        <button 
-          style={{
-            padding: '10px 15px',
-            background: 'none',
-            border: 'none',
-            borderBottom: activeTab === 'connection' ? '3px solid var(--accent-blue)' : 'none',
-            color: activeTab === 'connection' ? 'var(--text-primary)' : 'var(--text-secondary)',
-            fontWeight: activeTab === 'connection' ? 'bold' : 'normal',
-            cursor: 'pointer'
-          }}
-          onClick={() => setActiveTab('connection')}
-        >
-          Conexión ML / MP
-        </button>
-        <button 
-          style={{
-            padding: '10px 15px',
-            background: 'none',
-            border: 'none',
-            borderBottom: activeTab === 'users' ? '3px solid var(--accent-blue)' : 'none',
-            color: activeTab === 'users' ? 'var(--text-primary)' : 'var(--text-secondary)',
-            fontWeight: activeTab === 'users' ? 'bold' : 'normal',
-            cursor: 'pointer'
-          }}
-          onClick={() => setActiveTab('users')}
-        >
-          Gestión de Usuarios
-        </button>
-        <button 
-          style={{
-            padding: '10px 15px',
-            background: 'none',
-            border: 'none',
-            borderBottom: activeTab === 'web_config' ? '3px solid var(--accent-blue)' : 'none',
-            color: activeTab === 'web_config' ? 'var(--text-primary)' : 'var(--text-secondary)',
-            fontWeight: activeTab === 'web_config' ? 'bold' : 'normal',
-            cursor: 'pointer'
-          }}
-          onClick={() => setActiveTab('web_config')}
-        >
-          Configuración Web
-        </button>
-        <button 
-          style={{
-            padding: '10px 15px',
-            background: 'none',
-            border: 'none',
-            borderBottom: activeTab === 'security' ? '3px solid var(--accent-blue)' : 'none',
-            color: activeTab === 'security' ? 'var(--text-primary)' : 'var(--text-secondary)',
-            fontWeight: activeTab === 'security' ? 'bold' : 'normal',
-            cursor: 'pointer'
-          }}
-          onClick={() => setActiveTab('security')}
-        >
-          Seguridad & Accesos
-        </button>
-        <button 
-          style={{
-            padding: '10px 15px',
-            background: 'none',
-            border: 'none',
-            borderBottom: activeTab === 'arca' ? '3px solid var(--accent-blue)' : 'none',
-            color: activeTab === 'arca' ? 'var(--text-primary)' : 'var(--text-secondary)',
-            fontWeight: activeTab === 'arca' ? 'bold' : 'normal',
-            cursor: 'pointer'
-          }}
-          onClick={() => setActiveTab('arca')}
-        >
-          Facturación ARCA (ex AFIP)
-        </button>
-        <button 
-          style={{
-            padding: '10px 15px',
-            background: 'none',
-            border: 'none',
-            borderBottom: activeTab === 'backups' ? '3px solid var(--accent-blue)' : 'none',
-            color: activeTab === 'backups' ? 'var(--text-primary)' : 'var(--text-secondary)',
-            fontWeight: activeTab === 'backups' ? 'bold' : 'normal',
-            cursor: 'pointer'
-          }}
-          onClick={() => setActiveTab('backups')}
-        >
-          Respaldos
-        </button>
-        <button 
-          style={{
-            padding: '10px 15px',
-            background: 'none',
-            border: 'none',
-            borderBottom: activeTab === 'whatsapp' ? '3px solid var(--accent-blue)' : 'none',
-            color: activeTab === 'whatsapp' ? 'var(--text-primary)' : 'var(--text-secondary)',
-            fontWeight: activeTab === 'whatsapp' ? 'bold' : 'normal',
-            cursor: 'pointer'
-          }}
-          onClick={() => setActiveTab('whatsapp')}
-        >
-          🤖 Asistente WhatsApp (IA)
-        </button>
+      {/* Tab bar (4 per row grid) */}
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+        gap: 10,
+        marginBottom: 25
+      }}>
+        {[
+          { id: 'connection', label: 'Conexión ML / MP', icon: '🔌' },
+          { id: 'users', label: 'Gestión de Usuarios', icon: '👥' },
+          { id: 'web_config', label: 'Configuración Web', icon: '🌐' },
+          { id: 'lead_magnet', label: 'Pop-up Lead Magnet & Emails', icon: '🌱' },
+          { id: 'security', label: 'Seguridad & Accesos', icon: '🔒' },
+          { id: 'arca', label: 'Facturación ARCA (ex AFIP)', icon: '🧾' },
+          { id: 'backups', label: 'Respaldos', icon: '💾' },
+          { id: 'whatsapp', label: 'Asistente WhatsApp (IA)', icon: '🤖' }
+        ].map(t => {
+          const isActive = activeTab === t.id
+          return (
+            <button
+              key={t.id}
+              style={{
+                padding: '12px 10px',
+                borderRadius: 8,
+                border: isActive ? '2px solid var(--accent-blue)' : '1px solid var(--border-color)',
+                backgroundColor: isActive ? 'rgba(37, 99, 235, 0.08)' : 'var(--bg-card)',
+                color: isActive ? 'var(--accent-blue)' : 'var(--text-primary)',
+                fontWeight: isActive ? 'bold' : '500',
+                fontSize: '0.85rem',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 6,
+                textAlign: 'center',
+                transition: 'all 0.2s'
+              }}
+              onClick={() => setActiveTab(t.id)}
+            >
+              <span>{t.icon}</span>
+              <span>{t.label}</span>
+            </button>
+          )
+        })}
       </div>
+
+      {/* Lead Magnet Tab */}
+      {activeTab === 'lead_magnet' && (
+        <LeadMagnetSettings />
+      )}
 
       {/* Tab 1: Connection settings */}
       {activeTab === 'connection' && (

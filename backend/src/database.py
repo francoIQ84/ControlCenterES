@@ -257,6 +257,22 @@ def init_db():
                 )
             ''')
 
+            # Leads table
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS leads (
+                    id SERIAL PRIMARY KEY,
+                    name VARCHAR(255),
+                    email VARCHAR(255) UNIQUE NOT NULL,
+                    country VARCHAR(100) DEFAULT 'Argentina',
+                    source VARCHAR(100) DEFAULT 'popup_lead',
+                    pdf_sent TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+            cursor.execute('ALTER TABLE leads ADD COLUMN IF NOT EXISTS name VARCHAR(255);')
+            cursor.execute('ALTER TABLE leads ADD COLUMN IF NOT EXISTS country VARCHAR(100) DEFAULT \'Argentina\';')
+            cursor.execute('ALTER TABLE leads ADD COLUMN IF NOT EXISTS pdf_sent TEXT;')
+
             cursor.execute('ALTER TABLE fixed_expenses ADD COLUMN IF NOT EXISTS month INT;')
             cursor.execute('ALTER TABLE fixed_expenses ADD COLUMN IF NOT EXISTS year INT;')
             cursor.execute('ALTER TABLE login_history ADD COLUMN IF NOT EXISTS username VARCHAR(100);')
@@ -1479,5 +1495,52 @@ def get_whatsapp_paused_chats():
     except Exception as e:
         print(f"[get_whatsapp_paused_chats error] {e}")
         return []
+
+# --- Leads Operations ---
+
+def save_lead(name: str, email: str, country: str = "Argentina", source: str = "popup_lead", pdf_sent: str = ""):
+    """Inserts or updates a lead subscriber in the database."""
+    clean_email = (email or "").strip().lower()
+    if not clean_email:
+        return False
+    clean_name = (name or "").strip()
+    clean_country = (country or "Argentina").strip()
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute("""
+                INSERT INTO leads (name, email, country, source, pdf_sent)
+                VALUES (%s, %s, %s, %s, %s)
+                ON CONFLICT (email) DO UPDATE SET
+                    name = CASE WHEN EXCLUDED.name != '' THEN EXCLUDED.name ELSE leads.name END,
+                    country = CASE WHEN EXCLUDED.country != '' THEN EXCLUDED.country ELSE leads.country END,
+                    source = EXCLUDED.source,
+                    pdf_sent = EXCLUDED.pdf_sent,
+                    created_at = CURRENT_TIMESTAMP
+            """, (clean_name, clean_email, clean_country, source, pdf_sent))
+            return True
+
+def get_all_leads():
+    """Fetches all leads sorted by newest first."""
+    try:
+        with get_connection() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute("""
+                    SELECT id, name, email, country, source, pdf_sent, created_at
+                    FROM leads
+                    ORDER BY created_at DESC
+                """)
+                rows = cursor.fetchall()
+                return [dict(r) for r in rows]
+    except Exception as e:
+        print(f"[get_all_leads error] {e}")
+        return []
+
+def delete_lead(lead_id: int):
+    """Deletes a lead by ID."""
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute("DELETE FROM leads WHERE id = %s", (lead_id,))
+            return True
+
 
 

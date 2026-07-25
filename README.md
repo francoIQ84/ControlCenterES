@@ -385,4 +385,36 @@ Se incorporaron mejoras integrales en el módulo de ventas, cobros y facturació
   - **Soporte Consumidor Final sin DNI:** Envío automático del código de documento oficial AFIP `DocTipo = 99` y `DocNumero = 0` para emitir Factura B / C anónima de mostrador.
   - **Facturación con CUIT a Pedido:** Modal interactivo al hacer clic en "Emitir Factura AFIP" en cualquier venta de Mercado Libre o Local.
   - **Consulta en Tiempo Real al Padrón AFIP (`PersonaServiceA5`):** Al ingresar un CUIT, el sistema consulta en tiempo real los servidores de AFIP, obtiene la Razón Social y Domicilio Fiscal oficialmente registrados y los completa en el comprobante.
-  - **Monotributistas & Responsables Inscriptos:** Cumplimiento normativo para Monotributo (emisión de Factura C nominada al CUIT ingresado) y Responsables Inscriptos (Factura A / B).```
+  - **Monotributistas & Responsables Inscriptos:** Cumplimiento normativo para Monotributo (emisión de Factura C nominada al CUIT ingresado) y Responsables Inscriptos (Factura A / B).
+
+---
+
+### 11. Sistema de Captación de Leads (Lead Magnet), Gestor de Archivos y Envíos SMTP
+
+La plataforma incorpora una solución 100% genérica y administrable desde el panel de control para implementar estrategias de atracción y capitalización de contactos (**Lead Magnets**):
+
+#### 🚀 Gestor de Archivos y Multimedia (Ampliación para PDFs y Documentos):
+- **Soporte de Formatos Ampliado:** Además de imágenes (`.png`, `.jpg`, `.jpeg`, `.gif`, `.webp`, `.svg`), el gestor admite archivos PDF (`.pdf`), documentos (`.doc`, `.docx`), archivos comprimidos (`.zip`) y texto (`.txt`).
+- **Identificación Visual:** Las tarjetas del gestor muestran íconos diferenciados (`FileText`, `File`) e insignias de color de acuerdo al tipo de archivo.
+- **Acceso Público Directo:** Cada archivo subido obtiene una URL estática accesible (`/uploads/directorio/archivo.pdf`).
+
+#### 🧲 Pop-up Lead Magnet Genérico (Storefront y Blog):
+- **Modal Dinámico (`LeadMagnetPopup.tsx`):** Componente en Next.js con diseño moderno (Glassmorphism), backdrop blur y temporizador configurable.
+- **Formulario de Captura Completo:** Registra **Nombre**, **Email** y **País** (con selector desplegable adaptativo).
+- **Control de Frecuencia:** Almacena la preferencia de cierre en `localStorage` para no reabrir el modal tras haber sido completado o cerrado por el usuario.
+- **Filtrado por Rutas:** Configurable desde el panel para mostrarse en *Toda la Web y Blog*, *Solo en el Blog*, o *Solo en la Tienda Web*.
+
+#### 📧 Envío Automático por Email vía SMTP (Gmail):
+- **Despacho Asíncrono:** El backend en FastAPI utiliza `BackgroundTasks` para registrar al suscriptor y enviar inmediatamente el correo electrónico sin ralentizar la navegación del usuario.
+- **Soporte de Gmail SMTP:** Integración mediante el puerto TLS 587 (`smtp.gmail.com`) utilizando **Contraseñas de Aplicación de 16 caracteres**.
+- **Formato Personalizable:** Permite definir desde el panel de administración el Asunto del mail, el cuerpo HTML (con soporte para el comodín `{name}`) y la opción de adjuntar o enlazar automáticamente el archivo PDF seleccionado.
+- **Botón de Prueba de Conexión:** En el panel admin se incluye el envío de emails de prueba en tiempo real para verificar las credenciales SMTP cargadas.
+
+#### 📊 Capitalización de Contactos y Exportación a CSV / Excel:
+- **Almacenamiento en PostgreSQL:** Toda la información recolectada se guarda en la tabla `leads` (`id`, `name`, `email`, `country`, `source`, `pdf_sent`, `created_at`).
+- **Panel CRUD e Historial:** Muestra la lista de suscriptores con filtros, fecha y eliminación de registros.
+- **Exportación en un Clic:** Botón **"Exportar a CSV / Excel"** que genera de forma instantánea el archivo `leads_contactos.csv` para importar en plataformas de Email Marketing (Mailchimp, Brevo, Meta Ads, WhatsApp, etc.).
+
+#### 📱 Interfaz Responsiva de Configuración (Grilla de 4 Opciones por Fila):
+- La navegación por pestañas en **Configuración** (`Settings.jsx`) cuenta con un diseño de cuadrícula adaptativa de 4 items por fila con íconos distintivos, garantizando una excelente usabilidad en smartphones y pantallas de escritorio.
+```
