@@ -186,6 +186,26 @@ export default function Layout() {
     }
   };
 
+  const handleAuthMeliClick = async () => {
+    try {
+      const configRes = await fetch('/api/settings/config')
+      if (configRes.ok) {
+        const configData = await configRes.json()
+        if (configData.client_id) {
+          const redirectUri = configData.redirect_uri || (window.location.origin + '/settings')
+          const url = `https://auth.mercadolibre.com.ar/authorization?response_type=code&client_id=${configData.client_id}&redirect_uri=${encodeURIComponent(redirectUri)}`
+          window.location.href = url
+        } else {
+          alert("Primero ingresá tu App ID (Client ID) en Configuración > Conexión ML / MP.")
+          window.location.href = '/settings'
+        }
+      }
+    } catch (e) {
+      console.error("Auth Meli error:", e)
+      alert("Error al conectar con Mercado Libre")
+    }
+  }
+
   const handleLogout = async () => {
     try {
       await fetch('/api/auth/logout', { method: 'POST' })
@@ -294,20 +314,27 @@ export default function Layout() {
               </div>
             )}
 
-            {/* Vínculo Meli status Badge */}
+            {/* Vínculo Meli status Badge (Clickable for instant OAuth) */}
             {meliStatus && (
-              <div style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '8px',
-                padding: '6px 12px',
-                borderRadius: '20px',
-                fontSize: '0.8rem',
-                fontWeight: '600',
-                backgroundColor: meliStatus.is_authenticated ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)',
-                color: meliStatus.is_authenticated ? 'var(--accent-emerald)' : 'var(--accent-red)',
-                border: `1px solid ${meliStatus.is_authenticated ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)'}`
-              }}>
+              <div 
+                onClick={handleAuthMeliClick}
+                title={meliStatus.is_authenticated ? "Cuenta vinculada con Mercado Libre. Hacé clic para revincular." : "¡Hacé clic para vincular tu cuenta de Mercado Libre!"}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  padding: '6px 14px',
+                  borderRadius: '20px',
+                  fontSize: '0.8rem',
+                  fontWeight: '600',
+                  backgroundColor: meliStatus.is_authenticated ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.15)',
+                  color: meliStatus.is_authenticated ? 'var(--accent-emerald)' : 'var(--accent-red)',
+                  border: `1px solid ${meliStatus.is_authenticated ? 'rgba(16, 185, 129, 0.3)' : 'rgba(239, 68, 68, 0.3)'}`,
+                  cursor: 'pointer',
+                  transition: 'all 0.2s',
+                  userSelect: 'none'
+                }}
+              >
                 <span style={{
                   width: '8px',
                   height: '8px',
@@ -318,7 +345,7 @@ export default function Layout() {
                 {meliStatus.is_authenticated ? (
                   <span>Meli Vinculado {meliStatus.demo_mode && '(Demo)'}</span>
                 ) : (
-                  <span>Sin Vincular Meli</span>
+                  <span>🔗 Sin Vincular Meli (Hacé clic aquí)</span>
                 )}
               </div>
             )}
