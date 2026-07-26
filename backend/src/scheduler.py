@@ -31,6 +31,14 @@ def background_sync_loop():
                     meli_api.sync_products()
                     meli_api.sync_orders(limit=20)
                     print("[Scheduler] Sincronización automática de demostración finalizada.")
+            # Sincronización diaria de marcas monitoreadas en INPI
+            try:
+                from src.api.inpi import sync_monitored_trademarks
+                sync_res = sync_monitored_trademarks()
+                print(f"[Scheduler] Sincronización INPI: {sync_res.get('message')}")
+            except Exception as inpi_err:
+                print(f"[Scheduler] Error en sincronización INPI: {inpi_err}")
+
         except Exception as e:
             print("[Scheduler] Error en la tarea de segundo plano:", str(e))
             traceback.print_exc()

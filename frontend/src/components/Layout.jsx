@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { Outlet, NavLink } from 'react-router-dom'
-import { LayoutDashboard, Package, Receipt, Users, Settings, Sun, Moon, RefreshCw, Zap, Image, LogOut, Menu, FileText, Wallet, BookOpen } from 'lucide-react'
+import { LayoutDashboard, Package, Receipt, Users, Settings, Sun, Moon, RefreshCw, Zap, Image, LogOut, Menu, FileText, Wallet, BookOpen, ShieldCheck } from 'lucide-react'
 
 export default function Layout() {
   const [lightMode, setLightMode] = useState(true)
@@ -137,8 +137,9 @@ export default function Layout() {
 
   const hasPermission = (perm) => {
     const permsStr = localStorage.getItem('adminPermissions');
-    if (permsStr === null) return true; // default allowed during loading
+    if (permsStr === null || permsStr === "") return true; // default allowed during loading
     const perms = permsStr.split(',').map(p => p.trim());
+    if (perm === 'inpi' && (perms.includes('inpi') || perms.includes('settings'))) return true;
     return perms.includes(perm);
   };
 
@@ -272,6 +273,12 @@ export default function Layout() {
             <NavLink to="/cms" className={({isActive}) => `nav-link ${isActive ? 'active' : ''}`}>
               <BookOpen size={20} style={{ minWidth: 20 }} />
               <span className="nav-text">Blog & Web</span>
+            </NavLink>
+          )}
+          {hasPermission('inpi') && (
+            <NavLink to="/inpi" className={({isActive}) => `nav-link ${isActive ? 'active' : ''}`}>
+              <ShieldCheck size={20} style={{ minWidth: 20 }} />
+              <span className="nav-text">Propiedad Industrial</span>
             </NavLink>
           )}
           {hasPermission('settings') && (

@@ -13,6 +13,7 @@ from .backup import router as backup_router
 from .whatsapp import router as whatsapp_router
 from .mercadopago import router as mercadopago_router
 from .blog import router as blog_router
+from .inpi import router as inpi_router
 
 api_router = APIRouter()
 
@@ -33,3 +34,5 @@ api_router.include_router(backup_router, prefix="/backup", tags=["backup"], depe
 api_router.include_router(whatsapp_router, prefix="/whatsapp", tags=["whatsapp"])
 api_router.include_router(mercadopago_router, prefix="/mercadopago", tags=["mercadopago"], dependencies=[Depends(verify_session)])
 api_router.include_router(blog_router, prefix="/blog", tags=["blog"], dependencies=[Depends(verify_session), Depends(require_permission("settings"))])
+api_router.include_router(inpi_router, prefix="/inpi", tags=["inpi"], dependencies=[Depends(verify_session)])
+

@@ -273,12 +273,42 @@ def init_db():
             cursor.execute('ALTER TABLE leads ADD COLUMN IF NOT EXISTS country VARCHAR(100) DEFAULT \'Argentina\';')
             cursor.execute('ALTER TABLE leads ADD COLUMN IF NOT EXISTS pdf_sent TEXT;')
 
+            # Monitored trademarks table (INPI)
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS monitored_trademarks (
+                    id SERIAL PRIMARY KEY,
+                    acta VARCHAR(50) UNIQUE NOT NULL,
+                    denominacion VARCHAR(255) NOT NULL,
+                    clase INTEGER,
+                    tipo_marca VARCHAR(100),
+                    titulares TEXT,
+                    numero_resolucion VARCHAR(50),
+                    estado VARCHAR(100),
+                    fecha_ingreso TEXT,
+                    fecha_concesion_estimada VARCHAR(50),
+                    fecha_vencimiento_10anos VARCHAR(50),
+                    requiere_djumt BOOLEAN DEFAULT FALSE,
+                    djumt_codigo VARCHAR(50),
+                    djumt_mensaje TEXT,
+                    image_url TEXT,
+                    notes TEXT,
+                    last_checked_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+
             cursor.execute('ALTER TABLE fixed_expenses ADD COLUMN IF NOT EXISTS month INT;')
             cursor.execute('ALTER TABLE fixed_expenses ADD COLUMN IF NOT EXISTS year INT;')
             cursor.execute('ALTER TABLE login_history ADD COLUMN IF NOT EXISTS username VARCHAR(100);')
             cursor.execute('ALTER TABLE whatsapp_chat_history ADD COLUMN IF NOT EXISTS prompt_tokens INT DEFAULT 0;')
             cursor.execute('ALTER TABLE whatsapp_chat_history ADD COLUMN IF NOT EXISTS reply_tokens INT DEFAULT 0;')
             cursor.execute('ALTER TABLE whatsapp_chat_history ADD COLUMN IF NOT EXISTS total_tokens INT DEFAULT 0;')
+
+            # Auto-migrate existing users to have 'inpi' permission if they are admins
+            try:
+                cursor.execute("UPDATE users SET permissions = permissions || ',inpi' WHERE permissions NOT LIKE '%inpi%' AND (permissions LIKE '%settings%' OR permissions LIKE '%dashboard%');")
+            except Exception:
+                pass
 
             # Seed default admin user if no users exist
             cursor.execute("SELECT COUNT(*) as count FROM users")
@@ -287,7 +317,7 @@ def init_db():
                 cursor.execute('''
                     INSERT INTO users (username, password_hash, full_name, permissions)
                     VALUES (%s, %s, %s, %s)
-                ''', ("admin", admin_pw_hash, "Administrador", "dashboard,inventory,sales,billing,expenses,customers,media,settings"))
+                ''', ("admin", admin_pw_hash, "Administrador", "dashboard,inventory,sales,billing,expenses,customers,media,settings,inpi"))
 
 # --- Categories Operations ---
 
@@ -1130,7 +1160,7 @@ def get_all_users():
 
 def create_user(username, password, full_name, permissions=None):
     if permissions is None:
-        permissions = "dashboard,inventory,sales,billing,expenses,customers,media,settings"
+        permissions = "dashboard,inventory,sales,billing,expenses,customers,media,settings,inpi"
     pw_hash = hash_password(password)
     with get_connection() as conn:
         with conn.cursor() as cursor:
@@ -1541,6 +1571,135 @@ def delete_lead(lead_id: int):
         with conn.cursor() as cursor:
             cursor.execute("DELETE FROM leads WHERE id = %s", (lead_id,))
             return True
+
+# --- Monitored Trademarks (INPI) ---
+
+def get_all_monitored_trademarks():
+    """Obtiene todas las marcas registradas en el portafolio de seguimiento."""
+    try:
+        with get_connection() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute("""
+                    SELECT id, acta, denominacion, clase, tipo_marca, titulares,
+                           numero_resolucion, estado, fecha_ingreso, fecha_concesion_estimada,
+                           fecha_vencimiento_10anos, requiere_djumt, djumt_codigo, djumt_mensaje,
+                           image_url, notes, last_checked_at, created_at
+                    FROM monitored_trademarks
+                    ORDER BY id DESC
+                """)
+                rows = cursor.fetchall()
+                result = []
+                for r in rows:
+                    item = dict(r)
+                    if isinstance(item.get('last_checked_at'), datetime):
+                        item['last_checked_at'] = item['last_checked_at'].isoformat()
+                    if isinstance(item.get('created_at'), datetime):
+                        item['created_at'] = item['created_at'].isoformat()
+                    result.append(item)
+                return result
+    except Exception as e:
+        print(f"[get_all_monitored_trademarks error] {e}")
+        return []
+
+def add_monitored_trademark(item: dict):
+    """Agrega una nueva marca al seguimiento diario."""
+    acta = str(item.get('Acta') or item.get('acta') or '').strip()
+    if not acta:
+        raise ValueError("El número de Acta es obligatorio para monitorear una marca.")
+
+    denominacion = str(item.get('Denominacion') or item.get('denominacion') or '').strip()
+    clase = item.get('Clase') or item.get('clase')
+    try:
+        clase = int(clase) if clase else None
+    except ValueError:
+        clase = None
+
+    tipo_marca = str(item.get('Tipo_Marca') or item.get('tipo_marca') or '')
+    titulares = str(item.get('Titulares') or item.get('titulares') or '')
+    numero_resolucion = str(item.get('Numero_Resolucion') or item.get('numero_resolucion') or '')
+    estado = str(item.get('Estado') or item.get('estado') or '')
+    fecha_ingreso = str(item.get('Fecha_Ingreso') or item.get('fecha_ingreso') or '')
+    fecha_concesion = str(item.get('fecha_concesion_estimada') or '')
+    fecha_vencimiento = str(item.get('fecha_vencimiento_10anos') or '')
+    requiere_djumt = bool(item.get('requiere_djumt', False))
+    djumt_codigo = str(item.get('djumt_codigo') or 'NO_APLICA')
+    djumt_mensaje = str(item.get('djumt_mensaje') or '')
+    image_url = str(item.get('image_url') or '')
+    notes = str(item.get('notes') or '')
+
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute('''
+                INSERT INTO monitored_trademarks (
+                    acta, denominacion, clase, tipo_marca, titulares, numero_resolucion,
+                    estado, fecha_ingreso, fecha_concesion_estimada, fecha_vencimiento_10anos,
+                    requiere_djumt, djumt_codigo, djumt_mensaje, image_url, notes, last_checked_at
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
+                ON CONFLICT (acta) DO UPDATE SET
+                    denominacion = EXCLUDED.denominacion,
+                    clase = EXCLUDED.clase,
+                    tipo_marca = EXCLUDED.tipo_marca,
+                    titulares = EXCLUDED.titulares,
+                    numero_resolucion = EXCLUDED.numero_resolucion,
+                    estado = EXCLUDED.estado,
+                    fecha_ingreso = EXCLUDED.fecha_ingreso,
+                    fecha_concesion_estimada = EXCLUDED.fecha_concesion_estimada,
+                    fecha_vencimiento_10anos = EXCLUDED.fecha_vencimiento_10anos,
+                    requiere_djumt = EXCLUDED.requiere_djumt,
+                    djumt_codigo = EXCLUDED.djumt_codigo,
+                    djumt_mensaje = EXCLUDED.djumt_mensaje,
+                    last_checked_at = CURRENT_TIMESTAMP
+                RETURNING id
+            ''', (
+                acta, denominacion, clase, tipo_marca, titulares, numero_resolucion,
+                estado, fecha_ingreso, fecha_concesion, fecha_vencimiento,
+                requiere_djumt, djumt_codigo, djumt_mensaje, image_url, notes
+            ))
+            return cursor.fetchone()['id']
+
+def delete_monitored_trademark(acta: str):
+    """Elimina una marca del seguimiento."""
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute("DELETE FROM monitored_trademarks WHERE acta = %s", (str(acta).strip(),))
+            return True
+
+def update_monitored_trademark_image(acta: str, image_url: str):
+    """Actualiza la URL del logo o imagen de una marca monitoreada."""
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute("UPDATE monitored_trademarks SET image_url = %s WHERE acta = %s", (image_url.strip(), str(acta).strip()))
+            return True
+
+def update_monitored_trademark_data(acta: str, item: dict):
+    """Actualiza los datos provenientes de la re-consulta en INPI."""
+    numero_resolucion = str(item.get('Numero_Resolucion') or item.get('numero_resolucion') or '')
+    estado = str(item.get('Estado') or item.get('estado') or '')
+    fecha_concesion = str(item.get('fecha_concesion_estimada') or '')
+    fecha_vencimiento = str(item.get('fecha_vencimiento_10anos') or '')
+    requiere_djumt = bool(item.get('requiere_djumt', False))
+    djumt_codigo = str(item.get('djumt_codigo') or 'NO_APLICA')
+    djumt_mensaje = str(item.get('djumt_mensaje') or '')
+
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute('''
+                UPDATE monitored_trademarks
+                SET numero_resolucion = %s,
+                    estado = %s,
+                    fecha_concesion_estimada = %s,
+                    fecha_vencimiento_10anos = %s,
+                    requiere_djumt = %s,
+                    djumt_codigo = %s,
+                    djumt_mensaje = %s,
+                    last_checked_at = CURRENT_TIMESTAMP
+                WHERE acta = %s
+            ''', (
+                numero_resolucion, estado, fecha_concesion, fecha_vencimiento,
+                requiere_djumt, djumt_codigo, djumt_mensaje, str(acta).strip()
+            ))
+            return True
+
 
 
 
