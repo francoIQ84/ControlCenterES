@@ -9,3 +9,8 @@ def get_metrics(period: str = "total", start_date: Optional[str] = None, end_dat
     stats = database.get_dashboard_metrics(period=period, start_date_str=start_date, end_date_str=end_date)
     return stats
 
+@router.get("/notifications")
+def get_notifications():
+    return database.get_system_notifications()
+
+

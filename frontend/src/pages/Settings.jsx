@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react'
+import { RefreshCw } from 'lucide-react'
 import MediaBrowser from '../components/MediaBrowser'
 import LeadMagnetSettings from '../components/LeadMagnetSettings'
 
@@ -19,6 +20,28 @@ export default function Settings() {
   })
   const [status, setStatus] = useState({ is_authenticated: false, user_id: null })
   const [code, setCode] = useState("")
+
+  const [syncingHistorical, setSyncingHistorical] = useState(false)
+
+  const handleSyncHistorical = async () => {
+    setSyncingHistorical(true)
+    try {
+      const res = await fetch('/api/settings/sync-all', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ limit: 2000 })
+      })
+      if (res.ok) {
+        alert("Sincronización histórica (2 años) iniciada en segundo plano.")
+      } else {
+        alert("Error al iniciar la sincronización.")
+      }
+    } catch (err) {
+      alert("Error de conexión: " + err.message)
+    } finally {
+      setSyncingHistorical(false)
+    }
+  }
   
   // Tabs & Logs
   const [activeTab, setActiveTab] = useState("connection") // "connection", "users", "security", "web_config", "arca"
@@ -864,6 +887,24 @@ export default function Settings() {
                     </div>
                   </div>
                 </details>
+
+                <div style={{ marginTop: '24px', paddingTop: '16px', borderTop: '1px solid var(--border-color)' }}>
+                  <span style={{ fontSize: '0.85rem', fontWeight: 600, display: 'block', marginBottom: '8px', color: 'var(--text-primary)' }}>
+                    Sincronización Histórica Completa:
+                  </span>
+                  <button 
+                    className="btn btn-secondary" 
+                    onClick={handleSyncHistorical}
+                    disabled={syncingHistorical}
+                    style={{ width: '100%', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '8px', padding: '10px 14px', fontSize: '0.85rem' }}
+                  >
+                    <RefreshCw size={16} className={syncingHistorical ? 'animate-spin' : ''} />
+                    <span>{syncingHistorical ? 'Sincronizando...' : '🔄 Sincronizar Histórico (2 Años)'}</span>
+                  </button>
+                  <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'block', marginTop: '6px', textAlign: 'center' }}>
+                    Descarga y actualiza todas las ventas, productos y cobros de los últimos 2 años.
+                  </span>
+                </div>
               </div>
             </div>
           </div>

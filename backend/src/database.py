@@ -1700,6 +1700,106 @@ def update_monitored_trademark_data(acta: str, item: dict):
             ))
             return True
 
+def get_system_notifications():
+    """Compila las notificaciones de eventos importantes (INPI, Ventas, Stock)."""
+    notifications = []
+    
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            # 1. Alertas de Propiedad Industrial (INPI)
+            try:
+                cursor.execute('''
+                    SELECT acta, denominacion, djumt_codigo, djumt_mensaje
+                    FROM monitored_trademarks
+                    WHERE djumt_codigo IN ('PRESENTAR_AHORA', 'EN_MORA')
+                ''')
+                rows = cursor.fetchall()
+                for r in rows:
+                    acta = r['acta']
+                    denom = r['denominacion']
+                    code = r['djumt_codigo']
+                    if code == 'EN_MORA':
+                        notifications.append({
+                            'id': f'inpi_mora_{acta}',
+                            'category': 'inpi',
+                            'severity': 'danger',
+                            'title': f'⚠️ DJUMT Vencida: {denom}',
+                            'message': f'La marca (Acta #{acta}) supera los 6 años sin Declaración Jurada de Uso.',
+                            'link': '/inpi',
+                            'time': 'Urgente'
+                        })
+                    elif code == 'PRESENTAR_AHORA':
+                        notifications.append({
+                            'id': f'inpi_ahora_{acta}',
+                            'category': 'inpi',
+                            'severity': 'warning',
+                            'title': f'🟠 Presentar DJUMT: {denom}',
+                            'message': f'Ventanilla abierta (5° a 6° año) para Acta #{acta}.',
+                            'link': '/inpi',
+                            'time': 'En ventana'
+                        })
+            except Exception as err:
+                print("[Database] Error fetching INPI notifications:", err)
+
+            # 2. Nuevas Ventas Recientes (Últimas 24 horas)
+            try:
+                cursor.execute('''
+                    SELECT id, buyer_name, total_amount, status, created_at
+                    FROM sales
+                    WHERE created_at >= NOW() - INTERVAL '24 HOURS'
+                    ORDER BY created_at DESC
+                    LIMIT 5
+                ''')
+                sales_rows = cursor.fetchall()
+                for s in sales_rows:
+                    sale_id = s['id']
+                    buyer = s['buyer_name'] or 'Cliente'
+                    total = float(s['total_amount'] or 0)
+                    time_str = s['created_at'].strftime('%H:%M hs') if s.get('created_at') else 'Hoy'
+                    notifications.append({
+                        'id': f'sale_{sale_id}',
+                        'category': 'sales',
+                        'severity': 'info',
+                        'title': f'🛒 Nueva Venta de ${total:,.2f}',
+                        'message': f'Comprador: {buyer}',
+                        'link': '/sales',
+                        'time': time_str
+                    })
+            except Exception as err:
+                print("[Database] Error fetching sales notifications:", err)
+
+            # 3. Alertas de Stock Crítico (Inventario)
+            try:
+                cursor.execute('''
+                    SELECT id, title, stock
+                    FROM products
+                    WHERE stock <= 3
+                    ORDER BY stock ASC
+                    LIMIT 5
+                ''')
+                stock_rows = cursor.fetchall()
+                for p in stock_rows:
+                    prod_id = p['id']
+                    title = p['title'] or 'Producto'
+                    stk = p['stock'] or 0
+                    notifications.append({
+                        'id': f'stock_{prod_id}',
+                        'category': 'inventory',
+                        'severity': 'danger' if stk == 0 else 'warning',
+                        'title': f'📦 Stock Crítico ({stk} u.): {title[:28]}',
+                        'message': 'Sin stock' if stk == 0 else f'Quedan solo {stk} unidades disponibles.',
+                        'link': '/inventory',
+                        'time': 'Inventario'
+                    })
+            except Exception as err:
+                print("[Database] Error fetching stock notifications:", err)
+
+    return {
+        'notifications': notifications,
+        'unread_count': len(notifications)
+    }
+
+
 
 
 

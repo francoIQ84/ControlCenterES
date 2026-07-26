@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react'
-import { Outlet, NavLink } from 'react-router-dom'
-import { LayoutDashboard, Package, Receipt, Users, Settings, Sun, Moon, RefreshCw, Zap, Image, LogOut, Menu, FileText, Wallet, BookOpen, ShieldCheck } from 'lucide-react'
+import { Outlet, NavLink, useNavigate } from 'react-router-dom'
+import { LayoutDashboard, Package, Receipt, Users, Settings, Sun, Moon, RefreshCw, Zap, Image, LogOut, Menu, FileText, Wallet, BookOpen, ShieldCheck, Bell, CheckCircle2, X } from 'lucide-react'
 
 export default function Layout() {
+  const navigate = useNavigate()
   const [lightMode, setLightMode] = useState(true)
   const [syncing, setSyncing] = useState(false)
   const [collapsed, setCollapsed] = useState(typeof window !== 'undefined' ? window.innerWidth < 768 : false)
@@ -12,6 +13,46 @@ export default function Layout() {
   const [progress, setProgress] = useState(null)
   const [showProgressModal, setShowProgressModal] = useState(false)
   const [autoSyncing, setAutoSyncing] = useState(false)
+
+  // Notification Center State
+  const [notifications, setNotifications] = useState([])
+  const [showNotifications, setShowNotifications] = useState(false)
+  const [activeNotifFilter, setActiveNotifFilter] = useState('all')
+  const [dismissedIds, setDismissedIds] = useState([])
+
+  const fetchNotifications = async () => {
+    try {
+      const res = await fetch('/api/dashboard/notifications')
+      if (res.ok) {
+        const data = await res.json()
+        setNotifications(data.notifications || [])
+      }
+    } catch (err) {
+      console.error("Error fetching notifications:", err)
+    }
+  }
+
+  useEffect(() => {
+    fetchNotifications()
+    const interval = setInterval(fetchNotifications, 60000)
+    return () => clearInterval(interval)
+  }, [])
+
+  const filteredNotifs = notifications
+    .filter(n => !dismissedIds.includes(n.id))
+    .filter(n => activeNotifFilter === 'all' || n.category === activeNotifFilter)
+
+  const visibleUnreadCount = notifications.filter(n => !dismissedIds.includes(n.id)).length
+
+  const handleNotifClick = (n) => {
+    setDismissedIds(prev => [...prev, n.id])
+    setShowNotifications(false)
+    if (n.link) navigate(n.link)
+  }
+
+  const handleClearAllNotifs = () => {
+    setDismissedIds(notifications.map(n => n.id))
+  }
 
   useEffect(() => {
     if (lightMode) {
@@ -365,11 +406,165 @@ export default function Layout() {
               </span>
             )}
             
-            <div style={{display: 'flex', gap: '10px'}}>
-              <button className="btn-icon" onClick={handleSync} disabled={syncing || autoSyncing} title="Sincronizar Histórico (2 Años)">
-                <RefreshCw size={20} className={syncing ? 'animate-spin' : ''} />
-              </button>
-              <button className="btn-icon" onClick={() => setLightMode(!lightMode)}>
+            <div style={{display: 'flex', gap: '10px', alignItems: 'center'}}>
+              
+              {/* Notification Center Bell */}
+              <div style={{ position: 'relative' }}>
+                <button 
+                  className="btn-icon" 
+                  onClick={() => setShowNotifications(!showNotifications)}
+                  title="Centro de Alertas y Notificaciones"
+                  style={{ position: 'relative' }}
+                >
+                  <Bell size={20} />
+                  {visibleUnreadCount > 0 && (
+                    <span style={{
+                      position: 'absolute',
+                      top: '-4px',
+                      right: '-4px',
+                      backgroundColor: 'var(--accent-red)',
+                      color: '#ffffff',
+                      fontSize: '0.68rem',
+                      fontWeight: 700,
+                      borderRadius: '10px',
+                      padding: '2px 6px',
+                      lineHeight: 1,
+                      border: '2px solid var(--bg-card)',
+                      boxShadow: '0 0 6px rgba(239, 68, 68, 0.5)'
+                    }}>
+                      {visibleUnreadCount}
+                    </span>
+                  )}
+                </button>
+
+                {/* Popover Dropdown */}
+                {showNotifications && (
+                  <div style={{
+                    position: 'absolute',
+                    top: '42px',
+                    right: '0',
+                    width: '380px',
+                    maxWidth: '90vw',
+                    backgroundColor: 'var(--bg-card)',
+                    border: '1px solid var(--border-color)',
+                    borderRadius: '12px',
+                    boxShadow: '0 20px 25px -5px rgba(0,0,0,0.4)',
+                    zIndex: 9999,
+                    overflow: 'hidden'
+                  }}>
+                    {/* Popover Header */}
+                    <div style={{
+                      padding: '12px 16px',
+                      borderBottom: '1px solid var(--border-color)',
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      backgroundColor: 'var(--bg-dark)'
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <Bell size={18} style={{ color: 'var(--accent-blue)' }} />
+                        <h4 style={{ margin: 0, fontSize: '0.95rem', fontWeight: 700 }}>Notificaciones</h4>
+                      </div>
+                      <button className="btn-icon" onClick={() => setShowNotifications(false)} style={{ padding: '2px' }}>
+                        <X size={16} />
+                      </button>
+                    </div>
+
+                    {/* Filter Pills */}
+                    <div style={{ display: 'flex', gap: '6px', padding: '8px 12px', borderBottom: '1px solid var(--border-color)', backgroundColor: 'var(--bg-card)', overflowX: 'auto' }}>
+                      {[
+                        { id: 'all', label: 'Todas' },
+                        { id: 'inpi', label: '🛡️ INPI' },
+                        { id: 'sales', label: '🛒 Ventas' },
+                        { id: 'inventory', label: '📦 Stock' }
+                      ].map(f => (
+                        <button
+                          key={f.id}
+                          onClick={() => setActiveNotifFilter(f.id)}
+                          style={{
+                            padding: '4px 10px',
+                            fontSize: '0.75rem',
+                            borderRadius: '12px',
+                            border: 'none',
+                            backgroundColor: activeNotifFilter === f.id ? 'var(--accent-blue)' : 'var(--bg-dark)',
+                            color: activeNotifFilter === f.id ? '#ffffff' : 'var(--text-secondary)',
+                            cursor: 'pointer',
+                            fontWeight: 600,
+                            whiteSpace: 'nowrap'
+                          }}
+                        >
+                          {f.label}
+                        </button>
+                      ))}
+                    </div>
+
+                    {/* Notifications List */}
+                    <div style={{ maxHeight: '360px', overflowY: 'auto' }}>
+                      {filteredNotifs.length === 0 ? (
+                        <div style={{ padding: '30px 16px', textAlign: 'center', color: 'var(--text-secondary)', fontSize: '0.85rem' }}>
+                          <CheckCircle2 size={32} style={{ color: 'var(--accent-emerald)', marginBottom: '8px', opacity: 0.8 }} />
+                          <p style={{ margin: 0 }}>¡Todo al día! No hay alertas pendientes.</p>
+                        </div>
+                      ) : (
+                        filteredNotifs.map(n => (
+                          <div
+                            key={n.id}
+                            onClick={() => handleNotifClick(n)}
+                            style={{
+                              padding: '12px 16px',
+                              borderBottom: '1px solid var(--border-color)',
+                              cursor: 'pointer',
+                              display: 'flex',
+                              gap: '12px',
+                              alignItems: 'flex-start',
+                              backgroundColor: 'transparent',
+                              transition: 'background-color 0.15s'
+                            }}
+                            onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--bg-hover)'}
+                            onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                          >
+                            <div style={{
+                              padding: '6px',
+                              borderRadius: '8px',
+                              backgroundColor: n.severity === 'danger' ? 'rgba(239, 68, 68, 0.12)' : n.severity === 'warning' ? 'rgba(245, 158, 11, 0.12)' : 'rgba(37, 99, 235, 0.12)',
+                              color: n.severity === 'danger' ? 'var(--accent-red)' : n.severity === 'warning' ? '#f59e0b' : 'var(--accent-blue)',
+                              flexShrink: 0
+                            }}>
+                              {n.category === 'inpi' ? <ShieldCheck size={16} /> : n.category === 'sales' ? <Receipt size={16} /> : <Package size={16} />}
+                            </div>
+
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2px' }}>
+                                <strong style={{ fontSize: '0.85rem', color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                  {n.title}
+                                </strong>
+                                <span style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', marginLeft: '6px' }}>{n.time}</span>
+                              </div>
+                              <p style={{ margin: 0, fontSize: '0.78rem', color: 'var(--text-secondary)', lineHeight: '1.3' }}>
+                                {n.message}
+                              </p>
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+
+                    {/* Footer */}
+                    {filteredNotifs.length > 0 && (
+                      <div style={{ padding: '8px 16px', borderTop: '1px solid var(--border-color)', backgroundColor: 'var(--bg-dark)', textAlign: 'center' }}>
+                        <button
+                          onClick={handleClearAllNotifs}
+                          style={{ background: 'none', border: 'none', color: 'var(--accent-blue)', fontSize: '0.78rem', fontWeight: 600, cursor: 'pointer' }}
+                        >
+                          Marcar todas como leídas
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              <button className="btn-icon" onClick={() => setLightMode(!lightMode)} title={lightMode ? "Modo Oscuro" : "Modo Claro"}>
                 {lightMode ? <Moon size={20} /> : <Sun size={20} />}
               </button>
               <button className="btn-icon" onClick={handleLogout} title="Cerrar sesión">
