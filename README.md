@@ -1,420 +1,191 @@
-# ControlCenterES
+# 🚀 ControlCenterES — E-Commerce ERP, CRM & AI Marketing Platform
 
-ControlCenterES es una plataforma avanzada para la gestión de publicaciones, ventas e inventario sincronizada directamente con la API de Mercado Libre.
+**ControlCenterES** es un ecosistema omnicanal completo de gestión comercial (**ERP / CRM / TPV / Marketing IA**) diseñado para empresas, comerciantes y vendedores de **Mercado Libre** y **Tienda Web propia**. 
 
-La aplicación utiliza una arquitectura moderna separada en backend, frontend administrativo y un storefront público.
+La plataforma centraliza en un único panel inteligente el inventario, las ventas omnicanal, la facturación electrónica oficial, la atención al cliente automatizada por WhatsApp con IA y la creación y publicación autónoma de campañas de marketing en redes sociales.
 
-## Arquitectura (Monorepo)
+---
 
-- **Backend (`/backend`):** FastAPI (Python) + PostgreSQL (`psycopg2`)
-- **Frontend Admin (`/frontend`):** React + Vite + Vanilla CSS
-- **Storefront Público (`/storefront`):** Next.js + React + Tailwind CSS
-- **Integraciones:** API oficial de Mercado Libre
+## 🌟 Visión Comercial: ¿En qué consiste y qué valor aporta?
 
-## Requisitos Previos
+En el comercio moderno, gestionar Mercado Libre, una tienda online propia, facturar en la AFIP/ARCA, responder WhatsApps 24/7 y crear contenido para redes sociales exige múltiples herramientas desconectadas y costosas suscripciones mensuales.
 
+**ControlCenterES** unifica todo el ciclo de vida del negocio en una sola infraestructura auto-hospedada sin comisiones por venta:
+
+1. **Sincronización Total con Mercado Libre & Tienda Web**: Control centralizado de stock, precios y márgenes de ganancia reales.
+2. **Facturación Electrónica Automática ARCA / AFIP**: Emisión instantánea de Facturas A, B y C con validación en AFIP por CUIT.
+3. **Atención al Cliente 24/7 con IA por WhatsApp**: Chatbot con **Google Gemini AI** que conoce tu catálogo, stock y pedidos, con pausa automática cuando interviene un vendedor humano.
+4. **Generador y Programador de Marketing & Reels (IA)**: Redacción automática de publicaciones y guiones de Reels + auto-publicación autónoma a Instagram y Facebook via Meta Graph API.
+5. **Tienda Online Pública (Storefront Next.js)**: Catálogo ultrarrápido optimizado para SEO y conversión.
+6. **Custodia de Marcas (INPI)**: Alertas automáticas para proteger tu marca registrada frente a oposiciones.
+
+---
+
+## 💎 Catálogo de Funcionalidades (Features)
+
+### 1. 📦 Gestión Avanzada de Inventario & Márgenes
+- **Sincronización Bidireccional con Mercado Libre**: Sincronización en segundo plano de stock, precios y estado de publicaciones.
+- **Creación de Productos Exclusivos Web (Locales)**: Alta de artículos con prefijo `LOCAL-` para vender únicamente en la tienda propia sin comisiones.
+- **Cálculo de Márgenes Reales**: Carga de costo base, comisión de Mercado Libre y envío gratis para visualizar el margen neto (%) y ganancia exacta por unidad.
+- **Destacados en Portada Web (`featured_order`)**: Selección interactiva y reordenamiento de productos prioritarios en la página principal.
+- **Vistas Adaptativas de Inventario**: 
+  - **Vista Comprimida (Por Defecto)**: Ultra legible, aprovecha el 100% del ancho de pantalla para nombres largos de productos, con insignias de categoría y marcas de modificación.
+  - **Vista Detallada**: Despliegue de fotos secundarias, descripción web y vinculaciones.
+- **Historial de Modificaciones**: Registro de la última fecha/hora de actualización y visor de valores anteriores (`ant: $...`).
+
+---
+
+### 2. 🛍️ Tienda Web Pública (Storefront Next.js 16)
+- **Diseño Ultra Moderno & Responsivo**: Optimizado para dispositivos móviles y escritorio.
+- **Ficha de Producto de Alta Conversión**:
+  - Zona Superior (*Hero*): Galería de imágenes, precio, insignia de stock en vivo, selector de cantidad y botón prominente **`Agregar al Carrito`**.
+  - Zona Inferior: Bloque de **Descripción del Producto** a pantalla completa con botón expandible interactivo **`Ver descripción completa ▼`** / **`Ver menos ▲`**.
+- **Carrito & Pedidos por WhatsApp**: Envío directo de carritos de compra armados a la línea de WhatsApp del negocio.
+- **Optimizada para SEO**: Títulos semánticos, meta-etiquetas y tiempos de carga instantáneos (Turbopack).
+
+---
+
+### 3. 🛒 Ventas, TPV (Punto de Venta) & Cobro con QR Mercado Pago
+- **Sincronización de Órdenes Mercado Libre**: Carga automática de compradores, montos, comisión e impuestos.
+- **Punto de Venta Mostrador (Venta Local)**: Registro rápido de ventas presenciales con buscador dinámico de artículos.
+- **Escáner de Código de Barras & QR**: Compatible con lectores USB/Bluetooth y cámara de smartphone para autocompletar productos.
+- **Terminal de Cobro Dinámico Mercado Pago**:
+  - Generación en pantalla de **Código QR de cobro de 300x300 px** para escanear en el acto desde la App de Mercado Pago.
+  - Enlaces de pago directos y botón de compartir cobro por WhatsApp.
+
+---
+
+### 4. 🧾 Facturación Electrónica Oficial ARCA (ex AFIP)
+- **Soporte Multicondición Fiscal**:
+  - **Monotributo**: Emisión de **Factura C (`COD. 011`)**.
+  - **Responsable Inscripto**: Emisión de **Factura B (`COD. 006`)** a Consumidores Finales y **Factura A (`COD. 001`)** a CUITs.
+- **Consulta al Padrón AFIP en Tiempo Real (`PersonaServiceA5`)**: Al ingresar un CUIT, autocompleta la Razón Social y Domicilio Fiscal oficial.
+- **Desglose de IVA 21%**: Generación correcta de campos `<AlicIva>`, `ImpNeto` e `ImpIVA` requeridos por la AFIP en Facturas A.
+- **Factura B Automática (Consumidor Final)**: Fallback inteligente si el comprador no presenta CUIT.
+- **Generación de PDF Oficial**: Descarga e impresión de comprobantes fiscales normativos.
+
+---
+
+### 5. 🤖 Asistente Virtual de WhatsApp con IA (Gemini)
+- **Atención Automática 24/7**: Conexión nativa mediante pasarela Baileys Node.js (auto-hospedada, sin costos por mensaje de APIs oficiales).
+- **Conocimiento del Negocio**: La IA consulta en tiempo real el inventario PostgreSQL para informar stock, precios y responder preguntas frecuentes.
+- **Consulta de Pedidos**: Los clientes pueden preguntar por el estado de su pedido con su número de orden.
+- **Sistema de Pausa Inteligente & Atención Humana (*Human Takeover*)**:
+  - Si un vendedor responde manualmente desde el celular, el bot se pausa automáticamente para ese cliente por 24 horas.
+  - Si el cliente pide hablar con una persona, Gemini deriva la atención y pausa las respuestas automáticas.
+  - Comandos rápidos de chat: `#pausa` para pausar la IA, `#bot` para reactivarla.
+  - Panel de control en tiempo real para visualizar y reanudar chats en atención humana.
+
+---
+
+### 6. 📢 Módulo de Marketing & Redes Sociales (Generador IA & Auto-Publicación)
+- **Redacción de Contenido con IA (Gemini)**:
+  - Selección de producto del inventario -> elección de objetivo (*Promocional*, *Oferta*, *Educativo*) y tono (*Entusiasta*, *Profesional*, *Divertido*).
+  - La IA redacta el título, copy con emojis y hashtags, e incluye una **idea de guión de 15 segundos para grabar el Reel**.
+- **Auto-Publicación Autónoma a Instagram & Facebook**:
+  - Integración nativa con la **Meta Graph API** para publicar fotos y **Reels de Instagram** y posts de **Páginas de Facebook**.
+- **Programador & Tarea en Segundo Plano (`scheduler.py`)**:
+  - Agendamiento de fecha y hora para publicaciones. El backend procesa la cola automáticamente sin requerir intervención manual.
+
+---
+
+### 7. 🧲 Captación de Leads, Email Marketing & Pop-up Magnet
+- **Pop-up Captador Dinámico (`LeadMagnetPopup.tsx`)**: Formulario con Glassmorphism para captar Nombre, Email y País.
+- **Envío Automático de PDFs por SMTP (Gmail)**: Entrega en segundo plano de catálogos o guías gratuitas al suscribirse.
+- **Exportación a CSV / Excel**: Descarga de listas de contactos en un clic para importar en Mailchimp, Meta Ads o envíos masivos.
+
+---
+
+### 8. 🛡️ Monitoreo de Marcas & Propiedad Industrial (INPI)
+- Custodia diaria automática de marcas registradas contra el Boletín Oficial del INPI (Argentina) para detectar solicitudes conflictivas de terceros y prevenir oposiciones.
+
+---
+
+### 9. 💾 Respaldos Automáticos Mensuales & Retención Anual
+- Generación mensual automática de un archivo `.zip` que incluye el dump completo de la base de datos PostgreSQL (`pg_dump`), credenciales `.env`, directorio de imágenes `uploads/` y facturas emitidas `invoices/`.
+- Regla de retención de los 12 respaldos mensuales más recientes.
+
+---
+
+### 10. 🔐 Seguridad Criptográfica & Registro de Accesos
+- Encriptación de contraseñas con el estándar **PBKDF2-HMAC-SHA256** (100.000 iteraciones + sal aleatoria).
+- Registro de auditoría de inicio de sesión con geolocalización IP (País, Región y Ciudad).
+
+---
+
+## 🛠️ Arquitectura Técnica (Monorepo)
+
+```
+ControlCenterES/
+├── backend/             # REST API con FastAPI (Python 3.12) + PostgreSQL + Scheduler
+│   ├── src/
+│   │   ├── api/         # Endpoints: inventory, sales, marketing, whatsapp, afip, etc.
+│   │   ├── utils/       # social_publisher, invoice_gen, afip_ws, email_sender
+│   │   ├── database.py  # Conexión PostgreSQL (psycopg2) y esquema de tablas
+│   │   └── scheduler.py # Tareas en segundo plano (Meli sync, Marketing, Auto-Backups)
+│   └── whatsapp/        # Pasarela Baileys Node.js para WhatsApp Gateway
+├── frontend/            # Panel de Administración (React + Vite + Vanilla CSS)
+│   └── src/
+│       ├── pages/       # Dashboard, Inventory, Sales, Marketing, Settings, etc.
+│       └── components/  # Layout, MediaBrowser, QR Modals, etc.
+├── storefront/          # Tienda Web Pública (Next.js 16 + Tailwind CSS)
+│   └── src/
+│       ├── app/         # Catálogo, Detalle de Producto, Blog, Quiénes Somos
+│       └── components/  # AddToCartButton, ProductDescription, LeadMagnetPopup
+└── deploy_all.py        # Script de despliegue automatizado por SSH/SFTP al VPS
+```
+
+---
+
+## 🚀 Guía de Instalación y Ejecución Local
+
+### Requisitos Previos
 - Python 3.10+
-- Node.js y npm (para los proyectos React)
-- Servidor PostgreSQL instalado y corriendo
+- Node.js 20+
+- PostgreSQL corriendo localmente
 
-## Instalación y Configuración
+### 1. Clonar el repositorio y configurar variables de entorno
+Crear un archivo `.env` dentro de `backend/`:
+```env
+DATABASE_URL=postgresql://postgres:postgres@localhost:5432/controlcenter
+```
 
-### 1. Base de Datos
-Asegurate de tener una instancia de PostgreSQL en ejecución. Por defecto, la aplicación intentará conectarse a `postgresql://postgres:postgres@localhost:5432/controlcenter`. Podés sobreescribir esta URL creando una variable de entorno `DATABASE_URL` en el archivo `.env` dentro de `backend/`.
-
-### 2. Backend (FastAPI)
-Instalar las dependencias de Python y activar el entorno virtual (desde la carpeta raíz):
+### 2. Levantar el Backend (FastAPI)
 ```powershell
-# Activar entorno virtual existente
-.\venv\Scripts\Activate.ps1
-
-# Ingresar a backend e instalar requerimientos
 cd backend
+python -m venv venv
+.\venv\Scripts\Activate.ps1
 pip install -r requirements.txt
-```
-
-### 3. Frontends (Node.js)
-Navegar a las carpetas respectivas e instalar dependencias:
-```bash
-# Para el panel de administración
-cd frontend
-npm install
-
-# Para la tienda pública
-cd ../storefront
-npm install
-```
-
-## Ejecución del Proyecto (Desarrollo)
-
-Para tener el proyecto funcionando completamente, es necesario levantar los tres servicios simultáneamente (necesitarás 3 ventanas de terminal abiertas).
-
-### Terminal 1: Backend
-Activa el entorno virtual, entra a la carpeta `backend` y ejecuta el servidor de Python:
-```powershell
-.\venv\Scripts\Activate.ps1
-cd backend
 python main.py
 ```
-*(El backend API se levantará en `http://localhost:8090`)*
+*(Se ejecutará en `http://localhost:8090`)*
 
-### Terminal 2: Frontend Administrativo
-Entra a la carpeta `frontend` y ejecuta el entorno de Vite:
+### 3. Levantar el Panel de Administración (Frontend)
 ```powershell
 cd frontend
+npm install
 npm run dev
 ```
-*(El panel de control se levantará típicamente en `http://localhost:5173`)*
+*(Se ejecutará en `http://localhost:5173`)*
 
-### Terminal 3: Storefront
-Entra a la carpeta `storefront` y ejecuta el servidor de Next.js:
+### 4. Levantar la Tienda Web (Storefront Next.js)
 ```powershell
 cd storefront
+npm install
 npm run dev
 ```
-*(La tienda pública se levantará típicamente en `http://localhost:3000`)*
-
-## Funcionalidades
-- Sincronización en segundo plano de publicaciones activas/pausadas y órdenes de ventas.
-- Cálculo real de márgenes de ganancia mediante carga de costos locales.
-- Gestión avanzada y métricas del cliente (historial de facturación).
-- Tema de interfaz Daylight Premium personalizable y responsivo.
-- Gestor de imágenes integrado por carpetas y selector de galería en inventario.
-- Creación de productos exclusivos para la Tienda Web (locales) o para simular en Mercado Libre.
-
-## Documentación de Nuevas Características
-
-### 1. Gestor de Medios (Imágenes)
-El proyecto cuenta con un gestor de imágenes unificado accesible desde la barra lateral ("Imágenes").
-- **Almacenamiento:** Las imágenes subidas se guardan físicamente en la carpeta `backend/uploads/`.
-- **Organización:** Soporta la creación de subcarpetas jerárquicas e indica el tamaño y la fecha exacta de subida (ordenando por fecha descendente).
-- **Ruta Estática:** FastAPI expone de forma recursiva y segura este directorio en la ruta web `/uploads`. Cualquier imagen cargada es accesible públicamente mediante URLs absolutas (ej. `http://localhost:8090/uploads/carpeta/imagen.jpg`).
-- **Prevención de Traversal:** Cuenta con una función de validación de rutas `get_safe_path` en `backend/src/api/media.py` que bloquea peticiones maliciosas que busquen navegar fuera del directorio de subidas.
-
-### 2. Sincronización en Segundo Plano (Background Scheduler)
-Al arrancar el servidor backend, se levanta de manera automática un hilo demonio (`scheduler.py`) que ejecuta sincronizaciones periódicas con Mercado Libre sin bloquear el servidor web.
-- **Intervalo:** Se ejecuta cada **15 minutos**.
-- **Acciones:**
-  - Si el sistema está conectado en Modo Real, descarga e indexa las últimas 100 ventas/órdenes y actualiza los precios y stock del inventario.
-  - Si está en Modo Demo, recarga las órdenes ficticias y las publicaciones simuladas de demostración para mantener el entorno activo.
-- **Configuración:** Para ajustar el intervalo de sincronización, podés modificar el parámetro `time.sleep(900)` al final del bucle en `backend/src/scheduler.py`.
-
-### 3. Creación de Productos (Locales vs. Mercado Libre)
-Se ha implementado el botón "+ Agregar Producto" en la sección de Inventario para dar de alta artículos directamente:
-- **Productos Locales (Solo Web):** Generan un identificador con prefijo `LOCAL-` y estado `local`. Estos productos no se sincronizan a la API de Mercado Libre al modificarlos y sirven para ventas exclusivas en el Storefront.
-- **Publicaciones Mercado Libre:**
-  - **En Modo Demo:** Simula la publicación inmediata creando un identificador ficticio `MLAxxx` con enlace demo en Mercado Libre.
-  - **En Modo Real:** La aplicación despliega un aviso recomendando crear el artículo de forma nativa en Mercado Libre para garantizar la categorización apropiada y posterior sincronización.
-
-### 4. Seguridad de Acceso y Gestión de Usuarios (Login)
-Para restringir el acceso al panel administrativo en un entorno público (como un VPS), la plataforma implementa una pantalla de inicio de sesión protegida y un sistema de control de usuarios.
-
-- **Credenciales Iniciales por Defecto:**
-  - **Usuario:** `admin`
-  - **Contraseña:** `admin123`
-  - *(Se recomienda cambiar la clave o crear un nuevo usuario y borrar este desde el panel una vez montado en el VPS)*
-- **Criptografía Segura:** Las contraseñas de los usuarios son encriptadas en la base de datos utilizando el estándar criptográfico **PBKDF2-HMAC-SHA256** con una sal aleatoria única de 32 caracteres por usuario y 100,000 iteraciones, previniendo ataques de diccionario.
-- **Panel CRUD Integrado:** En la sección **Configuración > Gestión de Usuarios**, los administradores pueden crear nuevos accesos, modificar claves (lo cual invalida sesiones activas para esa cuenta) o eliminar usuarios (evitando la auto-eliminación).
-- **Historial de Auditoría con Geolocalización:** En **Configuración > Seguridad & Accesos** se registra el historial de accesos fallidos y exitosos, capturando la dirección IP del visitante y resolviendo su ubicación geográfica (País, Región y Ciudad) utilizando el servicio de `ip-api.com`. Las conexiones locales se detectan de forma segura y se registran como "Red Local".
-
-## Despliegue en Servidor VPS (Ubuntu 22.04 / 1GB RAM)
-
-Esta sección documenta la arquitectura de despliegue configurada para correr el proyecto en un servidor VPS con recursos limitados (1GB RAM, 1 vCPU).
-
-### 1. Configuración de Memoria de Intercambio (SWAP)
-Debido a la limitación de 1GB de RAM física, es crucial habilitar un archivo SWAP para evitar caídas por falta de memoria (OOM Killer) durante la compilación de Node/Next.js y el funcionamiento de la base de datos PostgreSQL.
-Se configuraron **2GB de SWAP** ejecutando:
-```bash
-sudo fallocate -l 2G /swapfile
-sudo chmod 600 /swapfile
-sudo mkswap /swapfile
-sudo swapon /swapfile
-echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
-```
-
-### 2. Entorno de Node.js y Python
-* **Node.js 20:** Next.js requiere Node.js `>= 20.9.0`. Se actualizó la versión del sistema agregando el repositorio oficial de NodeSource (v20) para compilar y ejecutar el Storefront de forma óptima.
-* **Python 3.12 + Venv:** Se configuró un entorno virtual en `/var/www/controlcenter/backend/venv` y se instalaron las dependencias requeridas en `requirements.txt` (incluyendo `python-multipart` y `cryptography`).
-
-### 3. Base de Datos (PostgreSQL)
-Se instaló y habilitó el motor PostgreSQL localmente.
-* **Usuario:** `postgres`
-* **Contraseña:** `postgres`
-* **Base de Datos:** `controlcenter`
-* *Nota: Las tablas de la base de datos se inicializan y actualizan automáticamente al arrancar el backend de FastAPI.*
-
-### 4. Servidor Web y Proxy Inverso (Nginx)
-Nginx actúa como servidor web estático para la interfaz del Panel de Administración y como proxy inverso para direccionar el tráfico. Ambos dominios y subdominios corren sobre el **puerto estándar 80**, lo que evita bloqueos de red externos:
-
-* **Storefront Next.js (Tienda Pública):**
-  * Dominios: `hidroponiarosario.com.ar`, `www.hidroponiarosario.com.ar`, `hidroponiarosario.com`, `www.hidroponiarosario.com`.
-  * Redirecciona internamente a `http://127.0.0.1:3000`.
-* **Panel de Administración (Admin + API):**
-  * Dominios: `admin.hidroponiarosario.com.ar`, `admin.hidroponiarosario.com`.
-  * Sirve de forma estática la carpeta compilada `/var/www/controlcenter/admin`.
-  * Redirecciona las peticiones de `/api/*` al backend de FastAPI (`http://127.0.0.1:8090/api/*`).
-  * Expone el directorio estático de uploads de imágenes en `/uploads`.
-
-
-### 5. Configuración de Servicios del Sistema (Systemd)
-Para asegurar que la aplicación **se levante sola si se cae el VPS o si ocurre algún error/cuelgue inesperado**, se configuraron servicios de Systemd (`systemd`) que administran el ciclo de vida de los procesos y los inician automáticamente tras un reinicio.
-
-#### Servicio Backend (`/etc/systemd/system/controlcenter-backend.service`):
-```ini
-[Unit]
-Description=ControlCenterES Backend API
-After=network.target postgresql.service
-
-[Service]
-Type=simple
-User=root
-WorkingDirectory=/var/www/controlcenter/backend
-ExecStart=/var/www/controlcenter/backend/venv/bin/python main.py
-Restart=always
-RestartSec=5
-Environment=DATABASE_URL=postgresql://postgres:postgres@localhost:5432/controlcenter
-
-[Install]
-WantedBy=multi-user.target
-```
-
-#### Servicio Storefront (`/etc/systemd/system/controlcenter-storefront.service`):
-```ini
-[Unit]
-Description=ControlCenterES Next.js Storefront
-After=network.target
-
-[Service]
-Type=simple
-User=root
-WorkingDirectory=/var/www/controlcenter/storefront
-ExecStart=/usr/bin/npm run start
-Restart=always
-RestartSec=5
-
-[Install]
-WantedBy=multi-user.target
-```
-
-#### Comandos de administración:
-```bash
-# Recargar systemd tras cambios
-sudo systemctl daemon-reload
-
-# Habilitar inicio automático en el arranque del VPS
-sudo systemctl enable controlcenter-backend
-sudo systemctl enable controlcenter-storefront
-
-# Controlar los servicios (start, stop, restart, status)
-sudo systemctl restart controlcenter-backend
-sudo systemctl restart controlcenter-storefront
-sudo systemctl status controlcenter-backend
-sudo systemctl status controlcenter-storefront
-```
-
-## Configuración de Facturación Electrónica ARCA (ex AFIP)
-
-Para emitir facturas electrónicas oficiales y realizar búsquedas de CUITs a través de los servicios web de ARCA/AFIP, es necesario configurar las credenciales de seguridad (Certificado Digital y Clave Privada) correspondientes. El sistema admite dos entornos de ejecución:
-
-1. **Homologación (Pruebas):** Utilizado para realizar pruebas de desarrollo. La AFIP firma los certificados en este entorno bajo la entidad emisora `CN=Computadores`. Las facturas emitidas aquí **no tienen validez fiscal**.
-2. **Producción (Real):** Utilizado para la emisión real y vinculante de facturas oficiales. Requiere un certificado emitido por la autoridad real de la AFIP (`CN=Sub CA de Produccion de Servicios Web`).
+*(Se ejecutará en `http://localhost:3000`)*
 
 ---
 
-### Guía de Configuración Paso a Paso para Producción (Real)
+## 🌐 Despliegue en Servidor VPS (Producción)
 
-#### Paso 1: Generar la Solicitud de Certificado (CSR) en el Panel
-1. Ve a la pestaña **Ajustes** en el panel administrativo de ControlCenter.
-2. En la sección **1. Generar Solicitud de Certificado (CSR)**, escribe un nombre identificatorio para tu alias de servidor en el campo de texto (por ejemplo: `ControlCenterES` o `HidroponiaRosario`).
-3. Haz clic en **Generar CSR**.
-4. Haz clic en el botón azul **Descargar arca.csr** para guardar el archivo de solicitud criptográfica en tu computadora local. *(Este proceso creará y guardará automáticamente la clave privada asociada `arca.key` en la carpeta segura de tu VPS: `/backend/backend/data/afip/arca.key`)*.
+El proyecto incluye el script de automatización **`python deploy_all.py`**, el cual compila los activos estáticos del frontend, los sube mediante SFTP/SSH al servidor VPS, compila el Storefront Next.js en el VPS y reinicia los servicios de `systemd`:
 
-#### Paso 2: Firmar el Certificado en el Portal Oficial de AFIP
-1. Ingresa a la web de la [AFIP](https://www.afip.gob.ar/) con tu CUIT y Clave Fiscal.
-2. Abre el servicio **"Administración de Certificados Digitales"** *(si no lo tienes activo, agrégalo desde el "Administrador de Relaciones de Clave Fiscal")*.
-3. Haz clic en **Agregar Alias**.
-4. Escribe el mismo alias que ingresaste en tu panel (ej: `ControlCenterES`).
-5. Sube el archivo `arca.csr` que descargaste en el Paso 1 y guarda.
-6. En la tabla de alias registrados, haz clic en **Ver/Descargar** al lado de tu nuevo alias para descargar el certificado firmado por AFIP (un archivo con extensión `.crt`).
-7. En el panel de **Ajustes** de ControlCenter, dirígete a la sección **2. Subir Certificado AFIP (.crt)**, selecciona el archivo descargado y haz clic en subir.
-
-#### Paso 3: Delegar los Web Services (Autorización) en AFIP
-Para que el alias/certificado que creaste pueda interactuar con los servidores de facturación, debes asociarle los servicios web adecuados:
-1. En la web de AFIP, ingresa al servicio **"Administrador de Relaciones de Clave Fiscal"**.
-2. Haz clic en **Nueva Relación**.
-3. Haz clic en **Buscar** (al lado del campo de servicio) -> selecciona **ARCA / AFIP** -> **Servicios Web**.
-4. Selecciona el servicio que deseas asociar:
-   * **`Facturación Electrónica`** (nombre interno: `wsfe`) para la emisión de comprobantes.
-   * **`ws_sr_constancia_inscripcion`** para la consulta automatizada de datos fiscales de compradores.
-5. En la sección **Representante**, haz clic en **Buscar** y selecciona el alias que creaste (ej. `ControlCenterES`).
-6. Haz clic en **Confirmar**.
-
-#### Paso 4: Activar y Guardar
-Una vez que hayas subido el certificado y delegado las relaciones en el portal de la AFIP:
-1. Selecciona **Entorno: Producción (Real)** en la columna izquierda de los Ajustes de ControlCenter.
-2. Haz clic en **Guardar Configuración ARCA**.
-3. Escribe tu CUIT en el campo correspondiente y haz clic en **Buscar AFIP** para comprobar la conectividad en producción. El sistema consultará los registros reales de AFIP y autocompletará tu Razón Social e Ingresos Brutos de inmediato.
+- `controlcenter-backend.service` (Puerto 8090)
+- `controlcenter-storefront.service` (Puerto 3000)
+- `controlcenter-whatsapp.service` (Puerto 8091)
+- Nginx como Reverse Proxy (HTTPS / Certbot)
 
 ---
-
-### Soporte Multicondición Fiscal (Facturas A, B y C)
-
-La plataforma admite la emisión automatizada de comprobantes para **Monotributistas** y **Responsables Inscriptos**:
-
-- **Factura C (Monotributo - CbteTipo 11):** Emisión con monto final no discriminado, apta para pequeños contribuyentes.
-- **Factura B (Responsable Inscripto - CbteTipo 6):** Emisión a Consumidores Finales o Monotributistas.
-- **Factura A (Responsable Inscripto a CUIT - CbteTipo 1):** 
-  - Generación automática del desglose fiscal de **Neto Gravado + IVA 21%** en la estructura XML (`<AlicIva>`, `ImpNeto`, `ImpIVA`) enviada a ARCA/AFIP.
-  - Generación de PDF oficial A con letra **A** (`COD. 001`) y desglose de IVA de acuerdo a la normativa legal.
-- **Fallback Automático (Consumidor Final):** Si el contribuyente tiene configurado el emisor como *Factura A*, pero ingresa una venta a un comprador sin CUIT (*Consumidor Final / DNI*), el sistema emite **automáticamente una Factura B (`COD. 006`)** para esa transacción, evitando rechazos de la AFIP por inconsistencia de documento.
-
----
-
-### 5. Asistente Virtual de WhatsApp con Gemini AI
-
-La plataforma integra un chatbot inteligente autónomo auto-hospedado para atención al cliente y ventas por WhatsApp, que utiliza los modelos de **Google Gemini AI** (con soporte predeterminado para **Gemini 3.6 Flash** y sistema de fallback automático a modelos alternativos).
-
-#### Arquitectura de la Integración:
-- **Pasarela WhatsApp (`/backend/whatsapp`):** Servicio Node.js que ejecuta la librería `@whiskeysockets/baileys` de forma totalmente nativa y liviana (sin necesidad de navegador Chrome/Selenium). Se ejecuta de forma aislada y auto-hospedada en la VPS bajo el servicio de systemd `controlcenter-whatsapp.service`. Cuenta además con un servidor interno de control HTTP en el puerto `8091`.
-- **Integración con FastAPI y Base de Datos:** Cuando entra o sale un mensaje en la línea de WhatsApp:
-  1. El gateway Node.js envía la consulta al endpoint interno `POST /api/whatsapp/webhook` en FastAPI.
-  2. El backend en Python consulta en tiempo real la base de datos de PostgreSQL para armar el catálogo de productos disponibles y stock actualizado.
-  3. Si la consulta incluye un número de pedido (9-12 dígitos), busca la orden en `orders_cache` e inyecta el estado de pago y envío en el contexto.
-  4. Mantiene memoria del hilo de conversación leyendo las últimas interacciones almacenadas en la tabla `whatsapp_chat_history`.
-  5. Envía la consulta enriquecida a la API de **Gemini AI** (Google AI Studio).
-  6. Devuelve la respuesta generada a la pasarela Node.js, la cual emite el mensaje de texto al cliente en WhatsApp.
-
-#### Servicio Systemd (`/etc/systemd/system/controlcenter-whatsapp.service`):
-```ini
-[Unit]
-Description=ControlCenterES WhatsApp Bot Gateway
-After=network.target controlcenter-backend.service
-
-[Service]
-Type=simple
-User=root
-WorkingDirectory=/var/www/controlcenter/backend/whatsapp
-ExecStart=/usr/bin/node index.js
-Restart=always
-RestartSec=5
-
-[Install]
-WantedBy=multi-user.target
-```
-
-#### Vinculación y Regeneración de Código QR:
-- **Vinculación por Código QR:** En el panel de control (**Configuración > Asistente WhatsApp (IA)**), el sistema sondea el estado del bot. Si no está autenticado, la pantalla muestra un código QR dinámico. Al escanearlo desde WhatsApp (*Dispositivos vinculados*), se conecta automáticamente actualizando el estado a `● CONECTADO`.
-- **Desvinculación y Regeneración de QR:** En la tarjeta *Estado del Servicio*, el botón **🔴 Desvincular Línea y Generar Nuevo QR** permite cerrar la sesión activa de Baileys, eliminar la carpeta de credenciales `auth_state` y forzar de inmediato la emisión de un nuevo Código QR para cambiar de número de teléfono.
-
-#### 👥 Sistema de Pausa Inteligente y Atención Humana (Human Takeover):
-
-Para evitar que la Inteligencia Artificial interfiera cuando un vendedor o representante humano toma el control de una conversación, el sistema integra tres mecanismos complementarios:
-
-1. **Auto-Pausa por Intervención de Vendedor (Opción 1):**
-   - Cuando un operador envía un mensaje directo a un cliente desde el celular o WhatsApp Web vinculado (`fromMe: true`), la pasarela de Node.js notifica automáticamente al backend.
-   - El backend registra la intervención en la tabla `whatsapp_paused_chats` y **pausa automáticamente las respuestas de IA para ese número de cliente durante 24 horas**.
-
-2. **Detección e Instrucción de Transferencia por IA (Opción 2):**
-   - El System Prompt incluye la regla `REGLA DE ATENCIÓN HUMANA`.
-   - Si el cliente solicita explícitamente hablar con una persona real o la consulta requiere atención personalizada, Gemini responderá amablemente confirmando la derivación e incluirá la etiqueta `[HUMAN_TAKEOVER]`.
-   - Al detectar dicha etiqueta, el backend pausa la IA para ese cliente por 24 horas y limpia la etiqueta antes de enviar el mensaje al cliente.
-
-3. **Comandos Rápidos por Chat (Opción 3):**
-   - **Pausar IA:** Escribir **`#pausa`**, **`#pausar`** o **`#humano`** en cualquier chat desactiva inmediatamente la IA para ese cliente y confirma con un mensaje de atención humana activada.
-   - **Reactivar IA:** Escribir **`#bot`**, **`#reactivar`** o **`#reanudar`** vuelve a activar las respuestas automáticas al instante.
-
-4. **Gestión desde el Panel de Administración:**
-   - En la pantalla de Configuración de WhatsApp se incluye la tarjeta **👤 Chats en Atención Humana (IA Pausada)**.
-   - Muestra la lista en tiempo real de clientes con IA pausada, el motivo (`👤 Respuesta de Vendedor`, `🤖 Solicitud de Cliente` o `⚙️ Comando de Chat`), la fecha de caducidad y un botón de un clic **`🟢 Reanudar IA`** para devolver la atención al bot en cualquier momento.
-
----
-
-### 6. Sistema de Códigos QR y Control de Inventario por Cámara
-
-La plataforma cuenta con un módulo autónomo de trazabilidad e identificación de productos mediante códigos QR y control por visión computacional en vivo desde smartphones:
-
-- **Generación de QR y Etiquetas Comercial (`CC-PROD-{ml_id}`):** Cada producto (tanto sincronizado de Mercado Libre como creado exclusivamente para la Tienda Web) genera un código de referencia único e irrepetible. Desde la tabla de inventario se puede previsualizar e imprimir su etiqueta adhesiva profesional en impresoras térmicas o estándar.
-- **Escáner por Cámara de Celular en Vivo:** Mediante la librería `html5-qrcode`, el panel administrativo permite activar directamente la cámara trasera de cualquier celular o tablet. Al enfocar la etiqueta de un producto, la cámara decodifica el código QR en tiempo real y abre la tarjeta del producto.
-- **Ajuste Rápido de Stock y Precios:** Al escanear un artículo, la aplicación ofrece botones de un toque (`-5`, `-1`, `+1`, `+5`, `+10`), campo para fijar el stock exacto y edición simultánea de los **Precios de Mercado Libre y Tienda Web**, sincronizando los cambios con PostgreSQL y Mercado Libre automáticamente.
-- **Registro de Última Modificación (`last_modified`):** Cada producto almacena la marca temporal exacta de la última vez que se actualizaron sus unidades de stock, precios o costos base. Esta fecha y hora se muestra en letra pequeña (`🕒 Modificado: DD/MM/AAAA, HH:MM`) debajo del título de cada artículo en el inventario.
-- **Historial de Valores Anteriores (`ant: ...`):** Debajo de cada campo editable de inventario (**Stock**, **Precio ML**, **Costo Base**, **Costo ML** y **Precio Web**) se visualiza automáticamente en letra chica gris la cifra anterior previa al último cambio (ejemplo: `ant: $12.500` o `ant: 15`).
-
-### 7. Automatizaciones de Mensajería Posventa en Mercado Libre
-
-En **Configuración > Conexión Mercado Libre** se incluyen interruptores para controlar la automatización de la mensajería con los compradores:
-- **Mensaje automático de compra:** Enviado inmediatamente al detectar una nueva orden de venta.
-- **Mensaje automático de seguimiento:** Enviado cuando el paquete se encuentra despachado.
-- **Mensaje automático de factura:** Enviado al adjuntar el comprobante fiscal.
-- **Mensajería manual:** Interruptor para mostrar u ocultar los botones de envío directo de mensajes en la tabla de Ventas.
-
-### 8. Cartera de Clientes y Gestión Manual
-La sección **Cartera de Clientes** permite consolidar y administrar la información de compradores:
-- **Creación y Edición Manual:** Se pueden dar de alta nuevos clientes directamente desde la interfaz con su Razón Social/Nombre completo, Alias/Nickname, Email, Teléfono, Tipo/Número de Documento (DNI, CUIT, etc.) y Dirección.
-- **Modificación de Datos:** Permite actualizar en cualquier momento la información de clientes existentes (tanto creados manualmente como importados de ventas de Mercado Libre).
-- **Distinción de Origen:** La tabla identifica con insignias claras si el cliente proviene de una compra de Mercado Libre (`MeLi`) o de un alta realizada en la plataforma (`Manual`).
-- **Buscador en Tiempo Real:** Barra de filtrado dinámico por cualquier campo (DNI, CUIT, Nombre, Email, Teléfono o Dirección).
-
-### 9. Respaldos Automáticos Mensuales y Retención de 1 Año
-El backend incluye una rutina automatizada de copias de seguridad completa del sistema:
-- **Respaldo Mensual Automático:** Una vez al mes, el programador en segundo plano (`scheduler.py`) genera de forma transparente un archivo `backup_auto_YYYYMMDD_HHMMSS.zip` con la base de datos PostgreSQL completa (`pg_dump`), configuraciones `.env`, directorio de imágenes `uploads/` y facturas PDF `invoices/`.
-- **Política de Retención de 12 Meses (1 Año):** Al generarse un nuevo respaldo automático, el sistema purga los archivos automáticos más antiguos manteniendo únicamente los 12 respaldos automáticos más recientes.
-- **Protección de Respaldos Manuales:** Los respaldos generados manualmente por el usuario mediante el botón "Crear Nuevo Respaldo Manual" se conservan indefinidamente y no son afectados por las reglas de limpieza automática.
-- **Visualización en el Panel:** En **Configuración > Respaldos (Backups)** se visualiza el estado del programador automático y etiquetas distintivas (`Automático` / `Manual`) para cada archivo disponible para descarga.
-
-### 10. Integración Mercado Pago, Cobro con QR/Link, Buscador y Facturación ARCA (AFIP)
-
-Se incorporaron mejoras integrales en el módulo de ventas, cobros y facturación electrónica:
-
-- **Integración Mercado Pago (ML / MP):**
-  - Discriminación estricta entre **Cobros/Ventas entrantes** (`collector_id == user_id`) y **Egresos/Gastos salientes** (`payer_id == user_id` o `collector_id != user_id`).
-  - Extracción automática de comisiones, impuestos y retenciones de MP en **Gastos Variables**.
-  - Clasificación de egresos por tarjeta de crédito, compras e insumos y transferencias salientes sin contaminar el registro de ventas.
-  - Widget de **Saldo Mercado Pago** en el Dashboard (Dinero disponible vs A liberar).
-
-- **Terminal de Cobro Dinámico con QR y Link MP en Ventas:**
-  - En la ventana de **Registrar Venta**, se puede presionar el botón `📱 Cobrar con QR / Link MP`.
-  - Genera al instante un **código QR de 300x300 px** en pantalla para que el cliente lo escanee en el acto desde su app de Mercado Pago.
-  - Genera y copia enlaces directos de pago y botón para compartir por **WhatsApp**.
-
-- **Buscador de Productos con Autocompletado y Escáner de Código de Barras / QR:**
-  - El selector de productos en **Registrar Venta** cuenta con autocompletado en tiempo real por Nombre, Modelo o SKU/ID.
-  - Compatible con **lectores de código de barras USB/inalámbricos**: al escanear el código físico o QR de un producto, se autocompleta el título, precio e ID al instante.
-  - Los campos de comprador en mostrador son opcionales y por defecto se asignan como "Consumidor Final (Sin DNI)".
-
-- **Facturación Electrónica ARCA (ex AFIP) para Consumidor Final y CUIT:**
-  - **Soporte Consumidor Final sin DNI:** Envío automático del código de documento oficial AFIP `DocTipo = 99` y `DocNumero = 0` para emitir Factura B / C anónima de mostrador.
-  - **Facturación con CUIT a Pedido:** Modal interactivo al hacer clic en "Emitir Factura AFIP" en cualquier venta de Mercado Libre o Local.
-  - **Consulta en Tiempo Real al Padrón AFIP (`PersonaServiceA5`):** Al ingresar un CUIT, el sistema consulta en tiempo real los servidores de AFIP, obtiene la Razón Social y Domicilio Fiscal oficialmente registrados y los completa en el comprobante.
-  - **Monotributistas & Responsables Inscriptos:** Cumplimiento normativo para Monotributo (emisión de Factura C nominada al CUIT ingresado) y Responsables Inscriptos (Factura A / B).
-
----
-
-### 11. Sistema de Captación de Leads (Lead Magnet), Gestor de Archivos y Envíos SMTP
-
-La plataforma incorpora una solución 100% genérica y administrable desde el panel de control para implementar estrategias de atracción y capitalización de contactos (**Lead Magnets**):
-
-#### 🚀 Gestor de Archivos y Multimedia (Ampliación para PDFs y Documentos):
-- **Soporte de Formatos Ampliado:** Además de imágenes (`.png`, `.jpg`, `.jpeg`, `.gif`, `.webp`, `.svg`), el gestor admite archivos PDF (`.pdf`), documentos (`.doc`, `.docx`), archivos comprimidos (`.zip`) y texto (`.txt`).
-- **Identificación Visual:** Las tarjetas del gestor muestran íconos diferenciados (`FileText`, `File`) e insignias de color de acuerdo al tipo de archivo.
-- **Acceso Público Directo:** Cada archivo subido obtiene una URL estática accesible (`/uploads/directorio/archivo.pdf`).
-
-#### 🧲 Pop-up Lead Magnet Genérico (Storefront y Blog):
-- **Modal Dinámico (`LeadMagnetPopup.tsx`):** Componente en Next.js con diseño moderno (Glassmorphism), backdrop blur y temporizador configurable.
-- **Formulario de Captura Completo:** Registra **Nombre**, **Email** y **País** (con selector desplegable adaptativo).
-- **Control de Frecuencia:** Almacena la preferencia de cierre en `localStorage` para no reabrir el modal tras haber sido completado o cerrado por el usuario.
-- **Filtrado por Rutas:** Configurable desde el panel para mostrarse en *Toda la Web y Blog*, *Solo en el Blog*, o *Solo en la Tienda Web*.
-
-#### 📧 Envío Automático por Email vía SMTP (Gmail):
-- **Despacho Asíncrono:** El backend en FastAPI utiliza `BackgroundTasks` para registrar al suscriptor y enviar inmediatamente el correo electrónico sin ralentizar la navegación del usuario.
-- **Soporte de Gmail SMTP:** Integración mediante el puerto TLS 587 (`smtp.gmail.com`) utilizando **Contraseñas de Aplicación de 16 caracteres**.
-- **Formato Personalizable:** Permite definir desde el panel de administración el Asunto del mail, el cuerpo HTML (con soporte para el comodín `{name}`) y la opción de adjuntar o enlazar automáticamente el archivo PDF seleccionado.
-- **Botón de Prueba de Conexión:** En el panel admin se incluye el envío de emails de prueba en tiempo real para verificar las credenciales SMTP cargadas.
-
-#### 📊 Capitalización de Contactos y Exportación a CSV / Excel:
-- **Almacenamiento en PostgreSQL:** Toda la información recolectada se guarda en la tabla `leads` (`id`, `name`, `email`, `country`, `source`, `pdf_sent`, `created_at`).
-- **Panel CRUD e Historial:** Muestra la lista de suscriptores con filtros, fecha y eliminación de registros.
-- **Exportación en un Clic:** Botón **"Exportar a CSV / Excel"** que genera de forma instantánea el archivo `leads_contactos.csv` para importar en plataformas de Email Marketing (Mailchimp, Brevo, Meta Ads, WhatsApp, etc.).
-
-#### 📱 Interfaz Responsiva de Configuración (Grilla de 4 Opciones por Fila):
-- La navegación por pestañas en **Configuración** (`Settings.jsx`) cuenta con un diseño de cuadrícula adaptativa de 4 items por fila con íconos distintivos, garantizando una excelente usabilidad en smartphones y pantallas de escritorio.
-```
+© 2026 ControlCenterES. Todos los derechos reservados.
