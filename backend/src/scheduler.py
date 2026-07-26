@@ -39,6 +39,24 @@ def background_sync_loop():
             except Exception as inpi_err:
                 print(f"[Scheduler] Error en sincronización INPI: {inpi_err}")
 
+            # Procesar publicaciones de Marketing agendadas
+            try:
+                from src import database
+                from src.utils import social_publisher
+                due_posts = database.get_due_scheduled_marketing_posts()
+                if due_posts:
+                    print(f"[Scheduler] Procesando {len(due_posts)} publicaciones de Marketing programadas...")
+                    for post in due_posts:
+                        ok, summary = social_publisher.publish_post_to_all_platforms(post)
+                        if ok:
+                            database.update_marketing_post_status(post['id'], 'published', external_post_id=summary)
+                            print(f"[Scheduler] Publicación #{post['id']} enviada a redes sociales: {summary}")
+                        else:
+                            database.update_marketing_post_status(post['id'], 'failed', error_message=summary)
+                            print(f"[Scheduler] Error al publicar #{post['id']}: {summary}")
+            except Exception as mkt_err:
+                print(f"[Scheduler] Error procesando publicaciones de marketing:", mkt_err)
+
         except Exception as e:
             print("[Scheduler] Error en la tarea de segundo plano:", str(e))
             traceback.print_exc()

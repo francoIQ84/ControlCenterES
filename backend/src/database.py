@@ -1813,6 +1813,85 @@ def get_system_notifications():
         'unread_count': len(notifications)
     }
 
+# --- Marketing Operations ---
+
+def create_marketing_post(post_data):
+    now = datetime.now().isoformat()
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute('''
+                INSERT INTO marketing_posts 
+                (product_ml_id, title, post_type, platforms, caption, media_urls, scheduled_at, status)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                RETURNING id
+            ''', (
+                post_data.get('product_ml_id'),
+                post_data.get('title', 'Publicación'),
+                post_data.get('post_type', 'post'),
+                post_data.get('platforms', 'instagram,facebook'),
+                post_data.get('caption', ''),
+                post_data.get('media_urls', ''),
+                post_data.get('scheduled_at'),
+                post_data.get('status', 'draft')
+            ))
+            row = cursor.fetchone()
+            return row['id'] if row else None
+
+def get_marketing_posts(status=None, limit=100):
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            sql = "SELECT * FROM marketing_posts WHERE 1=1"
+            params = []
+            if status:
+                sql += " AND status = %s"
+                params.append(status)
+            sql += " ORDER BY created_at DESC LIMIT %s"
+            params.append(limit)
+            cursor.execute(sql, params)
+            return [dict(r) for r in cursor.fetchall()]
+
+def get_marketing_post_by_id(post_id):
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute("SELECT * FROM marketing_posts WHERE id = %s", (post_id,))
+            row = cursor.fetchone()
+            return dict(row) if row else None
+
+def update_marketing_post_status(post_id, status, external_post_id=None, error_message=None):
+    now = datetime.now().isoformat()
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            if status == 'published':
+                cursor.execute('''
+                    UPDATE marketing_posts 
+                    SET status = %s, external_post_id = %s, published_at = %s, error_message = NULL
+                    WHERE id = %s
+                ''', (status, external_post_id, now, post_id))
+            else:
+                cursor.execute('''
+                    UPDATE marketing_posts 
+                    SET status = %s, error_message = %s
+                    WHERE id = %s
+                ''', (status, error_message, post_id))
+
+def delete_marketing_post(post_id):
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute("DELETE FROM marketing_posts WHERE id = %s", (post_id,))
+
+def get_due_scheduled_marketing_posts():
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute('''
+                SELECT * FROM marketing_posts 
+                WHERE status = 'scheduled' 
+                  AND scheduled_at IS NOT NULL 
+                  AND scheduled_at <= CURRENT_TIMESTAMP
+                ORDER BY scheduled_at ASC
+            ''')
+            return [dict(r) for r in cursor.fetchall()]
+
+
 
 
 

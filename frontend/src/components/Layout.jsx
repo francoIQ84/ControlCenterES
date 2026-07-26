@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { Outlet, NavLink, useNavigate } from 'react-router-dom'
-import { LayoutDashboard, Package, Receipt, Users, Settings, Sun, Moon, RefreshCw, Zap, Image, LogOut, Menu, FileText, Wallet, BookOpen, ShieldCheck, Bell, CheckCircle2, X } from 'lucide-react'
+import { LayoutDashboard, Package, Receipt, Users, Settings, Sun, Moon, RefreshCw, Zap, Image, LogOut, Menu, FileText, Wallet, BookOpen, ShieldCheck, Bell, CheckCircle2, X, Megaphone } from 'lucide-react'
 
 export default function Layout() {
   const navigate = useNavigate()
@@ -322,6 +322,10 @@ export default function Layout() {
               <span className="nav-text">Propiedad Industrial</span>
             </NavLink>
           )}
+          <NavLink to="/marketing" className={({isActive}) => `nav-link ${isActive ? 'active' : ''}`}>
+            <Megaphone size={20} style={{ minWidth: 20 }} />
+            <span className="nav-text">Marketing & Redes</span>
+          </NavLink>
           {hasPermission('settings') && (
             <NavLink to="/settings" className={({isActive}) => `nav-link ${isActive ? 'active' : ''}`}>
               <Settings size={20} style={{ minWidth: 20 }} />
