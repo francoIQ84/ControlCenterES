@@ -41,7 +41,8 @@ export default function Settings() {
     expenses: true,
     customers: true,
     media: true,
-    settings: true
+    settings: true,
+    inpi: true
   })
   
   // Change Password / Permissions Form State
@@ -56,7 +57,8 @@ export default function Settings() {
     expenses: false,
     customers: false,
     media: false,
-    settings: false
+    settings: false,
+    inpi: false
   })
 
   // Web Config State
@@ -604,7 +606,8 @@ export default function Settings() {
           expenses: true,
           customers: true,
           media: true,
-          settings: true
+          settings: true,
+          inpi: true
         })
         fetchUsers()
       } else {
@@ -627,7 +630,8 @@ export default function Settings() {
       expenses: list.includes('expenses'),
       customers: list.includes('customers'),
       media: list.includes('media'),
-      settings: list.includes('settings')
+      settings: list.includes('settings'),
+      inpi: list.includes('inpi')
     })
   }
 
@@ -1080,6 +1084,10 @@ export default function Settings() {
                       <input type="checkbox" checked={newPerms.settings} onChange={e => setNewPerms(prev => ({...prev, settings: e.target.checked}))} />
                       Configuración
                     </label>
+                    <label style={{display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer'}}>
+                      <input type="checkbox" checked={newPerms.inpi} onChange={e => setNewPerms(prev => ({...prev, inpi: e.target.checked}))} />
+                      Propiedad Industrial
+                    </label>
                   </div>
                 </div>
 
@@ -1160,6 +1168,10 @@ export default function Settings() {
                     <label style={{display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer'}}>
                       <input type="checkbox" checked={editPerms.settings} onChange={e => setEditPerms(prev => ({...prev, settings: e.target.checked}))} />
                       Configuración
+                    </label>
+                    <label style={{display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer'}}>
+                      <input type="checkbox" checked={editPerms.inpi} onChange={e => setEditPerms(prev => ({...prev, inpi: e.target.checked}))} />
+                      Propiedad Industrial
                     </label>
                   </div>
                   <div style={{display: 'flex', gap: 10, marginTop: 5}}>
