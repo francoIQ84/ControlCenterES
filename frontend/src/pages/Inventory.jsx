@@ -9,7 +9,7 @@ export default function Inventory() {
   const [query, setQuery] = useState("")
   const [sortConfig, setSortConfig] = useState({ key: null, direction: 'asc' })
   const [drafts, setDrafts] = useState({})
-  const [viewMode, setViewMode] = useState('detailed') // 'detailed' o 'compact'
+  const [viewMode, setViewMode] = useState('compact') // 'compact' o 'detailed'
   
   // QR Modals state
   const [showQrScanModal, setShowQrScanModal] = useState(false)
@@ -638,16 +638,16 @@ export default function Inventory() {
               <thead>
                 {viewMode === 'compact' ? (
                   <tr>
-                    <th style={{width: 50}}>IMG</th>
-                    <th onClick={() => requestSort('title')} style={{cursor: 'pointer', userSelect: 'none'}}>Detalle{getSortIcon('title')}</th>
-                    <th onClick={() => requestSort('status')} style={{cursor: 'pointer', userSelect: 'none'}}>Estado{getSortIcon('status')}</th>
+                    <th style={{width: 45}}>IMG</th>
+                    <th onClick={() => requestSort('title')} style={{cursor: 'pointer', userSelect: 'none', minWidth: 220}}>Detalle{getSortIcon('title')}</th>
+                    <th onClick={() => requestSort('status')} style={{cursor: 'pointer', userSelect: 'none', width: 90}}>Estado{getSortIcon('status')}</th>
                     <th style={{width: 60}}>Stock</th>
-                    <th style={{width: 80}}>P. ML</th>
-                    <th style={{width: 80}}>C. Base</th>
-                    <th style={{width: 80}} title="Costo total de Mercado Libre obtenido desde la API (Comisión de venta + Envío gratis si aplica)">C. ML ⓘ</th>
-                    <th style={{width: 80}}>P. Web</th>
-                    <th style={{width: 50, textAlign: 'center'}}>Web</th>
-                    <th style={{width: 110}}>Acciones</th>
+                    <th style={{width: 75}}>P. ML</th>
+                    <th style={{width: 75}}>C. Base</th>
+                    <th style={{width: 75}} title="Costo total de Mercado Libre obtenido desde la API (Comisión de venta + Envío gratis si aplica)">C. ML ⓘ</th>
+                    <th style={{width: 75}}>P. Web</th>
+                    <th style={{width: 45, textAlign: 'center'}}>Web</th>
+                    <th style={{width: 100}}>Acciones</th>
                   </tr>
                 ) : (
                   <tr>
@@ -908,10 +908,34 @@ function ProductRow({ p, onSave, onOpenGallery, onDraftChange, categories, viewM
               style={{width: 35, height: 35, objectFit: 'contain', borderRadius: 4, border: '1px solid var(--border-color)', backgroundColor: '#fff'}}
             />
           </td>
-          <td data-label="Detalle" style={{padding: '5px 8px'}}>
-            <div style={{fontWeight: 600, fontSize: '0.85rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '280px'}} title={p.title}>{p.title}</div>
-            <div style={{display: 'flex', alignItems: 'center', gap: 6, marginTop: 2, flexWrap: 'wrap'}}>
+          <td data-label="Detalle" style={{padding: '6px 10px'}}>
+            <div 
+              style={{
+                fontWeight: 600, 
+                fontSize: '0.86rem', 
+                color: 'var(--text-primary)', 
+                lineHeight: '1.3',
+                wordBreak: 'break-word'
+              }} 
+              title={p.title}
+            >
+              {p.title}
+            </div>
+            <div style={{display: 'flex', alignItems: 'center', gap: 6, marginTop: 4, flexWrap: 'wrap'}}>
               <span style={{color: 'var(--text-secondary)', fontSize: '0.7rem', fontFamily: 'monospace'}}>{p.ml_id}</span>
+              {p.category_name && (
+                <span style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  padding: '1px 6px',
+                  fontSize: '0.65rem',
+                  borderRadius: 3,
+                  backgroundColor: 'var(--bg-hover)',
+                  color: 'var(--text-secondary)'
+                }}>
+                  📁 {p.category_name}
+                </span>
+              )}
               {parseNum(featuredOrder, true) > 0 && (
                 <span style={{
                   display: 'inline-flex',
@@ -946,7 +970,7 @@ function ProductRow({ p, onSave, onOpenGallery, onDraftChange, categories, viewM
                   }}
                   title="Ver publicación en Mercado Libre"
                 >
-                  <ExternalLink size={10} /> MeLi
+                  <ExternalLink size={10} /> MeLi ↗
                 </a>
               )}
               {isWebActive && (
@@ -968,11 +992,11 @@ function ProductRow({ p, onSave, onOpenGallery, onDraftChange, categories, viewM
                   }}
                   title="Ver producto en la Tienda Web"
                 >
-                  <ExternalLink size={10} /> Web
+                  <ExternalLink size={10} /> Web ↗
                 </a>
               )}
             </div>
-            <div style={{color: 'var(--text-secondary)', fontSize: '0.68rem', marginTop: 2}}>
+            <div style={{color: 'var(--text-secondary)', fontSize: '0.68rem', marginTop: 3}}>
               🕒 Modif: {p.last_modified ? new Date(p.last_modified).toLocaleString('es-AR', { dateStyle: 'short', timeStyle: 'short' }) : 'Sin cambios'}
             </div>
           </td>
