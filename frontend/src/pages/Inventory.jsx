@@ -70,7 +70,8 @@ export default function Inventory() {
           d.is_web_active !== (orig.is_web_active ? 1 : 0) ||
           (d.category_id || null) !== (orig.category_id || null) ||
           d.sync_meli !== (orig.sync_meli === 0 ? 0 : 1) ||
-          d.min_stock !== (orig.min_stock || 0);
+          d.min_stock !== (orig.min_stock || 0) ||
+          d.featured_order !== (orig.featured_order || 0);
         if (isChanged) {
           modified.push(d)
         }
@@ -827,6 +828,7 @@ function ProductRow({ p, onSave, onOpenGallery, onDraftChange, categories, viewM
   const [categoryId, setCategoryId] = useState(p.category_id || "")
   const [syncMeli, setSyncMeli] = useState(p.sync_meli !== 0)
   const [description, setDescription] = useState(p.description || "")
+  const [featuredOrder, setFeaturedOrder] = useState(p.featured_order || 0)
   const [showWebDetails, setShowWebDetails] = useState(false)
 
   const isMeliMain = !p.images || p.images.split(',')[0].trim() === p.thumbnail
@@ -890,9 +892,10 @@ function ProductRow({ p, onSave, onOpenGallery, onDraftChange, categories, viewM
       is_web_active: isWebActive ? 1 : 0,
       category_id: categoryId ? parseInt(categoryId) : null,
       sync_meli: syncMeli ? 1 : 0,
-      min_stock: parseNum(minStock, true)
+      min_stock: parseNum(minStock, true),
+      featured_order: parseNum(featuredOrder, true)
     })
-  }, [qty, price, cost, costMeli, priceWeb, isWebActive, description, useMeliImage, customMainUrl, additionalUrls, categoryId, syncMeli, minStock])
+  }, [qty, price, cost, costMeli, priceWeb, isWebActive, description, useMeliImage, customMainUrl, additionalUrls, categoryId, syncMeli, minStock, featuredOrder])
 
   if (viewMode === 'compact') {
     return (
@@ -909,6 +912,21 @@ function ProductRow({ p, onSave, onOpenGallery, onDraftChange, categories, viewM
             <div style={{fontWeight: 600, fontSize: '0.85rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '280px'}} title={p.title}>{p.title}</div>
             <div style={{display: 'flex', alignItems: 'center', gap: 6, marginTop: 2, flexWrap: 'wrap'}}>
               <span style={{color: 'var(--text-secondary)', fontSize: '0.7rem', fontFamily: 'monospace'}}>{p.ml_id}</span>
+              {parseNum(featuredOrder, true) > 0 && (
+                <span style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 2,
+                  padding: '1px 5px',
+                  fontSize: '0.65rem',
+                  fontWeight: 600,
+                  borderRadius: 3,
+                  backgroundColor: 'rgba(245, 158, 11, 0.2)',
+                  color: '#d97706'
+                }}>
+                  ⭐ #{featuredOrder}
+                </span>
+              )}
               {p.status !== 'local' && (
                 <a 
                   href={p.permalink || `https://articulo.mercadolibre.com.ar/${p.ml_id.replace('MLA', 'MLA-')}`} 
@@ -1002,7 +1020,7 @@ function ProductRow({ p, onSave, onOpenGallery, onDraftChange, categories, viewM
           </td>
           <td data-label="Acciones" style={{padding: '5px 8px'}}>
             <div style={{display: 'flex', gap: 6, alignItems: 'center'}}>
-              <button className="btn-icon" onClick={() => onSave(p.ml_id, qty, price, cost, costMeli, priceWeb, getCombinedImages(), description, isWebActive, categoryId, syncMeli, minStock)} title="Guardar Todo" style={{padding: 4}}>
+              <button className="btn-icon" onClick={() => onSave(p.ml_id, qty, price, cost, costMeli, priceWeb, getCombinedImages(), description, isWebActive, categoryId, syncMeli, minStock, featuredOrder)} title="Guardar Todo" style={{padding: 4}}>
                 <Save size={14} className="text-blue-500" />
               </button>
               <button type="button" className="btn-icon" onClick={() => onOpenQrModal(p)} title="Ver / Imprimir QR" style={{padding: 4, color: 'var(--accent-blue)'}}>
@@ -1054,9 +1072,12 @@ function ProductRow({ p, onSave, onOpenGallery, onDraftChange, categories, viewM
                       {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                     </select>
                   </div>
-                  <div style={{display: 'flex', alignItems: 'center', gap: 10, marginTop: 4}}>
+                  <div style={{display: 'flex', alignItems: 'center', gap: 10, marginTop: 4, flexWrap: 'wrap'}}>
                     <label style={{fontSize: '0.75rem', color: 'var(--text-secondary)'}}>Alerta Mín:
                       <input type="number" value={minStock} onChange={e => setMinStock(e.target.value)} style={{width: 50, marginLeft: 5, padding: '3px 5px', fontSize: '0.75rem', border: '1px solid var(--border-color)', borderRadius: 4, backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)'}}/>
+                    </label>
+                    <label style={{fontSize: '0.75rem', color: 'var(--text-secondary)'}}>⭐ Orden Destacado:
+                      <input type="number" min="0" value={featuredOrder} onChange={e => setFeaturedOrder(e.target.value)} style={{width: 50, marginLeft: 5, padding: '3px 5px', fontSize: '0.75rem', border: '1px solid var(--border-color)', borderRadius: 4, backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)'}} title="0 = Normal. 1, 2, 3... = Destacado en Portada"/>
                     </label>
                     {p.status !== 'local' && (
                       <label style={{display: 'flex', alignItems: 'center', gap: 4, fontSize: '0.75rem', cursor: 'pointer', color: 'var(--text-secondary)'}}>
@@ -1112,6 +1133,22 @@ function ProductRow({ p, onSave, onOpenGallery, onDraftChange, categories, viewM
           <div style={{fontWeight: 600, fontSize: '0.9rem'}}>{p.title}</div>
           <div style={{display: 'flex', alignItems: 'center', gap: 8, marginTop: 4, flexWrap: 'wrap'}}>
             <span style={{color: 'var(--text-secondary)', fontSize: '0.75rem', fontFamily: 'monospace'}}>{p.ml_id}</span>
+            {parseNum(featuredOrder, true) > 0 && (
+              <span style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 4,
+                padding: '2px 8px',
+                fontSize: '0.72rem',
+                fontWeight: 600,
+                borderRadius: 4,
+                backgroundColor: 'rgba(245, 158, 11, 0.2)',
+                color: '#d97706',
+                border: '1px solid rgba(245, 158, 11, 0.3)'
+              }}>
+                ⭐ #{featuredOrder}
+              </span>
+            )}
             {p.status !== 'local' && (
               <a 
                 href={p.permalink || `https://articulo.mercadolibre.com.ar/${p.ml_id.replace('MLA', 'MLA-')}`} 
@@ -1229,7 +1266,7 @@ function ProductRow({ p, onSave, onOpenGallery, onDraftChange, categories, viewM
         </td>
         <td data-label="Acción">
           <div style={{display: 'flex', gap: 6, alignItems: 'center'}}>
-            <button className="btn-icon" onClick={() => onSave(p.ml_id, qty, price, cost, costMeli, priceWeb, getCombinedImages(), description, isWebActive, categoryId, syncMeli, minStock)} title="Guardar Todo">
+            <button className="btn-icon" onClick={() => onSave(p.ml_id, qty, price, cost, costMeli, priceWeb, getCombinedImages(), description, isWebActive, categoryId, syncMeli, minStock, featuredOrder)} title="Guardar Todo">
               <Save size={18} className="text-blue-500" />
             </button>
             <button type="button" className="btn-icon" onClick={() => onOpenQrModal(p)} title="Ver / Imprimir QR" style={{color: 'var(--accent-blue)'}}>
@@ -1314,6 +1351,18 @@ function ProductRow({ p, onSave, onOpenGallery, onDraftChange, categories, viewM
                        <option key={c.id} value={c.id}>{c.name}</option>
                     ))}
                   </select>
+                </div>
+                <div style={{marginTop: 5}}>
+                  <label style={{fontSize: '0.85rem', fontWeight: 'bold', display: 'block', marginBottom: 5}}>⭐ Orden Destacado en Portada Web</label>
+                  <input 
+                    type="number" 
+                    min="0" 
+                    value={featuredOrder} 
+                    onChange={e => setFeaturedOrder(e.target.value)} 
+                    placeholder="0 = Normal. 1, 2, 3... = Posición"
+                    style={{width: '100%', padding: '6px 10px', backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)', border: '1px solid var(--border-color)', borderRadius: 4}}
+                    title="0 = No destacado. 1, 2, 3... = Destacado en Portada"
+                  />
                 </div>
                 {p.status !== 'local' && (
                   <div style={{marginTop: 5}}>

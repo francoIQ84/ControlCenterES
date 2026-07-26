@@ -121,6 +121,12 @@ export default function Settings() {
   const [webConfigLoading, setWebConfigLoading] = useState(false)
   const [showImageSelector, setShowImageSelector] = useState(false)
   const [selectorTarget, setSelectorTarget] = useState("")
+
+  // Featured Products Order state
+  const [inventoryProducts, setInventoryProducts] = useState([])
+  const [featuredIds, setFeaturedIds] = useState([])
+  const [selectedProductToAdd, setSelectedProductToAdd] = useState("")
+  const [savingFeaturedOrder, setSavingFeaturedOrder] = useState(false)
   
   // Backup State
   const [backups, setBackups] = useState([])
@@ -513,7 +519,78 @@ export default function Settings() {
       fetchBackups()
       fetchDiskSpace()
     }
+    if (activeTab === "web_config") {
+      fetchFeaturedProducts()
+    }
   }, [activeTab])
+
+  const fetchFeaturedProducts = () => {
+    fetch('/api/inventory/')
+      .then(r => r.json())
+      .then(data => {
+        if (data && data.products) {
+          setInventoryProducts(data.products)
+          const featured = data.products
+            .filter(p => (p.featured_order || 0) > 0)
+            .sort((a, b) => a.featured_order - b.featured_order)
+            .map(p => p.ml_id)
+          setFeaturedIds(featured)
+        }
+      })
+      .catch(err => console.error(err))
+  }
+
+  const moveFeaturedUp = (index) => {
+    if (index <= 0) return
+    const newArr = [...featuredIds]
+    const temp = newArr[index - 1]
+    newArr[index - 1] = newArr[index]
+    newArr[index] = temp
+    setFeaturedIds(newArr)
+  }
+
+  const moveFeaturedDown = (index) => {
+    if (index >= featuredIds.length - 1) return
+    const newArr = [...featuredIds]
+    const temp = newArr[index + 1]
+    newArr[index + 1] = newArr[index]
+    newArr[index] = temp
+    setFeaturedIds(newArr)
+  }
+
+  const removeFeatured = (id) => {
+    setFeaturedIds(prev => prev.filter(item => item !== id))
+  }
+
+  const addFeatured = () => {
+    if (!selectedProductToAdd) return
+    if (!featuredIds.includes(selectedProductToAdd)) {
+      setFeaturedIds(prev => [...prev, selectedProductToAdd])
+    }
+    setSelectedProductToAdd("")
+  }
+
+  const handleSaveFeaturedOrder = async () => {
+    setSavingFeaturedOrder(true)
+    try {
+      const res = await fetch('/api/inventory/featured-order', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ featured_ids: featuredIds })
+      })
+      const data = await res.json()
+      if (res.ok) {
+        alert("Orden de productos destacados guardado con éxito. Se verán primero en la portada de la tienda web.")
+        fetchFeaturedProducts()
+      } else {
+        alert("Error al guardar orden: " + (data.detail || "Error desconocido"))
+      }
+    } catch(err) {
+      alert("Error: " + err.message)
+    } finally {
+      setSavingFeaturedOrder(false)
+    }
+  }
 
   const handleCreateBackup = async () => {
     setCreatingBackup(true)
@@ -1403,6 +1480,131 @@ export default function Settings() {
               </div>
             </form>
           )}
+
+          <div style={{marginTop: 35, paddingTop: 25, borderTop: '1px solid var(--border-color)'}}>
+            <h3 style={{marginBottom: 5}}>⭐ Productos Destacados en Portada (Vista "Todos")</h3>
+            <p style={{fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: 20}}>
+              Seleccioná y ordená los productos del inventario que querés que aparezcan <strong>primeros</strong> en la página web pública cuando el usuario no tenga ninguna categoría filtrada.
+            </p>
+
+            <div style={{display: 'flex', gap: 10, marginBottom: 20, alignItems: 'center', flexWrap: 'wrap'}}>
+              <select 
+                value={selectedProductToAdd} 
+                onChange={e => setSelectedProductToAdd(e.target.value)}
+                style={{flex: 1, minWidth: 250, padding: '8px 12px', borderRadius: 6, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-dark)', color: 'var(--text-primary)'}}
+              >
+                <option value="">-- Seleccionar producto para agregar a destacados --</option>
+                {inventoryProducts
+                  .filter(p => p.is_web_active && !featuredIds.includes(p.ml_id))
+                  .map(p => (
+                    <option key={p.ml_id} value={p.ml_id}>
+                      {p.title} (Stock: {p.available_quantity} - ${p.price_web > 0 ? p.price_web : p.price})
+                    </option>
+                  ))}
+              </select>
+              <button 
+                type="button" 
+                className="btn" 
+                onClick={addFeatured}
+                disabled={!selectedProductToAdd}
+                style={{backgroundColor: 'var(--accent-emerald)', color: '#fff'}}
+              >
+                + Agregar a Destacados
+              </button>
+            </div>
+
+            {featuredIds.length === 0 ? (
+              <div style={{padding: 20, textAlign: 'center', color: 'var(--text-secondary)', border: '1px dashed var(--border-color)', borderRadius: 8}}>
+                No hay productos destacados configurados. Se mostrarán por orden alfabetico por defecto.
+              </div>
+            ) : (
+              <div style={{display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 20}}>
+                {featuredIds.map((id, idx) => {
+                  const prod = inventoryProducts.find(p => p.ml_id === id) || { title: id, thumbnail: '', price: 0 }
+                  return (
+                    <div 
+                      key={id} 
+                      style={{
+                        display: 'flex', 
+                        alignItems: 'center', 
+                        justifyContent: 'space-between', 
+                        padding: '10px 15px', 
+                        backgroundColor: 'var(--bg-dark)', 
+                        border: '1px solid var(--border-color)', 
+                        borderRadius: 8,
+                        gap: 15
+                      }}
+                    >
+                      <div style={{display: 'flex', alignItems: 'center', gap: 12}}>
+                        <span style={{
+                          fontWeight: 'bold', 
+                          fontSize: '0.9rem', 
+                          color: '#d97706', 
+                          width: 28, 
+                          height: 28, 
+                          borderRadius: '50%', 
+                          backgroundColor: 'rgba(245, 158, 11, 0.15)', 
+                          display: 'flex', 
+                          alignItems: 'center', 
+                          justifyContent: 'center'
+                        }}>
+                          #{idx + 1}
+                        </span>
+                        {prod.thumbnail && (
+                          <img src={prod.thumbnail} alt="" style={{width: 40, height: 40, objectFit: 'contain', borderRadius: 4, backgroundColor: '#fff'}} />
+                        )}
+                        <div>
+                          <div style={{fontWeight: 600, fontSize: '0.9rem'}}>{prod.title}</div>
+                          <div style={{fontSize: '0.75rem', color: 'var(--text-secondary)'}}>
+                            ID: {id} | Categoría: {prod.category_name || 'Sin Categoría'} | Stock: {prod.available_quantity}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div style={{display: 'flex', gap: 6, alignItems: 'center'}}>
+                        <button 
+                          type="button" 
+                          className="btn" 
+                          style={{padding: '4px 8px', fontSize: '0.75rem', backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)', border: '1px solid var(--border-color)'}} 
+                          onClick={() => moveFeaturedUp(idx)}
+                          disabled={idx === 0}
+                        >
+                          ⬆️ Subir
+                        </button>
+                        <button 
+                          type="button" 
+                          className="btn" 
+                          style={{padding: '4px 8px', fontSize: '0.75rem', backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)', border: '1px solid var(--border-color)'}} 
+                          onClick={() => moveFeaturedDown(idx)}
+                          disabled={idx === featuredIds.length - 1}
+                        >
+                          ⬇️ Bajar
+                        </button>
+                        <button 
+                          type="button" 
+                          className="btn" 
+                          style={{padding: '4px 8px', fontSize: '0.75rem', backgroundColor: 'rgba(239, 68, 68, 0.15)', color: '#ef4444', border: '1px solid rgba(239, 68, 68, 0.3)'}} 
+                          onClick={() => removeFeatured(id)}
+                        >
+                          ❌ Quitar
+                        </button>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+
+            <button 
+              type="button" 
+              className="btn" 
+              onClick={handleSaveFeaturedOrder}
+              disabled={savingFeaturedOrder}
+              style={{backgroundColor: 'var(--accent-blue)', color: '#fff', fontSize: '0.9rem', padding: '10px 20px'}}
+            >
+              {savingFeaturedOrder ? 'Guardando...' : '💾 Guardar Orden de Productos Destacados'}
+            </button>
+          </div>
         </div>
       )}
 

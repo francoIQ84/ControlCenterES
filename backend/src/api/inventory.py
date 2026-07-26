@@ -19,6 +19,7 @@ class UpdateProductRequest(BaseModel):
     category_id: Optional[int] = None
     sync_meli: int = 1
     min_stock: int = 0
+    featured_order: int = 0
 
 class CreateProductRequest(BaseModel):
     title: str
@@ -34,6 +35,7 @@ class CreateProductRequest(BaseModel):
     category_id: Optional[int] = None
     sync_meli: int = 1
     min_stock: int = 0
+    featured_order: int = 0
 
 @router.get("/")
 def get_products(query: str = None, status: str = None):
@@ -117,9 +119,21 @@ class BulkUpdateItem(BaseModel):
     category_id: Optional[int] = None
     sync_meli: int = 1
     min_stock: int = 0
+    featured_order: int = 0
 
 class BulkUpdateRequest(BaseModel):
     items: list[BulkUpdateItem]
+
+class FeaturedOrderRequest(BaseModel):
+    featured_ids: list[str]
+
+@router.put("/featured-order")
+def set_featured_products_order(payload: FeaturedOrderRequest):
+    try:
+        database.update_featured_products_order(payload.featured_ids)
+        return {"success": True, "message": "Orden de productos destacados actualizado correctamente"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error al actualizar orden de destacados: {str(e)}")
 
 @router.put("/bulk")
 def bulk_update_products(payload: BulkUpdateRequest):
@@ -146,7 +160,8 @@ def bulk_update_products(payload: BulkUpdateRequest):
             item.is_web_active,
             item.category_id,
             item.sync_meli,
-            item.min_stock
+            item.min_stock,
+            item.featured_order
         )
 
         is_local = item.ml_id.startswith('LOCAL-') or item.ml_id.startswith('WEB-')
@@ -186,7 +201,8 @@ def update_product(ml_id: str, payload: UpdateProductRequest):
         payload.is_web_active,
         payload.category_id,
         payload.sync_meli,
-        payload.min_stock
+        payload.min_stock,
+        payload.featured_order
     )
     
     # Sync to ML only if the product status is active or paused and NOT local-only AND sync_meli is enabled

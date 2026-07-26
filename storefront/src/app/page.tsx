@@ -95,6 +95,11 @@ export default async function Home(props: {
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-8">
           {products.map((p: any) => (
             <Link key={p.id} href={`/product/${p.id}`} className="group relative block bg-white border border-gray-200 rounded-2xl p-4 shadow-sm hover:shadow-lg hover:border-blue-500 transition-all duration-300">
+              {p.featured_order > 0 && !activeCategory && (
+                <span className="absolute top-6 left-6 z-10 bg-amber-500/90 backdrop-blur-sm text-white text-[11px] font-bold px-2.5 py-1 rounded-full shadow-sm flex items-center gap-1">
+                  ⭐ Destacado
+                </span>
+              )}
               <div className="relative h-60 w-full overflow-hidden rounded-xl bg-gray-50 mb-4 flex items-center justify-center p-2">
                 <img 
                   src={p.images[0] || 'https://via.placeholder.com/400'} 

@@ -82,6 +82,7 @@ def init_db():
             # Add category_id to products_cache
             cursor.execute('ALTER TABLE products_cache ADD COLUMN IF NOT EXISTS category_id INTEGER REFERENCES categories(id) ON DELETE SET NULL;')
             cursor.execute('ALTER TABLE products_cache ADD COLUMN IF NOT EXISTS sync_meli INTEGER DEFAULT 1;')
+            cursor.execute('ALTER TABLE products_cache ADD COLUMN IF NOT EXISTS featured_order INTEGER DEFAULT 0;')
 
             # Orders cache table
             cursor.execute('''
@@ -414,8 +415,8 @@ def create_product(product_data):
         with conn.cursor() as cursor:
             cursor.execute('''
                 INSERT INTO products_cache 
-                (ml_id, title, price, available_quantity, cost_price, cost_meli, permalink, thumbnail, status, last_sync, price_web, images, description, is_web_active, visits_meli, visits_web, category_id, sync_meli, min_stock, last_modified)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                (ml_id, title, price, available_quantity, cost_price, cost_meli, permalink, thumbnail, status, last_sync, price_web, images, description, is_web_active, visits_meli, visits_web, category_id, sync_meli, min_stock, featured_order, last_modified)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             ''', (
                 product_data['ml_id'],
                 product_data['title'],
@@ -436,6 +437,7 @@ def create_product(product_data):
                 product_data.get('category_id'),
                 product_data.get('sync_meli', 1),
                 product_data.get('min_stock', 0),
+                product_data.get('featured_order', 0),
                 now
             ))
 
@@ -469,7 +471,7 @@ def update_product_stock_price(ml_id, quantity, price):
                     p_price = row['price']
             cursor.execute("UPDATE products_cache SET available_quantity = %s, price = %s, prev_stock = %s, prev_price = %s, last_modified = %s WHERE ml_id = %s", (quantity, price, p_stock, p_price, now, ml_id))
 
-def update_product_web_details(ml_id, price_web, images, description, is_web_active, category_id=None, sync_meli=1, min_stock=0):
+def update_product_web_details(ml_id, price_web, images, description, is_web_active, category_id=None, sync_meli=1, min_stock=0, featured_order=0):
     now = datetime.now().isoformat()
     with get_connection() as conn:
         with conn.cursor() as cursor:
@@ -481,9 +483,19 @@ def update_product_web_details(ml_id, price_web, images, description, is_web_act
                     p_web = row['price_web']
             cursor.execute('''
                 UPDATE products_cache 
-                SET price_web = %s, images = %s, description = %s, is_web_active = %s, category_id = %s, sync_meli = %s, min_stock = %s, prev_price_web = %s, last_modified = %s
+                SET price_web = %s, images = %s, description = %s, is_web_active = %s, category_id = %s, sync_meli = %s, min_stock = %s, featured_order = %s, prev_price_web = %s, last_modified = %s
                 WHERE ml_id = %s
-            ''', (price_web, images, description, is_web_active, category_id, sync_meli, min_stock, p_web, now, ml_id))
+            ''', (price_web, images, description, is_web_active, category_id, sync_meli, min_stock, featured_order, p_web, now, ml_id))
+
+def update_featured_products_order(featured_ids: list):
+    now = datetime.now().isoformat()
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            # Reset featured_order to 0 for all products
+            cursor.execute("UPDATE products_cache SET featured_order = 0, last_modified = %s", (now,))
+            # Set sequential order for products in the featured list
+            for idx, ml_id in enumerate(featured_ids, start=1):
+                cursor.execute("UPDATE products_cache SET featured_order = %s, last_modified = %s WHERE ml_id = %s", (idx, now, ml_id))
 
 def get_all_products(query=None, status_filter=None, is_web_active=None, category_slug=None):
     with get_connection() as conn:
@@ -491,7 +503,7 @@ def get_all_products(query=None, status_filter=None, is_web_active=None, categor
             sql = """
                 SELECT p.ml_id, p.title, p.price, p.available_quantity, p.cost_price, p.cost_meli, p.permalink, p.thumbnail, 
                        p.status, p.last_sync, p.price_web, p.images, p.description, p.is_web_active, 
-                       p.visits_meli, p.visits_web, p.category_id, p.sync_meli, p.min_stock, p.last_modified,
+                       p.visits_meli, p.visits_web, p.category_id, p.sync_meli, p.min_stock, p.featured_order, p.last_modified,
                        p.prev_stock, p.prev_price, p.prev_cost_price, p.prev_cost_meli, p.prev_price_web,
                        c.name as category_name, c.slug as category_slug
                  FROM products_cache p
@@ -516,6 +528,8 @@ def get_all_products(query=None, status_filter=None, is_web_active=None, categor
                 sql += " AND c.slug = %s"
                 params.append(category_slug)
                 
+            sql += " ORDER BY CASE WHEN p.featured_order > 0 THEN p.featured_order ELSE 999999 END ASC, p.title ASC"
+
             cursor.execute(sql, params)
             rows = cursor.fetchall()
             return [dict(r) for r in rows]
@@ -526,7 +540,7 @@ def get_product_by_ml_id(ml_id: str):
             cursor.execute("""
                 SELECT p.ml_id, p.title, p.price, p.available_quantity, p.cost_price, p.cost_meli, p.permalink, p.thumbnail, 
                        p.status, p.last_sync, p.price_web, p.images, p.description, p.is_web_active, 
-                       p.visits_meli, p.visits_web, p.category_id, p.sync_meli, p.min_stock, p.last_modified,
+                       p.visits_meli, p.visits_web, p.category_id, p.sync_meli, p.min_stock, p.featured_order, p.last_modified,
                        p.prev_stock, p.prev_price, p.prev_cost_price, p.prev_cost_meli, p.prev_price_web,
                        c.name as category_name, c.slug as category_slug
                  FROM products_cache p

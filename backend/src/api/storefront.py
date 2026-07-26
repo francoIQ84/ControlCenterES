@@ -30,7 +30,8 @@ def get_storefront_products(category: str = None):
             "category_name": p.get('category_name'),
             "category_slug": p.get('category_slug'),
             "permalink": p.get('permalink'),
-            "status": p.get('status')
+            "status": p.get('status'),
+            "featured_order": p.get('featured_order', 0)
         })
     return mapped
 
