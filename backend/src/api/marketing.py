@@ -17,6 +17,7 @@ class GeneratePostRequest(BaseModel):
     tone: Optional[str] = "entusiasta"        # profesional, entusiasta, divertido
 
 class CreatePostRequest(BaseModel):
+    id: Optional[int] = None
     product_ml_id: Optional[str] = None
     title: str
     post_type: str = "post"                   # post, reel, story
@@ -139,7 +140,11 @@ def create_or_schedule_post(req: CreatePostRequest, _=Depends(verify_session)):
         "scheduled_at": req.scheduled_at,
         "status": status
     }
-    post_id = database.create_marketing_post(post_data)
+    if req.id:
+        database.update_marketing_post(req.id, post_data)
+        post_id = req.id
+    else:
+        post_id = database.create_marketing_post(post_data)
     return {"success": True, "post_id": post_id, "status": status, "message": "Publicación registrada correctamente"}
 
 @router.post("/publish-now/{post_id}")

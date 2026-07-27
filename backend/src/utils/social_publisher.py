@@ -1,6 +1,7 @@
 import json
 import urllib.request
 import urllib.parse
+import urllib.error
 from src import database
 
 META_GRAPH_API_VERSION = "v19.0"
@@ -22,7 +23,7 @@ def publish_to_instagram_photo(image_url: str, caption: str):
     ig_id = creds["instagram_account_id"]
 
     if not access_token or not ig_id:
-        return False, "Credenciales de Meta/Instagram no configuradas en Ajustes de Marketing."
+        return False, "Credenciales de Instagram no configuradas."
 
     try:
         # Step 1: Create Media Container
@@ -56,10 +57,17 @@ def publish_to_instagram_photo(image_url: str, caption: str):
         if post_id:
             return True, f"Instagram Post ID: {post_id}"
         else:
-            return False, "Error al publicar el contenedor en Instagram."
+            return False, "Error al publicar en Instagram."
 
+    except urllib.error.HTTPError as e:
+        try:
+            err_body = json.loads(e.read().decode('utf-8'))
+            err_msg = err_body.get('error', {}).get('message', str(e))
+        except Exception:
+            err_msg = str(e)
+        return False, f"Instagram API Error: {err_msg}"
     except Exception as e:
-        return False, f"Error en Meta API: {str(e)}"
+        return False, f"Error en Instagram API: {str(e)}"
 
 def publish_to_instagram_reel(video_url: str, caption: str):
     creds = get_meta_credentials()
@@ -67,7 +75,7 @@ def publish_to_instagram_reel(video_url: str, caption: str):
     ig_id = creds["instagram_account_id"]
 
     if not access_token or not ig_id:
-        return False, "Credenciales de Meta/Instagram no configuradas."
+        return False, "Credenciales de Instagram no configuradas."
 
     try:
         # Step 1: Create Reel Container
@@ -104,8 +112,15 @@ def publish_to_instagram_reel(video_url: str, caption: str):
         else:
             return False, "Error al publicar el Reel en Instagram."
 
+    except urllib.error.HTTPError as e:
+        try:
+            err_body = json.loads(e.read().decode('utf-8'))
+            err_msg = err_body.get('error', {}).get('message', str(e))
+        except Exception:
+            err_msg = str(e)
+        return False, f"Instagram API Error (Reel): {err_msg}"
     except Exception as e:
-        return False, f"Error en Meta API (Reel): {str(e)}"
+        return False, f"Error en Instagram API (Reel): {str(e)}"
 
 def publish_to_facebook_page(media_url: str, caption: str, is_video: bool = False):
     creds = get_meta_credentials()
@@ -116,12 +131,18 @@ def publish_to_facebook_page(media_url: str, caption: str, is_video: bool = Fals
         return False, "Credenciales de Facebook Page no configuradas."
 
     try:
-        if is_video:
+        if is_video and media_url and (media_url.startswith("http://") or media_url.startswith("https://")):
             post_url = f"{META_GRAPH_BASE_URL}/{page_id}/videos"
             payload = {"file_url": media_url, "description": caption, "access_token": access_token}
-        else:
+        elif media_url and (media_url.startswith("http://") or media_url.startswith("https://")) and not media_url.endswith(".webp"):
             post_url = f"{META_GRAPH_BASE_URL}/{page_id}/photos"
             payload = {"url": media_url, "caption": caption, "access_token": access_token}
+        else:
+            # Feed text post fallback (handles text-only or webp images cleanly)
+            post_url = f"{META_GRAPH_BASE_URL}/{page_id}/feed"
+            payload = {"message": caption, "access_token": access_token}
+            if media_url and (media_url.startswith("http://") or media_url.startswith("https://")):
+                payload["link"] = media_url
 
         params = urllib.parse.urlencode(payload).encode('utf-8')
         req = urllib.request.Request(post_url, data=params, method="POST")
@@ -133,6 +154,13 @@ def publish_to_facebook_page(media_url: str, caption: str, is_video: bool = Fals
             return True, f"Facebook Post ID: {post_id}"
         else:
             return False, "Error al publicar en la página de Facebook."
+    except urllib.error.HTTPError as e:
+        try:
+            err_body = json.loads(e.read().decode('utf-8'))
+            err_msg = err_body.get('error', {}).get('message', str(e))
+        except Exception:
+            err_msg = str(e)
+        return False, f"Facebook API Error: {err_msg}"
     except Exception as e:
         return False, f"Error en Facebook API: {str(e)}"
 
@@ -142,22 +170,29 @@ def publish_post_to_all_platforms(post_data: dict):
     caption = post_data.get("caption") or ""
     media_url = (post_data.get("media_urls") or "").split(",")[0].strip()
 
+    creds = get_meta_credentials()
     results = []
     successes = 0
 
     if "instagram" in platforms:
-        if post_type == "reel":
-            ok, msg = publish_to_instagram_reel(media_url, caption)
+        if not creds["instagram_account_id"]:
+            results.append("Instagram: Omitido (ID no configurado)")
         else:
-            ok, msg = publish_to_instagram_photo(media_url, caption)
-        results.append(f"Instagram: {'OK' if ok else msg}")
-        if ok: successes += 1
+            if post_type == "reel":
+                ok, msg = publish_to_instagram_reel(media_url, caption)
+            else:
+                ok, msg = publish_to_instagram_photo(media_url, caption)
+            results.append(f"Instagram: {'OK' if ok else msg}")
+            if ok: successes += 1
 
     if "facebook" in platforms:
-        is_vid = (post_type == "reel")
-        ok, msg = publish_to_facebook_page(media_url, caption, is_video=is_vid)
-        results.append(f"Facebook: {'OK' if ok else msg}")
-        if ok: successes += 1
+        if not creds["facebook_page_id"]:
+            results.append("Facebook: Omitido (ID no configurado)")
+        else:
+            is_vid = (post_type == "reel")
+            ok, msg = publish_to_facebook_page(media_url, caption, is_video=is_vid)
+            results.append(f"Facebook: {'OK' if ok else msg}")
+            if ok: successes += 1
 
     overall_ok = (successes > 0)
     summary_msg = " | ".join(results)

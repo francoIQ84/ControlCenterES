@@ -87,6 +87,16 @@ En el comercio moderno, gestionar Mercado Libre, una tienda online propia, factu
 - **Programador & Tarea en Segundo Plano (`scheduler.py`)**:
   - Agendamiento de fecha y hora para publicaciones. El backend procesa la cola automáticamente sin requerir intervención manual.
 
+#### 🔑 Guía de Obtención de Credenciales de Meta (Instagram & Facebook):
+1. **Facebook Page ID**:
+   - Ingresar a [Meta Graph API Explorer](https://developers.facebook.com/tools/explorer/).
+   - Con tu Token seleccionado, consultar `me/accounts` -> Copiar la propiedad `"id"` de tu página de Facebook.
+2. **Instagram Business Account ID**:
+   - Tu cuenta de Instagram debe ser de tipo Profesional/Empresa vinculada a tu página de Facebook.
+   - En Graph API Explorer, consultar `{TU_FACEBOOK_PAGE_ID}?fields=instagram_business_account`.
+   - Copiar la propiedad `"id"` que aparece dentro de `instagram_business_account`.
+3. Cargar el **Meta Access Token**, **Instagram Account ID** y **Facebook Page ID** en el panel administrativo (**Marketing > Configuración de Redes**).
+
 ---
 
 ### 7. 🧲 Captación de Leads, Email Marketing & Pop-up Magnet

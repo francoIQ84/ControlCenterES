@@ -23,6 +23,7 @@ export default function Marketing() {
   const [mediaUrl, setMediaUrl] = useState('')
   const [scheduledAt, setScheduledAt] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  const [editingPostId, setEditingPostId] = useState(null)
 
   // Config state
   const [metaConfig, setMetaConfig] = useState({
@@ -37,6 +38,44 @@ export default function Marketing() {
     fetchPosts()
     fetchMetaConfig()
   }, [])
+
+  const handleResetForm = () => {
+    setEditingPostId(null)
+    setSelectedProduct('')
+    setPostTitle('')
+    setPostType('post')
+    setPlatforms({ instagram: true, facebook: true })
+    setCaption('')
+    setMediaUrl('')
+    setScheduledAt('')
+    setGeneratedData(null)
+  }
+
+  const handleEditPost = (p) => {
+    setEditingPostId(p.id)
+    setSelectedProduct(p.product_ml_id || '')
+    setPostTitle(p.title || '')
+    setPostType(p.post_type || 'post')
+    const pStr = (p.platforms || '').toLowerCase()
+    setPlatforms({
+      instagram: pStr.includes('instagram'),
+      facebook: pStr.includes('facebook')
+    })
+    setCaption(p.caption || '')
+    setMediaUrl(p.media_urls || '')
+    if (p.scheduled_at) {
+      try {
+        const d = new Date(p.scheduled_at)
+        const isoStr = new Date(d.getTime() - (d.getTimezoneOffset() * 60000)).toISOString().slice(0, 16)
+        setScheduledAt(isoStr)
+      } catch(e) {
+        setScheduledAt('')
+      }
+    } else {
+      setScheduledAt('')
+    }
+    setActiveTab('creator')
+  }
 
   const fetchProducts = () => {
     fetch('/api/inventory/')
@@ -116,6 +155,7 @@ export default function Marketing() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          id: editingPostId || null,
           product_ml_id: selectedProduct || null,
           title: postTitle,
           post_type: postType,
@@ -128,14 +168,13 @@ export default function Marketing() {
       })
       const data = await res.json()
       if (res.ok) {
-        alert(finalStatus === 'scheduled' ? "Publicación programada correctamente!" : "Borrador guardado con éxito")
+        alert(editingPostId ? "¡Publicación actualizada con éxito!" : (finalStatus === 'scheduled' ? "Publicación programada correctamente!" : "Borrador guardado con éxito"))
+        handleResetForm()
         fetchPosts()
-        if (finalStatus === 'scheduled') setActiveTab('calendar')
+        setActiveTab('calendar')
       } else {
         alert("Error: " + (data.detail || "No se pudo guardar la publicación"))
       }
-    } catch(err) {
-      alert("Error: " + err.message)
     } finally {
       setSubmitting(false)
     }
@@ -255,10 +294,17 @@ export default function Marketing() {
         <div style={{display: 'flex', gap: 25, flexWrap: 'wrap'}}>
           {/* Columna Izquierda: Generación & Ajustes */}
           <div className="card" style={{flex: 1, minWidth: 320}}>
-            <h3 style={{marginTop: 0, marginBottom: 15, display: 'flex', alignItems: 'center', gap: 8}}>
-              <Sparkles size={18} style={{color: 'var(--accent-orange)'}} />
-              1. Selección de Producto & IA
-            </h3>
+            <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15}}>
+              <h3 style={{margin: 0, display: 'flex', alignItems: 'center', gap: 8}}>
+                <Sparkles size={18} style={{color: 'var(--accent-orange)'}} />
+                {editingPostId ? `✏️ Editando Publicación #${editingPostId}` : '1. Selección de Producto & IA'}
+              </h3>
+              {editingPostId && (
+                <button className="btn" onClick={handleResetForm} style={{padding: '3px 8px', fontSize: '0.75rem', backgroundColor: 'var(--bg-dark)', color: 'var(--text-primary)', border: '1px solid var(--border-color)'}}>
+                  ❌ Cancelar Edición
+                </button>
+              )}
+            </div>
 
             <div style={{display: 'flex', flexDirection: 'column', gap: 15}}>
               <label style={{fontSize: '0.85rem', fontWeight: 600}}>Producto del Inventario *
@@ -492,7 +538,10 @@ export default function Marketing() {
                           </span>
                         </td>
                         <td>
-                          <div style={{display: 'flex', gap: 6}}>
+                          <div style={{display: 'flex', gap: 6, alignItems: 'center'}}>
+                            <button className="btn" style={{padding: '3px 8px', fontSize: '0.7rem', backgroundColor: 'var(--bg-dark)', color: 'var(--text-primary)', border: '1px solid var(--border-color)'}} onClick={() => handleEditPost(p)} title="Editar Borrador / Publicación">
+                              ✏️ Editar
+                            </button>
                             {p.status !== 'published' && (
                               <button className="btn" style={{padding: '3px 8px', fontSize: '0.7rem', backgroundColor: 'var(--accent-emerald)', color: '#fff'}} onClick={() => handlePublishNow(p.id)} title="Publicar inmediatamente en Meta">
                                 <Send size={12} /> Publicar

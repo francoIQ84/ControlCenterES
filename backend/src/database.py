@@ -1879,6 +1879,32 @@ def delete_marketing_post(post_id):
         with conn.cursor() as cursor:
             cursor.execute("DELETE FROM marketing_posts WHERE id = %s", (post_id,))
 
+def update_marketing_post(post_id, post_data):
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute('''
+                UPDATE marketing_posts
+                SET product_ml_id = %s,
+                    title = %s,
+                    post_type = %s,
+                    platforms = %s,
+                    caption = %s,
+                    media_urls = %s,
+                    scheduled_at = %s,
+                    status = %s
+                WHERE id = %s
+            ''', (
+                post_data.get('product_ml_id'),
+                post_data.get('title', 'Publicación'),
+                post_data.get('post_type', 'post'),
+                post_data.get('platforms', 'instagram,facebook'),
+                post_data.get('caption', ''),
+                post_data.get('media_urls', ''),
+                post_data.get('scheduled_at'),
+                post_data.get('status', 'draft'),
+                post_id
+            ))
+
 def get_due_scheduled_marketing_posts():
     with get_connection() as conn:
         with conn.cursor() as cursor:
