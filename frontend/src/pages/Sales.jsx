@@ -85,19 +85,55 @@ export default function Sales() {
   const [customCuit, setCustomCuit] = useState('')
   const [customName, setCustomName] = useState('')
   const [cuitLookupLoading, setCuitLookupLoading] = useState(false)
+  const [mlBillingInfo, setMlBillingInfo] = useState(null)
+  const [mlBillingLoading, setMlBillingLoading] = useState(false)
 
-  const handleOpenInvoiceModal = (order) => {
+  const handleOpenInvoiceModal = async (order) => {
     setInvoiceModalOrder(order)
+    setMlBillingInfo(null)
+    
     const buyerDoc = order.buyer?.document_number || ''
     const buyerDocType = order.buyer?.document_type || ''
+    const buyerName = order.buyer?.name || ''
+
     if (buyerDocType === 'CUIT' || buyerDoc.length === 11) {
       setCustomInvoiceDocType('CUIT')
       setCustomCuit(buyerDoc)
-      setCustomName(order.buyer?.name || '')
+      setCustomName(buyerName)
     } else {
       setCustomInvoiceDocType('99')
       setCustomCuit('')
       setCustomName('')
+    }
+
+    // Fetch detailed billing info from backend/ML
+    setMlBillingLoading(true)
+    try {
+      const res = await fetch(`/api/sales/${order.order_id}/billing-info`)
+      if (res.ok) {
+        const data = await res.json()
+        setMlBillingInfo(data)
+        if (data.document_number && (data.document_number.length === 11 || data.document_type === 'CUIT' || data.document_type === 'CUIL')) {
+          setCustomInvoiceDocType('CUIT')
+          setCustomCuit(data.document_number)
+          if (data.name) setCustomName(data.name)
+        }
+      }
+    } catch(err) {
+      console.error("Error loading billing info:", err)
+    } finally {
+      setMlBillingLoading(false)
+    }
+  }
+
+  const handleApplyMlBilling = () => {
+    if (!mlBillingInfo) return
+    if (mlBillingInfo.document_number) {
+      setCustomInvoiceDocType('CUIT')
+      setCustomCuit(mlBillingInfo.document_number)
+    }
+    if (mlBillingInfo.name) {
+      setCustomName(mlBillingInfo.name)
     }
   }
 
@@ -114,7 +150,7 @@ export default function Sales() {
         setCustomName(data.razon_social || '')
         alert(`¡Razón Social encontrada!: ${data.razon_social}`)
       } else {
-        alert("Error AFIP Padrón: " + (data.detail || "No se encontró el CUIT"))
+        alert("Error AFIP Padrón: " + (data.detail || data.error || "No se encontró el CUIT"))
       }
     } catch(err) {
       alert("Error al consultar CUIT: " + err.message)
@@ -126,6 +162,13 @@ export default function Sales() {
   const handleConfirmInvoice = async () => {
     if (!invoiceModalOrder) return
     const orderId = invoiceModalOrder.order_id
+
+    if (invoiceModalOrder.invoice_number || invoiceModalOrder.afip_cae || invoiceModalOrder.invoice_generated === 1) {
+      alert(`⚠️ Este pedido #${orderId} ya posee una factura emitida (${invoiceModalOrder.invoice_number || 'con CAE'}). No se pueden emitir facturas duplicadas para la misma venta.`)
+      setInvoiceModalOrder(null)
+      return
+    }
+
     setInvoicingStates(prev => ({ ...prev, [orderId]: true }))
 
     try {
@@ -164,6 +207,10 @@ export default function Sales() {
   const handleCreateInvoice = async (orderId) => {
     const targetOrder = orders.find(o => o.order_id === orderId)
     if (targetOrder) {
+      if (targetOrder.invoice_number || targetOrder.afip_cae || targetOrder.invoice_generated === 1) {
+        alert(`⚠️ El pedido #${orderId} ya se encuentra facturado (Comprobante: ${targetOrder.invoice_number || 'con CAE'}).`)
+        return
+      }
       handleOpenInvoiceModal(targetOrder)
     } else {
       setInvoicingStates(prev => ({ ...prev, [orderId]: true }))
@@ -197,6 +244,22 @@ export default function Sales() {
         alert("Mensaje enviado exitosamente")
       } else {
         alert("Error al enviar mensaje: " + (data.detail || "Error desconocido"))
+      }
+    } catch(err) {
+      alert("Error de conexión: " + err.message)
+    }
+  }
+
+  const handleDeleteOrder = async (orderId) => {
+    if (!window.confirm(`¿Estás seguro de que deseas eliminar la venta #${orderId} del historial local?`)) return
+    try {
+      const res = await fetch(`/api/sales/${orderId}`, { method: 'DELETE' })
+      if (res.ok) {
+        alert(`Venta #${orderId} eliminada con éxito.`)
+        fetchOrders()
+      } else {
+        const data = await res.json()
+        alert("Error al eliminar venta: " + (data.detail || "Error desconocido"))
       }
     } catch(err) {
       alert("Error de conexión: " + err.message)
@@ -800,6 +863,16 @@ export default function Sales() {
                         )}
                       </div>
                     )}
+                    <div style={{display: 'flex', justifyContent: 'center', marginTop: 4}}>
+                      <button 
+                        onClick={() => handleDeleteOrder(o.order_id)} 
+                        className="btn" 
+                        title="Eliminar registro de esta venta" 
+                        style={{padding: '2px 6px', fontSize: '0.7rem', backgroundColor: 'transparent', color: '#ef4444', border: '1px solid #ef4444', borderRadius: 4, opacity: 0.75}}
+                      >
+                        🗑️ Eliminar
+                      </button>
+                    </div>
                     {o.source_platform === 'MERCADOLIBRE' && meliEnableManualMsg && (
                       <div style={{display: 'flex', gap: 4, marginTop: 5, justifyContent: 'center', width: '100%'}}>
                         <button 
@@ -1359,6 +1432,55 @@ export default function Sales() {
             <div style={{marginBottom: 15, fontSize: '0.9rem', color: 'var(--text-secondary)'}}>
               Pedido: <strong>#{invoiceModalOrder.order_id}</strong> | Plataforma: <strong>{invoiceModalOrder.source_platform}</strong> | Total: <strong>${invoiceModalOrder.total_amount?.toLocaleString()}</strong>
             </div>
+
+            {/* Mercado Libre / Customer Billing Info Banner */}
+            {mlBillingLoading ? (
+              <div style={{fontSize: '0.8rem', color: 'var(--text-secondary)', padding: '10px', backgroundColor: 'var(--bg-hover)', borderRadius: 8, marginBottom: 15, textAlign: 'center'}}>
+                ⏳ Consultando datos de facturación registrados...
+              </div>
+            ) : mlBillingInfo && (mlBillingInfo.document_number || mlBillingInfo.name) ? (
+              <div style={{
+                backgroundColor: 'rgba(59, 130, 246, 0.08)',
+                border: '1px solid rgba(59, 130, 246, 0.25)',
+                borderRadius: 8,
+                padding: 12,
+                marginBottom: 15
+              }}>
+                <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8}}>
+                  <span style={{fontSize: '0.82rem', fontWeight: 'bold', color: 'var(--accent-blue)', display: 'flex', alignItems: 'center', gap: 6}}>
+                    🗂️ Datos de Facturación Registrados ({mlBillingInfo.source}):
+                  </span>
+                  <button
+                    type="button"
+                    className="btn"
+                    onClick={handleApplyMlBilling}
+                    style={{padding: '3px 8px', fontSize: '0.75rem', backgroundColor: 'var(--accent-blue)', color: '#fff', borderRadius: 4}}
+                    title="Copiar estos datos al formulario de emisión"
+                  >
+                    ✨ Usar datos cargados
+                  </button>
+                </div>
+                <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px 12px', fontSize: '0.8rem', color: 'var(--text-primary)'}}>
+                  <div>
+                    <span style={{color: 'var(--text-secondary)'}}>CUIT / DNI: </span>
+                    <strong>{mlBillingInfo.document_number || 'Sin CUIT'}</strong>
+                  </div>
+                  <div>
+                    <span style={{color: 'var(--text-secondary)'}}>Condición IVA: </span>
+                    <strong style={{color: 'var(--accent-emerald)'}}>{mlBillingInfo.taxpayer_type || 'Consumidor Final'}</strong>
+                  </div>
+                  <div style={{gridColumn: 'span 2'}}>
+                    <span style={{color: 'var(--text-secondary)'}}>Razón Social: </span>
+                    <strong>{mlBillingInfo.name || 'Sin Razón Social'}</strong>
+                  </div>
+                  {mlBillingInfo.address && (
+                    <div style={{gridColumn: 'span 2', fontSize: '0.78rem', color: 'var(--text-secondary)'}}>
+                      <span>Domicilio Fiscal: </span>{mlBillingInfo.address}
+                    </div>
+                  )}
+                </div>
+              </div>
+            ) : null}
 
             <div style={{marginBottom: 20, display: 'flex', flexDirection: 'column', gap: 12}}>
               <label style={{display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', fontWeight: 'bold'}}>

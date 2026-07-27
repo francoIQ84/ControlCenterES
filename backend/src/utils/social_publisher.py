@@ -125,16 +125,17 @@ def publish_to_instagram_reel(video_url: str, caption: str):
 def publish_to_facebook_page(media_url: str, caption: str, is_video: bool = False):
     creds = get_meta_credentials()
     access_token = creds["access_token"]
-    page_id = creds["facebook_page_id"]
+    page_id = creds["facebook_page_id"].strip() if creds["facebook_page_id"] else "me"
 
-    if not access_token or not page_id:
+    if not access_token:
         return False, "Credenciales de Facebook Page no configuradas."
 
     try:
-        if is_video and media_url and (media_url.startswith("http://") or media_url.startswith("https://")):
+        is_real_video = is_video and media_url and any(media_url.lower().split('?')[0].endswith(ext) for ext in ['.mp4', '.mov', '.avi', '.webm', '.mkv'])
+        if is_real_video and (media_url.startswith("http://") or media_url.startswith("https://")):
             post_url = f"{META_GRAPH_BASE_URL}/{page_id}/videos"
             payload = {"file_url": media_url, "description": caption, "access_token": access_token}
-        elif media_url and (media_url.startswith("http://") or media_url.startswith("https://")) and not media_url.endswith(".webp"):
+        elif media_url and (media_url.startswith("http://") or media_url.startswith("https://")) and not media_url.lower().split('?')[0].endswith(".webp"):
             post_url = f"{META_GRAPH_BASE_URL}/{page_id}/photos"
             payload = {"url": media_url, "caption": caption, "access_token": access_token}
         else:

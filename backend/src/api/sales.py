@@ -239,15 +239,74 @@ def lookup_cuit_endpoint(cuit: str):
     from src.utils.afip_ws import lookup_cuit
     try:
         res = lookup_cuit(cuit)
+        if not res.get("success"):
+            raise HTTPException(status_code=400, detail=res.get("error", "Error al consultar CUIT en AFIP"))
         return res
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+@router.get("/{order_id}/billing-info")
+def get_order_billing_info_endpoint(order_id: int):
+    order = database.get_order_by_id(order_id)
+    if not order:
+        raise HTTPException(status_code=404, detail="Pedido no encontrado")
+
+    result = {
+        "success": True,
+        "has_billing_info": False,
+        "document_type": "",
+        "document_number": "",
+        "name": "",
+        "address": "",
+        "taxpayer_type": "Consumidor Final",
+        "source": order.get("source_platform", "LOCAL")
+    }
+
+    buyer = order.get("buyer", {})
+    if isinstance(buyer, dict):
+        result["document_type"] = buyer.get("document_type", "")
+        result["document_number"] = buyer.get("document_number", "")
+        result["name"] = buyer.get("name", "")
+        result["address"] = buyer.get("address", "")
+        if result["document_number"]:
+            result["has_billing_info"] = True
+
+    if order.get("source_platform") == "MERCADOLIBRE":
+        try:
+            from src import meli_api
+            ml_info = meli_api.fetch_order_billing_info(order_id)
+            if ml_info:
+                if ml_info.get("document_number"):
+                    result["document_number"] = ml_info["document_number"]
+                    result["has_billing_info"] = True
+                if ml_info.get("document_type"):
+                    result["document_type"] = ml_info["document_type"]
+                if ml_info.get("name"):
+                    result["name"] = ml_info["name"]
+                if ml_info.get("address"):
+                    result["address"] = ml_info["address"]
+                if ml_info.get("taxpayer_type"):
+                    result["taxpayer_type"] = ml_info["taxpayer_type"]
+        except Exception as e:
+            print(f"Error fetching ML billing info for order {order_id}: {e}")
+
+    return result
 
 @router.post("/{order_id}/invoice")
 def create_invoice_endpoint(order_id: int, req: Optional[InvoiceOptionsRequest] = None):
     order = database.get_order_by_id(order_id)
     if not order:
         raise HTTPException(status_code=404, detail="Pedido no encontrado")
+        
+    # Block duplicate invoicing for orders that already have an invoice
+    if order.get('invoice_generated') == 1 or order.get('afip_cae') or order.get('invoice_number'):
+        inv_num = order.get('invoice_number', 'registrada')
+        raise HTTPException(
+            status_code=400, 
+            detail=f"Este pedido #{order_id} ya fue facturado previamente (Comprobante: {inv_num}). No es posible emitir facturas duplicadas para la misma venta."
+        )
         
     if req:
         buyer = order.get('buyer', {})
@@ -383,3 +442,11 @@ def link_order_inventory_endpoint(order_id: int, req: LinkInventoryRequest):
 
     database.link_order_inventory(order_id, formatted_items, total_cost)
     return {"success": True, "message": "Inventario vinculado y stock actualizado correctamente"}
+
+@router.delete("/{order_id}")
+def delete_order_endpoint(order_id: int):
+    order = database.get_order_by_id(order_id)
+    if not order:
+        raise HTTPException(status_code=404, detail="Pedido no encontrado")
+    database.delete_order_by_id(order_id)
+    return {"success": True, "message": f"Venta #{order_id} eliminada correctamente"}

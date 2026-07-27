@@ -84,18 +84,25 @@ En el comercio moderno, gestionar Mercado Libre, una tienda online propia, factu
   - La IA redacta el título, copy con emojis y hashtags, e incluye una **idea de guión de 15 segundos para grabar el Reel**.
 - **Auto-Publicación Autónoma a Instagram & Facebook**:
   - Integración nativa con la **Meta Graph API** para publicar fotos y **Reels de Instagram** y posts de **Páginas de Facebook**.
-- **Programador & Tarea en Segundo Plano (`scheduler.py`)**:
-  - Agendamiento de fecha y hora para publicaciones. El backend procesa la cola automáticamente sin requerir intervención manual.
+- **Programador & Daemon en Segundo Plano (`scheduler.py`)**:
+  - Hilo de ejecución exclusivo para Marketing (`marketing_publisher_loop`) que evalúa la cola de publicaciones **cada 30 segundos**. Al cumplirse la fecha/hora agendada, el sistema envía automáticamente el post a las redes sin demoras ni intervención manual.
+- **Edición de Borradores e Historial**:
+  - Permite cargar cualquier publicación (borrador, programada o fallida) en el formulario para modificar título, producto, texto, medio, formato o fecha antes de reprogramar o publicar.
 
 #### 🔑 Guía de Obtención de Credenciales de Meta (Instagram & Facebook):
 1. **Facebook Page ID**:
    - Ingresar a [Meta Graph API Explorer](https://developers.facebook.com/tools/explorer/).
-   - Con tu Token seleccionado, consultar `me/accounts` -> Copiar la propiedad `"id"` de tu página de Facebook.
+   - En la consulta `me/accounts` -> Copiar la propiedad `"id"` de tu página de Facebook.
 2. **Instagram Business Account ID**:
    - Tu cuenta de Instagram debe ser de tipo Profesional/Empresa vinculada a tu página de Facebook.
    - En Graph API Explorer, consultar `{TU_FACEBOOK_PAGE_ID}?fields=instagram_business_account`.
    - Copiar la propiedad `"id"` que aparece dentro de `instagram_business_account`.
-3. Cargar el **Meta Access Token**, **Instagram Account ID** y **Facebook Page ID** en el panel administrativo (**Marketing > Configuración de Redes**).
+3. **Page Access Token (Token de la Página)**:
+   - En Graph API Explorer, agregar los permisos `pages_read_engagement`, `pages_manage_posts`, `pages_show_list` y `public_profile`.
+   - En el selector desplegable **User or Page**, seleccionar la **Página de Facebook** (ej. *Hidroponía Rosario*) para obtener el Token directo de administración. Esto resuelve el error Meta `(#200) Requires both pages_read_engagement and pages_manage_posts`.
+4. **Revisión de Uso de Datos (TOS / Data Use Checkup)**:
+   - En el [Panel de Apps de Meta Developers](https://developers.facebook.com/apps/), confirmar y aceptar los Términos de Servicio de la App para evitar el rechazo `(#100) Apps in the GK only need to pass TOS check`.
+5. Cargar el **Meta Access Token**, **Instagram Account ID** y **Facebook Page ID** en el panel administrativo (**Marketing > Configuración de Redes**).
 
 ---
 

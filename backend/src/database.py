@@ -1215,6 +1215,11 @@ def update_order_shipping_status(order_id: int, shipping_status: str):
         with conn.cursor() as cursor:
             cursor.execute("UPDATE orders_cache SET shipping_status = %s WHERE order_id = %s", (shipping_status, order_id))
 
+def delete_order_by_id(order_id: int):
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute("DELETE FROM orders_cache WHERE order_id = %s", (order_id,))
+
 def create_manual_order(order_id: int, date_created: str, buyer_nickname: str, buyer_name: str, total_amount: float, status: str, shipping_status: str, items: list, source_platform: str, payment_method: str = None):
     import json
     with get_connection() as conn:

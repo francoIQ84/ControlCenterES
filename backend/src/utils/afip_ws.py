@@ -283,12 +283,35 @@ def request_cae(token: str, sign: str, cuit: str, pto_vta: int, cbte_tipo: int, 
         
     raise Exception(err_msg)
 
+def sanitize_razon_social(name: str) -> str:
+    if not name:
+        return ""
+    clean = " ".join(name.strip().split())
+    words = clean.split(" ")
+    half = len(words) // 2
+    if len(words) >= 2 and half > 0:
+        first_half = " ".join(words[:half])
+        second_half = " ".join(words[half:])
+        if first_half.upper() == second_half.upper():
+            return first_half
+        if first_half.upper().startswith(second_half.upper()):
+            return first_half
+    return clean
+
 def create_invoice(order: dict):
     """
     Core entrypoint that handles the WSAA and WSFE workflow,
     returns dict with invoice details. Falls back to mock values if credentials
     are not loaded or AFIP integration is in demo/mock status.
     """
+    # Block duplicate invoicing
+    if order.get('invoice_generated') == 1 or order.get('afip_cae') or order.get('invoice_number'):
+        inv = order.get('invoice_number', 'emitida')
+        return {
+            "success": False,
+            "error": f"El pedido #{order.get('order_id')} ya fue facturado previamente (Comprobante {inv}). Operación rechazada para evitar facturación duplicada."
+        }
+
     afip_enabled = database.get_setting('afip_enabled', '0') == '1'
     cuit_raw = database.get_setting('afip_cuit', '30-71234567-9')
     cuit = cuit_raw.replace("-", "").strip()
@@ -526,13 +549,17 @@ def lookup_cuit(target_cuit: str, env: str = None):
         
         res = get_session().post(url, data=soap_request, headers=headers, timeout=30.0)
         if res.status_code != 200:
-            # Try to extract the error description from the SOAP Fault if status code is 500
+            # Try to extract the error description from the SOAP Fault if status code is not 200
             try:
                 err_root = ET.fromstring(res.text)
-                faultstring = err_root.find(".//faultstring")
-                if faultstring is not None:
-                    raise Exception(faultstring.text)
-            except Exception:
+                faultstring = None
+                for item in err_root.iter():
+                    if item.tag.endswith("faultstring"):
+                        faultstring = item.text
+                        break
+                if faultstring:
+                    raise Exception(faultstring)
+            except ET.ParseError:
                 pass
             raise Exception(f"Error al consultar padrón (HTTP {res.status_code})")
             
@@ -565,41 +592,67 @@ def lookup_cuit(target_cuit: str, env: str = None):
                     return el
             return None
         
-        error_node = find_by_local(persona_return, "errorConstancia")
-        if error_node is not None:
-            err_msg_node = find_by_local(error_node, "descripcionError")
-            if err_msg_node is not None:
-                raise Exception(err_msg_node.text)
+        # Check for error nodes in personaReturn or root
+        for err_tag in ["errorConstancia", "errorPersona", "errorRegimenGeneral", "errorMonotributo"]:
+            error_node = find_by_local(persona_return, err_tag) if persona_return is not None else find_by_local(root, err_tag)
+            if error_node is not None:
+                err_msg_node = find_by_local(error_node, "descripcionError") or find_by_local(error_node, "error") or find_by_local(error_node, "mensaje")
+                if err_msg_node is not None and err_msg_node.text:
+                    raise Exception(err_msg_node.text)
                 
+        # Helper function to extract name from candidate containers
+        def extract_name(container):
+            if container is None:
+                return ""
+            for tag_name in ["denominacion", "razonSocial", "razon_social", "razonSocialPersona"]:
+                node = find_by_local(container, tag_name)
+                if node is not None and node.text and node.text.strip():
+                    return node.text.strip()
+            
+            nombre_node = find_by_local(container, "nombre")
+            apellido_node = find_by_local(container, "apellido")
+            n_text = nombre_node.text.strip() if nombre_node is not None and nombre_node.text else ""
+            a_text = apellido_node.text.strip() if apellido_node is not None and apellido_node.text else ""
+            
+            if a_text and n_text:
+                return f"{a_text} {n_text}"
+            elif a_text:
+                return a_text
+            elif n_text:
+                return n_text
+            return ""
+
         razon_social = ""
         dg = find_by_local(persona_return, "datosGenerales")
-        if dg is not None:
-            denominacion_node = find_by_local(dg, "denominacion")
-            if denominacion_node is not None:
-                razon_social = denominacion_node.text
-            else:
-                nombre_node = find_by_local(dg, "nombre")
-                apellido_node = find_by_local(dg, "apellido")
-                if nombre_node is not None and apellido_node is not None:
-                    razon_social = f"{apellido_node.text} {nombre_node.text}"
+        persona_node = find_by_local(persona_return, "persona")
+        
+        for candidate_container in [dg, persona_node, persona_return, root]:
+            razon_social = extract_name(candidate_container)
+            if razon_social:
+                break
                     
         direccion = ""
         df = find_by_local(persona_return, "domicilioFiscal")
+        if df is None:
+            df = find_by_local(root, "domicilioFiscal") or find_by_local(persona_return, "domicilio")
+            
         if df is not None:
-            dir_node = find_by_local(df, "direccion")
+            dir_node = find_by_local(df, "direccion") or find_by_local(df, "domicilio") or find_by_local(df, "calle")
             localidad_node = find_by_local(df, "localidad")
-            provincia_node = find_by_local(df, "descripcionProvincia")
+            provincia_node = find_by_local(df, "descripcionProvincia") or find_by_local(df, "provincia")
             
             parts = []
-            if dir_node is not None and dir_node.text:
-                parts.append(dir_node.text)
-            if localidad_node is not None and localidad_node.text:
-                parts.append(localidad_node.text)
-            if provincia_node is not None and provincia_node.text:
-                parts.append(provincia_node.text)
+            if dir_node is not None and dir_node.text and dir_node.text.strip():
+                parts.append(dir_node.text.strip())
+            if localidad_node is not None and localidad_node.text and localidad_node.text.strip():
+                parts.append(localidad_node.text.strip())
+            if provincia_node is not None and provincia_node.text and provincia_node.text.strip():
+                parts.append(provincia_node.text.strip())
             direccion = ", ".join(parts)
             
         if not razon_social:
+            import logging
+            logging.error(f"AFIP PersonaService response without razon_social: {res.text[:2000]}")
             raise Exception("No se encontró la razón social para este CUIT en el padrón de AFIP")
         
         # Extract fecha de inicio de actividades (Standard format: YYYY-MM-DD or YYYYMM)
