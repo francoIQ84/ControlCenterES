@@ -312,6 +312,36 @@ def create_invoice(order: dict):
             "error": f"El pedido #{order.get('order_id')} ya fue facturado previamente (Comprobante {inv}). Operación rechazada para evitar facturación duplicada."
         }
 
+    # Si es una venta de Mercado Libre, verificar primero si ya hay una factura adjuntada en Mercado Libre
+    if order.get('source_platform') == 'MERCADOLIBRE':
+        from src import meli_api
+        has_meli_inv = order.get('meli_invoice_attached') or meli_api.check_meli_invoice_exists(order['order_id'])
+        if has_meli_inv:
+            pdf_bytes = meli_api.download_meli_invoice(order['order_id'])
+            if pdf_bytes:
+                from src.utils.invoice_gen import PDF_DIR
+                os.makedirs(PDF_DIR, exist_ok=True)
+                pdf_path = os.path.join(PDF_DIR, f"factura_{order['order_id']}.pdf")
+                with open(pdf_path, 'wb') as f:
+                    f.write(pdf_bytes)
+
+                with database.get_connection() as conn:
+                    with conn.cursor() as cursor:
+                        cursor.execute(
+                            "UPDATE orders_cache SET meli_invoice_attached = 1, invoice_generated = 1 WHERE order_id = %s",
+                            (order['order_id'],)
+                        )
+                order['meli_invoice_attached'] = 1
+                order['invoice_generated'] = 1
+
+                return {
+                    "success": True,
+                    "invoice_number": order.get('invoice_number') or "Adjunta en Mercado Libre",
+                    "mode": "meli_existing",
+                    "meli_uploaded": True,
+                    "meli_msg": "La factura ya se encontraba adjuntada en Mercado Libre. Se descargó y vinculó a la venta en tu sistema."
+                }
+
     afip_enabled = database.get_setting('afip_enabled', '0') == '1'
     cuit_raw = database.get_setting('afip_cuit', '30-71234567-9')
     cuit = cuit_raw.replace("-", "").strip()

@@ -870,91 +870,94 @@ def fetch_order_billing_info(order_id):
 def check_meli_invoice_exists(order_id):
     """
     Verifica rápidamente si existe una factura adjunta en Mercado Libre para la venta.
+    Busca tanto por order_id como por pack_id si corresponde.
     """
     if is_demo_mode():
         return False
+
+    ids_to_try = [order_id]
     try:
-        path = f"/billing/integration/group/{order_id}/documents"
-        res = api_request("GET", path)
-        if res and res.status_code == 200:
-            data = res.json()
-            if data.get('fiscal_documents') or data.get('documents'):
-                return True
-        # Si falla o no existe en billing/integration, intentamos con el endpoint de fiscal_documents
-        # ML usa /packs/{pack_id}/fiscal_documents incluso para órdenes individuales (usando order_id como pack_id)
-        res2 = api_request("GET", f"/packs/{order_id}/fiscal_documents")
-        if res2 and res2.status_code == 200:
-            docs_data = res2.json()
-            # el formato de packs/{id}/fiscal_documents devuelve un objeto con "fiscal_documents": [...]
-            if isinstance(docs_data, dict) and "fiscal_documents" in docs_data:
-                fiscal_docs = docs_data["fiscal_documents"]
-                if fiscal_docs and len(fiscal_docs) > 0 and fiscal_docs[0].get("id"):
-                    return True
-            
-            # (fallback legacy si devuelve array)
-            if isinstance(docs_data, list) and len(docs_data) > 0 and docs_data[0].get("id"):
-                return True
+        order_res = api_request("GET", f"/orders/{order_id}")
+        if order_res and order_res.status_code == 200:
+            pack_id = order_res.json().get('pack_id')
+            if pack_id and pack_id not in ids_to_try:
+                ids_to_try.append(pack_id)
     except Exception:
         pass
+
+    for target_id in ids_to_try:
+        try:
+            path = f"/billing/integration/group/{target_id}/documents"
+            res = api_request("GET", path)
+            if res and res.status_code == 200:
+                data = res.json()
+                if data.get('fiscal_documents') or data.get('documents'):
+                    return True
+            res2 = api_request("GET", f"/packs/{target_id}/fiscal_documents")
+            if res2 and res2.status_code == 200:
+                docs_data = res2.json()
+                if isinstance(docs_data, dict) and "fiscal_documents" in docs_data:
+                    fiscal_docs = docs_data["fiscal_documents"]
+                    if fiscal_docs and len(fiscal_docs) > 0 and (fiscal_docs[0].get("id") or fiscal_docs[0].get("file_id")):
+                        return True
+                elif isinstance(docs_data, list) and len(docs_data) > 0 and (docs_data[0].get("id") or docs_data[0].get("file_id")):
+                    return True
+        except Exception:
+            pass
     return False
 
 def download_meli_invoice(order_id):
     """
-    Descarga la factura adjunta en Mercado Libre para una venta.
+    Descarga la factura adjunta en Mercado Libre para una venta (o pack).
     Retorna el contenido binario del PDF (bytes) o None si no existe o falla.
     """
     if is_demo_mode():
         return None
 
-    path = f"/billing/integration/group/{order_id}/documents"
+    ids_to_try = [order_id]
     try:
-        res = api_request("GET", path)
-        if not res or res.status_code != 200:
-            # Fallback a endpoint de packs
-            res2 = api_request("GET", f"/packs/{order_id}/fiscal_documents")
-            if not res2 or res2.status_code != 200:
-                return None
-                
-            docs_data = res2.json()
-            doc_id = None
-            
-            if isinstance(docs_data, dict) and "fiscal_documents" in docs_data:
-                fiscal_docs = docs_data["fiscal_documents"]
+        order_res = api_request("GET", f"/orders/{order_id}")
+        if order_res and order_res.status_code == 200:
+            pack_id = order_res.json().get('pack_id')
+            if pack_id and pack_id not in ids_to_try:
+                ids_to_try.append(pack_id)
+    except Exception:
+        pass
+
+    for target_id in ids_to_try:
+        path = f"/billing/integration/group/{target_id}/documents"
+        try:
+            res = api_request("GET", path)
+            if res and res.status_code == 200:
+                data = res.json()
+                documents = data.get('fiscal_documents') or data.get('documents') or []
+                if documents:
+                    doc = documents[0]
+                    file_id = doc.get('file_id') or doc.get('id')
+                    if file_id:
+                        dl_res = api_request("GET", f"{path}/{file_id}/download")
+                        if dl_res and dl_res.status_code == 200:
+                            return dl_res.content
+
+            res2 = api_request("GET", f"/packs/{target_id}/fiscal_documents")
+            if res2 and res2.status_code == 200:
+                docs_data = res2.json()
+                fiscal_docs = []
+                if isinstance(docs_data, dict):
+                    fiscal_docs = docs_data.get("fiscal_documents", [])
+                elif isinstance(docs_data, list):
+                    fiscal_docs = docs_data
+
                 if fiscal_docs and len(fiscal_docs) > 0:
-                    doc_id = fiscal_docs[0].get('id')
-            elif isinstance(docs_data, list) and len(docs_data) > 0:
-                doc_id = docs_data[0].get('id')
-                
-            if doc_id:
-                dl_res = api_request("GET", f"/packs/{order_id}/fiscal_documents/{doc_id}")
-                if dl_res and dl_res.status_code == 200:
-                    return dl_res.content
-            return None
-            
-        data = res.json()
-        documents = data.get('fiscal_documents', [])
-        if not documents:
-            # Algunas respuestas de ML tienen la key 'documents' en vez de 'fiscal_documents'
-            documents = data.get('documents', [])
-            
-        if not documents:
-            return None
-            
-        # Tomamos el primer documento
-        doc = documents[0]
-        file_id = doc.get('file_id') or doc.get('id')
-            
-        if file_id:
-            # Descargamos el archivo propiamente dicho
-            dl_path = f"{path}/{file_id}/download"
-            dl_res = api_request("GET", dl_path)
-            if dl_res and dl_res.status_code == 200:
-                return dl_res.content
-                
-        return None
-    except Exception as e:
-        print(f"Error descargando factura de ML para order_id={order_id}: {e}")
-        return None
+                    doc_id = fiscal_docs[0].get('id') or fiscal_docs[0].get('file_id')
+                    if doc_id:
+                        dl_res = api_request("GET", f"/packs/{target_id}/fiscal_documents/{doc_id}")
+                        if dl_res and dl_res.status_code == 200:
+                            return dl_res.content
+        except Exception as e:
+            print(f"Error descargando factura de ML para target_id={target_id}: {e}")
+
+    return None
 
 
 def upload_invoice_to_meli(order_id, pdf_path):
@@ -1019,11 +1022,11 @@ def upload_invoice_to_meli(order_id, pdf_path):
                 print(f"Error trying to fetch pack_id for order {order_id}: {e}")
 
         if response.status_code in (200, 201):
-            # Update meli_invoice_attached in DB
+            # Update meli_invoice_attached and invoice_generated in DB
             with database.get_connection() as conn:
                 with conn.cursor() as cursor:
                     cursor.execute(
-                        "UPDATE orders_cache SET meli_invoice_attached = 1 WHERE order_id = %s",
+                        "UPDATE orders_cache SET meli_invoice_attached = 1, invoice_generated = 1 WHERE order_id = %s",
                         (order_id,)
                     )
             # Send post-sale message
@@ -1042,6 +1045,31 @@ def upload_invoice_to_meli(order_id, pdf_path):
                 error_detail = err_data.get('message', '') or err_data.get('error', '') or str(err_data)
             except Exception:
                 error_detail = response.text[:200]
+
+            is_already_exists = (
+                response.status_code == 409 or
+                'already exists' in response.text.lower() or
+                'file not allowed' in response.text.lower() or
+                'already exists' in error_detail.lower()
+            )
+            if is_already_exists:
+                print(f"[Upload ML] Invoice already exists on Mercado Libre for order {order_id}. Downloading existing invoice...")
+                dl_bytes = download_meli_invoice(order_id)
+                if dl_bytes:
+                    try:
+                        with open(pdf_path, 'wb') as f:
+                            f.write(dl_bytes)
+                    except Exception as e_write:
+                        print(f"Error writing ML invoice to {pdf_path}: {e_write}")
+
+                with database.get_connection() as conn:
+                    with conn.cursor() as cursor:
+                        cursor.execute(
+                            "UPDATE orders_cache SET meli_invoice_attached = 1, invoice_generated = 1 WHERE order_id = %s",
+                            (order_id,)
+                        )
+                return True, "Ya existía una factura adjunta en Mercado Libre. Se descargó y vinculó a tu sistema."
+
             return False, f"Error al adjuntar en ML (HTTP {response.status_code}): {error_detail}"
 
     except Exception as e:
