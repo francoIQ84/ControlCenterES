@@ -340,6 +340,7 @@ def create_invoice(order: dict):
         order['afip_cae_exp'] = cae_exp
         
         from src.utils.invoice_gen import generate_invoice_pdf
+        pdf_path = generate_invoice_pdf(order)
         res_dict = {
             "success": True,
             "invoice_number": formatted_invoice_number,
@@ -472,6 +473,7 @@ def create_invoice(order: dict):
         
         # Regenerate reportlab invoice PDF with real AFIP values
         from src.utils.invoice_gen import generate_invoice_pdf
+        pdf_path = generate_invoice_pdf(order)
         res_real = {
             "success": True,
             "invoice_number": formatted_invoice_number,
