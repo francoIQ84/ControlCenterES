@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react'
-import { Package, CloudOff, Cloud, RefreshCw, Save, QrCode, Camera, ExternalLink } from 'lucide-react'
+import { Package, CloudOff, Cloud, RefreshCw, Save, QrCode, Camera, ExternalLink, Eye, EyeOff } from 'lucide-react'
 import { Html5QrcodeScanner } from 'html5-qrcode'
 import MediaBrowser from '../components/MediaBrowser'
 
@@ -10,6 +10,7 @@ export default function Inventory() {
   const [sortConfig, setSortConfig] = useState({ key: null, direction: 'asc' })
   const [drafts, setDrafts] = useState({})
   const [viewMode, setViewMode] = useState('compact') // 'compact' o 'detailed'
+  const [showHidden, setShowHidden] = useState(false)
   
   // QR Modals state
   const [showQrScanModal, setShowQrScanModal] = useState(false)
@@ -238,13 +239,38 @@ export default function Inventory() {
 
   const fetchProducts = () => {
     setLoading(true)
-    fetch(`/api/inventory/?query=${query}`)
+    fetch(`/api/inventory/?query=${encodeURIComponent(query)}&show_hidden=${showHidden}`)
       .then(res => res.json())
       .then(data => {
         setProducts(data.products || [])
         setDrafts({})
         setLoading(false)
       })
+  }
+
+  const handleToggleHide = async (ml_id, currentHiddenStatus) => {
+    const isHiddenInt = currentHiddenStatus ? 1 : 0
+    const newStatus = isHiddenInt === 1 ? 0 : 1
+    const actionText = newStatus === 1 ? "ocultar" : "volver a mostrar"
+    if (!confirm(`¿Estás seguro de que deseas ${actionText} este producto del inventario?`)) return
+
+    try {
+      setLoading(true)
+      const res = await fetch(`/api/inventory/${ml_id}/toggle-hidden`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ is_hidden: newStatus })
+      })
+      if (res.ok) {
+        fetchProducts()
+      } else {
+        alert("Error al cambiar la visibilidad del producto")
+        setLoading(false)
+      }
+    } catch(e) {
+      alert("Error: " + e.message)
+      setLoading(false)
+    }
   }
 
   const handleSyncCosts = async () => {
@@ -276,7 +302,7 @@ export default function Inventory() {
   useEffect(() => {
     fetchProducts()
     fetchCategories()
-  }, [query])
+  }, [query, showHidden])
 
   const handleUpdate = async (ml_id, qty, price, cost, cost_meli, price_web, images, description, is_web_active, category_id, sync_meli, min_stock) => {
     try {
@@ -481,6 +507,27 @@ export default function Inventory() {
               Comprimida
             </button>
           </div>
+          <button 
+            type="button"
+            className="btn" 
+            style={{
+              padding: '6px 12px', 
+              fontSize: '0.8rem',
+              backgroundColor: showHidden ? 'rgba(239, 68, 68, 0.15)' : 'var(--bg-card)',
+              color: showHidden ? 'var(--accent-red)' : 'var(--text-secondary)',
+              border: '1px solid var(--border-color)',
+              borderRadius: 6,
+              cursor: 'pointer',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6
+            }}
+            onClick={() => setShowHidden(!showHidden)}
+            title={showHidden ? "Ocultar productos archivados" : "Mostrar productos archivados / ocultos"}
+          >
+            {showHidden ? <EyeOff size={14} /> : <Eye size={14} />}
+            {showHidden ? 'Ocultos Visibles' : 'Ver Ocultos'}
+          </button>
         </div>
         <div className="control-buttons" style={{display: 'flex', gap: 10, flexWrap: 'wrap'}}>
           {modifiedCount > 0 && (
@@ -674,6 +721,7 @@ export default function Inventory() {
                       setSelectedProductForQr(prod)
                       setShowQrPrintModal(true)
                     }}
+                    onToggleHide={handleToggleHide}
                   />
                 ))}
               </tbody>
@@ -816,7 +864,7 @@ export default function Inventory() {
   )
 }
 
-function ProductRow({ p, onSave, onOpenGallery, onDraftChange, categories, viewMode, onOpenQrModal }) {
+function ProductRow({ p, onSave, onOpenGallery, onDraftChange, categories, viewMode, onOpenQrModal, onToggleHide }) {
   const [qty, setQty] = useState(p.available_quantity)
   const [price, setPrice] = useState(p.price)
   const [cost, setCost] = useState(p.cost_price)
@@ -936,6 +984,20 @@ function ProductRow({ p, onSave, onOpenGallery, onDraftChange, categories, viewM
                   📁 {p.category_name}
                 </span>
               )}
+              {p.is_hidden === 1 && (
+                <span style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  padding: '1px 6px',
+                  fontSize: '0.65rem',
+                  fontWeight: 600,
+                  borderRadius: 3,
+                  backgroundColor: 'rgba(239, 68, 68, 0.15)',
+                  color: '#ef4444'
+                }}>
+                  👁️ Oculto
+                </span>
+              )}
               {parseNum(featuredOrder, true) > 0 && (
                 <span style={{
                   display: 'inline-flex',
@@ -1049,6 +1111,9 @@ function ProductRow({ p, onSave, onOpenGallery, onDraftChange, categories, viewM
               </button>
               <button type="button" className="btn-icon" onClick={() => onOpenQrModal(p)} title="Ver / Imprimir QR" style={{padding: 4, color: 'var(--accent-blue)'}}>
                 <QrCode size={14} />
+              </button>
+              <button type="button" className="btn-icon" onClick={() => onToggleHide(p.ml_id, p.is_hidden)} title={p.is_hidden ? "Restaurar a inventario activo" : "Ocultar / Archivar producto"} style={{padding: 4, color: p.is_hidden ? '#ef4444' : 'var(--text-secondary)'}}>
+                {p.is_hidden ? <EyeOff size={14} /> : <Eye size={14} />}
               </button>
               <button type="button" className="btn" style={{padding: '3px 6px', fontSize: '0.7rem', backgroundColor: 'var(--bg-hover)', color: 'var(--text-primary)', border: 'none', borderRadius: 4, cursor: 'pointer'}} onClick={() => setShowWebDetails(!showWebDetails)}>
                 Web {showWebDetails ? '▲' : '▼'}
@@ -1295,6 +1360,9 @@ function ProductRow({ p, onSave, onOpenGallery, onDraftChange, categories, viewM
             </button>
             <button type="button" className="btn-icon" onClick={() => onOpenQrModal(p)} title="Ver / Imprimir QR" style={{color: 'var(--accent-blue)'}}>
               <QrCode size={18} />
+            </button>
+            <button type="button" className="btn-icon" onClick={() => onToggleHide(p.ml_id, p.is_hidden)} title={p.is_hidden ? "Restaurar a inventario activo" : "Ocultar / Archivar producto"} style={{color: p.is_hidden ? '#ef4444' : 'var(--text-secondary)'}}>
+              {p.is_hidden ? <EyeOff size={18} /> : <Eye size={18} />}
             </button>
           </div>
         </td>

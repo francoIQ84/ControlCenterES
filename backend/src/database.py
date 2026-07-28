@@ -58,6 +58,7 @@ def init_db():
             cursor.execute('ALTER TABLE products_cache ADD COLUMN IF NOT EXISTS prev_cost_price REAL;')
             cursor.execute('ALTER TABLE products_cache ADD COLUMN IF NOT EXISTS prev_cost_meli REAL;')
             cursor.execute('ALTER TABLE products_cache ADD COLUMN IF NOT EXISTS prev_price_web REAL;')
+            cursor.execute('ALTER TABLE products_cache ADD COLUMN IF NOT EXISTS is_hidden INTEGER DEFAULT 0;')
 
             # Categories table
             cursor.execute('''
@@ -497,14 +498,20 @@ def update_featured_products_order(featured_ids: list):
             for idx, ml_id in enumerate(featured_ids, start=1):
                 cursor.execute("UPDATE products_cache SET featured_order = %s, last_modified = %s WHERE ml_id = %s", (idx, now, ml_id))
 
-def get_all_products(query=None, status_filter=None, is_web_active=None, category_slug=None):
+def update_product_hidden_status(ml_id: str, is_hidden: int):
+    now = datetime.now().isoformat()
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute("UPDATE products_cache SET is_hidden = %s, last_modified = %s WHERE ml_id = %s", (int(is_hidden), now, ml_id))
+
+def get_all_products(query=None, status_filter=None, is_web_active=None, category_slug=None, include_hidden=False, is_hidden=None):
     with get_connection() as conn:
         with conn.cursor() as cursor:
             sql = """
                 SELECT p.ml_id, p.title, p.price, p.available_quantity, p.cost_price, p.cost_meli, p.permalink, p.thumbnail, 
                        p.status, p.last_sync, p.price_web, p.images, p.description, p.is_web_active, 
                        p.visits_meli, p.visits_web, p.category_id, p.sync_meli, p.min_stock, p.featured_order, p.last_modified,
-                       p.prev_stock, p.prev_price, p.prev_cost_price, p.prev_cost_meli, p.prev_price_web,
+                       p.prev_stock, p.prev_price, p.prev_cost_price, p.prev_cost_meli, p.prev_price_web, COALESCE(p.is_hidden, 0) as is_hidden,
                        c.name as category_name, c.slug as category_slug
                  FROM products_cache p
                  LEFT JOIN categories c ON p.category_id = c.id
@@ -512,6 +519,12 @@ def get_all_products(query=None, status_filter=None, is_web_active=None, categor
              """
             params = []
             
+            if is_hidden is not None:
+                sql += " AND COALESCE(p.is_hidden, 0) = %s"
+                params.append(int(is_hidden))
+            elif not include_hidden:
+                sql += " AND COALESCE(p.is_hidden, 0) = 0"
+
             if query:
                 sql += " AND (p.title ILIKE %s OR p.ml_id ILIKE %s)"
                 params.extend([f"%{query}%", f"%{query}%"])
@@ -541,7 +554,7 @@ def get_product_by_ml_id(ml_id: str):
                 SELECT p.ml_id, p.title, p.price, p.available_quantity, p.cost_price, p.cost_meli, p.permalink, p.thumbnail, 
                        p.status, p.last_sync, p.price_web, p.images, p.description, p.is_web_active, 
                        p.visits_meli, p.visits_web, p.category_id, p.sync_meli, p.min_stock, p.featured_order, p.last_modified,
-                       p.prev_stock, p.prev_price, p.prev_cost_price, p.prev_cost_meli, p.prev_price_web,
+                       p.prev_stock, p.prev_price, p.prev_cost_price, p.prev_cost_meli, p.prev_price_web, COALESCE(p.is_hidden, 0) as is_hidden,
                        c.name as category_name, c.slug as category_slug
                  FROM products_cache p
                  LEFT JOIN categories c ON p.category_id = c.id

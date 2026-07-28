@@ -20,6 +20,7 @@ class UpdateProductRequest(BaseModel):
     sync_meli: int = 1
     min_stock: int = 0
     featured_order: int = 0
+    is_hidden: int = 0
 
 class CreateProductRequest(BaseModel):
     title: str
@@ -38,8 +39,8 @@ class CreateProductRequest(BaseModel):
     featured_order: int = 0
 
 @router.get("/")
-def get_products(query: str = None, status: str = None):
-    products = database.get_all_products(query=query, status_filter=status)
+def get_products(query: str = None, status: str = None, show_hidden: bool = False, is_hidden: Optional[int] = None):
+    products = database.get_all_products(query=query, status_filter=status, include_hidden=show_hidden, is_hidden=is_hidden)
     return {"products": products}
 
 @router.post("/sync")
@@ -120,12 +121,30 @@ class BulkUpdateItem(BaseModel):
     sync_meli: int = 1
     min_stock: int = 0
     featured_order: int = 0
+    is_hidden: int = 0
 
 class BulkUpdateRequest(BaseModel):
     items: list[BulkUpdateItem]
 
 class FeaturedOrderRequest(BaseModel):
     featured_ids: list[str]
+
+class ToggleHiddenRequest(BaseModel):
+    is_hidden: Optional[int] = None
+
+@router.put("/{ml_id}/toggle-hidden")
+def toggle_product_hidden(ml_id: str, payload: Optional[ToggleHiddenRequest] = None):
+    product = database.get_product_by_ml_id(ml_id)
+    if not product:
+        raise HTTPException(status_code=404, detail="Producto no encontrado")
+    
+    if payload and payload.is_hidden is not None:
+        new_hidden = int(payload.is_hidden)
+    else:
+        new_hidden = 1 if int(product.get('is_hidden', 0)) == 0 else 0
+        
+    database.update_product_hidden_status(ml_id, new_hidden)
+    return {"success": True, "ml_id": ml_id, "is_hidden": new_hidden, "message": "Estado de visibilidad actualizado correctamente"}
 
 @router.put("/featured-order")
 def set_featured_products_order(payload: FeaturedOrderRequest):
