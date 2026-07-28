@@ -268,17 +268,12 @@ def sync_mp_payments(date_from=None, limit=2000):
                             fee_date = date_created[:10] if len(date_created) >= 10 else datetime.now().strftime('%Y-%m-%d')
 
 
-                            # Determine category for outgoing payment/transfer
-                            if 'ccpaymentprod' in ext_ref.lower() or 'tarjeta' in desc.lower() or 'tarjeta' in ext_ref.lower():
-                                cat = 'Pago de Tarjeta MP'
-                                fee_desc = f"Pago de Tarjeta de Crédito #{payment_id}"
-                            elif op_type == 'money_transfer':
-                                cat = 'Transferencias Salientes MP'
-                                fee_desc = f"Transferencia enviada #{payment_id}: {desc or 'Varios'}"
-                            else:
-                                cat = 'Compras / Insumos MP'
-                                fee_desc = f"Compra MP #{payment_id}: {desc or 'Pago a proveedor/servicio'}"
+                            # Skip internal money transfers and credit card bill payments from operational expenses
+                            if op_type == 'money_transfer' or 'ccpaymentprod' in ext_ref.lower() or 'tarjeta' in desc.lower() or 'tarjeta' in ext_ref.lower():
+                                continue
 
+                            cat = 'Compras / Insumos MP'
+                            fee_desc = f"Compra MP #{payment_id}: {desc or 'Pago a proveedor/servicio'}"
                             database.save_auto_mp_expense(fee_date, fee_desc, total_amount, cat, payment_id)
 
                         offset_p += 50

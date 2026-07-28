@@ -901,7 +901,7 @@ def get_dashboard_metrics(period="total", start_date_str=None, end_date_str=None
         elif period == "year":
             start_date = now - timedelta(days=365)
 
-    orders_conditions = ["status = 'paid'"]
+    orders_conditions = ["LOWER(status) NOT IN ('cancelled', 'cancelado')"]
     orders_params = []
     if start_date:
         orders_conditions.append("date_created >= %s")
@@ -918,7 +918,24 @@ def get_dashboard_metrics(period="total", start_date_str=None, end_date_str=None
             cursor.execute(sales_query, tuple(orders_params))
             sales_row = cursor.fetchone()
             total_sales = sales_row['count'] or 0
-            total_revenue = sales_row['total'] or 0.0
+            sales_revenue = sales_row['total'] or 0.0
+
+            # Manual incomes from incomes table for the period
+            incomes_conditions = []
+            incomes_params = []
+            if start_date:
+                incomes_conditions.append("date >= %s")
+                incomes_params.append(start_date.strftime("%Y-%m-%d"))
+            if end_date:
+                incomes_conditions.append("date <= %s")
+                incomes_params.append(end_date.strftime("%Y-%m-%d"))
+            incomes_where = (" WHERE " + " AND ".join(incomes_conditions)) if incomes_conditions else ""
+            incomes_query = f"SELECT SUM(amount) as total FROM incomes{incomes_where}"
+            cursor.execute(incomes_query, tuple(incomes_params))
+            incomes_row = cursor.fetchone()
+            manual_incomes = incomes_row['total'] if incomes_row and incomes_row['total'] else 0.0
+
+            total_revenue = sales_revenue + manual_incomes
             
             cursor.execute("SELECT COUNT(ml_id) as count FROM products_cache WHERE status = 'active'")
             total_active_products = cursor.fetchone()['count'] or 0
@@ -933,7 +950,7 @@ def get_dashboard_metrics(period="total", start_date_str=None, end_date_str=None
             total_cost = 0.0
             for row in orders_items:
                 source_platform = row.get('source_platform', 'MERCADOLIBRE')
-                items = json.loads(row['items_json'])
+                items = json.loads(row['items_json']) if row.get('items_json') else []
                 for item in items:
                     ml_id = item.get('id')
                     quantity = item.get('quantity', 1)
@@ -947,8 +964,8 @@ def get_dashboard_metrics(period="total", start_date_str=None, end_date_str=None
                     total_cost += cost * quantity
                     
             # --- EXPENSES CALCULATION ---
-            # Variable expenses for the period
-            var_conditions = []
+            # Variable expenses for the period (excluding money transfers and card payments)
+            var_conditions = ["category NOT IN ('Transferencias Salientes MP', 'Pago de Tarjeta MP')"]
             var_params = []
             if start_date:
                 var_conditions.append("date >= %s")
@@ -956,7 +973,7 @@ def get_dashboard_metrics(period="total", start_date_str=None, end_date_str=None
             if end_date:
                 var_conditions.append("date <= %s")
                 var_params.append(end_date.strftime("%Y-%m-%d"))
-            var_where = (" WHERE " + " AND ".join(var_conditions)) if var_conditions else ""
+            var_where = " WHERE " + " AND ".join(var_conditions)
             var_query = f"SELECT SUM(amount) as total FROM variable_expenses{var_where}"
             cursor.execute(var_query, tuple(var_params))
             var_row = cursor.fetchone()
@@ -993,8 +1010,8 @@ def get_dashboard_metrics(period="total", start_date_str=None, end_date_str=None
 
             total_expenses = total_var_expenses + total_fixed_expenses
             
-            # Net profit = Revenue - Product Costs - Expenses
-            total_profit = total_revenue - total_cost - total_expenses
+            # Net profit = Revenue - Expenses (matching Finanzas as requested)
+            total_profit = total_revenue - total_expenses
             profit_margin = (total_profit / total_revenue * 100) if total_revenue > 0 else 0.0
             
             cursor.execute("SELECT COUNT(ml_id) as count FROM products_cache WHERE available_quantity <= CASE WHEN min_stock > 0 THEN min_stock ELSE 3 END AND status = 'active'")
@@ -1803,19 +1820,19 @@ def get_system_notifications():
             # 3. Alertas de Stock Crítico (Inventario)
             try:
                 cursor.execute('''
-                    SELECT id, title, stock
-                    FROM products
-                    WHERE stock <= 3
-                    ORDER BY stock ASC
+                    SELECT ml_id, title, available_quantity
+                    FROM products_cache
+                    WHERE available_quantity <= 3 AND COALESCE(is_hidden, 0) = 0
+                    ORDER BY available_quantity ASC
                     LIMIT 5
                 ''')
                 stock_rows = cursor.fetchall()
                 for p in stock_rows:
-                    prod_id = p['id']
+                    ml_id = p['ml_id']
                     title = p['title'] or 'Producto'
-                    stk = p['stock'] or 0
+                    stk = p['available_quantity'] or 0
                     notifications.append({
-                        'id': f'stock_{prod_id}',
+                        'id': f'stock_{ml_id}',
                         'category': 'inventory',
                         'severity': 'danger' if stk == 0 else 'warning',
                         'title': f'📦 Stock Crítico ({stk} u.): {title[:28]}',
@@ -1825,6 +1842,57 @@ def get_system_notifications():
                     })
             except Exception as err:
                 print("[Database] Error fetching stock notifications:", err)
+
+            # 4. Alertas de Leads / Suscriptores Recientes
+            try:
+                cursor.execute('''
+                    SELECT id, name, email, country, created_at
+                    FROM leads
+                    ORDER BY id DESC
+                    LIMIT 5
+                ''')
+                lead_rows = cursor.fetchall()
+                for l in lead_rows:
+                    lead_id = l['id']
+                    name_disp = l['name'].strip() if l.get('name') else l['email'].split('@')[0]
+                    email_disp = l['email']
+                    country_disp = l.get('country') or 'Argentina'
+                    time_str = l['created_at'].strftime('%d/%m %H:%M') if l.get('created_at') else 'Lead'
+                    notifications.append({
+                        'id': f'lead_{lead_id}',
+                        'category': 'leads',
+                        'severity': 'info',
+                        'title': f'🌱 Nuevo Lead: {name_disp}',
+                        'message': f'Email: {email_disp} ({country_disp})',
+                        'link': '/settings?tab=lead_popup',
+                        'time': time_str
+                    })
+            except Exception as err:
+                print("[Database] Error fetching lead notifications:", err)
+
+            # 5. Notificaciones de WhatsApp (Solicitudes de Atención Humana y Consultas)
+            try:
+                cursor.execute('''
+                    SELECT sender, reason, created_at
+                    FROM whatsapp_paused_chats
+                    ORDER BY created_at DESC
+                    LIMIT 5
+                ''')
+                paused_rows = cursor.fetchall()
+                for p in paused_rows:
+                    sender = p['sender']
+                    time_str = p['created_at'].strftime('%d/%m %H:%M') if p.get('created_at') else 'WhatsApp'
+                    notifications.append({
+                        'id': f'wa_paused_{sender}',
+                        'category': 'whatsapp',
+                        'severity': 'warning',
+                        'title': f'💬 Atención Humana: +{sender}',
+                        'message': 'El cliente solicitó hablar con un asesor o se pausó el bot.',
+                        'link': '/settings?tab=whatsapp',
+                        'time': time_str
+                    })
+            except Exception as err:
+                print("[Database] Error fetching WhatsApp paused chat notifications:", err)
 
     return {
         'notifications': notifications,

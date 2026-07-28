@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { Outlet, NavLink, useNavigate } from 'react-router-dom'
-import { LayoutDashboard, Package, Receipt, Users, Settings, Sun, Moon, RefreshCw, Zap, Image, LogOut, Menu, FileText, Wallet, BookOpen, ShieldCheck, Bell, CheckCircle2, X, Megaphone } from 'lucide-react'
+import { LayoutDashboard, Package, Receipt, Users, Settings, Sun, Moon, RefreshCw, Zap, Image, LogOut, Menu, FileText, Wallet, BookOpen, ShieldCheck, Bell, CheckCircle2, X, Megaphone, UserCheck, MessageSquare } from 'lucide-react'
 
 export default function Layout() {
   const navigate = useNavigate()
@@ -480,7 +480,9 @@ export default function Layout() {
                         { id: 'all', label: 'Todas' },
                         { id: 'inpi', label: '🛡️ INPI' },
                         { id: 'sales', label: '🛒 Ventas' },
-                        { id: 'inventory', label: '📦 Stock' }
+                        { id: 'inventory', label: '📦 Stock' },
+                        { id: 'leads', label: '🌱 Leads' },
+                        { id: 'whatsapp', label: '💬 WhatsApp' }
                       ].map(f => (
                         <button
                           key={f.id}
@@ -534,7 +536,7 @@ export default function Layout() {
                               color: n.severity === 'danger' ? 'var(--accent-red)' : n.severity === 'warning' ? '#f59e0b' : 'var(--accent-blue)',
                               flexShrink: 0
                             }}>
-                              {n.category === 'inpi' ? <ShieldCheck size={16} /> : n.category === 'sales' ? <Receipt size={16} /> : <Package size={16} />}
+                              {n.category === 'inpi' ? <ShieldCheck size={16} /> : n.category === 'sales' ? <Receipt size={16} /> : n.category === 'leads' ? <UserCheck size={16} /> : n.category === 'whatsapp' ? <MessageSquare size={16} /> : <Package size={16} />}
                             </div>
 
                             <div style={{ flex: 1, minWidth: 0 }}>
