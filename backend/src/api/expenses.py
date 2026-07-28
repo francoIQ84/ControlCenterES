@@ -50,6 +50,21 @@ def create_fixed_expense(expense: FixedExpenseCreate, current_user: dict = Depen
             )
             return cursor.fetchone()
 
+@router.put("/fixed/{expense_id}")
+def update_fixed_expense(expense_id: int, expense: FixedExpenseCreate, current_user: dict = Depends(get_current_user)):
+    with database.get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute(
+                """UPDATE fixed_expenses 
+                   SET description = %s, amount = %s, category = %s, month = %s, year = %s 
+                   WHERE id = %s RETURNING *""",
+                (expense.description, expense.amount, expense.category, expense.month, expense.year, expense_id)
+            )
+            row = cursor.fetchone()
+            if not row:
+                raise HTTPException(status_code=404, detail="Expense not found")
+            return row
+
 @router.delete("/fixed/{expense_id}")
 def delete_fixed_expense(expense_id: int, current_user: dict = Depends(get_current_user)):
     with database.get_connection() as conn:
@@ -96,6 +111,23 @@ def create_variable_expense(expense: VariableExpenseCreate, current_user: dict =
                 row['date'] = row['date'].strftime('%Y-%m-%d')
             return row
 
+@router.put("/variable/{expense_id}")
+def update_variable_expense(expense_id: int, expense: VariableExpenseCreate, current_user: dict = Depends(get_current_user)):
+    with database.get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute(
+                """UPDATE variable_expenses 
+                   SET date = %s, description = %s, amount = %s, category = %s 
+                   WHERE id = %s RETURNING *""",
+                (expense.date, expense.description, expense.amount, expense.category, expense_id)
+            )
+            row = cursor.fetchone()
+            if not row:
+                raise HTTPException(status_code=404, detail="Expense not found")
+            if row.get('date'):
+                row['date'] = row['date'].strftime('%Y-%m-%d')
+            return row
+
 @router.delete("/variable/{expense_id}")
 def delete_variable_expense(expense_id: int, current_user: dict = Depends(get_current_user)):
     with database.get_connection() as conn:
@@ -135,6 +167,23 @@ def create_income(income: IncomeCreate, current_user: dict = Depends(get_current
             )
             row = cursor.fetchone()
             if row and row.get('date'):
+                row['date'] = row['date'].strftime('%Y-%m-%d')
+            return row
+
+@router.put("/incomes/{income_id}")
+def update_income(income_id: int, income: IncomeCreate, current_user: dict = Depends(get_current_user)):
+    with database.get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute(
+                """UPDATE incomes 
+                   SET date = %s, description = %s, amount = %s, category = %s 
+                   WHERE id = %s RETURNING *""",
+                (income.date, income.description, income.amount, income.category, income_id)
+            )
+            row = cursor.fetchone()
+            if not row:
+                raise HTTPException(status_code=404, detail="Income not found")
+            if row.get('date'):
                 row['date'] = row['date'].strftime('%Y-%m-%d')
             return row
 

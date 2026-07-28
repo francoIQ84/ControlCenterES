@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { Plus, Trash2, Wallet, Calendar, DollarSign, Tag, TrendingDown, TrendingUp, PieChart, ArrowUpRight, ArrowDownRight, Layers, FileText, CheckCircle2, AlertTriangle, Search, ChevronDown, ChevronUp } from 'lucide-react'
+import { Plus, Trash2, Wallet, Calendar, DollarSign, Tag, TrendingDown, TrendingUp, PieChart, ArrowUpRight, ArrowDownRight, Layers, FileText, CheckCircle2, AlertTriangle, Search, ChevronDown, ChevronUp, Pencil } from 'lucide-react'
 
 export default function Expenses() {
   const [activeTab, setActiveTab] = useState('summary') // 'summary' | 'expenses' | 'incomes'
@@ -29,6 +29,7 @@ export default function Expenses() {
   const [newFixed, setNewFixed] = useState({ description: '', amount: '', category: 'Sueldos' })
   const [newVariable, setNewVariable] = useState({ date: new Date().toISOString().split('T')[0], description: '', amount: '', category: 'Insumos' })
   const [newIncome, setNewIncome] = useState({ date: new Date().toISOString().split('T')[0], description: '', amount: '', category: 'Venta Directa / Extra' })
+  const [editModal, setEditModal] = useState({ open: false, type: '', item: null })
 
   const fixedCategories = ['Sueldos', 'Alquiler', 'Impuestos', 'Servicios', 'Software/Suscripciones', 'Otros Fijos']
   const variableCategories = ['Insumos', 'Logística', 'Mantenimiento', 'Marketing', 'Otros Variables']
@@ -193,6 +194,52 @@ export default function Expenses() {
         fetchSummary()
       }
     } catch (e) {}
+  }
+
+  const handleSaveEdit = async (e) => {
+    e.preventDefault()
+    if (!editModal.item || !editModal.item.description || !editModal.item.amount) return
+    const { type, item } = editModal
+
+    try {
+      let url = `/api/expenses/${type}/${item.id}`
+      let bodyData = {}
+
+      if (type === 'fixed') {
+        bodyData = {
+          description: item.description,
+          amount: parseFloat(item.amount),
+          category: item.category,
+          month: item.month || selectedMonth,
+          year: item.year || selectedYear
+        }
+      } else if (type === 'variable' || type === 'incomes') {
+        bodyData = {
+          date: item.date,
+          description: item.description,
+          amount: parseFloat(item.amount),
+          category: item.category
+        }
+      }
+
+      const res = await fetch(url, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(bodyData)
+      })
+
+      if (res.ok) {
+        setEditModal({ open: false, type: '', item: null })
+        if (type === 'fixed') fetchFixed()
+        else if (type === 'variable') fetchVariable()
+        else if (type === 'incomes') fetchIncomes()
+        fetchSummary()
+      } else {
+        alert("Error al actualizar el registro")
+      }
+    } catch(err) {
+      alert("Error: " + err.message)
+    }
   }
 
   const totalFixed = fixedExpenses.reduce((acc, curr) => acc + curr.amount, 0)
@@ -487,8 +534,11 @@ export default function Expenses() {
                           <td>{exp.description}</td>
                           <td><span className="badge" style={{backgroundColor: 'var(--bg-hover)', color: 'var(--text-primary)'}}>{exp.category}</span></td>
                           <td style={{textAlign: 'right', fontWeight: 'bold'}}>${Math.round(exp.amount).toLocaleString()}</td>
-                          <td style={{textAlign: 'center'}}>
-                            <button className="btn-icon" onClick={() => handleDeleteFixed(exp.id)} style={{color: '#ef4444'}}>
+                          <td style={{textAlign: 'center', whiteSpace: 'nowrap'}}>
+                            <button className="btn-icon" onClick={() => setEditModal({ open: true, type: 'fixed', item: { ...exp } })} style={{color: 'var(--accent-blue)', marginRight: 6}} title="Editar">
+                              <Pencil size={16} />
+                            </button>
+                            <button className="btn-icon" onClick={() => handleDeleteFixed(exp.id)} style={{color: '#ef4444'}} title="Eliminar">
                               <Trash2 size={16} />
                             </button>
                           </td>
@@ -574,8 +624,11 @@ export default function Expenses() {
                           <td>{exp.description}</td>
                           <td><span className="badge" style={{backgroundColor: 'var(--bg-hover)', color: 'var(--text-primary)'}}>{exp.category}</span></td>
                           <td style={{textAlign: 'right', fontWeight: 'bold'}}>${Math.round(exp.amount).toLocaleString()}</td>
-                          <td style={{textAlign: 'center'}}>
-                            <button className="btn-icon" onClick={() => handleDeleteVariable(exp.id)} style={{color: '#ef4444'}}>
+                          <td style={{textAlign: 'center', whiteSpace: 'nowrap'}}>
+                            <button className="btn-icon" onClick={() => setEditModal({ open: true, type: 'variable', item: { ...exp } })} style={{color: 'var(--accent-blue)', marginRight: 6}} title="Editar">
+                              <Pencil size={16} />
+                            </button>
+                            <button className="btn-icon" onClick={() => handleDeleteVariable(exp.id)} style={{color: '#ef4444'}} title="Eliminar">
                               <Trash2 size={16} />
                             </button>
                           </td>
@@ -820,8 +873,11 @@ export default function Expenses() {
                         <td>{inc.description}</td>
                         <td><span className="badge" style={{backgroundColor: 'rgba(16,185,129,0.1)', color: '#10b981'}}>{inc.category}</span></td>
                         <td style={{textAlign: 'right', fontWeight: 'bold', color: '#10b981'}}>${Math.round(inc.amount).toLocaleString()}</td>
-                        <td style={{textAlign: 'center'}}>
-                          <button className="btn-icon" onClick={() => handleDeleteIncome(inc.id)} style={{color: '#ef4444'}}>
+                        <td style={{textAlign: 'center', whiteSpace: 'nowrap'}}>
+                          <button className="btn-icon" onClick={() => setEditModal({ open: true, type: 'incomes', item: { ...inc } })} style={{color: 'var(--accent-blue)', marginRight: 6}} title="Editar">
+                            <Pencil size={16} />
+                          </button>
+                          <button className="btn-icon" onClick={() => handleDeleteIncome(inc.id)} style={{color: '#ef4444'}} title="Eliminar">
                             <Trash2 size={16} />
                           </button>
                         </td>
@@ -838,6 +894,76 @@ export default function Expenses() {
                 </table>
               </div>
             )}
+          </div>
+        </div>
+      )}
+      {/* --- EDIT MODAL --- */}
+      {editModal.open && editModal.item && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+          backgroundColor: 'rgba(0,0,0,0.7)', display: 'flex',
+          justifyContent: 'center', alignItems: 'center', zIndex: 1000
+        }}>
+          <div className="card" style={{ width: 450, maxWidth: '90%', padding: 25, backgroundColor: 'var(--bg-card)', border: '1px solid var(--border-color)' }}>
+            <h3 style={{ marginTop: 0, marginBottom: 20 }}>
+              ✏️ Editar {editModal.type === 'fixed' ? 'Gasto Fijo' : editModal.type === 'variable' ? 'Gasto Variable' : 'Ingreso Manual'}
+            </h3>
+            <form onSubmit={handleSaveEdit} style={{ display: 'flex', flexDirection: 'column', gap: 15 }}>
+              {editModal.type !== 'fixed' && (
+                <label style={{ fontSize: '0.85rem' }}>Fecha *
+                  <input 
+                    type="date" 
+                    required 
+                    value={editModal.item.date || ''} 
+                    onChange={e => setEditModal(prev => ({ ...prev, item: { ...prev.item, date: e.target.value } }))} 
+                    style={{ width: '100%', marginTop: 4 }}
+                  />
+                </label>
+              )}
+              <label style={{ fontSize: '0.85rem' }}>Descripción *
+                <input 
+                  type="text" 
+                  required 
+                  value={editModal.item.description || ''} 
+                  onChange={e => setEditModal(prev => ({ ...prev, item: { ...prev.item, description: e.target.value } }))} 
+                  style={{ width: '100%', marginTop: 4 }}
+                />
+              </label>
+              <label style={{ fontSize: '0.85rem' }}>Monto $ *
+                <input 
+                  type="number" 
+                  step="0.01" 
+                  required 
+                  value={editModal.item.amount || ''} 
+                  onChange={e => setEditModal(prev => ({ ...prev, item: { ...prev.item, amount: e.target.value } }))} 
+                  style={{ width: '100%', marginTop: 4 }}
+                />
+              </label>
+              <label style={{ fontSize: '0.85rem' }}>Categoría
+                <select 
+                  value={editModal.item.category || ''} 
+                  onChange={e => setEditModal(prev => ({ ...prev, item: { ...prev.item, category: e.target.value } }))} 
+                  style={{ width: '100%', marginTop: 4 }}
+                >
+                  {(editModal.type === 'fixed' ? fixedCategories : editModal.type === 'variable' ? variableCategories : incomeCategories).map(c => (
+                    <option key={c} value={c}>{c}</option>
+                  ))}
+                </select>
+              </label>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 10 }}>
+                <button 
+                  type="button" 
+                  className="btn" 
+                  onClick={() => setEditModal({ open: false, type: '', item: null })}
+                  style={{ backgroundColor: 'transparent', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}
+                >
+                  Cancelar
+                </button>
+                <button type="submit" className="btn-primary" style={{ padding: '6px 16px' }}>
+                  Guardar Cambios
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
