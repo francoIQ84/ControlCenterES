@@ -93,12 +93,12 @@ def sync_mp_payments(date_from=None, limit=2000):
                     database.save_auto_mp_expense(fee_date, fee_desc, fee_amount, cat, payment_id)
 
                 # CRITICAL FILTER: If merchant is NOT the collector OR is the payer, this is an EGRESO/GASTO (Pago de tarjeta, compra, egreso)
-                if user_id_str and ((collector_id and collector_id != user_id_str) or (payer_id and payer_id == user_id_str)):
-                    # Remove from orders_cache if previously inserted
+                if collector_id != user_id_str or payer_id == user_id_str:
                     with database.get_connection() as conn:
                         with conn.cursor() as cursor:
-                            cursor.execute("DELETE FROM orders_cache WHERE order_id = %s AND source_platform LIKE 'MERCADOPAGO%%'", (str(payment_id),))
-                    continue
+                            cursor.execute("DELETE FROM orders_cache WHERE order_id = %s", (payment_id,))
+                    continue  # We skip saving these to Ventas because they are not income
+
 
                 # Check if this payment belongs to a Mercado Libre order
                 if order_info.get('type') == 'mercadolibre':
@@ -127,6 +127,7 @@ def sync_mp_payments(date_from=None, limit=2000):
 
                 # Payer details
                 payer = p.get('payer') or {}
+                email = (payer.get('email') or '').strip()
                 buyer_id = payer.get('id') or (int(payment_id) if str(payment_id).isdigit() else 999000)
                 first_name = (payer.get('first_name') or '').strip()
                 last_name = (payer.get('last_name') or '').strip()
@@ -266,10 +267,6 @@ def sync_mp_payments(date_from=None, limit=2000):
 
                             fee_date = date_created[:10] if len(date_created) >= 10 else datetime.now().strftime('%Y-%m-%d')
 
-                            # Remove from orders_cache if previously inserted as a sale
-                            with database.get_connection() as conn:
-                                with conn.cursor() as cursor:
-                                    cursor.execute("DELETE FROM orders_cache WHERE order_id = %s AND source_platform LIKE 'MERCADOPAGO%%'", (str(payment_id),))
 
                             # Determine category for outgoing payment/transfer
                             if 'ccpaymentprod' in ext_ref.lower() or 'tarjeta' in desc.lower() or 'tarjeta' in ext_ref.lower():

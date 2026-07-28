@@ -186,3 +186,22 @@ def get_financial_summary(month: int, year: int, current_user: dict = Depends(ge
                 "net_balance": net_balance,
                 "margin_pct": round(margin_pct, 2)
             }
+
+@router.get("/sales")
+def get_expenses_sales(month: int, year: int, current_user: dict = Depends(get_current_user)):
+    with database.get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute("""
+                SELECT order_id, date_created, buyer_name, buyer_nickname, total_amount, 
+                       source_platform, payment_method, status
+                FROM orders_cache 
+                WHERE EXTRACT(MONTH FROM date_created::timestamp) = %s 
+                  AND EXTRACT(YEAR FROM date_created::timestamp) = %s 
+                  AND LOWER(status) NOT IN ('cancelled', 'cancelado')
+                ORDER BY date_created DESC
+            """, (month, year))
+            rows = cursor.fetchall()
+            for r in rows:
+                if r.get('date_created'):
+                    r['date_created'] = str(r['date_created'])[:19].replace('T', ' ')
+            return rows

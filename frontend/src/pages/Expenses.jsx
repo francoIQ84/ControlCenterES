@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { Plus, Trash2, Wallet, Calendar, DollarSign, Tag, TrendingDown, TrendingUp, PieChart, ArrowUpRight, ArrowDownRight, Layers, FileText } from 'lucide-react'
+import { Plus, Trash2, Wallet, Calendar, DollarSign, Tag, TrendingDown, TrendingUp, PieChart, ArrowUpRight, ArrowDownRight, Layers, FileText, CheckCircle2, AlertTriangle, Search, ChevronDown, ChevronUp } from 'lucide-react'
 
 export default function Expenses() {
   const [activeTab, setActiveTab] = useState('summary') // 'summary' | 'expenses' | 'incomes'
@@ -10,6 +10,9 @@ export default function Expenses() {
   const [fixedExpenses, setFixedExpenses] = useState([])
   const [variableExpenses, setVariableExpenses] = useState([])
   const [manualIncomes, setManualIncomes] = useState([])
+  const [salesList, setSalesList] = useState([])
+  const [showSalesDetails, setShowSalesDetails] = useState(true)
+  const [salesSearch, setSalesSearch] = useState('')
   const [summary, setSummary] = useState({
     total_sales: 0,
     total_manual_incomes: 0,
@@ -67,9 +70,18 @@ export default function Expenses() {
     }
   }
 
+  const fetchSalesList = async () => {
+    try {
+      const res = await fetch(`/api/expenses/sales?month=${selectedMonth}&year=${selectedYear}`)
+      if (res.ok) setSalesList(await res.json())
+    } catch (e) {
+      console.error(e)
+    }
+  }
+
   const loadData = async () => {
     setLoading(true)
-    await Promise.all([fetchSummary(), fetchFixed(), fetchVariable(), fetchIncomes()])
+    await Promise.all([fetchSummary(), fetchFixed(), fetchVariable(), fetchIncomes(), fetchSalesList()])
     setLoading(false)
   }
 
@@ -603,6 +615,129 @@ export default function Expenses() {
               ${Math.round(summary.total_sales).toLocaleString()}
             </div>
           </div>
+
+          {/* Automatic Sales Breakdown List Card */}
+          {(() => {
+            const salesIdCounts = {}
+            salesList.forEach(s => {
+              const idStr = String(s.order_id)
+              salesIdCounts[idStr] = (salesIdCounts[idStr] || 0) + 1
+            })
+            const duplicateSalesIds = Object.keys(salesIdCounts).filter(id => salesIdCounts[id] > 1)
+
+            const filteredSalesList = salesList.filter(s => {
+              if (!salesSearch.trim()) return true
+              const q = salesSearch.toLowerCase()
+              return String(s.order_id).toLowerCase().includes(q) ||
+                     (s.buyer_name || '').toLowerCase().includes(q) ||
+                     (s.buyer_nickname || '').toLowerCase().includes(q) ||
+                     (s.source_platform || '').toLowerCase().includes(q) ||
+                     (s.payment_method || '').toLowerCase().includes(q) ||
+                     String(s.total_amount).includes(q)
+            })
+
+            return (
+              <div className="card" style={{ padding: '15px 20px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                    <h4 style={{ margin: 0, fontSize: '1rem', color: 'var(--text-main)' }}>
+                      📋 Detalle de Ventas Registradas ({salesList.length})
+                    </h4>
+                    {duplicateSalesIds.length === 0 ? (
+                      <span className="badge" style={{ backgroundColor: 'rgba(16, 185, 129, 0.1)', color: '#10b981', border: '1px solid rgba(16, 185, 129, 0.3)', padding: '4px 10px', borderRadius: 20, fontSize: '0.8rem', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                        <CheckCircle2 size={14} /> Sin duplicados detectados ({salesList.length} registros)
+                      </span>
+                    ) : (
+                      <span className="badge" style={{ backgroundColor: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', border: '1px solid rgba(239, 68, 68, 0.3)', padding: '4px 10px', borderRadius: 20, fontSize: '0.8rem', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                        <AlertTriangle size={14} /> ⚠️ {duplicateSalesIds.length} orden(es) con posibles duplicados
+                      </span>
+                    )}
+                  </div>
+                  
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <div style={{ position: 'relative' }}>
+                      <Search size={14} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-secondary)' }} />
+                      <input 
+                        type="text" 
+                        placeholder="Buscar por ID, cliente, plataforma..." 
+                        value={salesSearch}
+                        onChange={e => setSalesSearch(e.target.value)}
+                        style={{ paddingLeft: 30, fontSize: '0.82rem', height: 32, width: 220 }}
+                      />
+                    </div>
+                    <button 
+                      className="btn" 
+                      onClick={() => setShowSalesDetails(!showSalesDetails)}
+                      style={{ padding: '4px 12px', fontSize: '0.82rem', backgroundColor: 'var(--bg-dark)', color: 'var(--text-secondary)', border: '1px solid var(--border-color)', display: 'inline-flex', alignItems: 'center', gap: 6 }}
+                    >
+                      {showSalesDetails ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                      {showSalesDetails ? 'Ocultar Lista' : 'Ver Lista'}
+                    </button>
+                  </div>
+                </div>
+
+                {showSalesDetails && (
+                  <div style={{ marginTop: 15 }}>
+                    {filteredSalesList.length === 0 ? (
+                      <div style={{ padding: '20px 0', textAlign: 'center', color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
+                        No se encontraron ventas registradas para el período seleccionado.
+                      </div>
+                    ) : (
+                      <div style={{ overflowX: 'auto', maxHeight: '420px', overflowY: 'auto' }}>
+                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
+                          <thead style={{ position: 'sticky', top: 0, backgroundColor: 'var(--card-bg)', zIndex: 1 }}>
+                            <tr style={{ borderBottom: '1px solid var(--border-color)', textAlign: 'left', color: 'var(--text-secondary)' }}>
+                              <th style={{ padding: '8px 10px' }}>Fecha</th>
+                              <th style={{ padding: '8px 10px' }}>ID Venta / Cobro</th>
+                              <th style={{ padding: '8px 10px' }}>Origen / Plataforma</th>
+                              <th style={{ padding: '8px 10px' }}>Medio de Pago</th>
+                              <th style={{ padding: '8px 10px' }}>Cliente / Payer</th>
+                              <th style={{ padding: '8px 10px' }}>Estado</th>
+                              <th style={{ padding: '8px 10px', textAlign: 'right' }}>Monto Total</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {filteredSalesList.map((s, idx) => {
+                              const isDup = salesIdCounts[String(s.order_id)] > 1
+                              return (
+                                <tr key={s.order_id + '-' + idx} style={{ borderBottom: '1px solid var(--border-color)', backgroundColor: isDup ? 'rgba(239, 68, 68, 0.08)' : 'transparent' }}>
+                                  <td style={{ padding: '8px 10px', whiteSpace: 'nowrap' }}>{s.date_created || '-'}</td>
+                                  <td style={{ padding: '8px 10px', fontWeight: 'bold', color: isDup ? '#ef4444' : 'var(--text-main)' }}>
+                                    #{s.order_id} {isDup && <span style={{ fontSize: '0.75rem', color: '#ef4444' }}>(Duplicado)</span>}
+                                  </td>
+                                  <td style={{ padding: '8px 10px' }}>
+                                    <span className="badge" style={{ backgroundColor: 'var(--bg-dark)', padding: '2px 8px', borderRadius: 4, border: '1px solid var(--border-color)', fontSize: '0.78rem' }}>
+                                      {s.source_platform || 'MERCADOPAGO'}
+                                    </span>
+                                  </td>
+                                  <td style={{ padding: '8px 10px', color: 'var(--text-secondary)' }}>{s.payment_method || '-'}</td>
+                                  <td style={{ padding: '8px 10px' }}>{s.buyer_name || s.buyer_nickname || 'Cliente MP'}</td>
+                                  <td style={{ padding: '8px 10px' }}>
+                                    <span style={{ color: '#10b981', fontWeight: 500 }}>{s.status || 'approved'}</span>
+                                  </td>
+                                  <td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 'bold', color: '#10b981' }}>
+                                    ${s.total_amount?.toLocaleString()}
+                                  </td>
+                                </tr>
+                              )
+                            })}
+                          </tbody>
+                          <tfoot>
+                            <tr style={{ borderTop: '2px solid var(--border-color)', fontWeight: 'bold' }}>
+                              <td colSpan={6} style={{ padding: '10px' }}>Total ({filteredSalesList.length} de {salesList.length} registros)</td>
+                              <td style={{ padding: '10px', textAlign: 'right', color: '#10b981', fontSize: '1rem' }}>
+                                ${filteredSalesList.reduce((acc, curr) => acc + (curr.total_amount || 0), 0).toLocaleString()}
+                              </td>
+                            </tr>
+                          </tfoot>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )
+          })()}
 
           {/* Manual Extra Incomes Card */}
           <div className="card">
