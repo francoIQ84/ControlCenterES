@@ -19,6 +19,7 @@ export default function Expenses() {
     total_incomes: 0,
     total_fixed_expenses: 0,
     total_variable_expenses: 0,
+    total_transfers: 0,
     total_expenses: 0,
     net_balance: 0,
     margin_pct: 0
@@ -456,6 +457,12 @@ export default function Expenses() {
                   <span>Total Gastos:</span>
                   <span style={{ color: '#ef4444' }}>${Math.round(summary.total_expenses).toLocaleString()}</span>
                 </div>
+                {summary.total_transfers > 0 && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 10px', marginTop: 8, backgroundColor: 'rgba(59,130,246,0.05)', borderRadius: 6, fontSize: '0.82rem', color: 'var(--text-secondary)' }}>
+                    <span>💸 Transferencias / Pagos Tarjeta MP (no cuentan como gasto)</span>
+                    <strong>${Math.round(summary.total_transfers).toLocaleString()}</strong>
+                  </div>
+                )}
               </div>
             </div>
           </div>

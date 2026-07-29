@@ -206,8 +206,19 @@ def get_financial_summary(month: int, year: int, current_user: dict = Depends(ge
             cursor.execute("SELECT COALESCE(SUM(amount), 0) as total FROM fixed_expenses WHERE month = %s AND year = %s", (month, year))
             total_fixed = float(cursor.fetchone()['total'])
 
-            cursor.execute("SELECT COALESCE(SUM(amount), 0) as total FROM variable_expenses WHERE EXTRACT(MONTH FROM date) = %s AND EXTRACT(YEAR FROM date) = %s", (month, year))
+            # Variable expenses excluding transfers/card payments (money movements, not real expenses)
+            cursor.execute(
+                "SELECT COALESCE(SUM(amount), 0) as total FROM variable_expenses WHERE EXTRACT(MONTH FROM date) = %s AND EXTRACT(YEAR FROM date) = %s AND category NOT IN ('Transferencias Salientes MP', 'Pago de Tarjeta MP')",
+                (month, year)
+            )
             total_variable = float(cursor.fetchone()['total'])
+
+            # Transfers/card payments tracked separately for transparency
+            cursor.execute(
+                "SELECT COALESCE(SUM(amount), 0) as total FROM variable_expenses WHERE EXTRACT(MONTH FROM date) = %s AND EXTRACT(YEAR FROM date) = %s AND category IN ('Transferencias Salientes MP', 'Pago de Tarjeta MP')",
+                (month, year)
+            )
+            total_transfers = float(cursor.fetchone()['total'])
 
             cursor.execute("SELECT COALESCE(SUM(amount), 0) as total FROM incomes WHERE EXTRACT(MONTH FROM date) = %s AND EXTRACT(YEAR FROM date) = %s", (month, year))
             total_manual_incomes = float(cursor.fetchone()['total'])
@@ -234,6 +245,7 @@ def get_financial_summary(month: int, year: int, current_user: dict = Depends(ge
                 "total_incomes": total_incomes,
                 "total_fixed_expenses": total_fixed,
                 "total_variable_expenses": total_variable,
+                "total_transfers": total_transfers,
                 "total_expenses": total_expenses,
                 "net_balance": net_balance,
                 "margin_pct": round(margin_pct, 2)

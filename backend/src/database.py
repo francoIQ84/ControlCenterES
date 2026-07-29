@@ -1301,13 +1301,13 @@ def get_dashboard_metrics(period="total", start_date_str=None, end_date_str=None
     elif period != "total":
         now = datetime.now()
         if period == "day":
-            start_date = now - timedelta(days=1)
+            start_date = now.replace(hour=0, minute=0, second=0, microsecond=0)
         elif period == "week":
             start_date = now - timedelta(days=7)
         elif period == "month":
-            start_date = now - timedelta(days=30)
+            start_date = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
         elif period == "year":
-            start_date = now - timedelta(days=365)
+            start_date = now.replace(month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
 
     orders_conditions = ["LOWER(status) NOT IN ('cancelled', 'cancelado')"]
     orders_params = []
