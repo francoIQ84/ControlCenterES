@@ -394,13 +394,15 @@ def save_products(products_list):
                     VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     ON CONFLICT (ml_id) DO UPDATE SET
                         title = EXCLUDED.title,
-                        price = EXCLUDED.price,
-                        available_quantity = EXCLUDED.available_quantity,
+                        price = CASE WHEN COALESCE(products_cache.sync_meli, 1) = 1 THEN EXCLUDED.price ELSE products_cache.price END,
+                        available_quantity = CASE WHEN COALESCE(products_cache.sync_meli, 1) = 1 THEN EXCLUDED.available_quantity ELSE products_cache.available_quantity END,
+                        prev_stock = CASE WHEN COALESCE(products_cache.sync_meli, 1) = 1 AND products_cache.available_quantity != EXCLUDED.available_quantity THEN products_cache.available_quantity ELSE products_cache.prev_stock END,
+                        prev_price = CASE WHEN COALESCE(products_cache.sync_meli, 1) = 1 AND products_cache.price != EXCLUDED.price THEN products_cache.price ELSE products_cache.prev_price END,
                         cost_meli = CASE WHEN EXCLUDED.cost_meli > 0 THEN EXCLUDED.cost_meli ELSE products_cache.cost_meli END,
                         prev_cost_meli = CASE WHEN EXCLUDED.cost_meli > 0 AND products_cache.cost_meli != EXCLUDED.cost_meli THEN products_cache.cost_meli ELSE products_cache.prev_cost_meli END,
                         permalink = EXCLUDED.permalink,
                         thumbnail = EXCLUDED.thumbnail,
-                        status = EXCLUDED.status,
+                        status = CASE WHEN COALESCE(products_cache.sync_meli, 1) = 1 THEN EXCLUDED.status ELSE products_cache.status END,
                         last_sync = EXCLUDED.last_sync,
                         visits_meli = EXCLUDED.visits_meli,
                         images = CASE WHEN products_cache.images IS NULL OR products_cache.images = '' THEN EXCLUDED.images ELSE products_cache.images END
