@@ -93,7 +93,9 @@ def sync_mp_payments(date_from=None, limit=2000):
                     database.save_auto_mp_expense(fee_date, fee_desc, fee_amount, cat, payment_id)
 
                 # CRITICAL FILTER: If merchant is NOT the collector OR is the payer, this is an EGRESO/GASTO (Pago de tarjeta, compra, egreso)
-                if collector_id != user_id_str or payer_id == user_id_str:
+                # Exception: Incoming CVU / bank deposits (operation_type == 'account_fund' or payment_method_id == 'cvu') have collector_id == payer_id == user_id_str
+                is_incoming_deposit = (operation_type in ['account_fund', 'bank_transfer'] or payment_method_id == 'cvu' or payment_type == 'bank_transfer') and (collector_id == user_id_str)
+                if collector_id != user_id_str or (payer_id == user_id_str and not is_incoming_deposit):
                     with database.get_connection() as conn:
                         with conn.cursor() as cursor:
                             cursor.execute("DELETE FROM orders_cache WHERE order_id = %s", (payment_id,))
@@ -116,7 +118,7 @@ def sync_mp_payments(date_from=None, limit=2000):
 
                 # Determine platform subtype for standalone Mercado Pago transactions
                 source_platform = 'MERCADOPAGO'
-                if payment_type == 'bank_transfer' or payment_method_id in ['pix', 'cvu', 'account_money'] or operation_type == 'money_transfer':
+                if payment_type == 'bank_transfer' or payment_method_id in ['pix', 'cvu', 'account_money'] or operation_type in ['money_transfer', 'account_fund']:
                     source_platform = 'MERCADOPAGO_TRANSFER'
                 elif 'pos' in operation_type or 'point' in operation_type or payment_type == 'ticket':
                     source_platform = 'MERCADOPAGO_QR'
@@ -133,7 +135,10 @@ def sync_mp_payments(date_from=None, limit=2000):
                 last_name = (payer.get('last_name') or '').strip()
                 full_name = f"{first_name} {last_name}".strip()
                 if not full_name or full_name == "None None":
-                    full_name = email.split('@')[0] if (email and '@' in email) else f"Cliente MP #{payment_id}"
+                    if is_incoming_deposit:
+                        full_name = "Transferencia Recibida (CVU/Banco)"
+                    else:
+                        full_name = email.split('@')[0] if (email and '@' in email) else f"Cliente MP #{payment_id}"
                 
                 identification = payer.get('identification') or {}
                 doc_type = identification.get('type', 'DNI')
@@ -262,14 +267,12 @@ def sync_mp_payments(date_from=None, limit=2000):
                             date_created = p.get('date_created', '')
                             total_amount = float(p.get('transaction_amount', 0.0))
                             op_type = p.get('operation_type', '')
-                            desc = p.get('description') or ''
-                            ext_ref = str(p.get('external_reference') or '')
+                            collector_id = str(p.get('collector_id') or p.get('collector', {}).get('id') or '')
+                            pay_type = p.get('payment_type_id', '')
+                            pay_method = p.get('payment_method_id', '')
 
-                            fee_date = date_created[:10] if len(date_created) >= 10 else datetime.now().strftime('%Y-%m-%d')
-
-
-                            # Skip internal money transfers and credit card bill payments from operational expenses
-                            if op_type == 'money_transfer' or 'ccpaymentprod' in ext_ref.lower() or 'tarjeta' in desc.lower() or 'tarjeta' in ext_ref.lower():
+                            # Skip internal money transfers, incoming deposits, bank/CVU transfers, and credit card bill payments from operational expenses
+                            if op_type in ['money_transfer', 'account_fund'] or pay_method == 'cvu' or pay_type == 'bank_transfer' or collector_id == user_id_str or 'ccpaymentprod' in ext_ref.lower() or 'tarjeta' in desc.lower() or 'tarjeta' in ext_ref.lower():
                                 continue
 
                             cat = 'Compras / Insumos MP'

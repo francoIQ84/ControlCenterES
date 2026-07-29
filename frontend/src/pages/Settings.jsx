@@ -22,6 +22,28 @@ export default function Settings() {
   const [code, setCode] = useState("")
 
   const [syncingHistorical, setSyncingHistorical] = useState(false)
+  const [syncingToday, setSyncingToday] = useState(false)
+
+  const handleSyncToday = async () => {
+    setSyncingToday(true)
+    try {
+      const dateFrom = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().split('.')[0] + 'Z'
+      const res = await fetch('/api/settings/sync-all', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ limit: 500, date_from: dateFrom })
+      })
+      if (res.ok) {
+        alert("Sincronización del día de hoy iniciada en segundo plano.")
+      } else {
+        alert("Error al iniciar la sincronización.")
+      }
+    } catch (err) {
+      alert("Error de conexión: " + err.message)
+    } finally {
+      setSyncingToday(false)
+    }
+  }
 
   const handleSyncHistorical = async () => {
     setSyncingHistorical(true)
@@ -965,22 +987,42 @@ export default function Settings() {
                   </div>
                 </details>
 
-                <div style={{ marginTop: '24px', paddingTop: '16px', borderTop: '1px solid var(--border-color)' }}>
-                  <span style={{ fontSize: '0.85rem', fontWeight: 600, display: 'block', marginBottom: '8px', color: 'var(--text-primary)' }}>
-                    Sincronización Histórica Completa:
-                  </span>
-                  <button 
-                    className="btn btn-secondary" 
-                    onClick={handleSyncHistorical}
-                    disabled={syncingHistorical}
-                    style={{ width: '100%', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '8px', padding: '10px 14px', fontSize: '0.85rem' }}
-                  >
-                    <RefreshCw size={16} className={syncingHistorical ? 'animate-spin' : ''} />
-                    <span>{syncingHistorical ? 'Sincronizando...' : '🔄 Sincronizar Histórico (2 Años)'}</span>
-                  </button>
-                  <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'block', marginTop: '6px', textAlign: 'center' }}>
-                    Descarga y actualiza todas las ventas, productos y cobros de los últimos 2 años.
-                  </span>
+                <div style={{ marginTop: '24px', paddingTop: '16px', borderTop: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                  <div>
+                    <span style={{ fontSize: '0.85rem', fontWeight: 600, display: 'block', marginBottom: '8px', color: 'var(--text-primary)' }}>
+                      Sincronización Rápida del Día:
+                    </span>
+                    <button 
+                      className="btn" 
+                      onClick={handleSyncToday}
+                      disabled={syncingToday || syncingHistorical}
+                      style={{ width: '100%', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '8px', padding: '10px 14px', fontSize: '0.85rem', backgroundColor: 'var(--accent-emerald)', color: '#fff' }}
+                    >
+                      <RefreshCw size={16} className={syncingToday ? 'animate-spin' : ''} />
+                      <span>{syncingToday ? 'Sincronizando hoy...' : '⚡ Sincronizar Hoy (Últimas 24 hs)'}</span>
+                    </button>
+                    <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'block', marginTop: '6px', textAlign: 'center' }}>
+                      Actualización rápida de publicaciones, ventas y pagos del día de hoy.
+                    </span>
+                  </div>
+
+                  <div>
+                    <span style={{ fontSize: '0.85rem', fontWeight: 600, display: 'block', marginBottom: '8px', color: 'var(--text-primary)' }}>
+                      Sincronización Histórica Completa:
+                    </span>
+                    <button 
+                      className="btn btn-secondary" 
+                      onClick={handleSyncHistorical}
+                      disabled={syncingHistorical || syncingToday}
+                      style={{ width: '100%', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '8px', padding: '10px 14px', fontSize: '0.85rem' }}
+                    >
+                      <RefreshCw size={16} className={syncingHistorical ? 'animate-spin' : ''} />
+                      <span>{syncingHistorical ? 'Sincronizando...' : '🔄 Sincronizar Histórico (2 Años)'}</span>
+                    </button>
+                    <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'block', marginTop: '6px', textAlign: 'center' }}>
+                      Descarga y actualiza todas las ventas, productos y cobros de los últimos 2 años.
+                    </span>
+                  </div>
                 </div>
               </div>
             </div>

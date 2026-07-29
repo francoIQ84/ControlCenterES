@@ -132,9 +132,12 @@ def update_variable_expense(expense_id: int, expense: VariableExpenseCreate, cur
 def delete_variable_expense(expense_id: int, current_user: dict = Depends(get_current_user)):
     with database.get_connection() as conn:
         with conn.cursor() as cursor:
-            cursor.execute("DELETE FROM variable_expenses WHERE id = %s RETURNING id", (expense_id,))
-            if not cursor.fetchone():
+            cursor.execute("DELETE FROM variable_expenses WHERE id = %s RETURNING id, mp_payment_id", (expense_id,))
+            row = cursor.fetchone()
+            if not row:
                 raise HTTPException(status_code=404, detail="Expense not found")
+            if row.get('mp_payment_id'):
+                cursor.execute("INSERT INTO deleted_mp_expenses (mp_payment_id) VALUES (%s) ON CONFLICT DO NOTHING", (row['mp_payment_id'],))
             return {"success": True}
 
 @router.get("/incomes")

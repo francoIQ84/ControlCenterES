@@ -51,6 +51,8 @@ window.fetch = async (...args) => {
   }
 }
 
+const processedMeliCodes = new Set();
+
 function ProtectedRoute() {
   const token = localStorage.getItem('adminToken')
   
@@ -58,8 +60,9 @@ function ProtectedRoute() {
     const urlParams = new URLSearchParams(window.location.search);
     const code = urlParams.get('code');
     // Si la URL tiene un código de Mercado Libre y estamos logueados, lo procesamos
-    if (code && token) {
-      // Limpiamos la URL para no re-procesar
+    if (code && token && !processedMeliCodes.has(code)) {
+      processedMeliCodes.add(code);
+      // Limpiamos la URL de inmediato para no re-procesar
       window.history.replaceState({}, document.title, window.location.pathname);
       
       fetch('/api/settings/exchange-code', {

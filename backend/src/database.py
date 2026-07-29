@@ -117,6 +117,13 @@ def init_db():
             cursor.execute('ALTER TABLE variable_expenses ADD COLUMN IF NOT EXISTS mp_payment_id BIGINT;')
             cursor.execute('ALTER TABLE variable_expenses ADD COLUMN IF NOT EXISTS is_auto_mp INTEGER DEFAULT 0;')
 
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS deleted_mp_expenses (
+                    mp_payment_id BIGINT PRIMARY KEY,
+                    deleted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
+            ''')
+
             # Customers table
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS customers (
@@ -1841,6 +1848,11 @@ def save_auto_mp_expense(date_str, description, amount, category, mp_payment_id)
         return
     with get_connection() as conn:
         with conn.cursor() as cursor:
+            # Check if user explicitly deleted this MP expense
+            cursor.execute("SELECT 1 FROM deleted_mp_expenses WHERE mp_payment_id = %s", (mp_payment_id,))
+            if cursor.fetchone():
+                return  # Do not recreate deleted expense
+
             cursor.execute("SELECT id FROM variable_expenses WHERE mp_payment_id = %s AND category = %s", (mp_payment_id, category))
             existing = cursor.fetchone()
             if existing:

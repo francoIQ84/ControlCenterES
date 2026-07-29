@@ -75,31 +75,6 @@ export default function Layout() {
     return () => window.removeEventListener('resize', handleResize)
   }, [])
 
-  // Captura y canje de código de Mercado Libre (?code=TG-xxx) en la URL
-  useEffect(() => {
-    const queryParams = new URLSearchParams(window.location.search);
-    const code = queryParams.get('code');
-    if (code) {
-      const exchangeCode = async () => {
-        try {
-          const res = await fetch('/api/settings/exchange-code', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ code })
-          });
-          if (res.ok) {
-            window.history.replaceState({}, document.title, window.location.pathname);
-            window.location.reload();
-          } else {
-            alert("Error al vincular con Mercado Libre");
-          }
-        } catch (e) {
-          console.error("Exchange code error:", e);
-        }
-      };
-      exchangeCode();
-    }
-  }, []);
 
   // Consultar estado de Meli, redirección automática de login y autosincronización
   useEffect(() => {
@@ -218,6 +193,33 @@ export default function Layout() {
         startPollingProgress();
       } else {
         alert("Error al iniciar sincronización");
+        setShowProgressModal(false);
+        setSyncing(false);
+      }
+    } catch (e) {
+      alert("Error de conexión al iniciar sincronización");
+      setShowProgressModal(false);
+      setSyncing(false);
+    }
+  };
+
+  const handleSync24h = async () => {
+    setSyncing(true);
+    setProgress({ status: 'idle', progress: 0, message: 'Iniciando sincronización de 24 horas (Mercado Libre y Mercado Pago)...', current: 0, total: 100 });
+    setShowProgressModal(true);
+    
+    try {
+      const dateFrom = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().split('.')[0] + 'Z';
+      const res = await fetch('/api/settings/sync-all', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ limit: 500, date_from: dateFrom })
+      });
+      
+      if (res.ok) {
+        startPollingProgress();
+      } else {
+        alert("Error al iniciar sincronización de 24 horas");
         setShowProgressModal(false);
         setSyncing(false);
       }
@@ -400,6 +402,34 @@ export default function Layout() {
                   <span>🔗 Sin Vincular Meli (Hacé clic aquí)</span>
                 )}
               </div>
+            )}
+
+            {/* Quick 24h Sync Button for Mercado Libre & Mercado Pago */}
+            {meliStatus && meliStatus.is_authenticated && (
+              <button 
+                onClick={handleSync24h}
+                disabled={syncing || autoSyncing}
+                title="Sincronizar ventas, cobros y publicaciones de Mercado Libre y Mercado Pago de las últimas 24 horas"
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  padding: '6px 14px',
+                  borderRadius: '20px',
+                  fontSize: '0.8rem',
+                  fontWeight: '600',
+                  backgroundColor: 'var(--accent-emerald)',
+                  color: '#ffffff',
+                  border: 'none',
+                  cursor: syncing || autoSyncing ? 'not-allowed' : 'pointer',
+                  opacity: syncing || autoSyncing ? 0.7 : 1,
+                  transition: 'all 0.2s',
+                  boxShadow: '0 2px 6px rgba(16, 185, 129, 0.3)'
+                }}
+              >
+                <RefreshCw size={14} className={syncing ? 'animate-spin' : ''} />
+                <span>{syncing ? 'Sincronizando 24h...' : '⚡ Sincronizar 24hs ML/MP'}</span>
+              </button>
             )}
 
             {/* Autosync indicator */}
