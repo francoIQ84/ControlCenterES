@@ -11,6 +11,23 @@ const AUTH_DIR = path.resolve(__dirname, 'auth_state');
 let currentSock = null;
 let isDisconnecting = false;
 
+const CONTACTS_CACHE_FILE = path.resolve(__dirname, 'contacts_cache.json');
+let knownContacts = {};
+if (fs.existsSync(CONTACTS_CACHE_FILE)) {
+    try {
+        const parsed = JSON.parse(fs.readFileSync(CONTACTS_CACHE_FILE, 'utf-8'));
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+            knownContacts = parsed;
+        }
+    } catch (e) {}
+}
+
+function saveContactsCache() {
+    try {
+        fs.writeFileSync(CONTACTS_CACHE_FILE, JSON.stringify(knownContacts || {}, null, 2));
+    } catch (e) {}
+}
+
 async function startBot() {
     const { state, saveCreds } = await useMultiFileAuthState(AUTH_DIR);
     
@@ -78,10 +95,117 @@ async function startBot() {
             } catch (err) {}
         }
     });
-    
+
+
+
+    // Track contacts & pushName updates
+    sock.ev.on('contacts.upsert', (contacts) => {
+        for (const c of contacts) {
+            if (c.id && !c.id.endsWith('@g.us')) {
+                const phone = c.id.split('@')[0];
+                const name = c.name || c.notify || c.verifiedName || '';
+                if (phone) {
+                    knownContacts[phone] = {
+                        phone,
+                        name: name || knownContacts[phone]?.name || ''
+                    };
+                }
+            }
+        }
+        saveContactsCache();
+    });
+
+    sock.ev.on('chats.upsert', (chats) => {
+        for (const chat of chats) {
+            if (chat.id && !chat.id.endsWith('@g.us')) {
+                const phone = chat.id.split('@')[0];
+                const name = chat.name || chat.notify || '';
+                if (phone) {
+                    knownContacts[phone] = {
+                        phone,
+                        name: name || knownContacts[phone]?.name || ''
+                    };
+                }
+            }
+        }
+        saveContactsCache();
+    });
+
+    sock.ev.on('chats.set', ({ chats }) => {
+        if (chats) {
+            for (const chat of chats) {
+                if (chat.id && !chat.id.endsWith('@g.us')) {
+                    const phone = chat.id.split('@')[0];
+                    const name = chat.name || chat.notify || '';
+                    if (phone) {
+                        knownContacts[phone] = {
+                            phone,
+                            name: name || knownContacts[phone]?.name || ''
+                        };
+                    }
+                }
+            }
+            saveContactsCache();
+        }
+    });
+
+    sock.ev.on('messaging-history.set', ({ contacts, chats, messages }) => {
+        if (contacts) {
+            for (const c of contacts) {
+                if (c.id && !c.id.endsWith('@g.us')) {
+                    const phone = c.id.split('@')[0];
+                    const name = c.name || c.notify || c.verifiedName || '';
+                    if (phone) {
+                        knownContacts[phone] = {
+                            phone,
+                            name: name || knownContacts[phone]?.name || ''
+                        };
+                    }
+                }
+            }
+        }
+        if (chats) {
+            for (const chat of chats) {
+                if (chat.id && !chat.id.endsWith('@g.us')) {
+                    const phone = chat.id.split('@')[0];
+                    const name = chat.name || chat.notify || '';
+                    if (phone) {
+                        knownContacts[phone] = {
+                            phone,
+                            name: name || knownContacts[phone]?.name || ''
+                        };
+                    }
+                }
+            }
+        }
+        if (messages) {
+            for (const msg of messages) {
+                const sender = msg.key?.remoteJid;
+                if (sender && !sender.endsWith('@g.us')) {
+                    const phone = sender.split('@')[0];
+                    const pushName = msg.pushName || '';
+                    if (phone) {
+                        if (!knownContacts[phone]) knownContacts[phone] = { phone, name: pushName };
+                        else if (pushName && !knownContacts[phone].name) knownContacts[phone].name = pushName;
+                    }
+                }
+            }
+        }
+        saveContactsCache();
+    });
+
     sock.ev.on('messages.upsert', async (m) => {
         if (m.type !== 'notify') return;
         const msg = m.messages[0];
+        const sender = msg.key.remoteJid;
+        if (!sender || sender.endsWith('@g.us')) return;
+
+        const phone = sender.split('@')[0];
+        if (msg.pushName) {
+            if (!knownContacts[phone]) knownContacts[phone] = { phone, name: msg.pushName };
+            else if (!knownContacts[phone].name) knownContacts[phone].name = msg.pushName;
+        }
+
         if (msg.key.fromMe) {
             const recipient = msg.key.remoteJid;
             if (recipient && !recipient.endsWith('@g.us')) {
@@ -102,13 +226,9 @@ async function startBot() {
             return;
         }
         
-        const sender = msg.key.remoteJid;
-        // Ignore group messages (group JIDs end in @g.us)
-        if (sender.endsWith('@g.us')) return;
-
         // Extract text message content
-        const text = msg.message.conversation || 
-                     (msg.message.extendedTextMessage && msg.message.extendedTextMessage.text) || 
+        const text = msg.message?.conversation || 
+                     (msg.message?.extendedTextMessage && msg.message.extendedTextMessage.text) || 
                      '';
                      
         if (!text) return;
@@ -118,7 +238,8 @@ async function startBot() {
         try {
             // Post message to backend webhook
             const res = await axios.post(`${BACKEND_URL}/webhook`, {
-                sender: sender.split('@')[0], // strip domain
+                sender: phone,
+                pushName: msg.pushName || '',
                 text: text
             });
             
@@ -160,6 +281,16 @@ const server = http.createServer(async (req, res) => {
             }, 1000);
         } catch (err) {
             console.error('Error handling disconnect request:', err.message);
+            res.writeHead(500, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ success: false, error: err.message }));
+        }
+    } else if ((req.method === 'GET' || req.method === 'POST') && req.url === '/sync-contacts') {
+        try {
+            console.log('Received sync-contacts request...');
+            const contactsList = Object.values(knownContacts || {});
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ success: true, count: contactsList.length, contacts: contactsList }));
+        } catch (err) {
             res.writeHead(500, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({ success: false, error: err.message }));
         }

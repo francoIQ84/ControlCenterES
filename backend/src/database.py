@@ -131,6 +131,9 @@ def init_db():
                 )
             ''')
             cursor.execute('ALTER TABLE customers ADD COLUMN IF NOT EXISTS address TEXT;')
+            cursor.execute('ALTER TABLE customers ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;')
+            cursor.execute('ALTER TABLE customers ADD COLUMN IF NOT EXISTS last_activity TIMESTAMP DEFAULT CURRENT_TIMESTAMP;')
+            cursor.execute("UPDATE customers SET source_platform = 'MANUAL' WHERE source_platform IS NULL OR source_platform = '';")
 
 
             # Users table
@@ -746,18 +749,21 @@ def get_all_customers():
         with conn.cursor() as cursor:
             cursor.execute('''
                 SELECT 
-                    c.buyer_id, c.nickname, c.full_name, c.email, c.phone, c.document_type, c.document_number, c.address, c.source_platform,
+                    c.buyer_id, c.nickname, c.full_name, c.email, c.phone, c.document_type, c.document_number, c.address, c.source_platform, c.created_at,
                     COUNT(o.order_id) as total_orders,
-                    COALESCE(SUM(o.total_amount), 0) as total_spent
+                    COALESCE(SUM(o.total_amount), 0) as total_spent,
+                    MAX(o.date_created) as last_order_date
                 FROM customers c
                 LEFT JOIN orders_cache o ON c.buyer_id = o.buyer_id
                 GROUP BY c.buyer_id
-                ORDER BY total_spent DESC
+                ORDER BY total_spent DESC, c.buyer_id DESC
             ''')
             rows = cursor.fetchall()
             
             customers = []
             for r in rows:
+                created_str = r['created_at'].strftime('%Y-%m-%d %H:%M') if r.get('created_at') else None
+                last_act = r.get('last_order_date') or created_str
                 customers.append({
                     'buyer_id': r['buyer_id'],
                     'nickname': r['nickname'],
@@ -769,7 +775,9 @@ def get_all_customers():
                     'address': r.get('address', ''),
                     'total_orders': r['total_orders'] or 0,
                     'total_spent': r['total_spent'] or 0.0,
-                    'source_platform': r['source_platform']
+                    'source_platform': r['source_platform'],
+                    'created_at': created_str,
+                    'last_activity': last_act
                 })
             return customers
 
@@ -828,6 +836,397 @@ def delete_customer(buyer_id):
         with conn.cursor() as cursor:
             cursor.execute("DELETE FROM customers WHERE buyer_id = %s", (buyer_id,))
             return True
+
+# --- Unified CRM & WhatsApp Extractor Operations ---
+
+def sync_whatsapp_contacts_bulk(contacts_list):
+    """Bulk inserts/updates WhatsApp contacts in the customers table."""
+    import time
+    synced_count = 0
+    if not contacts_list:
+        return 0
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            for item in contacts_list:
+                phone = (item.get('phone') or '').strip()
+                if not phone:
+                    continue
+                name = (item.get('name') or '').strip() or f"Cliente WhatsApp +{phone}"
+                
+                # Check if phone already exists in customers
+                cursor.execute("SELECT buyer_id, full_name, phone FROM customers WHERE phone = %s OR nickname = %s", (phone, phone))
+                existing = cursor.fetchone()
+                
+                if existing:
+                    cursor.execute("""
+                        UPDATE customers 
+                        SET full_name = CASE WHEN full_name IS NULL OR full_name = '' THEN %s ELSE full_name END,
+                            nickname = CASE WHEN nickname IS NULL OR nickname = '' THEN %s ELSE nickname END
+                        WHERE buyer_id = %s
+                    """, (name, name, existing['buyer_id']))
+                else:
+                    new_buyer_id = int(time.time() * 1000) + synced_count
+                    cursor.execute("""
+                        INSERT INTO customers (buyer_id, nickname, full_name, phone, source_platform)
+                        VALUES (%s, %s, %s, %s, 'WHATSAPP')
+                        ON CONFLICT (buyer_id) DO NOTHING
+                    """, (new_buyer_id, name, name, phone))
+                synced_count += 1
+    return synced_count
+
+def get_product_inquiries_stats(limit=50):
+    """Retrieves aggregated statistics for most consulted products in WhatsApp chats and web inquiries."""
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute("""
+                SELECT 
+                    wpi.product_name,
+                    COUNT(wpi.id) as inquiry_count,
+                    SUM(CASE WHEN wpi.in_stock THEN 1 ELSE 0 END) as in_stock_inquiries,
+                    SUM(CASE WHEN NOT wpi.in_stock THEN 1 ELSE 0 END) as out_stock_inquiries,
+                    COUNT(DISTINCT wpi.sender) as unique_customers,
+                    MAX(wpi.created_at) as last_inquired_at,
+                    p.ml_id,
+                    p.title as catalog_title,
+                    p.price_web,
+                    p.price as price_meli,
+                    p.available_quantity as stock,
+                    p.thumbnail,
+                    p.images
+                FROM whatsapp_product_inquiries wpi
+                LEFT JOIN products_cache p ON LOWER(p.title) LIKE LOWER('%%' || wpi.product_name || '%%')
+                GROUP BY wpi.product_name, p.ml_id, p.title, p.price_web, p.price, p.available_quantity, p.thumbnail, p.images
+                ORDER BY inquiry_count DESC, last_inquired_at DESC
+                LIMIT %s
+            """, (limit,))
+            rows = cursor.fetchall()
+            
+            result = []
+            for r in rows:
+                result.append({
+                    'product_name': r['product_name'],
+                    'inquiry_count': r['inquiry_count'] or 0,
+                    'in_stock_inquiries': r['in_stock_inquiries'] or 0,
+                    'out_stock_inquiries': r['out_stock_inquiries'] or 0,
+                    'unique_customers': r['unique_customers'] or 0,
+                    'last_inquired_at': r['last_inquired_at'].strftime('%Y-%m-%d %H:%M') if r.get('last_inquired_at') else None,
+                    'ml_id': r.get('ml_id'),
+                    'catalog_title': r.get('catalog_title') or r['product_name'],
+                    'price_web': r.get('price_web') or 0.0,
+                    'price_meli': r.get('price_meli') or 0.0,
+                    'stock': r.get('stock') if r.get('stock') is not None else 0,
+                    'thumbnail': r.get('thumbnail') or ''
+                })
+            return result
+
+def get_unified_crm_data():
+    """Returns consolidated CRM statistics: Customers, WhatsApp contacts, Web Leads, Product Inquiries."""
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            # 1. Customers with totals & dates
+            customer_rows = get_all_customers()
+
+            # 2. Leads / Web Subscribers
+            cursor.execute("SELECT id, name, email, country, source, pdf_sent, created_at FROM leads ORDER BY created_at DESC")
+            lead_rows = [dict(r) for r in cursor.fetchall()]
+            for l in lead_rows:
+                if l.get('created_at'):
+                    l['created_at'] = l['created_at'].strftime('%Y-%m-%d %H:%M')
+
+            # 3. WhatsApp unique contacts from chat history
+            cursor.execute("""
+                SELECT 
+                    sender, 
+                    COUNT(id) as total_messages, 
+                    MAX(timestamp) as last_activity
+                FROM whatsapp_chat_history
+                GROUP BY sender
+                ORDER BY last_activity DESC
+            """)
+            wa_rows = cursor.fetchall()
+            wa_chats = []
+            for w in wa_rows:
+                wa_chats.append({
+                    'sender': w['sender'],
+                    'total_messages': w['total_messages'],
+                    'last_activity': w['last_activity'].strftime('%Y-%m-%d %H:%M') if w.get('last_activity') else ''
+                })
+
+            # 4. Product inquiries stats
+            product_inquiries = get_product_inquiries_stats(limit=50)
+
+            # Metrics count
+            total_customers = len(customer_rows)
+            total_wa_chats = len(wa_chats)
+            total_leads = len(lead_rows)
+            total_inquiries = sum(p['inquiry_count'] for p in product_inquiries)
+
+            return {
+                'metrics': {
+                    'total_customers': total_customers,
+                    'total_wa_chats': total_wa_chats,
+                    'total_leads': total_leads,
+                    'total_inquiries': total_inquiries
+                },
+                'customers': customer_rows,
+                'leads': lead_rows,
+                'whatsapp_chats': wa_chats,
+                'product_inquiries': product_inquiries
+            }
+
+def run_historical_whatsapp_chat_analysis():
+    """Scans stored WhatsApp chat history and extracts product inquiries against the product catalog."""
+    import re
+    analyzed_count = 0
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            # Fetch active catalog product titles
+            cursor.execute("SELECT ml_id, title, available_quantity FROM products_cache WHERE COALESCE(is_hidden, 0) = 0")
+            products = cursor.fetchall()
+            if not products:
+                return 0
+
+            # Fetch chat history messages
+            cursor.execute("SELECT id, sender, message, timestamp FROM whatsapp_chat_history ORDER BY id ASC")
+            messages = cursor.fetchall()
+
+            for msg in messages:
+                sender = msg['sender']
+                text = (msg['message'] or '').lower().strip()
+                if not text or len(text) < 3:
+                    continue
+
+                for p in products:
+                    title = p['title'].lower()
+                    # Check key terms (matching product title words)
+                    words = [w for w in title.split() if len(w) > 3 and w not in ['para', 'con', 'de', 'del', 'los', 'las', 'por']]
+                    if len(words) >= 2 and all(w in text for w in words[:2]):
+                        in_stock = (p['available_quantity'] or 0) > 0
+                        # Check if inquiry already recorded for this sender & product
+                        cursor.execute("""
+                            SELECT id FROM whatsapp_product_inquiries 
+                            WHERE sender = %s AND product_name = %s
+                        """, (sender, p['title']))
+                        if not cursor.fetchone():
+                            cursor.execute("""
+                                INSERT INTO whatsapp_product_inquiries (sender, product_name, in_stock)
+                                VALUES (%s, %s, %s)
+                            """, (sender, p['title'], in_stock))
+                            analyzed_count += 1
+                        break
+
+    return analyzed_count
+
+def decrypt_whatsapp_db_and_parse(crypt_bytes: bytes, key_bytes: bytes):
+    """Decrypts WhatsApp .crypt14 / .crypt15 / .crypt12 file with key and returns list of message dicts."""
+    import tempfile
+    import sqlite3
+    import os
+    import re
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+    from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+
+    if len(key_bytes) >= 158:
+        aes_key = key_bytes[126:158]
+    elif len(key_bytes) == 32:
+        aes_key = key_bytes
+    elif len(key_bytes) == 64:
+        aes_key = bytes.fromhex(key_bytes.decode('utf-8', errors='ignore').strip())
+    else:
+        aes_key = key_bytes[-32:] if len(key_bytes) >= 32 else key_bytes
+
+    decrypted_bytes = None
+
+    for iv_offset, cipher_offset in [(51, 67), (19, 67), (15, 67)]:
+        try:
+            iv = crypt_bytes[iv_offset:iv_offset+16]
+            ciphertext_tag = crypt_bytes[cipher_offset:]
+            aesgcm = AESGCM(aes_key)
+            res = aesgcm.decrypt(iv, ciphertext_tag, None)
+            if res and res.startswith(b'SQLite format 3'):
+                decrypted_bytes = res
+                break
+        except Exception:
+            pass
+
+    if not decrypted_bytes or not decrypted_bytes.startswith(b'SQLite format 3'):
+        try:
+            iv = crypt_bytes[51:67]
+            ciphertext = crypt_bytes[67:-16]
+            cipher = Cipher(algorithms.AES(aes_key), modes.CBC(iv))
+            decryptor = cipher.decryptor()
+            raw = decryptor.update(ciphertext) + decryptor.finalize()
+            if raw.startswith(b'SQLite format 3'):
+                decrypted_bytes = raw
+        except Exception:
+            pass
+
+    if not decrypted_bytes or not decrypted_bytes.startswith(b'SQLite format 3'):
+        raise ValueError("No se pudo desencriptar la base de datos de WhatsApp. Verifica que la clave corresponda al archivo msgstore.")
+
+    with tempfile.NamedTemporaryFile(delete=False, suffix='.db') as tmp:
+        tmp.write(decrypted_bytes)
+        tmp_path = tmp.name
+
+    messages_list = []
+    try:
+        conn = sqlite3.connect(tmp_path)
+        cursor = conn.cursor()
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
+        tables = [r[0] for r in cursor.fetchall()]
+
+        msg_table = 'messages' if 'messages' in tables else ('message' if 'message' in tables else None)
+        if msg_table:
+            # Check columns in msg_table
+            cursor.execute(f"PRAGMA table_info({msg_table});")
+            cols = [c[1] for c in cursor.fetchall()]
+            text_col = 'text_data' if 'text_data' in cols else ('data' if 'data' in cols else None)
+
+            if text_col:
+                if 'jid' in tables:
+                    cursor.execute(f"""
+                        SELECT COALESCE(j.user, j.raw_string, m.key_remote_jid), m.{text_col}, m.timestamp
+                        FROM {msg_table} m
+                        LEFT JOIN jid j ON m.key_remote_jid = j.raw_string OR m.chat_row_id = j._id
+                        WHERE m.{text_col} IS NOT NULL AND length(m.{text_col}) > 0
+                    """)
+                    for r in cursor.fetchall():
+                        sender = r[0] or 'Cliente WhatsApp'
+                        text = r[1] or ''
+                        ts = r[2]
+                        if text:
+                            messages_list.append({'sender': str(sender), 'text': str(text), 'timestamp': ts})
+                else:
+                    cursor.execute(f"SELECT key_remote_jid, {text_col}, timestamp FROM {msg_table} WHERE {text_col} IS NOT NULL AND length({text_col}) > 0")
+                    for r in cursor.fetchall():
+                        messages_list.append({'sender': str(r[0] or ''), 'text': str(r[1] or ''), 'timestamp': r[2]})
+        conn.close()
+    finally:
+        if os.path.exists(tmp_path):
+            os.remove(tmp_path)
+
+    return messages_list
+
+def import_whatsapp_chat_file(file_content_str: str, filename: str, key_bytes: bytes = None, raw_bytes: bytes = None):
+    """Parses an exported WhatsApp chat file (.txt, .csv, .json, etc.) or decrypts .crypt14 with key file."""
+    import re
+    import time
+    
+    imported_messages = 0
+    imported_contacts = 0
+    contacts_map = {} # phone/name -> count
+
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            # If key_bytes provided, attempt decryption of raw_bytes (.crypt14 / .crypt15)
+            if key_bytes and raw_bytes:
+                decrypted_msgs = decrypt_whatsapp_db_and_parse(raw_bytes, key_bytes)
+                for msg in decrypted_msgs:
+                    sender = msg['sender']
+                    text = msg['text']
+                    clean_digits = re.sub(r'[^0-9]', '', sender)
+                    sender_key = clean_digits if len(clean_digits) >= 10 else sender
+                    
+                    cursor.execute("""
+                        INSERT INTO whatsapp_chat_history (sender, message, reply, timestamp)
+                        VALUES (%s, %s, %s, CURRENT_TIMESTAMP)
+                    """, (sender_key, text, '[Desencriptado desde Backup .crypt]'))
+                    imported_messages += 1
+                    
+                    if sender_key not in contacts_map:
+                        contacts_map[sender_key] = sender
+    
+    # Try filename extraction for default contact name if exporting individual chat (e.g. Chat de WhatsApp con +5493416123456.txt)
+    match_filename_phone = re.search(r'(\d{10,13})', filename)
+    default_phone = match_filename_phone.group(1) if match_filename_phone else ''
+    match_filename_name = re.search(r'Chat\s+de\s+WhatsApp\s+con\s+(.*?)(?:\.txt|\.csv|$)', filename, re.IGNORECASE)
+    default_name = match_filename_name.group(1).strip() if match_filename_name else ''
+    
+    lines = file_content_str.splitlines()
+    
+    # Regex to match WhatsApp exported chat line formats
+    # Formats:
+    # 1. 15/04/2020, 14:32 - Nombre o Teléfono: Mensaje
+    # 2. [15/04/2020 14:32:15] Nombre o Teléfono: Mensaje
+    # 3. 15.04.20, 14:32 - Nombre o Teléfono: Mensaje
+    pattern = re.compile(
+        r'^(?:\[?(\d{1,2}[\/\.\-]\d{1,2}[\/\.\-]\d{2,4})[,\s]+(\d{1,2}:\d{2}(?::\d{2})?(?:\s?[aApP]\.?[mM]\.?)?)\]?)\s*[\-\:]?\s*([^:]+):\s*(.*)$'
+    )
+    
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            current_sender = default_name or default_phone or "Cliente WhatsApp"
+            
+            for line in lines:
+                line_str = line.strip()
+                if not line_str:
+                    continue
+                
+                m = pattern.match(line_str)
+                if m:
+                    sender_part = m.group(3).strip()
+                    msg_text = m.group(4).strip()
+                    
+                    # Omit WhatsApp system messages like "<Media omitted>", "Los mensajes y las llamadas están cifrados", etc.
+                    if "<Media omitted>" in msg_text or "archivos multimedia omitidos" in msg_text.lower() or "cifrados de extremo a extremo" in msg_text.lower():
+                        continue
+                    
+                    if sender_part and msg_text:
+                        current_sender = sender_part
+                        # Clean phone digits if sender is phone number
+                        clean_digits = re.sub(r'[^0-9]', '', sender_part)
+                        sender_key = clean_digits if len(clean_digits) >= 10 else sender_part
+                        
+                        # Insert message
+                        cursor.execute("""
+                            INSERT INTO whatsapp_chat_history (sender, message, reply, timestamp)
+                            VALUES (%s, %s, %s, CURRENT_TIMESTAMP)
+                        """, (sender_key, msg_text, '[Histórico Importado por Copia Backup]'))
+                        imported_messages += 1
+                        
+                        if sender_key not in contacts_map:
+                            contacts_map[sender_key] = sender_part
+                else:
+                    # Multi-line message continuation
+                    if line_str and current_sender and imported_messages > 0:
+                        clean_digits = re.sub(r'[^0-9]', '', current_sender)
+                        sender_key = clean_digits if len(clean_digits) >= 10 else current_sender
+                        cursor.execute("""
+                            INSERT INTO whatsapp_chat_history (sender, message, reply, timestamp)
+                            VALUES (%s, %s, %s, CURRENT_TIMESTAMP)
+                        """, (sender_key, line_str, '[Histórico Importado]'))
+                        imported_messages += 1
+
+            # Fallback for binary / crypt database files if line parsing found no text format lines
+            if imported_messages == 0:
+                raw_phones = set(re.findall(r'(?:549|54|341|\+54)?\d{8,12}', file_content_str))
+                for phone_candidate in raw_phones:
+                    clean_phone = re.sub(r'[^0-9]', '', phone_candidate)
+                    if len(clean_phone) >= 10:
+                        contacts_map[clean_phone] = f"Contacto WA +{clean_phone}"
+
+            # Sync parsed contacts into customers table
+            for key, name in contacts_map.items():
+                clean_phone = re.sub(r'[^0-9]', '', key)
+                cursor.execute("SELECT buyer_id FROM customers WHERE phone = %s OR nickname = %s", (clean_phone or key, key))
+                existing = cursor.fetchone()
+                if not existing:
+                    new_buyer_id = int(time.time() * 1000) + imported_contacts
+                    cursor.execute("""
+                        INSERT INTO customers (buyer_id, nickname, full_name, phone, source_platform)
+                        VALUES (%s, %s, %s, %s, 'WHATSAPP')
+                        ON CONFLICT (buyer_id) DO NOTHING
+                    """, (new_buyer_id, name, name, clean_phone or key))
+                    imported_contacts += 1
+
+    # Run AI inquiry extraction on imported history
+    analyzed = run_historical_whatsapp_chat_analysis()
+    
+    return {
+        'imported_messages': imported_messages,
+        'imported_contacts': imported_contacts,
+        'analyzed_inquiries': analyzed
+    }
 
 # --- Metrics Operations ---
 

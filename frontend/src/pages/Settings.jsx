@@ -2262,13 +2262,32 @@ export default function Settings() {
               )}
 
               {waConfig.status === 'disconnected' && (
-                <div>
+                <div style={{ width: '100%' }}>
                   <div style={{display: 'inline-flex', alignItems: 'center', gap: 6, padding: '5px 10px', borderRadius: 20, backgroundColor: 'rgba(239, 68, 68, 0.15)', color: 'var(--accent-red)', fontWeight: 600, fontSize: '0.8rem', marginBottom: 15}}>
                     ● DESCONECTADO
                   </div>
-                  <p style={{fontSize: '0.85rem', color: 'var(--text-secondary)'}}>
-                    El bot de WhatsApp no se encuentra iniciado. Asegúrate de que el servicio está activo en el servidor.
+                  <p style={{fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: 15}}>
+                    El bot de WhatsApp no tiene una sesión activa. Haz clic abajo para generar el código QR de escaneo.
                   </p>
+                  <button 
+                    type="button"
+                    onClick={handleDisconnectWa}
+                    disabled={disconnectingWa}
+                    className="btn btn-primary"
+                    style={{
+                      width: '100%',
+                      backgroundColor: '#25D366',
+                      color: '#fff',
+                      border: 'none',
+                      fontSize: '0.88rem',
+                      fontWeight: 'bold',
+                      cursor: 'pointer',
+                      padding: '10px 14px',
+                      borderRadius: '8px'
+                    }}
+                  >
+                    {disconnectingWa ? "Generando QR..." : "📱 Generar Código QR de Vinculación"}
+                  </button>
                 </div>
               )}
 

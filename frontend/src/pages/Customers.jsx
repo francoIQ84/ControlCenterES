@@ -1,14 +1,37 @@
 import React, { useState, useEffect, useMemo } from 'react'
+import { 
+  Users, MessageSquare, TrendingUp, RefreshCw, Sparkles, Filter, Search, Plus, 
+  Trash2, Edit2, Download, ExternalLink, Mail, Phone, ShoppingBag, UserCheck, 
+  CheckCircle2, AlertTriangle, Layers, HelpCircle, Upload, FileText
+} from 'lucide-react'
 
 export default function Customers() {
-  const [customers, setCustomers] = useState([])
+  const [activeTab, setActiveTab] = useState('customers') // 'customers' | 'inquiries' | 'leads' | 'whatsapp'
   const [loading, setLoading] = useState(true)
-  const [sortConfig, setSortConfig] = useState({ key: null, direction: 'asc' })
+  const [syncingWa, setSyncingWa] = useState(false)
+  const [analyzingInquiries, setAnalyzingInquiries] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
+  const [platformFilter, setPlatformFilter] = useState('ALL')
+  const [syncNotice, setSyncNotice] = useState(null)
 
-  // Modal State
+  // WhatsApp File Import Modal State
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false)
+  const [importingFile, setImportingFile] = useState(false)
+  const [selectedWaFile, setSelectedWaFile] = useState(null)
+  const [importError, setImportError] = useState('')
+
+  // Central CRM State
+  const [crmData, setCrmData] = useState({
+    metrics: { total_customers: 0, total_wa_chats: 0, total_leads: 0, total_inquiries: 0 },
+    customers: [],
+    leads: [],
+    whatsapp_chats: [],
+    product_inquiries: []
+  })
+
+  // Modal State for Manual Customer
   const [isModalOpen, setIsModalOpen] = useState(false)
-  const [modalMode, setModalMode] = useState('create') // 'create' | 'edit'
+  const [modalMode, setModalMode] = useState('create')
   const [selectedCustomer, setSelectedCustomer] = useState(null)
   const [saving, setSaving] = useState(false)
   const [errorMsg, setErrorMsg] = useState('')
@@ -20,28 +43,115 @@ export default function Customers() {
     phone: '',
     document_type: 'DNI',
     document_number: '',
-    address: ''
+    address: '',
+    source_platform: 'MANUAL'
   }
   const [formData, setFormData] = useState(initialForm)
 
-  const fetchCustomers = () => {
+  const fetchCrmData = async () => {
     setLoading(true)
-    fetch('/api/customers/')
-      .then(res => res.json())
-      .then(data => {
-        setCustomers(data.customers || [])
-        setLoading(false)
-      })
-      .catch(err => {
-        console.error("Error fetching customers:", err)
-        setLoading(false)
-      })
+    try {
+      const res = await fetch('/api/customers/central')
+      if (res.ok) {
+        const json = await res.json()
+        if (json.data) {
+          setCrmData(json.data)
+        }
+      }
+    } catch (err) {
+      console.error("Error fetching CRM central data:", err)
+    } finally {
+      setLoading(false)
+    }
   }
 
   useEffect(() => {
-    fetchCustomers()
+    fetchCrmData()
   }, [])
 
+  // Action: Trigger WhatsApp Contact Sync
+  const handleSyncWhatsApp = async () => {
+    setSyncingWa(true)
+    setSyncNotice(null)
+    try {
+      const res = await fetch('/api/customers/sync-whatsapp', { method: 'POST' })
+      const json = await res.json()
+      if (res.ok && json.status === 'success') {
+        setSyncNotice({ type: 'success', text: `¡WhatsApp Sincronizado! Se procesaron ${json.total_found} contactos (${json.synced_count} guardados en clientes).` })
+        fetchCrmData()
+      } else {
+        setSyncNotice({ type: 'warning', text: json.message || 'No se pudieron extraer contactos de WhatsApp en este momento.' })
+      }
+    } catch (err) {
+      setSyncNotice({ type: 'error', text: `Error de conexión: ${err.message}` })
+    } finally {
+      setSyncingWa(false)
+    }
+  }
+
+  // Action: Trigger Chat Inquiry AI Analysis
+  const handleAnalyzeInquiries = async () => {
+    setAnalyzingInquiries(true)
+    setSyncNotice(null)
+    try {
+      const res = await fetch('/api/customers/analyze-inquiries', { method: 'POST' })
+      const json = await res.json()
+      if (res.ok && json.status === 'success') {
+        setSyncNotice({ type: 'success', text: `¡Análisis completado! Se indexaron ${json.analyzed_count} nuevas consultas de productos en el historial.` })
+        fetchCrmData()
+      } else {
+        setSyncNotice({ type: 'error', text: 'Error durante el análisis del historial de chats.' })
+      }
+    } catch (err) {
+      setSyncNotice({ type: 'error', text: `Error: ${err.message}` })
+    } finally {
+      setAnalyzingInquiries(false)
+    }
+  }
+
+  // Action: Import WhatsApp Backup / Chat File
+  const [selectedKeyFile, setSelectedKeyFile] = useState(null)
+
+  const handleUploadWaFile = async (e) => {
+    e.preventDefault()
+    if (!selectedWaFile) {
+      setImportError('Por favor selecciona un archivo (.txt, .db, .crypt14)')
+      return
+    }
+    setImportingFile(true)
+    setImportError('')
+    try {
+      const formDataUpload = new FormData()
+      formDataUpload.append('file', selectedWaFile)
+      if (selectedKeyFile) {
+        formDataUpload.append('key_file', selectedKeyFile)
+      }
+      const res = await fetch('/api/customers/import-whatsapp-file', {
+        method: 'POST',
+        body: formDataUpload
+      })
+      const json = await res.json()
+      if (res.ok && json.status === 'success') {
+        const d = json.data
+        setSyncNotice({
+          type: 'success',
+          text: `¡Copia de WhatsApp Importada! Se procesaron ${d.imported_messages} mensajes, ${d.imported_contacts} nuevos contactos y ${d.analyzed_inquiries} consultas de productos por IA.`
+        })
+        setIsImportModalOpen(false)
+        setSelectedWaFile(null)
+        setSelectedKeyFile(null)
+        fetchCrmData()
+      } else {
+        throw new Error(json.detail || json.message || 'Error al procesar el archivo de WhatsApp')
+      }
+    } catch (err) {
+      setImportError(err.message)
+    } finally {
+      setImportingFile(false)
+    }
+  }
+
+  // Handle Manual Customer Modals
   const handleOpenCreate = () => {
     setModalMode('create')
     setSelectedCustomer(null)
@@ -60,7 +170,8 @@ export default function Customers() {
       phone: customer.phone || '',
       document_type: customer.document_type || 'DNI',
       document_number: customer.document_number || '',
-      address: customer.address || ''
+      address: customer.address || '',
+      source_platform: customer.source_platform || 'MANUAL'
     })
     setErrorMsg('')
     setIsModalOpen(true)
@@ -75,29 +186,22 @@ export default function Customers() {
     e.preventDefault()
     setSaving(true)
     setErrorMsg('')
-
     try {
       let url = '/api/customers/'
       let method = 'POST'
-
       if (modalMode === 'edit' && selectedCustomer) {
         url = `/api/customers/${selectedCustomer.buyer_id}`
         method = 'PUT'
       }
-
       const res = await fetch(url, {
         method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(formData)
       })
-
       const data = await res.json()
-      if (!res.ok) {
-        throw new Error(data.detail || 'Error al guardar cliente')
-      }
-
+      if (!res.ok) throw new Error(data.detail || 'Error al guardar cliente')
       setIsModalOpen(false)
-      fetchCustomers()
+      fetchCrmData()
     } catch (err) {
       setErrorMsg(err.message)
     } finally {
@@ -106,28 +210,66 @@ export default function Customers() {
   }
 
   const handleDelete = async (customer) => {
-    if (!window.confirm(`¿Estás seguro de eliminar el cliente "${customer.full_name || customer.nickname}"?`)) {
-      return
-    }
-
+    if (!window.confirm(`¿Estás seguro de eliminar el cliente "${customer.full_name || customer.nickname}"?`)) return
     try {
-      const res = await fetch(`/api/customers/${customer.buyer_id}`, {
-        method: 'DELETE'
-      })
-      const data = await res.json()
-      if (!res.ok) {
-        throw new Error(data.detail || 'Error al eliminar cliente')
-      }
-      fetchCustomers()
+      const res = await fetch(`/api/customers/${customer.buyer_id}`, { method: 'DELETE' })
+      if (!res.ok) throw new Error('Error al eliminar cliente')
+      fetchCrmData()
     } catch (err) {
       alert(err.message)
     }
   }
 
-  const requestSort = (key) => {
-    let direction = 'asc'
-    if (sortConfig.key === key && sortConfig.direction === 'asc') {
-      direction = 'desc'
+  // CSV Exporter for Leads
+  const exportLeadsCSV = () => {
+    if (!crmData.leads || crmData.leads.length === 0) return
+    const headers = ['ID', 'Nombre', 'Email', 'Pais', 'Origen', 'PDF Enviado', 'Fecha']
+    const rows = crmData.leads.map(l => [
+      l.id, `"${l.name || ''}"`, `"${l.email || ''}"`, `"${l.country || ''}"`, `"${l.source || ''}"`, `"${l.pdf_sent || ''}"`, `"${l.created_at || ''}"`
+    ])
+    const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map(r => r.join(','))].join('\n')
+    const encodedUri = encodeURI(csvContent)
+    const link = document.createElement('a')
+    link.setAttribute('href', encodedUri)
+    link.setAttribute('download', `leads_hidroponia_${new Date().toISOString().slice(0,10)}.csv`)
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+  }
+
+  const [sortConfig, setSortConfig] = useState({ key: 'total_spent', direction: 'desc' })
+
+  // Filtering for Customers
+  const filteredCustomers = useMemo(() => {
+    let items = crmData.customers || []
+    if (platformFilter !== 'ALL') {
+      items = items.filter(c => {
+        const p = (c.source_platform || '').toUpperCase()
+        if (platformFilter === 'WHATSAPP') return p === 'WHATSAPP' || p === 'WA'
+        if (platformFilter === 'MERCADOLIBRE') return p === 'MERCADOLIBRE' || p === 'MELI'
+        if (platformFilter === 'MERCADOPAGO') return p === 'MERCADOPAGO' || p === 'MP'
+        if (platformFilter === 'MANUAL') {
+          return p === 'MANUAL' || !p || (!['MERCADOLIBRE', 'MELI', 'MERCADOPAGO', 'MP', 'WHATSAPP', 'WA', 'WEB_LEAD', 'LEAD'].includes(p))
+        }
+        return p === platformFilter
+      })
+    }
+    if (!searchQuery.trim()) return items
+    const q = searchQuery.toLowerCase().trim()
+    return items.filter(c =>
+      (c.nickname || '').toLowerCase().includes(q) ||
+      (c.full_name || '').toLowerCase().includes(q) ||
+      (c.email || '').toLowerCase().includes(q) ||
+      (c.phone || '').toLowerCase().includes(q) ||
+      (c.document_number || '').toLowerCase().includes(q)
+    )
+  }, [crmData.customers, platformFilter, searchQuery])
+
+  // Sorting for Customers
+  const handleRequestSort = (key) => {
+    let direction = 'desc'
+    if (sortConfig.key === key && sortConfig.direction === 'desc') {
+      direction = 'asc'
     }
     setSortConfig({ key, direction })
   }
@@ -137,446 +279,781 @@ export default function Customers() {
     return sortConfig.direction === 'asc' ? ' ▲' : ' ▼'
   }
 
-  const filteredCustomers = useMemo(() => {
-    if (!searchQuery.trim()) return customers
-    const q = searchQuery.toLowerCase().trim()
-    return customers.filter(c =>
-      (c.nickname || '').toLowerCase().includes(q) ||
-      (c.full_name || '').toLowerCase().includes(q) ||
-      (c.email || '').toLowerCase().includes(q) ||
-      (c.phone || '').toLowerCase().includes(q) ||
-      (c.document_number || '').toLowerCase().includes(q) ||
-      (c.address || '').toLowerCase().includes(q)
-    )
-  }, [customers, searchQuery])
-
   const sortedCustomers = useMemo(() => {
-    let sortableItems = [...filteredCustomers]
-    if (sortConfig.key !== null) {
-      sortableItems.sort((a, b) => {
-        let aVal = a[sortConfig.key]
-        let bVal = b[sortConfig.key]
+    let items = [...filteredCustomers]
+    if (!sortConfig.key) return items
 
-        if (sortConfig.key === 'nickname') {
-          aVal = (a.nickname || "").toLowerCase()
-          bVal = (b.nickname || "").toLowerCase()
-        } else if (sortConfig.key === 'full_name') {
-          aVal = (a.full_name || "").toLowerCase()
-          bVal = (b.full_name || "").toLowerCase()
-        } else if (sortConfig.key === 'total_orders') {
-          aVal = a.total_orders || 0
-          bVal = b.total_orders || 0
-        } else if (sortConfig.key === 'total_spent') {
-          aVal = a.total_spent || 0
-          bVal = b.total_spent || 0
-        }
+    return items.sort((a, b) => {
+      let aVal = a[sortConfig.key]
+      let bVal = b[sortConfig.key]
 
-        if (aVal < bVal) return sortConfig.direction === 'asc' ? -1 : 1
-        if (aVal > bVal) return sortConfig.direction === 'asc' ? 1 : -1
-        return 0
-      })
-    }
-    return sortableItems
+      if (sortConfig.key === 'full_name') {
+        aVal = (a.full_name || a.nickname || '').toLowerCase()
+        bVal = (b.full_name || b.nickname || '').toLowerCase()
+      } else if (sortConfig.key === 'source_platform') {
+        aVal = (a.source_platform || 'MANUAL').toLowerCase()
+        bVal = (b.source_platform || 'MANUAL').toLowerCase()
+      } else if (sortConfig.key === 'total_orders') {
+        aVal = Number(a.total_orders || 0)
+        bVal = Number(b.total_orders || 0)
+      } else if (sortConfig.key === 'total_spent') {
+        aVal = Number(a.total_spent || 0)
+        bVal = Number(b.total_spent || 0)
+      } else if (sortConfig.key === 'last_activity') {
+        aVal = a.last_activity || a.created_at || ''
+        bVal = b.last_activity || b.created_at || ''
+      }
+
+      if (aVal < bVal) return sortConfig.direction === 'asc' ? -1 : 1
+      if (aVal > bVal) return sortConfig.direction === 'asc' ? 1 : -1
+      return 0
+    })
   }, [filteredCustomers, sortConfig])
 
+  // Helper Badge Render
+  const renderPlatformBadge = (platform) => {
+    const p = (platform || 'MANUAL').toUpperCase()
+    if (p === 'MERCADOLIBRE' || p === 'MELI') {
+      return <span style={{ padding: '3px 8px', borderRadius: '6px', fontSize: '11px', fontWeight: '700', backgroundColor: '#fff159', color: '#333' }}>MercadoLibre</span>
+    }
+    if (p === 'MERCADOPAGO' || p === 'MP') {
+      return <span style={{ padding: '3px 8px', borderRadius: '6px', fontSize: '11px', fontWeight: '700', backgroundColor: '#009ee3', color: '#fff' }}>MercadoPago</span>
+    }
+    if (p === 'WHATSAPP' || p === 'WA') {
+      return <span style={{ padding: '3px 8px', borderRadius: '6px', fontSize: '11px', fontWeight: '700', backgroundColor: '#25D366', color: '#fff' }}>WhatsApp</span>
+    }
+    if (p === 'WEB_LEAD' || p === 'LEAD') {
+      return <span style={{ padding: '3px 8px', borderRadius: '6px', fontSize: '11px', fontWeight: '700', backgroundColor: '#10b981', color: '#fff' }}>Lead Web</span>
+    }
+    return <span style={{ padding: '3px 8px', borderRadius: '6px', fontSize: '11px', fontWeight: '700', backgroundColor: 'var(--border-color)', color: 'var(--text-secondary)' }}>Manual</span>
+  }
+
   return (
-    <div>
+    <div style={{ paddingBottom: '40px' }}>
+      {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '15px', marginBottom: '20px' }}>
         <div>
-          <h1 className="page-title">Cartera de Clientes</h1>
-          <p className="page-subtitle">Listado de compradores con métricas de compras recurrentes y gestión manual.</p>
+          <h1 className="page-title" style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <Users style={{ color: 'var(--accent-blue)' }} /> Central Unificada de Clientes & Consultas
+          </h1>
+          <p className="page-subtitle">
+            Consolidado general de compradores, contactos de WhatsApp últimos o históricos, leads web y analítica de productos más consultados.
+          </p>
         </div>
+        <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+          <button
+            onClick={() => setIsImportModalOpen(true)}
+            className="btn btn-secondary"
+            style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '9px 15px', borderRadius: '8px', fontWeight: '600', backgroundColor: 'rgba(37, 211, 102, 0.15)', color: '#25D366', border: '1px solid #25D366' }}
+          >
+            <Upload size={16} /> Importar Copia WA
+          </button>
+
+          <button
+            onClick={handleSyncWhatsApp}
+            disabled={syncingWa}
+            className="btn btn-secondary"
+            style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '9px 15px', borderRadius: '8px', fontWeight: '600' }}
+          >
+            <RefreshCw size={16} className={syncingWa ? 'spin' : ''} />
+            {syncingWa ? 'Sincronizando...' : 'Extraer Contactos WA'}
+          </button>
+
+          <button
+            onClick={handleAnalyzeInquiries}
+            disabled={analyzingInquiries}
+            className="btn btn-secondary"
+            style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '9px 15px', borderRadius: '8px', fontWeight: '600', backgroundColor: '#8b5cf6', color: '#fff', border: 'none' }}
+          >
+            <Sparkles size={16} className={analyzingInquiries ? 'spin' : ''} />
+            {analyzingInquiries ? 'Analizando...' : 'Analizar Chats con IA'}
+          </button>
+
+          <button
+            onClick={handleOpenCreate}
+            className="btn btn-primary"
+            style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '9px 15px', borderRadius: '8px', fontWeight: '600' }}
+          >
+            <Plus size={16} /> Nuevo Cliente
+          </button>
+        </div>
+      </div>
+
+      {/* Sync Notification Banner */}
+      {syncNotice && (
+        <div style={{
+          padding: '12px 18px',
+          borderRadius: '10px',
+          marginBottom: '20px',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '12px',
+          backgroundColor: syncNotice.type === 'success' ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+          border: `1px solid ${syncNotice.type === 'success' ? '#10b981' : '#ef4444'}`,
+          color: syncNotice.type === 'success' ? '#10b981' : '#ef4444'
+        }}>
+          {syncNotice.type === 'success' ? <CheckCircle2 size={20} /> : <AlertTriangle size={20} />}
+          <span style={{ fontSize: '14px', fontWeight: '600' }}>{syncNotice.text}</span>
+        </div>
+      )}
+
+      {/* Metric Cards Summary */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '15px', marginBottom: '25px' }}>
+        <div className="card" style={{ padding: '18px', display: 'flex', alignItems: 'center', gap: '15px' }}>
+          <div style={{ width: '48px', height: '48px', borderRadius: '12px', backgroundColor: 'rgba(59, 130, 246, 0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#3b82f6' }}>
+            <Users size={24} />
+          </div>
+          <div>
+            <div style={{ fontSize: '24px', fontWeight: '700' }}>{crmData.metrics.total_customers}</div>
+            <div style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>Clientes Consolidados</div>
+          </div>
+        </div>
+
+        <div className="card" style={{ padding: '18px', display: 'flex', alignItems: 'center', gap: '15px' }}>
+          <div style={{ width: '48px', height: '48px', borderRadius: '12px', backgroundColor: 'rgba(37, 211, 102, 0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#25D366' }}>
+            <MessageSquare size={24} />
+          </div>
+          <div>
+            <div style={{ fontSize: '24px', fontWeight: '700' }}>{crmData.metrics.total_wa_chats}</div>
+            <div style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>Chats WhatsApp Únicos</div>
+          </div>
+        </div>
+
+        <div className="card" style={{ padding: '18px', display: 'flex', alignItems: 'center', gap: '15px' }}>
+          <div style={{ width: '48px', height: '48px', borderRadius: '12px', backgroundColor: 'rgba(16, 185, 129, 0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#10b981' }}>
+            <UserCheck size={24} />
+          </div>
+          <div>
+            <div style={{ fontSize: '24px', fontWeight: '700' }}>{crmData.metrics.total_leads}</div>
+            <div style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>Leads & Suscriptores</div>
+          </div>
+        </div>
+
+        <div className="card" style={{ padding: '18px', display: 'flex', alignItems: 'center', gap: '15px' }}>
+          <div style={{ width: '48px', height: '48px', borderRadius: '12px', backgroundColor: 'rgba(139, 92, 246, 0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#8b5cf6' }}>
+            <TrendingUp size={24} />
+          </div>
+          <div>
+            <div style={{ fontSize: '24px', fontWeight: '700' }}>{crmData.metrics.total_inquiries}</div>
+            <div style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>Consultas de Productos</div>
+          </div>
+        </div>
+      </div>
+
+      {/* Tabs Navigation */}
+      <div style={{ display: 'flex', borderBottom: '1px solid var(--border-color)', marginBottom: '20px', gap: '10px', overflowX: 'auto' }}>
         <button
-          onClick={handleOpenCreate}
+          onClick={() => setActiveTab('customers')}
           style={{
-            backgroundColor: 'var(--accent-blue)',
-            color: '#fff',
+            padding: '12px 20px',
             border: 'none',
-            padding: '10px 18px',
-            borderRadius: '8px',
-            fontWeight: '600',
+            background: 'none',
+            borderBottom: activeTab === 'customers' ? '3px solid var(--accent-blue)' : '3px solid transparent',
+            color: activeTab === 'customers' ? 'var(--accent-blue)' : 'var(--text-secondary)',
+            fontWeight: '700',
             cursor: 'pointer',
             display: 'flex',
             alignItems: 'center',
-            gap: '8px',
-            boxShadow: '0 2px 4px rgba(59, 130, 246, 0.3)'
+            gap: '8px'
           }}
         >
-          ➕ Nuevo Cliente
+          <Users size={18} /> Cartera de Clientes ({crmData.customers.length})
+        </button>
+
+        <button
+          onClick={() => setActiveTab('inquiries')}
+          style={{
+            padding: '12px 20px',
+            border: 'none',
+            background: 'none',
+            borderBottom: activeTab === 'inquiries' ? '3px solid #8b5cf6' : '3px solid transparent',
+            color: activeTab === 'inquiries' ? '#8b5cf6' : 'var(--text-secondary)',
+            fontWeight: '700',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px'
+          }}
+        >
+          <TrendingUp size={18} /> Productos Más Consultados ({crmData.product_inquiries.length})
+        </button>
+
+        <button
+          onClick={() => setActiveTab('leads')}
+          style={{
+            padding: '12px 20px',
+            border: 'none',
+            background: 'none',
+            borderBottom: activeTab === 'leads' ? '3px solid #10b981' : '3px solid transparent',
+            color: activeTab === 'leads' ? '#10b981' : 'var(--text-secondary)',
+            fontWeight: '700',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px'
+          }}
+        >
+          <UserCheck size={18} /> Leads & Suscriptores ({crmData.leads.length})
+        </button>
+
+        <button
+          onClick={() => setActiveTab('whatsapp')}
+          style={{
+            padding: '12px 20px',
+            border: 'none',
+            background: 'none',
+            borderBottom: activeTab === 'whatsapp' ? '3px solid #25D366' : '3px solid transparent',
+            color: activeTab === 'whatsapp' ? '#25D366' : 'var(--text-secondary)',
+            fontWeight: '700',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px'
+          }}
+        >
+          <MessageSquare size={18} /> Extractor de WhatsApp ({crmData.whatsapp_chats.length})
         </button>
       </div>
 
-      <div className="card" style={{ marginBottom: '20px' }}>
-        <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-          <span style={{ fontSize: '1.2rem' }}>🔍</span>
-          <input
-            type="text"
-            placeholder="Buscar por nombre, alias, DNI/CUIT, email, teléfono o dirección..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            style={{
-              flex: 1,
-              padding: '10px 14px',
-              borderRadius: '8px',
-              border: '1px solid var(--border-color)',
-              backgroundColor: 'var(--bg-dark)',
-              color: 'var(--text-primary)',
-              fontSize: '0.95rem'
-            }}
-          />
-          {searchQuery && (
-            <button
-              onClick={() => setSearchQuery('')}
-              style={{
-                background: 'none',
-                border: 'none',
-                color: 'var(--text-secondary)',
-                cursor: 'pointer',
-                fontSize: '0.9rem'
-              }}
-            >
-              Limpiar
-            </button>
-          )}
-        </div>
-      </div>
+      {/* TAB 1: Cartera de Clientes */}
+      {activeTab === 'customers' && (
+        <div>
+          {/* Controls Bar */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px', marginBottom: '18px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: 1, minWidth: '280px' }}>
+              <div className="search-box" style={{ width: '100%', position: 'relative' }}>
+                <Search size={18} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-secondary)' }} />
+                <input
+                  type="text"
+                  placeholder="Buscar por nombre, teléfono, email, DNI..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  style={{ paddingLeft: '38px', width: '100%', borderRadius: '8px', border: '1px solid var(--border-color)', height: '40px' }}
+                />
+              </div>
+            </div>
 
-      <div className="card">
-        {loading ? <p>Cargando clientes...</p> : (
-          <div style={{ overflowX: 'auto' }}>
-            <table className="data-table">
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Filter size={16} style={{ color: 'var(--text-secondary)' }} />
+              <select
+                value={platformFilter}
+                onChange={(e) => setPlatformFilter(e.target.value)}
+                style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--border-color)', height: '40px', background: 'var(--bg-card)', color: 'var(--text-primary)' }}
+              >
+                <option value="ALL">Todos los orígenes</option>
+                <option value="WHATSAPP">WhatsApp</option>
+                <option value="MERCADOLIBRE">MercadoLibre</option>
+                <option value="MERCADOPAGO">MercadoPago</option>
+                <option value="MANUAL">Manual</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Customer Table */}
+          <div className="table-responsive card">
+            <table className="table">
               <thead>
                 <tr>
-                  <th onClick={() => requestSort('nickname')} style={{ cursor: 'pointer', userSelect: 'none' }}>Comprador{getSortIcon('nickname')}</th>
-                  <th onClick={() => requestSort('full_name')} style={{ cursor: 'pointer', userSelect: 'none' }}>Nombre Real{getSortIcon('full_name')}</th>
+                  <th onClick={() => handleRequestSort('full_name')} style={{ cursor: 'pointer', userSelect: 'none' }}>
+                    Cliente{getSortIcon('full_name')}
+                  </th>
                   <th>Contacto</th>
-                  <th>Documento</th>
-                  <th>Dirección</th>
-                  <th onClick={() => requestSort('total_orders')} style={{ cursor: 'pointer', userSelect: 'none', textAlign: 'center' }}>Órdenes{getSortIcon('total_orders')}</th>
-                  <th onClick={() => requestSort('total_spent')} style={{ cursor: 'pointer', userSelect: 'none' }}>Total Gastado{getSortIcon('total_spent')}</th>
+                  <th onClick={() => handleRequestSort('source_platform')} style={{ cursor: 'pointer', userSelect: 'none' }}>
+                    Origen{getSortIcon('source_platform')}
+                  </th>
+                  <th onClick={() => handleRequestSort('total_orders')} style={{ textAlign: 'center', cursor: 'pointer', userSelect: 'none' }}>
+                    Compras{getSortIcon('total_orders')}
+                  </th>
+                  <th onClick={() => handleRequestSort('total_spent')} style={{ textAlign: 'right', cursor: 'pointer', userSelect: 'none' }}>
+                    Total Gastado{getSortIcon('total_spent')}
+                  </th>
+                  <th onClick={() => handleRequestSort('last_activity')} style={{ textAlign: 'center', cursor: 'pointer', userSelect: 'none' }}>
+                    Última Actividad{getSortIcon('last_activity')}
+                  </th>
                   <th style={{ textAlign: 'center' }}>Acciones</th>
                 </tr>
               </thead>
               <tbody>
-                {sortedCustomers.length === 0 ? (
-                  <tr>
-                    <td colSpan="8" style={{ textAlign: 'center', padding: '30px', color: 'var(--text-secondary)' }}>
-                      No se encontraron clientes.
-                    </td>
-                  </tr>
+                {loading ? (
+                  <tr><td colSpan="7" style={{ textAlign: 'center', padding: '30px' }}>Cargando cartera de clientes...</td></tr>
+                ) : sortedCustomers.length === 0 ? (
+                  <tr><td colSpan="7" style={{ textAlign: 'center', padding: '30px', color: 'var(--text-secondary)' }}>No se encontraron clientes.</td></tr>
                 ) : (
-                  sortedCustomers.map(c => (
-                    <tr key={c.buyer_id}>
-                      <td style={{ fontWeight: 600, color: 'var(--accent-blue)' }}>
-                        @{c.nickname || 'Sin Alias'}
-                        {c.source_platform && (
-                          <span style={{
-                            display: 'inline-block',
-                            marginLeft: '6px',
-                            padding: '2px 6px',
-                            borderRadius: '4px',
-                            fontSize: '0.7rem',
-                            backgroundColor: c.source_platform === 'MERCADOLIBRE' ? 'rgba(245, 158, 11, 0.15)' : 'rgba(59, 130, 246, 0.15)',
-                            color: c.source_platform === 'MERCADOLIBRE' ? 'var(--accent-amber)' : 'var(--accent-blue)'
-                          }}>
-                            {c.source_platform === 'MERCADOLIBRE' ? 'MeLi' : 'Manual'}
+                  sortedCustomers.map(c => {
+                    const cleanPhone = (c.phone || '').replace(/[^0-9]/g, '')
+                    return (
+                      <tr key={c.buyer_id}>
+                        <td>
+                          <div style={{ fontWeight: '700' }}>{c.full_name || c.nickname || `Cliente #${c.buyer_id}`}</div>
+                          {c.nickname && c.nickname !== c.full_name && (
+                            <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>@{c.nickname}</div>
+                          )}
+                        </td>
+                        <td>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '3px', fontSize: '13px' }}>
+                            {c.phone && (
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                <Phone size={13} style={{ color: '#25D366' }} />
+                                <span>{c.phone}</span>
+                              </div>
+                            )}
+                            {c.email && (
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--text-secondary)' }}>
+                                <Mail size={13} />
+                                <span>{c.email}</span>
+                              </div>
+                            )}
+                          </div>
+                        </td>
+                        <td>{renderPlatformBadge(c.source_platform)}</td>
+                        <td style={{ textAlign: 'center', fontWeight: '700' }}>{c.total_orders || 0}</td>
+                        <td style={{ textAlign: 'right', fontWeight: '700', color: 'var(--accent-blue)' }}>
+                          ${(c.total_spent || 0).toLocaleString('es-AR', { minimumFractionDigits: 2 })}
+                        </td>
+                        <td style={{ textAlign: 'center', fontSize: '13px', color: 'var(--text-secondary)' }}>
+                          {c.last_activity || c.created_at || 'Reciente'}
+                        </td>
+                        <td style={{ textAlign: 'center' }}>
+                          <div style={{ display: 'flex', justifyContent: 'center', gap: '8px' }}>
+                            {cleanPhone && (
+                              <a
+                                href={`https://wa.me/${cleanPhone}`}
+                                target="_blank"
+                                rel="noreferrer"
+                                title="Abrir WhatsApp"
+                                style={{
+                                  padding: '6px 10px',
+                                  borderRadius: '6px',
+                                  backgroundColor: 'rgba(37, 211, 102, 0.15)',
+                                  color: '#25D366',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '4px',
+                                  textDecoration: 'none',
+                                  fontWeight: '600',
+                                  fontSize: '12px'
+                                }}
+                              >
+                                <MessageSquare size={14} /> WhatsApp
+                              </a>
+                            )}
+                            <button
+                              onClick={() => handleOpenEdit(c)}
+                              className="btn-icon"
+                              title="Editar cliente"
+                            >
+                              <Edit2 size={16} />
+                            </button>
+                            <button
+                              onClick={() => handleDelete(c)}
+                              className="btn-icon"
+                              style={{ color: '#ef4444' }}
+                              title="Eliminar cliente"
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    )
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* TAB 2: Productos Más Consultados */}
+      {activeTab === 'inquiries' && (
+        <div>
+          <div style={{ marginBottom: '15px', color: 'var(--text-secondary)', fontSize: '14px' }}>
+            Estadística extraída del análisis automático del historial de chats de WhatsApp e inquietudes de clientes.
+          </div>
+
+          {crmData.product_inquiries.length === 0 ? (
+            <div className="card" style={{ padding: '40px', textAlign: 'center' }}>
+              <HelpCircle size={40} style={{ color: 'var(--text-secondary)', marginBottom: '12px' }} />
+              <h3>Aún no hay estadísticas de consultas indexadas</h3>
+              <p style={{ color: 'var(--text-secondary)', maxWidth: '500px', margin: '0 auto 20px' }}>
+                Haz clic en el botón superior <strong>"Analizar Chats con IA"</strong> para procesar el historial de conversaciones y generar el ranking de productos más pedidos.
+              </p>
+              <button onClick={handleAnalyzeInquiries} className="btn btn-primary">
+                <Sparkles size={16} /> Iniciar Análisis de Historial
+              </button>
+            </div>
+          ) : (
+            <div className="table-responsive card">
+              <table className="table">
+                <thead>
+                  <tr>
+                    <th>Producto</th>
+                    <th style={{ textAlign: 'center' }}>Consultas Totales</th>
+                    <th style={{ textAlign: 'center' }}>Clientes Únicos</th>
+                    <th style={{ textAlign: 'center' }}>Estado de Stock</th>
+                    <th style={{ textAlign: 'right' }}>Precio Web</th>
+                    <th style={{ textAlign: 'center' }}>Última Consulta</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {crmData.product_inquiries.map((p, idx) => (
+                    <tr key={idx}>
+                      <td>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                          {p.thumbnail ? (
+                            <img src={p.thumbnail} alt={p.catalog_title} style={{ width: '42px', height: '42px', borderRadius: '6px', objectFit: 'cover' }} />
+                          ) : (
+                            <div style={{ width: '42px', height: '42px', borderRadius: '6px', backgroundColor: 'var(--border-color)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                              <ShoppingBag size={20} style={{ color: 'var(--text-secondary)' }} />
+                            </div>
+                          )}
+                          <div>
+                            <div style={{ fontWeight: '700' }}>{p.catalog_title}</div>
+                            {p.ml_id && <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>ID: {p.ml_id}</div>}
+                          </div>
+                        </div>
+                      </td>
+                      <td style={{ textAlign: 'center', fontWeight: '800', fontSize: '16px', color: '#8b5cf6' }}>
+                        {p.inquiry_count}
+                      </td>
+                      <td style={{ textAlign: 'center', fontWeight: '600' }}>
+                        {p.unique_customers} clientes
+                      </td>
+                      <td style={{ textAlign: 'center' }}>
+                        {p.stock > 0 ? (
+                          <span style={{ padding: '3px 8px', borderRadius: '6px', fontSize: '11px', fontWeight: '700', backgroundColor: 'rgba(16, 185, 129, 0.15)', color: '#10b981' }}>
+                            Con Stock ({p.stock} u.)
+                          </span>
+                        ) : (
+                          <span style={{ padding: '3px 8px', borderRadius: '6px', fontSize: '11px', fontWeight: '700', backgroundColor: 'rgba(239, 68, 68, 0.15)', color: '#ef4444' }}>
+                            Agotado / Sin Stock
                           </span>
                         )}
                       </td>
-                      <td style={{ fontWeight: 500 }}>{c.full_name || '-'}</td>
+                      <td style={{ textAlign: 'right', fontWeight: '700' }}>
+                        ${p.price_web ? p.price_web.toLocaleString('es-AR', { minimumFractionDigits: 2 }) : 'N/A'}
+                      </td>
+                      <td style={{ textAlign: 'center', fontSize: '13px', color: 'var(--text-secondary)' }}>
+                        {p.last_inquired_at || 'Reciente'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* TAB 3: Leads & Suscriptores Web */}
+      {activeTab === 'leads' && (
+        <div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
+            <span style={{ color: 'var(--text-secondary)', fontSize: '14px' }}>
+              Prospectos registrados desde el pop-up web y formulario de guía/boletín.
+            </span>
+            <button onClick={exportLeadsCSV} className="btn btn-secondary" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <Download size={16} /> Exportar CSV
+            </button>
+          </div>
+
+          <div className="table-responsive card">
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>Nombre</th>
+                  <th>Email</th>
+                  <th>País</th>
+                  <th>Origen</th>
+                  <th>Recurso Enviado</th>
+                  <th>Fecha Registro</th>
+                </tr>
+              </thead>
+              <tbody>
+                {crmData.leads.length === 0 ? (
+                  <tr><td colSpan="6" style={{ textAlign: 'center', padding: '30px', color: 'var(--text-secondary)' }}>No hay leads registrados.</td></tr>
+                ) : (
+                  crmData.leads.map(l => (
+                    <tr key={l.id}>
+                      <td style={{ fontWeight: '600' }}>{l.name || 'Sin especificar'}</td>
                       <td>
-                        <div style={{ fontSize: '0.85rem' }}>{c.email || '-'}</div>
-                        <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{c.phone || '-'}</div>
+                        <a href={`mailto:${l.email}`} style={{ color: 'var(--accent-blue)', textDecoration: 'none' }}>
+                          {l.email}
+                        </a>
                       </td>
-                      <td style={{ fontSize: '0.85rem' }}>
-                        {c.document_number ? `${c.document_type || 'Doc'} ${c.document_number}` : '-'}
-                      </td>
-                      <td style={{ fontSize: '0.85rem', maxWidth: '200px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={c.address || ''}>
-                        {c.address || '-'}
-                      </td>
-                      <td style={{ textAlign: 'center', fontWeight: 'bold' }}>{c.total_orders}</td>
-                      <td style={{ color: 'var(--accent-emerald)', fontWeight: 'bold' }}>${(c.total_spent || 0).toLocaleString()}</td>
-                      <td style={{ textAlign: 'center' }}>
-                        <div style={{ display: 'flex', gap: '6px', justifyContent: 'center' }}>
-                          <button
-                            onClick={() => handleOpenEdit(c)}
-                            title="Editar Cliente"
-                            style={{
-                              backgroundColor: 'rgba(59, 130, 246, 0.15)',
-                              color: 'var(--accent-blue)',
-                              border: '1px solid rgba(59, 130, 246, 0.3)',
-                              padding: '5px 10px',
-                              borderRadius: '6px',
-                              cursor: 'pointer',
-                              fontSize: '0.8rem',
-                              fontWeight: '600'
-                            }}
-                          >
-                            ✏️ Editar
-                          </button>
-                          <button
-                            onClick={() => handleDelete(c)}
-                            title="Eliminar Cliente"
-                            style={{
-                              backgroundColor: 'rgba(239, 68, 68, 0.15)',
-                              color: 'var(--accent-red)',
-                              border: '1px solid rgba(239, 68, 68, 0.3)',
-                              padding: '5px 8px',
-                              borderRadius: '6px',
-                              cursor: 'pointer',
-                              fontSize: '0.8rem'
-                            }}
-                          >
-                            🗑️
-                          </button>
-                        </div>
-                      </td>
+                      <td>{l.country || 'Argentina'}</td>
+                      <td><span style={{ padding: '2px 6px', borderRadius: '4px', fontSize: '11px', backgroundColor: 'var(--border-color)' }}>{l.source || 'Popup Lead'}</span></td>
+                      <td style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>{l.pdf_sent || 'Guía Hidroponia PDF'}</td>
+                      <td style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>{l.created_at || 'N/D'}</td>
                     </tr>
                   ))
                 )}
               </tbody>
             </table>
           </div>
-        )}
-      </div>
+        </div>
+      )}
 
-      {/* Modal Agregar / Editar Cliente */}
+      {/* TAB 4: Extractor de WhatsApp */}
+      {activeTab === 'whatsapp' && (
+        <div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
+            <span style={{ color: 'var(--text-secondary)', fontSize: '14px' }}>
+              Listado de números únicos detectados en la cuenta de WhatsApp conectada.
+            </span>
+            <button onClick={handleSyncWhatsApp} className="btn btn-primary" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <RefreshCw size={16} className={syncingWa ? 'spin' : ''} /> Ejecutar Extractor
+            </button>
+          </div>
+
+          <div className="table-responsive card">
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>Número / Remitente</th>
+                  <th style={{ textAlign: 'center' }}>Mensajes Intercambiados</th>
+                  <th style={{ textAlign: 'center' }}>Última Actividad</th>
+                  <th style={{ textAlign: 'center' }}>Acción</th>
+                </tr>
+              </thead>
+              <tbody>
+                {crmData.whatsapp_chats.length === 0 ? (
+                  <tr><td colSpan="4" style={{ textAlign: 'center', padding: '30px', color: 'var(--text-secondary)' }}>No hay chats de WhatsApp registrados en la base de datos.</td></tr>
+                ) : (
+                  crmData.whatsapp_chats.map((w, idx) => {
+                    const cleanPhone = (w.sender || '').replace(/[^0-9]/g, '')
+                    return (
+                      <tr key={idx}>
+                        <td style={{ fontWeight: '700' }}>
+                          +{w.sender}
+                        </td>
+                        <td style={{ textAlign: 'center', fontWeight: '700' }}>{w.total_messages}</td>
+                        <td style={{ textAlign: 'center', fontSize: '13px', color: 'var(--text-secondary)' }}>{w.last_activity || 'N/D'}</td>
+                        <td style={{ textAlign: 'center' }}>
+                          <a
+                            href={`https://wa.me/${cleanPhone}`}
+                            target="_blank"
+                            rel="noreferrer"
+                            style={{
+                              padding: '5px 12px',
+                              borderRadius: '6px',
+                              backgroundColor: '#25D366',
+                              color: '#fff',
+                              textDecoration: 'none',
+                              fontSize: '12px',
+                              fontWeight: '600',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '4px'
+                            }}
+                          >
+                            <ExternalLink size={13} /> Chat WhatsApp
+                          </a>
+                        </td>
+                      </tr>
+                    )
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: Crear/Editar Cliente Manual */}
       {isModalOpen && (
-        <div style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          backgroundColor: 'rgba(0, 0, 0, 0.65)',
-          display: 'flex',
-          justifyContent: 'center',
-          alignItems: 'center',
-          zIndex: 1000,
-          backdropFilter: 'blur(4px)'
-        }}>
-          <div style={{
-            backgroundColor: 'var(--bg-card)',
-            border: '1px solid var(--border-color)',
-            borderRadius: '12px',
-            padding: '25px',
-            width: '100%',
-            maxWidth: '550px',
-            boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.3)',
-            maxHeight: '90vh',
-            overflowY: 'auto'
-          }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-              <h2 style={{ margin: 0, fontSize: '1.4rem' }}>
-                {modalMode === 'create' ? '👤 Agregar Nuevo Cliente' : `✏️ Editar Cliente`}
-              </h2>
-              <button
-                onClick={handleCloseModal}
-                style={{
-                  background: 'none',
-                  border: 'none',
-                  color: 'var(--text-secondary)',
-                  fontSize: '1.2rem',
-                  cursor: 'pointer'
-                }}
-              >
-                ✕
-              </button>
-            </div>
+        <div className="modal-backdrop" onClick={handleCloseModal}>
+          <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: '520px' }}>
+            <h2 style={{ marginBottom: '15px' }}>{modalMode === 'create' ? 'Nuevo Cliente' : 'Editar Cliente'}</h2>
 
             {errorMsg && (
-              <div style={{
-                backgroundColor: 'rgba(239, 68, 68, 0.15)',
-                border: '1px solid var(--accent-red)',
-                color: 'var(--accent-red)',
-                padding: '10px 14px',
-                borderRadius: '8px',
-                marginBottom: '15px',
-                fontSize: '0.9rem'
-              }}>
+              <div style={{ padding: '10px 14px', borderRadius: '8px', backgroundColor: 'rgba(239,68,68,0.15)', color: '#ef4444', marginBottom: '15px', fontSize: '14px' }}>
                 {errorMsg}
               </div>
             )}
 
-            <form onSubmit={handleSave}>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', marginBottom: '15px' }}>
-                <div>
-                  <label style={{ display: 'block', fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '5px' }}>
-                    Alias / Nickname
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="Ej: juan_perez"
-                    value={formData.nickname}
-                    onChange={(e) => setFormData({ ...formData, nickname: e.target.value })}
-                    style={{
-                      width: '100%',
-                      padding: '9px 12px',
-                      borderRadius: '6px',
-                      border: '1px solid var(--border-color)',
-                      backgroundColor: 'var(--bg-dark)',
-                      color: 'var(--text-primary)'
-                    }}
-                  />
-                </div>
-                <div>
-                  <label style={{ display: 'block', fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '5px' }}>
-                    Nombre y Apellido / Razón Social *
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="Ej: Juan Pérez"
-                    value={formData.full_name}
-                    onChange={(e) => setFormData({ ...formData, full_name: e.target.value })}
-                    style={{
-                      width: '100%',
-                      padding: '9px 12px',
-                      borderRadius: '6px',
-                      border: '1px solid var(--border-color)',
-                      backgroundColor: 'var(--bg-dark)',
-                      color: 'var(--text-primary)'
-                    }}
-                  />
-                </div>
+            <form onSubmit={handleSave} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <div>
+                <label style={{ fontSize: '13px', fontWeight: '600' }}>Nombre Completo / Razón Social</label>
+                <input
+                  type="text"
+                  required
+                  value={formData.full_name}
+                  onChange={e => setFormData({ ...formData, full_name: e.target.value })}
+                  style={{ width: '100%', padding: '8px 12px', borderRadius: '6px', border: '1px solid var(--border-color)' }}
+                />
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', marginBottom: '15px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
                 <div>
-                  <label style={{ display: 'block', fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '5px' }}>
-                    Email
-                  </label>
+                  <label style={{ fontSize: '13px', fontWeight: '600' }}>Teléfono / WhatsApp</label>
+                  <input
+                    type="text"
+                    value={formData.phone}
+                    onChange={e => setFormData({ ...formData, phone: e.target.value })}
+                    placeholder="Ej: 5493416123456"
+                    style={{ width: '100%', padding: '8px 12px', borderRadius: '6px', border: '1px solid var(--border-color)' }}
+                  />
+                </div>
+                <div>
+                  <label style={{ fontSize: '13px', fontWeight: '600' }}>Email</label>
                   <input
                     type="email"
-                    placeholder="ejemplo@correo.com"
                     value={formData.email}
-                    onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                    style={{
-                      width: '100%',
-                      padding: '9px 12px',
-                      borderRadius: '6px',
-                      border: '1px solid var(--border-color)',
-                      backgroundColor: 'var(--bg-dark)',
-                      color: 'var(--text-primary)'
-                    }}
-                  />
-                </div>
-                <div>
-                  <label style={{ display: 'block', fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '5px' }}>
-                    Teléfono / WhatsApp
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="Ej: 3411234567"
-                    value={formData.phone}
-                    onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                    style={{
-                      width: '100%',
-                      padding: '9px 12px',
-                      borderRadius: '6px',
-                      border: '1px solid var(--border-color)',
-                      backgroundColor: 'var(--bg-dark)',
-                      color: 'var(--text-primary)'
-                    }}
+                    onChange={e => setFormData({ ...formData, email: e.target.value })}
+                    style={{ width: '100%', padding: '8px 12px', borderRadius: '6px', border: '1px solid var(--border-color)' }}
                   />
                 </div>
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '15px', marginBottom: '15px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '10px' }}>
                 <div>
-                  <label style={{ display: 'block', fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '5px' }}>
-                    Tipo Doc
-                  </label>
+                  <label style={{ fontSize: '13px', fontWeight: '600' }}>Doc. Tipo</label>
                   <select
                     value={formData.document_type}
-                    onChange={(e) => setFormData({ ...formData, document_type: e.target.value })}
-                    style={{
-                      width: '100%',
-                      padding: '9px 12px',
-                      borderRadius: '6px',
-                      border: '1px solid var(--border-color)',
-                      backgroundColor: 'var(--bg-dark)',
-                      color: 'var(--text-primary)'
-                    }}
+                    onChange={e => setFormData({ ...formData, document_type: e.target.value })}
+                    style={{ width: '100%', padding: '8px 12px', borderRadius: '6px', border: '1px solid var(--border-color)', background: 'var(--bg-card)', color: 'var(--text-primary)' }}
                   >
                     <option value="DNI">DNI</option>
                     <option value="CUIT">CUIT</option>
                     <option value="CUIL">CUIL</option>
                     <option value="PASAPORTE">Pasaporte</option>
-                    <option value="CI">CI</option>
                   </select>
                 </div>
                 <div>
-                  <label style={{ display: 'block', fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '5px' }}>
-                    Número de Documento
-                  </label>
+                  <label style={{ fontSize: '13px', fontWeight: '600' }}>Número Documento</label>
                   <input
                     type="text"
-                    placeholder="Ej: 20301234567"
                     value={formData.document_number}
-                    onChange={(e) => setFormData({ ...formData, document_number: e.target.value })}
-                    style={{
-                      width: '100%',
-                      padding: '9px 12px',
-                      borderRadius: '6px',
-                      border: '1px solid var(--border-color)',
-                      backgroundColor: 'var(--bg-dark)',
-                      color: 'var(--text-primary)'
-                    }}
+                    onChange={e => setFormData({ ...formData, document_number: e.target.value })}
+                    style={{ width: '100%', padding: '8px 12px', borderRadius: '6px', border: '1px solid var(--border-color)' }}
                   />
                 </div>
               </div>
 
-              <div style={{ marginBottom: '20px' }}>
-                <label style={{ display: 'block', fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '5px' }}>
-                  Dirección Completa
-                </label>
+              <div>
+                <label style={{ fontSize: '13px', fontWeight: '600' }}>Dirección / Domicilio</label>
                 <input
                   type="text"
-                  placeholder="Ej: Av. Pellegrini 1234, Rosario, Santa Fe"
                   value={formData.address}
-                  onChange={(e) => setFormData({ ...formData, address: e.target.value })}
+                  onChange={e => setFormData({ ...formData, address: e.target.value })}
+                  style={{ width: '100%', padding: '8px 12px', borderRadius: '6px', border: '1px solid var(--border-color)' }}
+                />
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '15px' }}>
+                <button type="button" onClick={handleCloseModal} className="btn btn-secondary">Cancelar</button>
+                <button type="submit" disabled={saving} className="btn btn-primary">
+                  {saving ? 'Guardando...' : 'Guardar Cliente'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: Importar Copia de WhatsApp / Archivo .txt / .db */}
+      {isImportModalOpen && (
+        <div className="modal-backdrop" onClick={() => setIsImportModalOpen(false)}>
+          <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: '580px' }}>
+            <h2 style={{ marginBottom: '15px', display: 'flex', alignItems: 'center', gap: '10px', color: '#25D366' }}>
+              <FileText size={22} /> Importar Copia de WhatsApp
+            </h2>
+
+            {/* Instruction Guide Box */}
+            <div style={{ backgroundColor: 'rgba(59, 130, 246, 0.1)', border: '1px solid rgba(59, 130, 246, 0.3)', borderRadius: '10px', padding: '14px 16px', marginBottom: '18px' }}>
+              <h4 style={{ margin: '0 0 8px', color: 'var(--accent-blue)', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px' }}>
+                <Phone size={16} /> ¿Dónde encontrar el archivo en tu celular?
+              </h4>
+              <div style={{ fontSize: '13px', lineHeight: '1.5', color: 'var(--text-primary)' }}>
+                <p style={{ margin: '0 0 10px' }}>
+                  <strong>📱 Opción 1: Copia de Seguridad Local (Android)</strong><br />
+                  Abre el explorador de archivos de tu celular y navega hasta:<br />
+                  <code style={{ background: 'var(--border-color)', padding: '3px 6px', borderRadius: '4px', fontSize: '12px', wordBreak: 'break-all', display: 'inline-block', marginTop: '3px' }}>
+                    Almacenamiento Interno &gt; Android &gt; media &gt; com.whatsapp &gt; WhatsApp &gt; Databases
+                  </code><br />
+                  Selecciona el archivo <strong>msgstore.db.crypt14</strong> (o <strong>msgstore.db</strong>).
+                </p>
+                <p style={{ margin: 0 }}>
+                  <strong>💬 Opción 2: Exportar Chat individual (.txt)</strong><br />
+                  En tu celular: Abre WhatsApp &gt; Entra a un chat &gt; Toca los 3 puntos (arriba a la derecha) &gt; <strong>Más</strong> &gt; <strong>Exportar chat</strong> &gt; <strong>Sin archivos multimedia</strong>.
+                </p>
+              </div>
+            </div>
+
+            {importError && (
+              <div style={{ padding: '10px 14px', borderRadius: '8px', backgroundColor: 'rgba(239,68,68,0.15)', color: '#ef4444', marginBottom: '15px', fontSize: '14px' }}>
+                {importError}
+              </div>
+            )}
+
+            <form onSubmit={handleUploadWaFile} style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+              <div>
+                <label style={{ fontSize: '13px', fontWeight: '600', display: 'block', marginBottom: '6px' }}>
+                  1. Archivo de copia (msgstore.db.crypt14, msgstore.db o .txt) *
+                </label>
+                <input
+                  type="file"
+                  accept=".txt,.db,.crypt14,.crypt15,.crypt12,.csv,.json"
+                  required
+                  onChange={e => setSelectedWaFile(e.target.files[0] || null)}
                   style={{
                     width: '100%',
-                    padding: '9px 12px',
-                    borderRadius: '6px',
-                    border: '1px solid var(--border-color)',
-                    backgroundColor: 'var(--bg-dark)',
-                    color: 'var(--text-primary)'
+                    padding: '10px',
+                    borderRadius: '8px',
+                    border: '2px dashed var(--border-color)',
+                    background: 'var(--bg-card)',
+                    cursor: 'pointer'
                   }}
                 />
               </div>
 
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
-                <button
-                  type="button"
-                  onClick={handleCloseModal}
+              {selectedWaFile && (
+                <div style={{ fontSize: '13px', color: '#10b981', fontWeight: '600' }}>
+                  ✓ Archivo de copia: {selectedWaFile.name} ({(selectedWaFile.size / 1024).toFixed(1)} KB)
+                </div>
+              )}
+
+              {/* Optional Key File Input */}
+              <div style={{ marginTop: '5px' }}>
+                <label style={{ fontSize: '13px', fontWeight: '600', display: 'block', marginBottom: '4px' }}>
+                  2. Archivo Key de WhatsApp (Requerido para desencriptar .crypt14 / .crypt15)
+                </label>
+                <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '6px' }}>
+                  Sube el archivo <code>key</code> (de 158 bytes) extraído de tu celular para descifrar todo el historial automáticamente.
+                </div>
+                <input
+                  type="file"
+                  onChange={e => setSelectedKeyFile(e.target.files[0] || null)}
                   style={{
-                    padding: '10px 16px',
-                    borderRadius: '6px',
+                    width: '100%',
+                    padding: '8px',
+                    borderRadius: '8px',
                     border: '1px solid var(--border-color)',
-                    backgroundColor: 'transparent',
-                    color: 'var(--text-primary)',
+                    background: 'var(--bg-card)',
                     cursor: 'pointer'
                   }}
-                >
+                />
+              </div>
+
+              {selectedKeyFile && (
+                <div style={{ fontSize: '13px', color: '#8b5cf6', fontWeight: '600' }}>
+                  🔑 Clave privada vinculada: {selectedKeyFile.name} ({selectedKeyFile.size} bytes)
+                </div>
+              )}
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '10px' }}>
+                <button type="button" onClick={() => setIsImportModalOpen(false)} className="btn btn-secondary">
                   Cancelar
                 </button>
                 <button
                   type="submit"
-                  disabled={saving}
-                  style={{
-                    padding: '10px 20px',
-                    borderRadius: '6px',
-                    border: 'none',
-                    backgroundColor: 'var(--accent-blue)',
-                    color: '#fff',
-                    fontWeight: '600',
-                    cursor: 'pointer',
-                    opacity: saving ? 0.7 : 1
-                  }}
+                  disabled={importingFile || !selectedWaFile}
+                  className="btn btn-primary"
+                  style={{ display: 'flex', alignItems: 'center', gap: '8px', backgroundColor: '#25D366', color: '#fff', border: 'none' }}
                 >
-                  {saving ? 'Guardando...' : (modalMode === 'create' ? 'Crear Cliente' : 'Guardar Cambios')}
+                  <Upload size={16} className={importingFile ? 'spin' : ''} />
+                  {importingFile ? 'Importando & Procesando IA...' : 'Comenzar Importación'}
                 </button>
               </div>
             </form>

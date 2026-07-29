@@ -67,14 +67,11 @@ En el comercio moderno, gestionar Mercado Libre, una tienda online propia, factu
 ---
 
 ### 5. 🤖 Asistente Virtual de WhatsApp con IA (Gemini)
-- **Atención Automática 24/7**: Conexión nativa mediante pasarela Baileys Node.js (auto-hospedada, sin costos por mensaje de APIs oficiales).
-- **Conocimiento del Negocio**: La IA consulta en tiempo real el inventario PostgreSQL para informar stock, precios y responder preguntas frecuentes.
-- **Consulta de Pedidos**: Los clientes pueden preguntar por el estado de su pedido con su número de orden.
-- **Sistema de Pausa Inteligente & Atención Humana (*Human Takeover*)**:
-  - Si un vendedor responde manualmente desde el celular, el bot se pausa automáticamente para ese cliente por 24 horas.
-  - Si el cliente pide hablar con una persona, Gemini deriva la atención y pausa las respuestas automáticas.
-  - Comandos rápidos de chat: `#pausa` para pausar la IA, `#bot` para reactivarla.
-  - Panel de control en tiempo real para visualizar y reanudar chats en atención humana.
+- **Extractor & Importador de Copias de Seguridad de WhatsApp**:
+  - Permite subir archivos de copia de seguridad local (`msgstore.db` / `msgstore.db.crypt14`) o chats exportados (`.txt`) directamente desde el panel de control.
+  - **¿Cómo obtener la copia en tu celular (Android)?**:
+    Abre el explorador de archivos de tu teléfono y ve a: `Almacenamiento Interno > Android > media > com.whatsapp > WhatsApp > Databases` y copia el archivo `msgstore.db.crypt14` o `msgstore.db`.
+  - **Exportar Chat Individual**: En WhatsApp > Abrir Chat > 3 Puntos > Más > Exportar chat > Sin archivos multimedia.
 
 ---
 
