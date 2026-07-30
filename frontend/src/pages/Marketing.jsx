@@ -48,6 +48,7 @@ export default function Marketing() {
   const [scheduledAt, setScheduledAt] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [editingPostId, setEditingPostId] = useState(null)
+  const [publishingId, setPublishingId] = useState(null)
 
   // Config state
   const [metaConfig, setMetaConfig] = useState({
@@ -614,6 +615,7 @@ export default function Marketing() {
 
   const handlePublishNow = async (postId) => {
     if (!confirm("¿Deseas publicar este contenido INMEDIATAMENTE en tus redes sociales?")) return
+    setPublishingId(postId)
     try {
       const res = await fetch(`/api/marketing/publish-now/${postId}`, { method: 'POST' })
       const data = await res.json()
@@ -625,6 +627,8 @@ export default function Marketing() {
       }
     } catch(err) {
       alert("Error de conexión: " + err.message)
+    } finally {
+      setPublishingId(null)
     }
   }
 
@@ -1096,9 +1100,29 @@ export default function Marketing() {
                       <tr key={p.id}>
                         <td>
                           {p.media_urls ? (
-                            <img src={toHighResMlImage(p.media_urls.split(',')[0])} alt="" style={{width: 40, height: 40, objectFit: 'contain', borderRadius: 4, backgroundColor: '#fff'}} />
+                            isVideoUrl(p.media_urls.split(',')[0]) ? (
+                              <div style={{position: 'relative', width: 44, height: 44, borderRadius: 6, overflow: 'hidden', backgroundColor: '#000', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid var(--border-color)'}}>
+                                <video 
+                                  src={p.media_urls.split(',')[0]} 
+                                  preload="metadata"
+                                  style={{width: '100%', height: '100%', objectFit: 'cover'}} 
+                                />
+                                <div style={{position: 'absolute', inset: 0, backgroundColor: 'rgba(0,0,0,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center'}}>
+                                  <Video size={16} color="#fff" />
+                                </div>
+                              </div>
+                            ) : (
+                              <img 
+                                src={toHighResMlImage(p.media_urls.split(',')[0])} 
+                                alt="" 
+                                style={{width: 44, height: 44, objectFit: 'cover', borderRadius: 6, backgroundColor: '#fff', border: '1px solid var(--border-color)'}} 
+                                onError={(e) => {
+                                  e.target.style.display = 'none';
+                                }}
+                              />
+                            )
                           ) : (
-                            <div style={{width: 40, height: 40, backgroundColor: 'var(--bg-dark)', borderRadius: 4, display: 'flex', alignItems: 'center', justifyContent: 'center'}}>
+                            <div style={{width: 44, height: 44, backgroundColor: 'var(--bg-dark)', borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid var(--border-color)'}}>
                               <ImageIcon size={18} />
                             </div>
                           )}
@@ -1138,8 +1162,33 @@ export default function Marketing() {
                               ✏️ Editar
                             </button>
                             {p.status !== 'published' && (
-                              <button className="btn" style={{padding: '3px 8px', fontSize: '0.7rem', backgroundColor: 'var(--accent-emerald)', color: '#fff'}} onClick={() => handlePublishNow(p.id)} title="Publicar inmediatamente en Meta">
-                                <Send size={12} /> Publicar
+                              <button 
+                                className="btn" 
+                                disabled={publishingId === p.id}
+                                style={{
+                                  padding: '4px 10px', 
+                                  fontSize: '0.72rem', 
+                                  backgroundColor: publishingId === p.id ? 'var(--bg-dark)' : 'var(--accent-emerald)', 
+                                  color: '#fff',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: 4,
+                                  fontWeight: 'bold'
+                                }} 
+                                onClick={() => handlePublishNow(p.id)} 
+                                title="Publicar inmediatamente en Meta"
+                              >
+                                {publishingId === p.id ? (
+                                  <>
+                                    <RefreshCw className="animate-spin" size={12} />
+                                    <span>Publicando... Esperá</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <Send size={12} />
+                                    <span>Publicar</span>
+                                  </>
+                                )}
                               </button>
                             )}
                             <button className="btn-icon" onClick={() => handleDeletePost(p.id)} style={{color: '#ef4444'}} title="Eliminar">
