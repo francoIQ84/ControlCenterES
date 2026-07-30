@@ -559,7 +559,7 @@ export default function Marketing() {
                 <label style={{flex: 1, fontSize: '0.85rem'}}>Tipo de Publicación
                   <select value={postType} onChange={e => setPostType(e.target.value)} style={{width: '100%', marginTop: 5, padding: '6px 10px', borderRadius: 6, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-dark)', color: 'var(--text-primary)'}}>
                     <option value="post">📷 Foto / Post Feed</option>
-                    <option value="reel">🎬 Reel de Instagram</option>
+                    <option value="reel">🎬 Reel de Instagram / Video</option>
                   </select>
                 </label>
 
@@ -575,6 +575,12 @@ export default function Marketing() {
                   </div>
                 </div>
               </div>
+
+              {postType === 'reel' && mediaUrl && !isVideoUrl(mediaUrl) && (
+                <div style={{fontSize: '0.76rem', color: 'var(--accent-orange)', backgroundColor: 'rgba(245, 158, 11, 0.1)', padding: '6px 10px', borderRadius: 6, border: '1px solid rgba(245, 158, 11, 0.3)'}}>
+                  💡 <strong>Nota sobre Reels:</strong> Los Reels en Instagram requieren un archivo de <strong>VIDEO (.MP4 / .MOV)</strong>. Dado que seleccionaste una imagen estática, el sistema la publicará automáticamente como <strong>Foto en el Feed de Instagram</strong> sin dar error.
+                </div>
+              )}
 
               <label style={{fontSize: '0.85rem'}}>Texto de la Publicación (Caption & Hashtags) *
                 <textarea 

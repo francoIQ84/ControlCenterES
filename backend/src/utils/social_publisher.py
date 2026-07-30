@@ -211,13 +211,17 @@ def publish_post_to_all_platforms(post_data: dict):
     results = []
     successes = 0
 
+    video_extensions = ['.mp4', '.mov', '.avi', '.webm', '.mkv']
+    is_real_video = media_url and any(media_url.lower().split('?')[0].endswith(ext) for ext in video_extensions)
+
     if "instagram" in platforms:
         if not creds["instagram_account_id"]:
             results.append("Instagram: Omitido (ID no configurado)")
         else:
-            if post_type == "reel":
+            if post_type == "reel" and is_real_video:
                 ok, msg = publish_to_instagram_reel(media_url, caption)
             else:
+                # If image is provided for a Reel, fallback to Instagram Photo post seamlessly
                 ok, msg = publish_to_instagram_photo(media_url, caption)
             results.append(f"Instagram: {'OK' if ok else msg}")
             if ok: successes += 1
