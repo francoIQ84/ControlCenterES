@@ -84,22 +84,37 @@ export default function Sales() {
   const [customInvoiceDocType, setCustomInvoiceDocType] = useState('99') // '99' or 'CUIT'
   const [customCuit, setCustomCuit] = useState('')
   const [customName, setCustomName] = useState('')
+  const [customIvaCondition, setCustomIvaCondition] = useState('IVA Exento')
   const [cuitLookupLoading, setCuitLookupLoading] = useState(false)
   const [mlBillingInfo, setMlBillingInfo] = useState(null)
   const [mlBillingLoading, setMlBillingLoading] = useState(false)
 
+  const mapIvaCondition = (condStr) => {
+    if (!condStr) return 'IVA Exento'
+    const lower = condStr.toLowerCase()
+    if (lower.includes('exent')) return 'IVA Exento'
+    if (lower.includes('monotribut')) return 'Responsable Monotributo'
+    if (lower.includes('inscript')) return 'Responsable Inscripto'
+    if (lower.includes('consumidor')) return 'Consumidor Final'
+    if (lower.includes('no responsable')) return 'No Responsable'
+    return condStr
+  }
+
   const handleOpenInvoiceModal = async (order) => {
     setInvoiceModalOrder(order)
     setMlBillingInfo(null)
+    setCustomIvaCondition('IVA Exento')
     
     const buyerDoc = order.buyer?.document_number || ''
     const buyerDocType = order.buyer?.document_type || ''
     const buyerName = order.buyer?.name || ''
+    const buyerIva = order.buyer?.iva_condition || order.buyer?.taxpayer_type || ''
 
     if (buyerDocType === 'CUIT' || buyerDoc.length === 11) {
       setCustomInvoiceDocType('CUIT')
       setCustomCuit(buyerDoc)
       setCustomName(buyerName)
+      if (buyerIva) setCustomIvaCondition(mapIvaCondition(buyerIva))
     } else {
       setCustomInvoiceDocType('99')
       setCustomCuit('')
@@ -117,6 +132,7 @@ export default function Sales() {
           setCustomInvoiceDocType('CUIT')
           setCustomCuit(data.document_number)
           if (data.name) setCustomName(data.name)
+          if (data.taxpayer_type) setCustomIvaCondition(mapIvaCondition(data.taxpayer_type))
         }
       }
     } catch(err) {
@@ -135,6 +151,9 @@ export default function Sales() {
     if (mlBillingInfo.name) {
       setCustomName(mlBillingInfo.name)
     }
+    if (mlBillingInfo.taxpayer_type) {
+      setCustomIvaCondition(mapIvaCondition(mlBillingInfo.taxpayer_type))
+    }
   }
 
   const handleLookupAFIP = async () => {
@@ -148,7 +167,13 @@ export default function Sales() {
       const data = await res.json()
       if (res.ok && data.success) {
         setCustomName(data.razon_social || '')
-        alert(`¡Razón Social encontrada!: ${data.razon_social}`)
+        if (data.iva_condition) {
+          const detected = mapIvaCondition(data.iva_condition)
+          setCustomIvaCondition(detected)
+          alert(`¡Datos AFIP encontrados!\n• Razón Social: ${data.razon_social}\n• Condición IVA: ${detected}`)
+        } else {
+          alert(`¡Razón Social encontrada!: ${data.razon_social}`)
+        }
       } else {
         alert("Error AFIP Padrón: " + (data.detail || data.error || "No se encontró el CUIT"))
       }
@@ -175,7 +200,8 @@ export default function Sales() {
       const bodyPayload = {
         doc_type: customInvoiceDocType,
         cuit: customInvoiceDocType === 'CUIT' ? customCuit : null,
-        name: customInvoiceDocType === 'CUIT' ? customName : null
+        name: customInvoiceDocType === 'CUIT' ? customName : null,
+        iva_condition: customInvoiceDocType === 'CUIT' ? customIvaCondition : 'Consumidor Final'
       }
 
       const res = await fetch(`/api/sales/${orderId}/invoice`, {
@@ -1542,6 +1568,20 @@ export default function Sales() {
                       onChange={e => setCustomName(e.target.value)} 
                       style={{width: '100%', marginTop: 5}}
                     />
+                  </label>
+
+                  <label style={{fontSize: '0.85rem'}}>Condición frente al IVA del Comprador:
+                    <select
+                      value={customIvaCondition}
+                      onChange={e => setCustomIvaCondition(e.target.value)}
+                      style={{width: '100%', marginTop: 5, padding: '8px 10px', borderRadius: 6, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-dark)', color: 'var(--text-primary)', fontWeight: 'bold'}}
+                    >
+                      <option value="IVA Exento">IVA Exento / Exento</option>
+                      <option value="Responsable Inscripto">Responsable Inscripto</option>
+                      <option value="Responsable Monotributo">Responsable Monotributo</option>
+                      <option value="Consumidor Final">Consumidor Final</option>
+                      <option value="No Responsable">No Responsable / Sin Alcanzar</option>
+                    </select>
                   </label>
                 </div>
               )}

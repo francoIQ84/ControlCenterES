@@ -4,6 +4,7 @@ import urllib.request
 import urllib.parse
 import urllib.error
 from src import database
+from src.utils.image_utils import get_high_res_image_url
 
 META_GRAPH_API_VERSION = "v19.0"
 META_GRAPH_BASE_URL = f"https://graph.facebook.com/{META_GRAPH_API_VERSION}"
@@ -203,7 +204,8 @@ def publish_post_to_all_platforms(post_data: dict):
     platforms = [p.strip().lower() for p in (post_data.get("platforms") or "instagram,facebook").split(",")]
     post_type = (post_data.get("post_type") or "post").lower()
     caption = post_data.get("caption") or ""
-    media_url = (post_data.get("media_urls") or "").split(",")[0].strip()
+    raw_media_url = (post_data.get("media_urls") or "").split(",")[0].strip()
+    media_url = get_high_res_image_url(raw_media_url)
 
     creds = get_meta_credentials()
     results = []

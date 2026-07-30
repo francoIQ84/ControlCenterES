@@ -336,10 +336,10 @@ def _build_invoice_page(order, copy_type, usable_w):
     buyer_doc_number = buyer.get('document_number', '')
     buyer_doc_type = buyer.get('document_type', 'DNI')
     buyer_address = buyer.get('address', '') or ''
-    buyer_condition = 'Consumidor Final'
-
-    if buyer_doc_type in ('CUIT', 'CUIL') and buyer_doc_number:
-        buyer_condition = 'Responsable Inscripto'
+    buyer_condition = buyer.get('iva_condition') or buyer.get('taxpayer_type') or 'Consumidor Final'
+    if not (buyer.get('iva_condition') or buyer.get('taxpayer_type')):
+        if buyer_doc_type in ('CUIT', 'CUIL') and buyer_doc_number:
+            buyer_condition = 'Responsable Inscripto'
 
     # Format doc number
     buyer_doc_display = 'S/D (Consumidor Final)'

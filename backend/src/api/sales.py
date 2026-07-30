@@ -233,6 +233,7 @@ class InvoiceOptionsRequest(BaseModel):
     doc_type: Optional[str] = '99' # '99' for Consumidor Final, 'CUIT' for CUIT
     cuit: Optional[str] = None
     name: Optional[str] = None
+    iva_condition: Optional[str] = None
 
 @router.get("/lookup-cuit/{cuit}")
 def lookup_cuit_endpoint(cuit: str):
@@ -326,6 +327,9 @@ def create_invoice_endpoint(order_id: int, req: Optional[InvoiceOptionsRequest] 
             buyer['document_number'] = clean_cuit
             if req.name and req.name != "None None":
                 buyer['name'] = req.name
+            if req.iva_condition:
+                buyer['iva_condition'] = req.iva_condition
+                buyer['taxpayer_type'] = req.iva_condition
             order['buyer'] = buyer
 
     from src.utils.afip_ws import create_invoice

@@ -1,6 +1,21 @@
 import React, { useState, useEffect } from 'react'
 import { Megaphone, Sparkles, Calendar, Settings as SettingsIcon, Send, Video, Image as ImageIcon, Trash2, CheckCircle, Clock, AlertCircle, RefreshCw, ExternalLink, MessageSquare } from 'lucide-react'
 
+const toHighResMlImage = (url) => {
+  if (!url) return ''
+  let clean = url.trim().replace(/-[IVECN]\.(jpg|jpeg|png|webp)/i, '-O.$1')
+  if (clean.startsWith('http://')) {
+    clean = 'https://' + clean.slice(7)
+  }
+  return clean
+}
+
+const isVideoUrl = (url) => {
+  if (!url) return false
+  const lower = url.toLowerCase().split('?')[0]
+  return lower.endsWith('.mp4') || lower.endsWith('.mov') || lower.endsWith('.webm') || lower.endsWith('.avi')
+}
+
 export default function Marketing() {
   const [activeTab, setActiveTab] = useState('creator') // 'creator', 'calendar', 'comments', 'config'
   
@@ -11,6 +26,8 @@ export default function Marketing() {
 
   // Creator state
   const [selectedProduct, setSelectedProduct] = useState('')
+  const [productImages, setProductImages] = useState([])
+  const [uploadingFile, setUploadingFile] = useState(false)
   const [objective, setObjective] = useState('promocional')
   const [tone, setTone] = useState('entusiasta')
   const [generating, setGenerating] = useState(false)
@@ -45,6 +62,49 @@ export default function Marketing() {
     fetchPosts()
     fetchMetaConfig()
   }, [])
+
+  useEffect(() => {
+    if (!selectedProduct) {
+      setProductImages([])
+      return
+    }
+    const curr = products.find(p => p.ml_id === selectedProduct)
+    if (curr) {
+      const rawList = curr.images ? curr.images.split(',') : (curr.thumbnail ? [curr.thumbnail] : [])
+      const cleanList = rawList.map(u => toHighResMlImage(u.trim())).filter(Boolean)
+      setProductImages(cleanList)
+      if (cleanList.length > 0 && !mediaUrl) {
+        setMediaUrl(cleanList[0])
+      }
+    } else {
+      setProductImages([])
+    }
+  }, [selectedProduct, products])
+
+  const handleFileUpload = async (e) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setUploadingFile(true)
+    const formData = new FormData()
+    formData.append('file', file)
+    try {
+      const res = await fetch('/api/media/upload', {
+        method: 'POST',
+        body: formData
+      })
+      const data = await res.json()
+      if (res.ok && data.url) {
+        setMediaUrl(data.url)
+      } else {
+        alert("Error al subir archivo: " + (data.detail || "Error desconocido"))
+      }
+    } catch(err) {
+      alert("Error de conexión al subir archivo: " + err.message)
+    } finally {
+      setUploadingFile(false)
+      e.target.value = ''
+    }
+  }
 
   const fetchComments = () => {
     setLoadingComments(true)
@@ -197,7 +257,7 @@ export default function Marketing() {
         setGeneratedData(data)
         setPostTitle(data.title || '')
         setCaption(data.caption || '')
-        const mainImg = data.images ? data.images.split(',')[0].trim() : ''
+        const mainImg = data.images ? toHighResMlImage(data.images.split(',')[0].trim()) : ''
         setMediaUrl(mainImg)
       } else {
         alert("Error al generar contenido: " + (data.detail || "Error desconocido"))
@@ -411,6 +471,34 @@ export default function Marketing() {
                 </select>
               </label>
 
+              {productImages.length > 0 && (
+                <div style={{marginTop: -5, marginBottom: 5}}>
+                  <div style={{fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 6}}>
+                    🖼️ Fotos HD del producto ({productImages.length}) - Clic para elegir:
+                  </div>
+                  <div style={{display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 6}}>
+                    {productImages.map((imgUrl, idx) => (
+                      <div 
+                        key={idx} 
+                        onClick={() => setMediaUrl(imgUrl)}
+                        style={{
+                          border: mediaUrl === imgUrl ? '2px solid var(--accent-blue)' : '1px solid var(--border-color)',
+                          borderRadius: 6,
+                          cursor: 'pointer',
+                          overflow: 'hidden',
+                          backgroundColor: '#111',
+                          padding: 2,
+                          flexShrink: 0
+                        }}
+                        title="Usar esta foto HD para la publicación"
+                      >
+                        <img src={imgUrl} alt="" style={{width: 48, height: 48, objectFit: 'cover', borderRadius: 4}} />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               <div style={{display: 'flex', gap: 15}}>
                 <label style={{flex: 1, fontSize: '0.85rem'}}>Objetivo Campaña
                   <select value={objective} onChange={e => setObjective(e.target.value)} style={{width: '100%', marginTop: 5, padding: '6px 10px', borderRadius: 6, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-dark)', color: 'var(--text-primary)'}}>
@@ -498,15 +586,43 @@ export default function Marketing() {
                 />
               </label>
 
-              <label style={{fontSize: '0.85rem'}}>URL de Imagen o Video *
-                <input 
-                  type="text" 
-                  value={mediaUrl} 
-                  onChange={e => setMediaUrl(e.target.value)} 
-                  placeholder="https://..." 
-                  style={{width: '100%', marginTop: 5, padding: '8px 10px', borderRadius: 6, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-dark)', color: 'var(--text-primary)'}}
-                />
-              </label>
+              <div>
+                <label style={{fontSize: '0.85rem', fontWeight: 600}}>URL o Archivo de Imagen / Video *</label>
+                <div style={{display: 'flex', gap: 8, marginTop: 5}}>
+                  <input 
+                    type="text" 
+                    value={mediaUrl} 
+                    onChange={e => setMediaUrl(toHighResMlImage(e.target.value))} 
+                    placeholder="https://... o seleccioná un archivo de la PC" 
+                    style={{flex: 1, padding: '8px 10px', borderRadius: 6, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-dark)', color: 'var(--text-primary)'}}
+                  />
+                  <label className="btn" style={{backgroundColor: 'var(--bg-dark)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', cursor: 'pointer', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 5, padding: '8px 12px', fontSize: '0.8rem'}}>
+                    {uploadingFile ? <RefreshCw className="animate-spin" size={14} /> : <ImageIcon size={14} />}
+                    {uploadingFile ? 'Subiendo...' : '📁 Subir de la PC'}
+                    <input type="file" accept="image/*,video/*" onChange={handleFileUpload} style={{display: 'none'}} />
+                  </label>
+                </div>
+              </div>
+
+              {mediaUrl && (
+                <div style={{padding: 10, borderRadius: 8, backgroundColor: 'var(--bg-dark)', border: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', alignItems: 'center'}}>
+                  <div style={{fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: 6, width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
+                    <span>🖼️ Vista Previa del Medio:</span>
+                    {mediaUrl.includes('-O.') && <span style={{color: 'var(--accent-emerald)', fontWeight: 600, fontSize: '0.72rem'}}>✨ Calidad HD MercadoLibre (-O.jpg)</span>}
+                    {mediaUrl.startsWith('/uploads/') && <span style={{color: 'var(--accent-blue)', fontWeight: 600, fontSize: '0.72rem'}}>📁 Archivo Subido de la PC</span>}
+                  </div>
+                  {isVideoUrl(mediaUrl) ? (
+                    <video src={mediaUrl} controls style={{maxHeight: 180, maxWidth: '100%', borderRadius: 6}} />
+                  ) : (
+                    <img 
+                      src={toHighResMlImage(mediaUrl)} 
+                      alt="Previsualización de la publicación" 
+                      onError={(e) => { e.target.onerror = null; e.target.src = mediaUrl; }}
+                      style={{maxHeight: 180, maxWidth: '100%', objectFit: 'contain', borderRadius: 6, backgroundColor: '#111'}} 
+                    />
+                  )}
+                </div>
+              )}
 
               <label style={{fontSize: '0.85rem'}}>Fecha y Hora de Publicación (Opcional - Dejar vacío para borrador)
                 <input 
@@ -579,7 +695,7 @@ export default function Marketing() {
                       <tr key={p.id}>
                         <td>
                           {p.media_urls ? (
-                            <img src={p.media_urls.split(',')[0]} alt="" style={{width: 40, height: 40, objectFit: 'contain', borderRadius: 4, backgroundColor: '#fff'}} />
+                            <img src={toHighResMlImage(p.media_urls.split(',')[0])} alt="" style={{width: 40, height: 40, objectFit: 'contain', borderRadius: 4, backgroundColor: '#fff'}} />
                           ) : (
                             <div style={{width: 40, height: 40, backgroundColor: 'var(--bg-dark)', borderRadius: 4, display: 'flex', alignItems: 'center', justifyContent: 'center'}}>
                               <ImageIcon size={18} />

@@ -8,6 +8,7 @@ import threading
 
 from src import config
 from src import database
+from src.utils.image_utils import get_high_res_image_url
 
 API_BASE_URL = "https://api.mercadolibre.com"
 
@@ -408,8 +409,10 @@ def sync_products():
 
                 for item in items_to_process:
                     pictures = item.get('pictures', [])
-                    images_list = [pic.get('secure_url') or pic.get('url') for pic in pictures if pic.get('secure_url') or pic.get('url')]
+                    raw_images = [pic.get('secure_url') or pic.get('url') for pic in pictures if pic.get('secure_url') or pic.get('url')]
+                    images_list = [get_high_res_image_url(url) for url in raw_images]
                     images_str = ",".join(images_list)
+                    high_res_thumb = get_high_res_image_url(item.get('thumbnail') or (images_list[0] if images_list else ''))
                     
                     products.append({
                         'ml_id': item['id'],
@@ -418,7 +421,7 @@ def sync_products():
                         'cost_meli': costs_dict.get(item['id'], 0.0),
                         'available_quantity': int(item['available_quantity']),
                         'permalink': item.get('permalink'),
-                        'thumbnail': item.get('thumbnail'),
+                        'thumbnail': high_res_thumb,
                         'status': item.get('status'),
                         'visits_meli': visits_dict.get(item['id'], 0),
                         'images': images_str

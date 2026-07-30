@@ -8,6 +8,7 @@ import urllib.parse
 from src import database
 from src.api.auth import verify_session
 from src.utils import social_publisher
+from src.utils.image_utils import convert_all_images_str, get_high_res_image_url
 
 router = APIRouter()
 
@@ -106,12 +107,15 @@ def generate_ai_post_copy(req: GeneratePostRequest, _=Depends(verify_session)):
                 # Combine caption with hashtags
                 full_caption = f"{parsed.get('caption', '')}\n\n{parsed.get('hashtags', '')}".strip()
 
+                raw_images = product.get("images") or product.get("thumbnail") or ""
+                high_res_images = convert_all_images_str(raw_images)
+
                 return {
                     "success": True,
                     "title": parsed.get("title", f"Promoción: {title}"),
                     "caption": full_caption,
                     "video_script_idea": parsed.get("video_script_idea", ""),
-                    "images": product.get("images") or product.get("thumbnail") or ""
+                    "images": high_res_images
                 }
         except Exception as e:
             last_err = str(e)
@@ -130,13 +134,15 @@ def create_or_schedule_post(req: CreatePostRequest, _=Depends(verify_session)):
     if req.scheduled_at and status != "published":
         status = "scheduled"
 
+    clean_media = convert_all_images_str(req.media_urls)
+
     post_data = {
         "product_ml_id": req.product_ml_id,
         "title": req.title,
         "post_type": req.post_type,
         "platforms": req.platforms,
         "caption": req.caption,
-        "media_urls": req.media_urls,
+        "media_urls": clean_media,
         "scheduled_at": req.scheduled_at,
         "status": status
     }
