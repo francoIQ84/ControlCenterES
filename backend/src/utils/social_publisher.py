@@ -232,3 +232,135 @@ def publish_post_to_all_platforms(post_data: dict):
     overall_ok = (successes > 0)
     summary_msg = " | ".join(results)
     return overall_ok, summary_msg
+
+def reply_to_instagram_comment(comment_id: str, message: str):
+    creds = get_meta_credentials()
+    access_token = creds["access_token"]
+    if not access_token:
+        return False, "Credenciales de Meta no configuradas."
+
+    url = f"{META_GRAPH_BASE_URL}/{comment_id}/replies"
+    try:
+        params = urllib.parse.urlencode({
+            "message": message,
+            "access_token": access_token
+        }).encode('utf-8')
+        req = urllib.request.Request(url, data=params, method="POST")
+        with urllib.request.urlopen(req) as resp:
+            res_data = json.loads(resp.read().decode('utf-8'))
+            reply_id = res_data.get("id")
+            if reply_id:
+                return True, reply_id
+            return False, "No se recibió ID de respuesta de Instagram."
+    except urllib.error.HTTPError as e:
+        try:
+            err_body = json.loads(e.read().decode('utf-8'))
+            err_msg = err_body.get('error', {}).get('message', str(e))
+        except Exception:
+            err_msg = str(e)
+        return False, f"Instagram API Error: {err_msg}"
+    except Exception as e:
+        return False, str(e)
+
+def reply_to_facebook_comment(comment_id: str, message: str):
+    creds = get_meta_credentials()
+    access_token = creds["access_token"]
+    if not access_token:
+        return False, "Credenciales de Meta no configuradas."
+
+    url = f"{META_GRAPH_BASE_URL}/{comment_id}/comments"
+    try:
+        params = urllib.parse.urlencode({
+            "message": message,
+            "access_token": access_token
+        }).encode('utf-8')
+        req = urllib.request.Request(url, data=params, method="POST")
+        with urllib.request.urlopen(req) as resp:
+            res_data = json.loads(resp.read().decode('utf-8'))
+            reply_id = res_data.get("id")
+            if reply_id:
+                return True, reply_id
+            return False, "No se recibió ID de respuesta de Facebook."
+    except urllib.error.HTTPError as e:
+        try:
+            err_body = json.loads(e.read().decode('utf-8'))
+            err_msg = err_body.get('error', {}).get('message', str(e))
+        except Exception:
+            err_msg = str(e)
+        return False, f"Facebook API Error: {err_msg}"
+    except Exception as e:
+        return False, str(e)
+
+def fetch_recent_social_comments(limit: int = 15):
+    creds = get_meta_credentials()
+    access_token = creds["access_token"]
+    ig_id = creds["instagram_account_id"]
+    page_id = creds["facebook_page_id"].strip() if creds["facebook_page_id"] else "me"
+
+    results = {
+        "instagram": [],
+        "facebook": []
+    }
+
+    if not access_token:
+        return results
+
+    # 1. Instagram Comments
+    if ig_id:
+        try:
+            ig_url = f"{META_GRAPH_BASE_URL}/{ig_id}/media?fields=id,caption,media_type,media_url,thumbnail_url,permalink,timestamp,comments_count&limit={limit}&access_token={access_token}"
+            req = urllib.request.Request(ig_url, method="GET")
+            with urllib.request.urlopen(req, timeout=12) as resp:
+                res_data = json.loads(resp.read().decode('utf-8'))
+                media_list = res_data.get("data", [])
+
+            for item in media_list:
+                media_id = item.get("id")
+                c_count = item.get("comments_count", 0)
+                if c_count > 0 and media_id:
+                    comments_url = f"{META_GRAPH_BASE_URL}/{media_id}/comments?fields=id,text,timestamp,username,replies{{id,text,timestamp,username}}&access_token={access_token}"
+                    req_c = urllib.request.Request(comments_url, method="GET")
+                    try:
+                        with urllib.request.urlopen(req_c, timeout=10) as resp_c:
+                            c_data = json.loads(resp_c.read().decode('utf-8'))
+                            comments = c_data.get("data", [])
+                            if comments:
+                                results["instagram"].append({
+                                    "post_id": media_id,
+                                    "caption": item.get("caption", ""),
+                                    "media_url": item.get("media_url") or item.get("thumbnail_url") or "",
+                                    "permalink": item.get("permalink", ""),
+                                    "timestamp": item.get("timestamp"),
+                                    "comments": comments
+                                })
+                    except Exception:
+                        pass
+        except Exception as e:
+            print("Error fetching Instagram comments:", e)
+
+    # 2. Facebook Comments
+    if page_id:
+        try:
+            fb_url = f"{META_GRAPH_BASE_URL}/{page_id}/published_posts?fields=id,message,full_picture,permalink_url,created_time,comments.limit(20){{id,message,created_time,from,comments{{id,message,created_time,from}}}}&limit={limit}&access_token={access_token}"
+            req = urllib.request.Request(fb_url, method="GET")
+            with urllib.request.urlopen(req, timeout=12) as resp:
+                res_data = json.loads(resp.read().decode('utf-8'))
+                posts_list = res_data.get("data", [])
+
+            for item in posts_list:
+                comments_obj = item.get("comments", {})
+                comments = comments_obj.get("data", []) if isinstance(comments_obj, dict) else []
+                if comments:
+                    results["facebook"].append({
+                        "post_id": item.get("id"),
+                        "message": item.get("message", ""),
+                        "picture": item.get("full_picture", ""),
+                        "permalink": item.get("permalink_url", ""),
+                        "created_time": item.get("created_time"),
+                        "comments": comments
+                    })
+        except Exception as e:
+            print("Error fetching Facebook comments:", e)
+
+    return results
+

@@ -161,7 +161,82 @@ def publish_post_now(post_id: int, _=Depends(verify_session)):
         database.update_marketing_post_status(post_id, "failed", error_message=summary)
         raise HTTPException(status_code=500, detail=f"Error al publicar: {summary}")
 
+class ReplyCommentRequest(BaseModel):
+    platform: str
+    comment_id: str
+    message: str
+
+class AISuggestReplyRequest(BaseModel):
+    comment_text: str
+    post_context: Optional[str] = ""
+    author_name: Optional[str] = ""
+
+@router.get("/comments")
+def get_social_comments(_=Depends(verify_session)):
+    comments_data = social_publisher.fetch_recent_social_comments()
+    return {"success": True, "data": comments_data}
+
+@router.post("/comments/reply")
+def reply_to_social_comment(req: ReplyCommentRequest, _=Depends(verify_session)):
+    if req.platform == "instagram":
+        ok, res = social_publisher.reply_to_instagram_comment(req.comment_id, req.message)
+    elif req.platform == "facebook":
+        ok, res = social_publisher.reply_to_facebook_comment(req.comment_id, req.message)
+    else:
+        raise HTTPException(status_code=400, detail="Plataforma no válida (debe ser instagram o facebook)")
+
+    if ok:
+        return {"success": True, "reply_id": res, "message": "Respuesta enviada correctamente"}
+    else:
+        raise HTTPException(status_code=500, detail=f"Error al enviar respuesta: {res}")
+
+@router.post("/comments/ai-suggest")
+def suggest_ai_comment_reply(req: AISuggestReplyRequest, _=Depends(verify_session)):
+    gemini_key = database.get_setting("gemini_api_key", "").strip()
+    if not gemini_key:
+        raise HTTPException(
+            status_code=400, 
+            detail="Se requiere una API Key de Gemini para generar sugerencias."
+        )
+
+    prompt = f"""
+    Eres el gestor de atención al cliente de "Hidroponía Rosario" (tienda especializada en insumos para cultivo e hidroponía en Argentina).
+    Redacta una respuesta amable, profesional, concisa y comercial a este comentario recibido en redes sociales:
+    
+    - Usuario: {req.author_name or 'Cliente'}
+    - Pregunta/Comentario recibido: "{req.comment_text}"
+    - Contexto de la publicación: "{req.post_context or ''}"
+
+    Reglas para la respuesta:
+    1. Dirígete amablemente al usuario.
+    2. Responde directo a la consulta (sobre stock, envíos a todo el país, ubicación en Rosario, asesoramiento).
+    3. Incluye emojis sutiles y amigables.
+    4. Invítalo a visitar la tienda web (hidroponia.com) o enviar mensaje si requiere ayuda personalizada.
+    5. No uses corchetes ni texto descriptivo fuera de la respuesta misma. Responde ÚNICAMENTE con el texto final que se publicará.
+    """
+
+    models_to_try = ["gemini-3.6-flash", "gemini-flash-latest", "gemini-flash-lite-latest", "gemini-3.5-flash-lite", "gemini-2.0-flash"]
+    last_err = ""
+
+    for model_name in models_to_try:
+        try:
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={gemini_key}"
+            payload = {"contents": [{"parts": [{"text": prompt}]}]}
+            data_bytes = json.dumps(payload).encode('utf-8')
+            http_req = urllib.request.Request(url, data=data_bytes, headers={"Content-Type": "application/json"})
+
+            with urllib.request.urlopen(http_req, timeout=12) as response:
+                res_data = json.loads(response.read().decode('utf-8'))
+                suggested_text = res_data['candidates'][0]['content']['parts'][0]['text'].strip()
+                return {"success": True, "suggested_reply": suggested_text}
+        except Exception as e:
+            last_err = str(e)
+            continue
+
+    raise HTTPException(status_code=500, detail=f"Error al generar sugerencia con Gemini IA: {last_err}")
+
 @router.delete("/posts/{post_id}")
 def delete_marketing_post(post_id: int, _=Depends(verify_session)):
     database.delete_marketing_post(post_id)
     return {"success": True, "message": "Publicación eliminada"}
+

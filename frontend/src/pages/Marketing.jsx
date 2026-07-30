@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react'
-import { Megaphone, Sparkles, Calendar, Settings as SettingsIcon, Send, Video, Image as ImageIcon, Trash2, CheckCircle, Clock, AlertCircle, RefreshCw, ExternalLink } from 'lucide-react'
+import { Megaphone, Sparkles, Calendar, Settings as SettingsIcon, Send, Video, Image as ImageIcon, Trash2, CheckCircle, Clock, AlertCircle, RefreshCw, ExternalLink, MessageSquare } from 'lucide-react'
 
 export default function Marketing() {
-  const [activeTab, setActiveTab] = useState('creator') // 'creator', 'calendar', 'automation', 'config'
+  const [activeTab, setActiveTab] = useState('creator') // 'creator', 'calendar', 'comments', 'config'
   
   // Data states
   const [products, setProducts] = useState([])
@@ -33,11 +33,85 @@ export default function Marketing() {
   })
   const [savingConfig, setSavingConfig] = useState(false)
 
+  // Comments / Inbox state
+  const [commentsData, setCommentsData] = useState({ instagram: [], facebook: [] })
+  const [loadingComments, setLoadingComments] = useState(false)
+  const [replyInputs, setReplyInputs] = useState({})
+  const [replyingId, setReplyingId] = useState(null)
+  const [suggestingId, setSuggestingId] = useState(null)
+
   useEffect(() => {
     fetchProducts()
     fetchPosts()
     fetchMetaConfig()
   }, [])
+
+  const fetchComments = () => {
+    setLoadingComments(true)
+    fetch('/api/marketing/comments')
+      .then(r => r.ok ? r.json() : { data: { instagram: [], facebook: [] } })
+      .then(res => setCommentsData(res.data || { instagram: [], facebook: [] }))
+      .catch(err => console.error(err))
+      .finally(() => setLoadingComments(false))
+  }
+
+  const handleReplyComment = async (platform, commentId) => {
+    const message = replyInputs[commentId]
+    if (!message || !message.trim()) {
+      alert("Por favor ingresa un texto de respuesta.")
+      return
+    }
+
+    setReplyingId(commentId)
+    try {
+      const res = await fetch('/api/marketing/comments/reply', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          platform,
+          comment_id: commentId,
+          message: message.trim()
+        })
+      })
+      const data = await res.json()
+      if (res.ok) {
+        alert("¡Respuesta enviada exitosamente a la red social!")
+        setReplyInputs(prev => ({ ...prev, [commentId]: '' }))
+        fetchComments()
+      } else {
+        alert("Error al responder: " + (data.detail || "Error desconocido"))
+      }
+    } catch(err) {
+      alert("Error de conexión: " + err.message)
+    } finally {
+      setReplyingId(null)
+    }
+  }
+
+  const handleAISuggestReply = async (commentText, postContext, authorName, commentId) => {
+    setSuggestingId(commentId)
+    try {
+      const res = await fetch('/api/marketing/comments/ai-suggest', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          comment_text: commentText,
+          post_context: postContext,
+          author_name: authorName
+        })
+      })
+      const data = await res.json()
+      if (res.ok && data.suggested_reply) {
+        setReplyInputs(prev => ({ ...prev, [commentId]: data.suggested_reply }))
+      } else {
+        alert("Error al generar sugerencia: " + (data.detail || "Error desconocido"))
+      }
+    } catch(err) {
+      alert("Error de conexión: " + err.message)
+    } finally {
+      setSuggestingId(null)
+    }
+  }
 
   const handleResetForm = () => {
     setEditingPostId(null)
@@ -155,33 +229,35 @@ export default function Marketing() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          id: editingPostId || null,
+          id: editingPostId,
           product_ml_id: selectedProduct || null,
-          title: postTitle,
+          title: postTitle.trim(),
           post_type: postType,
           platforms: selectedPlatforms,
-          caption,
-          media_urls: mediaUrl,
-          scheduled_at: scheduledAt || null,
+          caption: caption.trim(),
+          media_urls: mediaUrl.trim(),
+          scheduled_at: scheduledAt ? new Date(scheduledAt).toISOString() : null,
           status: finalStatus
         })
       })
       const data = await res.json()
       if (res.ok) {
-        alert(editingPostId ? "¡Publicación actualizada con éxito!" : (finalStatus === 'scheduled' ? "Publicación programada correctamente!" : "Borrador guardado con éxito"))
+        alert(editingPostId ? "Publicación actualizada correctamente." : "Publicación guardada en la cola.")
         handleResetForm()
         fetchPosts()
         setActiveTab('calendar')
       } else {
-        alert("Error: " + (data.detail || "No se pudo guardar la publicación"))
+        alert("Error al guardar: " + (data.detail || "Error desconocido"))
       }
+    } catch(err) {
+      alert("Error de conexión: " + err.message)
     } finally {
       setSubmitting(false)
     }
   }
 
   const handlePublishNow = async (postId) => {
-    if (!confirm("¿Deseas publicar esta entrada en tus redes sociales en este momento?")) return
+    if (!confirm("¿Deseas publicar este contenido INMEDIATAMENTE en tus redes sociales?")) return
     try {
       const res = await fetch(`/api/marketing/publish-now/${postId}`, { method: 'POST' })
       const data = await res.json()
@@ -189,8 +265,7 @@ export default function Marketing() {
         alert("¡Publicado con éxito! " + data.message)
         fetchPosts()
       } else {
-        alert("Error al publicar: " + (data.detail || "Ocurrió un error en Meta API"))
-        fetchPosts()
+        alert("Error al publicar: " + (data.detail || "Error desconocido"))
       }
     } catch(err) {
       alert("Error de conexión: " + err.message)
@@ -240,7 +315,7 @@ export default function Marketing() {
         <h1 className="page-title" style={{margin: 0}}>Marketing & Redes Sociales</h1>
       </div>
       <p className="page-subtitle" style={{marginBottom: 20}}>
-        Generá Reels y publicaciones con IA (Gemini), programalos y publicalos automáticamente en Instagram y Facebook.
+        Generá Reels y publicaciones con IA (Gemini), programalos y responde comentarios de Instagram y Facebook.
       </p>
 
       {/* Tabs Navigation */}
@@ -272,6 +347,20 @@ export default function Marketing() {
           }}
         >
           <Calendar size={16} /> Cola & Calendario ({posts.filter(p => p.status === 'scheduled').length})
+        </button>
+        <button 
+          className="btn" 
+          onClick={() => { setActiveTab('comments'); fetchComments(); }}
+          style={{
+            backgroundColor: activeTab === 'comments' ? 'var(--accent-blue)' : 'var(--bg-card)',
+            color: activeTab === 'comments' ? '#fff' : 'var(--text-primary)',
+            border: '1px solid var(--border-color)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6
+          }}
+        >
+          <MessageSquare size={16} /> 💬 Inbox de Comentarios
         </button>
         <button 
           className="btn" 
@@ -349,48 +438,83 @@ export default function Marketing() {
                 {generating ? <RefreshCw className="animate-spin" size={16} /> : <Sparkles size={16} />}
                 {generating ? 'Generando copy con IA...' : '✨ Generar Publicación con Gemini IA'}
               </button>
+
+              {generatedData?.video_script_idea && (
+                <div style={{backgroundColor: 'var(--bg-dark)', padding: 12, borderRadius: 8, border: '1px dashed var(--accent-orange)'}}>
+                  <div style={{fontSize: '0.8rem', fontWeight: 700, color: 'var(--accent-orange)', marginBottom: 5, display: 'flex', alignItems: 'center', gap: 6}}>
+                    <Video size={14} /> Idea de Guión para Reel (15 segs):
+                  </div>
+                  <div style={{fontSize: '0.8rem', color: 'var(--text-secondary)', whiteSpace: 'pre-line'}}>
+                    {generatedData.video_script_idea}
+                  </div>
+                </div>
+              )}
             </div>
+          </div>
 
-            <hr style={{margin: '25px 0', borderColor: 'var(--border-color)', opacity: 0.4}} />
-
-            <h3 style={{marginBottom: 15, display: 'flex', alignItems: 'center', gap: 8}}>
-              <Send size={18} style={{color: 'var(--accent-blue)'}} />
-              2. Configuración de Despacho
-            </h3>
-
+          {/* Columna Derecha: Previsualización & Programación */}
+          <div className="card" style={{flex: 1.2, minWidth: 340}}>
+            <h3 style={{marginTop: 0, marginBottom: 15}}>2. Detalle y Programación</h3>
+            
             <div style={{display: 'flex', flexDirection: 'column', gap: 15}}>
+              <label style={{fontSize: '0.85rem'}}>Título Interno / Campaña *
+                <input 
+                  type="text" 
+                  value={postTitle} 
+                  onChange={e => setPostTitle(e.target.value)} 
+                  placeholder="Ej: Promo Fertilizantes Hidroponía Primavera"
+                  style={{width: '100%', marginTop: 5, padding: '8px 10px', borderRadius: 6, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-dark)', color: 'var(--text-primary)'}}
+                />
+              </label>
+
               <div style={{display: 'flex', gap: 15}}>
-                <label style={{flex: 1, fontSize: '0.85rem'}}>Tipo de Formato
+                <label style={{flex: 1, fontSize: '0.85rem'}}>Tipo de Publicación
                   <select value={postType} onChange={e => setPostType(e.target.value)} style={{width: '100%', marginTop: 5, padding: '6px 10px', borderRadius: 6, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-dark)', color: 'var(--text-primary)'}}>
-                    <option value="post">📷 Imagen / Publicación</option>
-                    <option value="reel">🎬 Reel de 15-30s</option>
-                    <option value="story">📲 Historia</option>
+                    <option value="post">📷 Foto / Post Feed</option>
+                    <option value="reel">🎬 Reel de Instagram</option>
                   </select>
                 </label>
 
-                <div style={{flex: 1}}>
-                  <span style={{fontSize: '0.85rem', display: 'block', marginBottom: 5}}>Redes Destino</span>
-                  <div style={{display: 'flex', gap: 12, alignItems: 'center'}}>
-                    <label style={{fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer'}}>
-                      <input type="checkbox" checked={platforms.instagram} onChange={e => setPlatforms({...platforms, instagram: e.target.checked})} />
-                      Instagram
+                <div style={{flex: 1, fontSize: '0.85rem'}}>
+                  <div>Redes Destino</div>
+                  <div style={{display: 'flex', gap: 12, marginTop: 8}}>
+                    <label style={{display: 'flex', alignItems: 'center', gap: 5, fontSize: '0.8rem', cursor: 'pointer'}}>
+                      <input type="checkbox" checked={platforms.instagram} onChange={e => setPlatforms({...platforms, instagram: e.target.checked})} /> Instagram
                     </label>
-                    <label style={{fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer'}}>
-                      <input type="checkbox" checked={platforms.facebook} onChange={e => setPlatforms({...platforms, facebook: e.target.checked})} />
-                      Facebook
+                    <label style={{display: 'flex', alignItems: 'center', gap: 5, fontSize: '0.8rem', cursor: 'pointer'}}>
+                      <input type="checkbox" checked={platforms.facebook} onChange={e => setPlatforms({...platforms, facebook: e.target.checked})} /> Facebook
                     </label>
                   </div>
                 </div>
               </div>
 
-              <label style={{fontSize: '0.85rem'}}>Programar Fecha y Hora (Opcional)
+              <label style={{fontSize: '0.85rem'}}>Texto de la Publicación (Caption & Hashtags) *
+                <textarea 
+                  rows={6}
+                  value={caption} 
+                  onChange={e => setCaption(e.target.value)} 
+                  placeholder="El contenido redactado aparecerá aquí..."
+                  style={{width: '100%', marginTop: 5, padding: '10px', borderRadius: 6, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-dark)', color: 'var(--text-primary)', fontFamily: 'inherit'}}
+                />
+              </label>
+
+              <label style={{fontSize: '0.85rem'}}>URL de Imagen o Video *
+                <input 
+                  type="text" 
+                  value={mediaUrl} 
+                  onChange={e => setMediaUrl(e.target.value)} 
+                  placeholder="https://..." 
+                  style={{width: '100%', marginTop: 5, padding: '8px 10px', borderRadius: 6, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-dark)', color: 'var(--text-primary)'}}
+                />
+              </label>
+
+              <label style={{fontSize: '0.85rem'}}>Fecha y Hora de Publicación (Opcional - Dejar vacío para borrador)
                 <input 
                   type="datetime-local" 
                   value={scheduledAt} 
                   onChange={e => setScheduledAt(e.target.value)} 
-                  style={{width: '100%', marginTop: 5, padding: '6px 10px', borderRadius: 6, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-dark)', color: 'var(--text-primary)'}}
+                  style={{width: '100%', marginTop: 5, padding: '8px 10px', borderRadius: 6, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-dark)', color: 'var(--text-primary)'}}
                 />
-                <span style={{fontSize: '0.72rem', color: 'var(--text-secondary)'}}>Dejá en blanco para guardar como borrador o publicar manualmente.</span>
               </label>
 
               <div style={{display: 'flex', gap: 10, marginTop: 10}}>
@@ -402,98 +526,52 @@ export default function Marketing() {
                 >
                   💾 Guardar Borrador
                 </button>
-                <button 
-                  className="btn" 
-                  onClick={() => handleSavePost(scheduledAt ? 'scheduled' : 'draft')}
-                  disabled={submitting}
-                  style={{flex: 1, backgroundColor: 'var(--accent-blue)', color: '#fff'}}
-                >
-                  ⏰ {scheduledAt ? 'Programar Publicación' : 'Guardar en Cola'}
-                </button>
+
+                {scheduledAt && (
+                  <button 
+                    className="btn" 
+                    onClick={() => handleSavePost('scheduled')}
+                    disabled={submitting}
+                    style={{flex: 1, backgroundColor: 'var(--accent-blue)', color: '#fff'}}
+                  >
+                    ⏰ Programar Envío
+                  </button>
+                )}
               </div>
-            </div>
-          </div>
-
-          {/* Columna Derecha: Previsualización */}
-          <div className="card" style={{flex: 1, minWidth: 340}}>
-            <h3 style={{marginTop: 0, marginBottom: 15, display: 'flex', alignItems: 'center', gap: 8}}>
-              <ImageIcon size={18} style={{color: 'var(--accent-emerald)'}} />
-              Previsualización de Publicación
-            </h3>
-
-            <div style={{display: 'flex', flexDirection: 'column', gap: 15}}>
-              <label style={{fontSize: '0.85rem', fontWeight: 600}}>Título Corto Sugerido
-                <input 
-                  type="text" 
-                  value={postTitle} 
-                  onChange={e => setPostTitle(e.target.value)} 
-                  placeholder="ej. Oferta Especial: Kit Hidroponía" 
-                  style={{width: '100%', marginTop: 5, padding: '6px 10px', borderRadius: 6, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-dark)', color: 'var(--text-primary)'}}
-                />
-              </label>
-
-              <label style={{fontSize: '0.85rem', fontWeight: 600}}>URL de la Imagen o Video
-                <input 
-                  type="text" 
-                  value={mediaUrl} 
-                  onChange={e => setMediaUrl(e.target.value)} 
-                  placeholder="https://ejemplo.com/foto.jpg" 
-                  style={{width: '100%', marginTop: 5, padding: '6px 10px', borderRadius: 6, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-dark)', color: 'var(--text-primary)'}}
-                />
-              </label>
-
-              <label style={{fontSize: '0.85rem', fontWeight: 600}}>Contenido / Caption (Texto + Hashtags)
-                <textarea 
-                  value={caption} 
-                  onChange={e => setCaption(e.target.value)} 
-                  rows={8}
-                  placeholder="El texto generado por la IA aparecerá acá..."
-                  style={{width: '100%', marginTop: 5, padding: 10, borderRadius: 6, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-dark)', color: 'var(--text-primary)', fontFamily: 'sans-serif'}}
-                />
-              </label>
-
-              {generatedData && generatedData.video_script_idea && (
-                <div style={{padding: 12, backgroundColor: 'rgba(59, 130, 246, 0.1)', border: '1px solid rgba(59, 130, 246, 0.3)', borderRadius: 6}}>
-                  <span style={{fontSize: '0.8rem', fontWeight: 'bold', color: 'var(--accent-blue)', display: 'block', marginBottom: 4}}>
-                    💡 Idea para grabar Reel (15s):
-                  </span>
-                  <p style={{fontSize: '0.8rem', margin: 0, color: 'var(--text-primary)', whiteSpace: 'pre-line'}}>
-                    {generatedData.video_script_idea}
-                  </p>
-                </div>
-              )}
             </div>
           </div>
         </div>
       )}
 
-      {/* TAB 2: Cola & Calendario */}
+      {/* TAB 2: Cola y Calendario */}
       {activeTab === 'calendar' && (
         <div className="card">
-          <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20}}>
-            <h3 style={{margin: 0}}>Publicaciones Programadas & Historial</h3>
-            <button className="btn" onClick={fetchPosts} style={{backgroundColor: 'var(--bg-dark)', color: 'var(--text-primary)', border: '1px solid var(--border-color)'}}>
-              <RefreshCw size={14} /> Actualizar Listado
+          <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15}}>
+            <h3 style={{margin: 0}}>Cola de Publicaciones ({posts.length})</h3>
+            <button className="btn" onClick={fetchPosts} style={{padding: '5px 10px', fontSize: '0.8rem', backgroundColor: 'var(--bg-dark)', color: 'var(--text-primary)', border: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', gap: 5}}>
+              <RefreshCw className={loadingPosts ? "animate-spin" : ""} size={14} /> Actualizar
             </button>
           </div>
 
-          {loadingPosts ? <p>Cargando publicaciones...</p> : (
+          {loadingPosts ? (
+            <div style={{textAlign: 'center', padding: 30}}>Cargando publicaciones...</div>
+          ) : (
             posts.length === 0 ? (
-              <div style={{padding: 30, textAlign: 'center', color: 'var(--text-secondary)'}}>
-                No tenés publicaciones agendadas por el momento. Creá una nueva desde la pestaña "Creador IA".
+              <div style={{textAlign: 'center', padding: 30, color: 'var(--text-secondary)'}}>
+                No hay publicaciones agendadas o creadas.
               </div>
             ) : (
-              <div className="data-table-wrapper">
-                <table className="data-table">
+              <div style={{overflowX: 'auto'}}>
+                <table className="table" style={{width: '100%', fontSize: '0.85rem'}}>
                   <thead>
                     <tr>
-                      <th style={{width: 50}}>Media</th>
-                      <th>Título & Copy</th>
-                      <th style={{width: 100}}>Formato</th>
-                      <th style={{width: 120}}>Redes</th>
-                      <th style={{width: 130}}>Programado para</th>
-                      <th style={{width: 100}}>Estado</th>
-                      <th style={{width: 130}}>Acciones</th>
+                      <th style={{width: 60}}>Medio</th>
+                      <th>Título / Copy</th>
+                      <th>Tipo</th>
+                      <th>Redes</th>
+                      <th>Programado</th>
+                      <th>Estado</th>
+                      <th>Acciones</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -562,7 +640,233 @@ export default function Marketing() {
         </div>
       )}
 
-      {/* TAB 3: Configuración de Redes */}
+      {/* TAB 3: Inbox de Comentarios */}
+      {activeTab === 'comments' && (
+        <div style={{display: 'flex', flexDirection: 'column', gap: 20}}>
+          <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
+            <h3 style={{margin: 0, display: 'flex', alignItems: 'center', gap: 8}}>
+              <MessageSquare size={20} style={{color: 'var(--accent-blue)'}} />
+              Inbox de Comentarios (Instagram & Facebook)
+            </h3>
+            <button 
+              className="btn" 
+              onClick={fetchComments}
+              disabled={loadingComments}
+              style={{backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)', border: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', gap: 6}}
+            >
+              <RefreshCw className={loadingComments ? "animate-spin" : ""} size={14} />
+              {loadingComments ? 'Sincronizando...' : 'Actualizar Comentarios'}
+            </button>
+          </div>
+
+          {loadingComments ? (
+            <div style={{textAlign: 'center', padding: 40, color: 'var(--text-secondary)'}}>
+              <RefreshCw className="animate-spin" size={24} style={{marginBottom: 10}} />
+              <div>Obteniendo comentarios de Instagram y Facebook...</div>
+            </div>
+          ) : (
+            (!commentsData.instagram?.length && !commentsData.facebook?.length) ? (
+              <div className="card" style={{textAlign: 'center', padding: 40, color: 'var(--text-secondary)'}}>
+                <MessageSquare size={36} style={{marginBottom: 10, opacity: 0.5}} />
+                <h4>No se encontraron comentarios recientes</h4>
+                <p style={{fontSize: '0.85rem'}}>Verificá que tus publicaciones tengan comentarios o que tus credenciales de Meta incluyan permisos de lectura de comentarios.</p>
+              </div>
+            ) : (
+              <div style={{display: 'flex', flexDirection: 'column', gap: 20}}>
+                {/* Section Instagram */}
+                {commentsData.instagram?.length > 0 && (
+                  <div>
+                    <h4 style={{marginBottom: 15, display: 'flex', alignItems: 'center', gap: 8, color: '#e1306c'}}>
+                      📸 Instagram ({commentsData.instagram.reduce((acc, p) => acc + (p.comments?.length || 0), 0)} comentarios)
+                    </h4>
+                    <div style={{display: 'flex', flexDirection: 'column', gap: 15}}>
+                      {commentsData.instagram.map((post, pIdx) => (
+                        <div key={`ig-${pIdx}`} className="card" style={{padding: 15, borderLeft: '4px solid #e1306c'}}>
+                          {/* Post Header */}
+                          <div style={{display: 'flex', gap: 12, alignItems: 'center', marginBottom: 12, paddingBottom: 10, borderBottom: '1px solid var(--border-color)'}}>
+                            {post.media_url ? (
+                              <img src={post.media_url} alt="" style={{width: 44, height: 44, objectFit: 'cover', borderRadius: 6}} />
+                            ) : (
+                              <div style={{width: 44, height: 44, backgroundColor: 'var(--bg-dark)', borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center'}}>
+                                <ImageIcon size={20} />
+                              </div>
+                            )}
+                            <div style={{flex: 1}}>
+                              <div style={{fontSize: '0.85rem', fontWeight: 600, maxLine: 1, lineClamp: 1, display: '-webkit-box', WebkitLineClamp: 1, WebkitBoxOrient: 'vertical', overflow: 'hidden'}}>
+                                {post.caption || 'Publicación sin título'}
+                              </div>
+                              <div style={{fontSize: '0.75rem', color: 'var(--text-secondary)'}}>
+                                {post.timestamp ? new Date(post.timestamp).toLocaleString('es-AR') : ''}
+                              </div>
+                            </div>
+                            {post.permalink && (
+                              <a href={post.permalink} target="_blank" rel="noreferrer" className="btn-icon" style={{color: 'var(--accent-blue)'}} title="Ver en Instagram">
+                                <ExternalLink size={16} />
+                              </a>
+                            )}
+                          </div>
+
+                          {/* Comments List */}
+                          <div style={{display: 'flex', flexDirection: 'column', gap: 12}}>
+                            {post.comments.map((c) => (
+                              <div key={c.id} style={{backgroundColor: 'var(--bg-dark)', padding: 12, borderRadius: 8}}>
+                                <div style={{display: 'flex', justifyContent: 'space-between', marginBottom: 4}}>
+                                  <span style={{fontWeight: 700, fontSize: '0.82rem', color: 'var(--accent-blue)'}}>
+                                    @{c.username || 'usuario'}
+                                  </span>
+                                  <span style={{fontSize: '0.72rem', color: 'var(--text-secondary)'}}>
+                                    {c.timestamp ? new Date(c.timestamp).toLocaleString('es-AR', { dateStyle: 'short', timeStyle: 'short' }) : ''}
+                                  </span>
+                                </div>
+                                <div style={{fontSize: '0.85rem', marginBottom: 10, color: 'var(--text-primary)'}}>
+                                  {c.text}
+                                </div>
+
+                                {/* Existing Replies */}
+                                {c.replies?.data?.map(rep => (
+                                  <div key={rep.id} style={{marginLeft: 15, padding: '6px 10px', backgroundColor: 'var(--bg-card)', borderRadius: 6, marginBottom: 8, borderLeft: '2px solid var(--accent-emerald)', fontSize: '0.8rem'}}>
+                                    <strong style={{color: 'var(--accent-emerald)'}}>@{rep.username || 'Tu cuenta'}:</strong> {rep.text}
+                                  </div>
+                                ))}
+
+                                {/* Reply Input Box */}
+                                <div style={{display: 'flex', gap: 8, marginTop: 8}}>
+                                  <input 
+                                    type="text" 
+                                    placeholder={`Responder a @${c.username || 'usuario'}...`}
+                                    value={replyInputs[c.id] || ''}
+                                    onChange={e => setReplyInputs({ ...replyInputs, [c.id]: e.target.value })}
+                                    style={{flex: 1, padding: '6px 10px', fontSize: '0.82rem', borderRadius: 6, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)'}}
+                                  />
+                                  <button 
+                                    className="btn" 
+                                    onClick={() => handleAISuggestReply(c.text, post.caption, c.username, c.id)}
+                                    disabled={suggestingId === c.id}
+                                    style={{padding: '4px 8px', fontSize: '0.75rem', backgroundColor: 'var(--bg-card)', color: 'var(--accent-orange)', border: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', gap: 4}}
+                                    title="Sugerir respuesta con Gemini IA"
+                                  >
+                                    <Sparkles size={12} />
+                                    {suggestingId === c.id ? 'IA...' : 'Sugerir IA'}
+                                  </button>
+                                  <button 
+                                    className="btn" 
+                                    onClick={() => handleReplyComment('instagram', c.id)}
+                                    disabled={replyingId === c.id || !replyInputs[c.id]}
+                                    style={{padding: '4px 10px', fontSize: '0.75rem', backgroundColor: 'var(--accent-blue)', color: '#fff', display: 'flex', alignItems: 'center', gap: 4}}
+                                  >
+                                    <Send size={12} />
+                                    {replyingId === c.id ? 'Enviando...' : 'Responder'}
+                                  </button>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Section Facebook */}
+                {commentsData.facebook?.length > 0 && (
+                  <div>
+                    <h4 style={{marginBottom: 15, display: 'flex', alignItems: 'center', gap: 8, color: '#1877f2'}}>
+                      📘 Facebook ({commentsData.facebook.reduce((acc, p) => acc + (p.comments?.length || 0), 0)} comentarios)
+                    </h4>
+                    <div style={{display: 'flex', flexDirection: 'column', gap: 15}}>
+                      {commentsData.facebook.map((post, pIdx) => (
+                        <div key={`fb-${pIdx}`} className="card" style={{padding: 15, borderLeft: '4px solid #1877f2'}}>
+                          {/* Post Header */}
+                          <div style={{display: 'flex', gap: 12, alignItems: 'center', marginBottom: 12, paddingBottom: 10, borderBottom: '1px solid var(--border-color)'}}>
+                            {post.picture ? (
+                              <img src={post.picture} alt="" style={{width: 44, height: 44, objectFit: 'cover', borderRadius: 6}} />
+                            ) : (
+                              <div style={{width: 44, height: 44, backgroundColor: 'var(--bg-dark)', borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center'}}>
+                                <ImageIcon size={20} />
+                              </div>
+                            )}
+                            <div style={{flex: 1}}>
+                              <div style={{fontSize: '0.85rem', fontWeight: 600, maxLine: 1, lineClamp: 1, display: '-webkit-box', WebkitLineClamp: 1, WebkitBoxOrient: 'vertical', overflow: 'hidden'}}>
+                                {post.message || 'Publicación de Facebook'}
+                              </div>
+                              <div style={{fontSize: '0.75rem', color: 'var(--text-secondary)'}}>
+                                {post.created_time ? new Date(post.created_time).toLocaleString('es-AR') : ''}
+                              </div>
+                            </div>
+                            {post.permalink && (
+                              <a href={post.permalink} target="_blank" rel="noreferrer" className="btn-icon" style={{color: 'var(--accent-blue)'}} title="Ver en Facebook">
+                                <ExternalLink size={16} />
+                              </a>
+                            )}
+                          </div>
+
+                          {/* Comments List */}
+                          <div style={{display: 'flex', flexDirection: 'column', gap: 12}}>
+                            {post.comments.map((c) => (
+                              <div key={c.id} style={{backgroundColor: 'var(--bg-dark)', padding: 12, borderRadius: 8}}>
+                                <div style={{display: 'flex', justifyContent: 'space-between', marginBottom: 4}}>
+                                  <span style={{fontWeight: 700, fontSize: '0.82rem', color: '#1877f2'}}>
+                                    {c.from?.name || 'Usuario de Facebook'}
+                                  </span>
+                                  <span style={{fontSize: '0.72rem', color: 'var(--text-secondary)'}}>
+                                    {c.created_time ? new Date(c.created_time).toLocaleString('es-AR', { dateStyle: 'short', timeStyle: 'short' }) : ''}
+                                  </span>
+                                </div>
+                                <div style={{fontSize: '0.85rem', marginBottom: 10, color: 'var(--text-primary)'}}>
+                                  {c.message}
+                                </div>
+
+                                {/* Existing Replies */}
+                                {c.comments?.data?.map(rep => (
+                                  <div key={rep.id} style={{marginLeft: 15, padding: '6px 10px', backgroundColor: 'var(--bg-card)', borderRadius: 6, marginBottom: 8, borderLeft: '2px solid var(--accent-emerald)', fontSize: '0.8rem'}}>
+                                    <strong style={{color: 'var(--accent-emerald)'}}>{rep.from?.name || 'Página'}:</strong> {rep.message}
+                                  </div>
+                                ))}
+
+                                {/* Reply Input Box */}
+                                <div style={{display: 'flex', gap: 8, marginTop: 8}}>
+                                  <input 
+                                    type="text" 
+                                    placeholder={`Responder a ${c.from?.name || 'usuario'}...`}
+                                    value={replyInputs[c.id] || ''}
+                                    onChange={e => setReplyInputs({ ...replyInputs, [c.id]: e.target.value })}
+                                    style={{flex: 1, padding: '6px 10px', fontSize: '0.82rem', borderRadius: 6, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)'}}
+                                  />
+                                  <button 
+                                    className="btn" 
+                                    onClick={() => handleAISuggestReply(c.message, post.message, c.from?.name, c.id)}
+                                    disabled={suggestingId === c.id}
+                                    style={{padding: '4px 8px', fontSize: '0.75rem', backgroundColor: 'var(--bg-card)', color: 'var(--accent-orange)', border: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', gap: 4}}
+                                    title="Sugerir respuesta con Gemini IA"
+                                  >
+                                    <Sparkles size={12} />
+                                    {suggestingId === c.id ? 'IA...' : 'Sugerir IA'}
+                                  </button>
+                                  <button 
+                                    className="btn" 
+                                    onClick={() => handleReplyComment('facebook', c.id)}
+                                    disabled={replyingId === c.id || !replyInputs[c.id]}
+                                    style={{padding: '4px 10px', fontSize: '0.75rem', backgroundColor: 'var(--accent-blue)', color: '#fff', display: 'flex', alignItems: 'center', gap: 4}}
+                                  >
+                                    <Send size={12} />
+                                    {replyingId === c.id ? 'Enviando...' : 'Responder'}
+                                  </button>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )
+          )}
+        </div>
+      )}
+
+      {/* TAB 4: Configuración de Redes */}
       {activeTab === 'config' && (
         <div className="card" style={{maxWidth: 650}}>
           <h3 style={{marginTop: 0, marginBottom: 10}}>Conexión con Meta API (Instagram & Facebook)</h3>

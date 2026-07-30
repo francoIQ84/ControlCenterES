@@ -75,31 +75,128 @@ En el comercio moderno, gestionar Mercado Libre, una tienda online propia, factu
 
 ---
 
-### 6. 📢 Módulo de Marketing & Redes Sociales (Generador IA & Auto-Publicación)
+### 6. 📢 Módulo de Marketing, Redes Sociales & Inbox Unificado (IA Gemini)
 - **Redacción de Contenido con IA (Gemini)**:
   - Selección de producto del inventario -> elección de objetivo (*Promocional*, *Oferta*, *Educativo*) y tono (*Entusiasta*, *Profesional*, *Divertido*).
   - La IA redacta el título, copy con emojis y hashtags, e incluye una **idea de guión de 15 segundos para grabar el Reel**.
 - **Auto-Publicación Autónoma a Instagram & Facebook**:
-  - Integración nativa con la **Meta Graph API** para publicar fotos y **Reels de Instagram** y posts de **Páginas de Facebook**.
+  - Integración nativa con la **Meta Graph API** para publicar fotos y **Reels de Instagram** y posts en **Páginas de Facebook**.
+  - **Manejo Inteligente de Contenedores de Video (Polling)**: Consulta automática de estado (`status_code == 'FINISHED'`) antes de invocar la publicación final para evitar el error `Media ID is not available`.
+- **💬 Inbox Unificado de Comentarios (Social Inbox)**:
+  - Centralización de comentarios recibidos en publicaciones y Reels de **Instagram** (`@hidroponia_rosario`) y **Facebook** (`Hidroponía Rosario`).
+  - Respuestas directas desde el panel administrativo sin cambiar de aplicación.
+  - **Sugeridor de Respuestas con Gemini IA (`🪄 Sugerir IA`)**: Generación automática de respuestas comerciales personalizadas sobre stock, envíos y asesoramiento técnico.
 - **Programador & Daemon en Segundo Plano (`scheduler.py`)**:
-  - Hilo de ejecución exclusivo para Marketing (`marketing_publisher_loop`) que evalúa la cola de publicaciones **cada 30 segundos**. Al cumplirse la fecha/hora agendada, el sistema envía automáticamente el post a las redes sin demoras ni intervención manual.
-- **Edición de Borradores e Historial**:
-  - Permite cargar cualquier publicación (borrador, programada o fallida) en el formulario para modificar título, producto, texto, medio, formato o fecha antes de reprogramar o publicar.
+  - Hilo de ejecución exclusivo para Marketing (`marketing_publisher_loop`) que evalúa la cola **cada 30 segundos** y publica automáticamente.
 
-#### 🔑 Guía de Obtención de Credenciales de Meta (Instagram & Facebook):
-1. **Facebook Page ID**:
-   - Ingresar a [Meta Graph API Explorer](https://developers.facebook.com/tools/explorer/).
-   - En la consulta `me/accounts` -> Copiar la propiedad `"id"` de tu página de Facebook.
-2. **Instagram Business Account ID**:
-   - Tu cuenta de Instagram debe ser de tipo Profesional/Empresa vinculada a tu página de Facebook.
-   - En Graph API Explorer, consultar `{TU_FACEBOOK_PAGE_ID}?fields=instagram_business_account`.
-   - Copiar la propiedad `"id"` que aparece dentro de `instagram_business_account`.
-3. **Page Access Token (Token de la Página)**:
-   - En Graph API Explorer, agregar los permisos `pages_read_engagement`, `pages_manage_posts`, `pages_show_list` y `public_profile`.
-   - En el selector desplegable **User or Page**, seleccionar la **Página de Facebook** (ej. *Hidroponía Rosario*) para obtener el Token directo de administración. Esto resuelve el error Meta `(#200) Requires both pages_read_engagement and pages_manage_posts`.
-4. **Revisión de Uso de Datos (TOS / Data Use Checkup)**:
-   - En el [Panel de Apps de Meta Developers](https://developers.facebook.com/apps/), confirmar y aceptar los Términos de Servicio de la App para evitar el rechazo `(#100) Apps in the GK only need to pass TOS check`.
-5. Cargar el **Meta Access Token**, **Instagram Account ID** y **Facebook Page ID** en el panel administrativo (**Marketing > Configuración de Redes**).
+---
+
+#### 📘 Guía Completa Paso a Paso desde Cero: Configuración e Integración con Meta API (Instagram & Facebook)
+
+Esta guía detalla el proceso completo paso a paso para configurar tu entorno desde cero hasta dejar operativas las publicaciones autónomas y la lectura/respuesta de comentarios.
+
+**Datos del negocio de ejemplo:**
+- **Página de Facebook**: *Hidroponía Rosario*
+- **Cuenta Profesional de Instagram**: `@hidroponia_rosario`
+
+---
+
+##### 1️⃣ PASO 1: Vincular Instagram Profesional con la Fan Page en Meta Business Suite
+1. Ir a [business.facebook.com](https://business.facebook.com) e iniciar sesión con la cuenta de Facebook administradora de la página *Hidroponía Rosario*.
+2. Asegurarse de que la cuenta `@hidroponia_rosario` sea de tipo **Profesional / Empresa / Creador** (si es cuenta personal, en la app móvil de Instagram ir a `Configuración > Tipo de cuenta > Cambiar a cuenta profesional`).
+3. En **Meta Business Suite**:
+   - Ir a **Configuración del Negocio** -> **Cuentas de Instagram** -> **Agregar**.
+   - Iniciar sesión con `@hidroponia_rosario` y confirmar la vinculación a la página *Hidroponía Rosario*.
+
+---
+
+##### 2️⃣ PASO 2: Crear la Aplicación en Meta for Developers
+1. Ingresar al portal [developers.facebook.com](https://developers.facebook.com) e iniciar sesión.
+2. Hacer clic en **Mis Apps** (arriba a la derecha) -> **Crear App**.
+3. Seleccionar el tipo de aplicación:
+   - Elegir **Otros** -> Siguiente -> Seleccionar **Negocio (Business)**.
+4. Asignar un nombre a la app (ej: `ControlCenter ES Integration`) y asociarla al Portafolio Comercial del negocio (*Hidroponía Rosario*).
+5. Hacer clic en **Crear App**.
+
+---
+
+##### 3️⃣ PASO 3: Otorgar Permisos y Generar el Access Token en Graph API Explorer
+1. Ir a la herramienta [Meta Graph API Explorer](https://developers.facebook.com/tools/explorer/).
+2. En la esquina superior derecha:
+   - **Meta App**: Seleccionar la app recién creada (`ControlCenter ES Integration`).
+   - **User or Page**: Seleccionar **User Token**.
+3. En el panel lateral derecho **Permisos (Permissions)**, agregar los **7 permisos indispensables**:
+   - 📘 **Para Facebook**: `pages_show_list`, `pages_read_engagement`, `pages_manage_posts`, `pages_manage_engagement`.
+   - 📸 **Para Instagram**: `instagram_basic`, `instagram_content_publish`, `instagram_manage_comments`.
+4. Hacer clic en el botón azul **Generate Access Token**. Se abrirá una ventana emergente de Facebook para autorizar a la página *Hidroponía Rosario* e Instagram `@hidroponia_rosario`.
+5. Una vez autorizado, en el desplegable **User or Page**, seleccionar directamente la **Página de Facebook (Hidroponía Rosario)** para obtener el Token de administración directo de la página.
+
+---
+
+##### 4️⃣ PASO 4: Obtener los Identificadores Únicos (`FACEBOOK_PAGE_ID` e `INSTAGRAM_ACCOUNT_ID`)
+
+###### A. Obtener el `FACEBOOK_PAGE_ID`:
+En la consulta del Explorer, escribir:
+```http
+GET /me/accounts
+```
+Hacer clic en **Submit**. En la respuesta JSON, buscar la página *Hidroponía Rosario* y copiar el valor numérico de `"id"` (ej: `102938475612345`). Este es tu **Facebook Page ID**.
+
+###### B. Obtener el `INSTAGRAM_ACCOUNT_ID`:
+En la barra del Explorer, realizar la consulta enviando el ID de tu página de Facebook recién obtenido:
+```http
+GET /102938475612345?fields=instagram_business_account
+```
+Hacer clic en **Submit**. La API responderá con:
+```json
+{
+  "instagram_business_account": {
+    "id": "17841400012345678"
+  },
+  "id": "102938475612345"
+}
+```
+Copiar el valor numérico dentro de `instagram_business_account.id` (ej: `17841400012345678`). Este es tu **Instagram Business Account ID**.
+
+---
+
+##### 5️⃣ PASO 5: Generar un Token de Larga Duración (Long-Lived Page Access Token - 60 Días / Perpetuo)
+Los tokens generados en el Explorer vencen en 2 horas. Para usarlos en producción:
+1. Ir al panel de la App en Developers -> **Configuración de la App > Básica**.
+2. Copiar el **App ID** y la **Clave Secreta de la App (App Secret)**.
+3. En la barra de direcciones del navegador o postman, realizar la consulta reemplazando los valores:
+   ```http
+   GET https://graph.facebook.com/v19.0/oauth/access_token?grant_type=fb_exchange_token&client_id={APP_ID}&client_secret={APP_SECRET}&fb_exchange_token={USER_ACCESS_TOKEN_DEL_EXPLORER}
+   ```
+4. La respuesta entregará un `access_token` de larga duración válido por **60 días**.
+5. *(Recomendado para Token Perpetuo)*: Crear un **System User** (Usuario de Sistema) en Meta Business Settings -> Usuarios de Sistema -> Generar Token permanente.
+
+---
+
+##### 6️⃣ PASO 6: Cargar las Credenciales en el Panel de ControlCenterES
+1. Ingresar al panel de **ControlCenterES** -> **Marketing & Redes Sociales**.
+2. Ir a la pestaña **`⚙️ Configuración de Redes`**.
+3. Completar los 3 campos:
+   - **Meta Access Token**: Pegar el Token de Larga Duración (empieza con `EAA...`).
+   - **Instagram Business Account ID**: Pegar el ID numérico de Instagram (`17841400012345678`).
+   - **Facebook Page ID**: Pegar el ID numérico de Facebook (`102938475612345`).
+4. Presionar **`💾 Guardar Credenciales de Meta`**.
+
+---
+
+##### 7️⃣ PASO 7: Mecánica de Funcionamiento y Verificación
+
+- **Publicación en Facebook**:
+  - Llamada directa (1 paso): `POST /{PAGE_ID}/feed`, `/{PAGE_ID}/photos` o `/{PAGE_ID}/videos`.
+- **Publicación en Instagram (Fotos & Reels)**:
+  - Proceso de 2 pasos con Polling de estado:
+    1. **Crear Contenedor**: `POST /{INSTAGRAM_ACCOUNT_ID}/media` (recibe `CREATION_ID`).
+    2. **Polling de Estado**: `GET /{CREATION_ID}?fields=status_code,status` hasta recibir `"FINISHED"`.
+    3. **Publicar**: `POST /{INSTAGRAM_ACCOUNT_ID}/media_publish`.
+- **Inbox de Comentarios & Asistente IA**:
+  - `GET /comments`: Consulta publicaciones y comentarios recibidos en Instagram y Facebook.
+  - `POST /comments/reply`: Responde directamente al comentario en Meta API (`/{comment_id}/replies`).
+  - `POST /comments/ai-suggest`: Genera respuestas personalizadas con Gemini IA.
 
 ---
 
