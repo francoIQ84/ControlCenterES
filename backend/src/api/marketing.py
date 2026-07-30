@@ -17,6 +17,11 @@ class GeneratePostRequest(BaseModel):
     objective: Optional[str] = "promocional"  # promocional, educativo, oferta
     tone: Optional[str] = "entusiasta"        # profesional, entusiasta, divertido
 
+class GenerateVideoRequest(BaseModel):
+    product_ml_id: str
+    prompt: Optional[str] = ""
+    generator_type: Optional[str] = "gemini_canvas" # gemini_canvas, google_veo, pollinations
+
 class CreatePostRequest(BaseModel):
     id: Optional[int] = None
     product_ml_id: Optional[str] = None
@@ -122,6 +127,41 @@ def generate_ai_post_copy(req: GeneratePostRequest, _=Depends(verify_session)):
             continue
 
     raise HTTPException(status_code=500, detail=f"Error al generar post con Gemini IA: {last_err}")
+
+@router.post("/generate-video")
+def generate_ai_video(req: GenerateVideoRequest, _=Depends(verify_session)):
+    product = database.get_product_by_ml_id(req.product_ml_id)
+    if not product:
+        raise HTTPException(status_code=404, detail="Producto no encontrado")
+
+    from src.utils.video_generator import (
+        generate_video_script_with_gemini, 
+        generate_video_with_google_veo, 
+        generate_video_with_pollinations
+    )
+
+    gen_type = (req.generator_type or "gemini_canvas").lower()
+
+    try:
+        if gen_type == "google_veo":
+            res = generate_video_with_google_veo(req.prompt or f"Reel de {product.get('title')}", product.get("images"))
+            if not res.get("success"):
+                raise HTTPException(status_code=400, detail=res.get("error", "Error con Google Veo"))
+            return res
+        elif gen_type == "pollinations":
+            res = generate_video_with_pollinations(req.prompt or f"{product.get('title')} hydroponics")
+            return res
+        else: # gemini_canvas
+            script = generate_video_script_with_gemini(product, req.prompt)
+            return {
+                "success": True,
+                "engine": "gemini_canvas",
+                "script": script
+            }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error al generar video con IA: {str(e)}")
 
 @router.get("/posts")
 def list_marketing_posts(status: Optional[str] = None, limit: int = 100, _=Depends(verify_session)):

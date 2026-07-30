@@ -59,35 +59,68 @@ En el comercio moderno, gestionar Mercado Libre, una tienda online propia, factu
 - **Soporte Multicondición Fiscal**:
   - **Monotributo**: Emisión de **Factura C (`COD. 011`)**.
   - **Responsable Inscripto**: Emisión de **Factura B (`COD. 006`)** a Consumidores Finales y **Factura A (`COD. 001`)** a CUITs.
-- **Consulta al Padrón AFIP en Tiempo Real (`PersonaServiceA5`)**: Al ingresar un CUIT, autocompleta la Razón Social y Domicilio Fiscal oficial.
+- **Consulta al Padrón AFIP en Tiempo Real (`PersonaServiceA5`)**: Al ingresar un CUIT, autocompleta la Razón Social, Domicilio Fiscal y la **Condición frente al IVA del Comprador**.
+- **Selector de Condición IVA del Comprador**: Permite visualizar y seleccionar la condición frente al IVA (`IVA Exento`, `Responsable Inscripto`, `Responsable Monotributo`, `Consumidor Final`) para imprimirla en la factura.
 - **Desglose de IVA 21%**: Generación correcta de campos `<AlicIva>`, `ImpNeto` e `ImpIVA` requeridos por la AFIP en Facturas A.
 - **Factura B Automática (Consumidor Final)**: Fallback inteligente si el comprador no presenta CUIT.
 - **Generación de PDF Oficial**: Descarga e impresión de comprobantes fiscales normativos.
 
 ---
 
-### 5. 🤖 Asistente Virtual de WhatsApp con IA (Gemini)
-- **Extractor & Importador de Copias de Seguridad de WhatsApp**:
-  - Permite subir archivos de copia de seguridad local (`msgstore.db` / `msgstore.db.crypt14`) o chats exportados (`.txt`) directamente desde el panel de control.
-  - **¿Cómo obtener la copia en tu celular (Android)?**:
-    Abre el explorador de archivos de tu teléfono y ve a: `Almacenamiento Interno > Android > media > com.whatsapp > WhatsApp > Databases` y copia el archivo `msgstore.db.crypt14` o `msgstore.db`.
-  - **Exportar Chat Individual**: En WhatsApp > Abrir Chat > 3 Puntos > Más > Exportar chat > Sin archivos multimedia.
+### 5. 🔑 Configuración de la Clave de API de Google Gemini (Google AI Studio / Google Cloud)
+
+Para habilitar la **generación de contenido con IA**, el **Generador de Videos & Reels**, la **atención al cliente por WhatsApp** y las **respuestas automáticas en redes**, se requiere configurar una API Key de Gemini:
+
+#### A. ¿Cómo obtener tu API Key de Gemini (Gratis)?
+1. Ingresá a [Google AI Studio (aistudio.google.com)](https://aistudio.google.com/).
+2. Inicia sesión con tu cuenta de Google o Google Cloud.
+3. Hacé clic en **Get API key** -> **Create API key in new project**.
+4. Copiá la clave alfanumérica generada (empieza con `AIzaSy...`).
+
+*(Opcional para Google Veo)*: Si tu cuenta de Google Cloud / AI Studio tiene habilitado acceso a modelos de video como **Google Veo (`veo-2.0-generate-video`)** o **Imagen Video (`imagen-3.0-generate-002`)**, la misma clave te permitirá generar animaciones fotorrealistas de IA.
+
+#### B. ¿Dónde cargar la API Key en ControlCenterES?
+1. En el panel administrativo, ir a **Ajustes de WhatsApp / Chatbot** o a la pestaña **Marketing & Redes Sociales**.
+2. En el campo **Gemini API Key**, pegá tu clave `AIzaSy...`.
+3. Guardá los cambios. El sistema la validará y la utilizará automáticamente para Gemini 3.6 Flash, Veo y el Chatbot.
 
 ---
 
-### 6. 📢 Módulo de Marketing, Redes Sociales & Inbox Unificado (IA Gemini)
-- **Redacción de Contenido con IA (Gemini)**:
-  - Selección de producto del inventario -> elección de objetivo (*Promocional*, *Oferta*, *Educativo*) y tono (*Entusiasta*, *Profesional*, *Divertido*).
-  - La IA redacta el título, copy con emojis y hashtags, e incluye una **idea de guión de 15 segundos para grabar el Reel**.
-- **Auto-Publicación Autónoma a Instagram & Facebook**:
-  - Integración nativa con la **Meta Graph API** para publicar fotos y **Reels de Instagram** y posts en **Páginas de Facebook**.
-  - **Manejo Inteligente de Contenedores de Video (Polling)**: Consulta automática de estado (`status_code == 'FINISHED'`) antes de invocar la publicación final para evitar el error `Media ID is not available`.
-- **💬 Inbox Unificado de Comentarios (Social Inbox)**:
-  - Centralización de comentarios recibidos en publicaciones y Reels de **Instagram** (`@hidroponia_rosario`) y **Facebook** (`Hidroponía Rosario`).
-  - Respuestas directas desde el panel administrativo sin cambiar de aplicación.
-  - **Sugeridor de Respuestas con Gemini IA (`🪄 Sugerir IA`)**: Generación automática de respuestas comerciales personalizadas sobre stock, envíos y asesoramiento técnico.
-- **Programador & Daemon en Segundo Plano (`scheduler.py`)**:
-  - Hilo de ejecución exclusivo para Marketing (`marketing_publisher_loop`) que evalúa la cola **cada 30 segundos** y publica automáticamente.
+### 6. 🎬 Generador de Videos & Reels por IA (10 a 30 segundos HD)
+
+El módulo de **Marketing** incluye un estudio completo para crear, previsualizar y publicar Reels animados sin costo de servidor:
+
+#### A. ¿Cómo operar el Generador de Videos?
+1. Ir a **Marketing & Redes Sociales** -> pestaña **Creador IA & Reels**.
+2. **Seleccionar un producto** del inventario (se cargarán automáticamente sus fotos HD y su precio).
+3. **Escribir un Prompt / Instrucción breve para el video** (ej: *"Resaltar oferta de primavera, 15% OFF en efectivo y envío gratis a Rosario"*).
+4. **Elegir el Generador de Video IA**:
+   - 🎬 **Gemini IA + Comercial HD (Fotos HD + Precios - Gratis & 0 Costo de Servidor)**: Gemini 3.6 Flash redacta el guión comercial y el motor visual ensambla las fotos HD del producto, marca "Hidroponía Rosario", precio animado, badges de oferta y transiciones fluidas a 60 FPS.
+   - 🌟 **Google Veo / Imagen Video (Vía Gemini API Key)**: Conexión directa con la API oficial de video de Google.
+   - 🎨 **Pollinations AI Generativo (Gratis)**: Clips animativos de código abierto.
+5. Presionar **`🎬 Generar y Previsualizar Reel con IA`**.
+
+#### B. Previsualización y Acciones Disponibles:
+- **Reproductor en Pantalla**: Muestra el video en formato vertical 9:16 (1080x1920) con controles de Play, Pausa y Pantalla Completa.
+- **`✨ Usar para Post`**: Asigna la URL del video al editor de publicación y configura el tipo de post automáticamente como **Reel**.
+- **`🔄 Alternativa`**: Vuelve a ejecutar la IA para obtener otra propuesta diferente.
+- **`⬇️ Descargar`**: Guarda el archivo de video (.mp4 / .webm) directamente en tu computadora.
+
+---
+
+### 7. 🖼️ Gestión de Imágenes HD de Mercado Libre y Carga desde la PC
+
+- **Alta Calidad HD de Mercado Libre (`-O.jpg`)**: El sistema convierte automáticamente las miniaturas de Mercado Libre (`-I.jpg` de baja resolución) a la versión original de máxima calidad (`-O.jpg`, 1200x1200px+) y fuerza protocolo seguro `https://`.
+- **Galería de Selección del Producto**: Al elegir un producto en Marketing, podés hacer clic en cualquiera de sus fotos HD para usarla en el post.
+- **Subida de Archivos desde la PC (`📁 Subir de la PC`)**: Podés hacer clic en el botón de carga y seleccionar cualquier foto o video desde tu computadora para adjuntarlo a la publicación.
+
+---
+
+### 8. 📢 Módulo de Marketing, Redes Sociales & Inbox Unificado
+- **Redacción de Contenido con IA (Gemini)**: Selección de objetivo y tono para redactar títulos, copys y hashtags.
+- **Auto-Publicación Autónoma a Instagram & Facebook**: Integración nativa con Meta Graph API. Si se intenta publicar una imagen en formato Reel, el sistema la adapta automáticamente como Post de Foto en Instagram sin dar error.
+- **💬 Inbox Unificado de Comentarios (Social Inbox)**: Centralización de comentarios de Instagram y Facebook con sugerencias inteligentes por Gemini IA.
+- **Programador & Daemon en Segundo Plano (`scheduler.py`)**: Evaluación de la cola cada 30 segundos.
 
 ---
 

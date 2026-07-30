@@ -32,6 +32,13 @@ export default function Marketing() {
   const [tone, setTone] = useState('entusiasta')
   const [generating, setGenerating] = useState(false)
   const [generatedData, setGeneratedData] = useState(null)
+
+  // AI Video Generator state
+  const [videoPrompt, setVideoPrompt] = useState('')
+  const [videoEngine, setVideoEngine] = useState('gemini_canvas')
+  const [generatingVideo, setGeneratingVideo] = useState(false)
+  const [generatedVideoUrl, setGeneratedVideoUrl] = useState('')
+  const [videoScriptData, setVideoScriptData] = useState(null)
   
   const [postTitle, setPostTitle] = useState('')
   const [postType, setPostType] = useState('post') // 'post', 'reel', 'story'
@@ -266,6 +273,252 @@ export default function Marketing() {
       alert("Error de conexión: " + err.message)
     } finally {
       setGenerating(false)
+    }
+  }
+
+  const renderReelCanvasVideo = async (script) => {
+    return new Promise(async (resolve) => {
+      const width = 1080
+      const height = 1920
+      const canvas = document.createElement('canvas')
+      canvas.width = width
+      canvas.height = height
+      const ctx = canvas.getContext('2d')
+
+      const imagesList = script.images || []
+      const loadedImgs = await Promise.all(
+        imagesList.map(src => new Promise(res => {
+          const img = new Image()
+          img.crossOrigin = 'anonymous'
+          img.onload = () => res(img)
+          img.onerror = () => res(null)
+          img.src = src
+        }))
+      )
+      const validImgs = loadedImgs.filter(Boolean)
+
+      const scenes = script.scenes || [
+        { duration_sec: 4, badge_text: 'PROMO EXCLUSIVA', main_headline: script.product_title || 'Hidroponía Rosario', sub_text: '¡Conocé el stock!' },
+        { duration_sec: 4, badge_text: 'PRECIO ESPECIAL', main_headline: `$ ${script.product_price?.toLocaleString() || ''}`, sub_text: 'Envíos a todo el país' },
+        { duration_sec: 4, badge_text: 'COMPRÁ HOY', main_headline: 'Hidroponía Rosario', sub_text: 'Contactanos por WhatsApp' }
+      ]
+
+      const fps = 30
+      const totalDurationSec = scenes.reduce((acc, s) => acc + (s.duration_sec || 4), 0)
+      const stream = canvas.captureStream(fps)
+
+      let recorder
+      const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp9')
+        ? 'video/webm;codecs=vp9'
+        : 'video/webm'
+
+      try {
+        recorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 4000000 })
+      } catch(e) {
+        recorder = new MediaRecorder(stream)
+      }
+
+      const chunks = []
+      recorder.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data) }
+
+      recorder.onstop = async () => {
+        const blob = new Blob(chunks, { type: 'video/webm' })
+        const blobUrl = URL.createObjectURL(blob)
+        
+        try {
+          const formData = new FormData()
+          const file = new File([blob], `reel_${Date.now()}.webm`, { type: 'video/webm' })
+          formData.append('file', file)
+          const uploadRes = await fetch('/api/media/upload?path=reels', { method: 'POST', body: formData })
+          const uploadData = await uploadRes.json()
+          if (uploadRes.ok && uploadData.url) {
+            setMediaUrl(uploadData.url)
+            setPostType('reel')
+          }
+        } catch(e) {
+          console.warn("Error uploading reel:", e)
+        }
+        resolve(blobUrl)
+      }
+
+      recorder.start()
+
+      let currentSceneIdx = 0
+      let sceneStartTime = Date.now()
+      let overallStartTime = Date.now()
+
+      const drawFrame = () => {
+        const now = Date.now()
+        const elapsedTotal = (now - overallStartTime) / 1000
+        const elapsedScene = (now - sceneStartTime) / 1000
+
+        const currentScene = scenes[currentSceneIdx] || scenes[0]
+        const sceneDuration = currentScene.duration_sec || 4
+
+        if (elapsedScene >= sceneDuration) {
+          currentSceneIdx++
+          sceneStartTime = Date.now()
+          if (currentSceneIdx >= scenes.length) {
+            recorder.stop()
+            return
+          }
+        }
+
+        // 1. Background Gradient
+        const grad = ctx.createLinearGradient(0, 0, 0, height)
+        grad.addColorStop(0, '#041c14')
+        grad.addColorStop(0.5, '#050c18')
+        grad.addColorStop(1, '#0b1926')
+        ctx.fillStyle = grad
+        ctx.fillRect(0, 0, width, height)
+
+        // 2. Product Image with Zoom
+        const activeImg = validImgs[currentSceneIdx % validImgs.length] || validImgs[0]
+        if (activeImg) {
+          const scale = 1.02 + (elapsedScene / sceneDuration) * 0.08
+          const imgW = activeImg.width
+          const imgH = activeImg.height
+          const targetW = 900 * scale
+          const targetH = (imgH / imgW) * targetW
+
+          ctx.save()
+          ctx.beginPath()
+          if (ctx.roundRect) ctx.roundRect(90, 260, 900, 900, 32)
+          else ctx.rect(90, 260, 900, 900)
+          ctx.clip()
+
+          ctx.fillStyle = '#ffffff'
+          ctx.fillRect(90, 260, 900, 900)
+
+          const xPos = 90 + (900 - targetW) / 2
+          const yPos = 260 + (900 - targetH) / 2
+          ctx.drawImage(activeImg, xPos, yPos, targetW, targetH)
+          ctx.restore()
+
+          ctx.lineWidth = 6
+          ctx.strokeStyle = '#10b981'
+          ctx.beginPath()
+          if (ctx.roundRect) ctx.roundRect(90, 260, 900, 900, 32)
+          else ctx.rect(90, 260, 900, 900)
+          ctx.stroke()
+        }
+
+        // 3. Header Brand Bar
+        ctx.fillStyle = 'rgba(16, 185, 129, 0.25)'
+        ctx.fillRect(90, 100, 900, 90)
+        ctx.strokeStyle = '#10b981'
+        ctx.lineWidth = 2
+        ctx.strokeRect(90, 100, 900, 90)
+
+        ctx.fillStyle = '#ffffff'
+        ctx.font = 'bold 36px sans-serif'
+        ctx.textAlign = 'center'
+        ctx.fillText('🌱 HIDROPONÍA ROSARIO', width / 2, 158)
+
+        // 4. Badge
+        if (currentScene.badge_text) {
+          const badgeY = 1220
+          ctx.fillStyle = '#f59e0b'
+          ctx.beginPath()
+          if (ctx.roundRect) ctx.roundRect(width / 2 - 260, badgeY, 520, 64, 32)
+          else ctx.rect(width / 2 - 260, badgeY, 520, 64)
+          ctx.fill()
+
+          ctx.fillStyle = '#000000'
+          ctx.font = 'bold 32px sans-serif'
+          ctx.fillText(currentScene.badge_text, width / 2, badgeY + 43)
+        }
+
+        // 5. Headline
+        if (currentScene.main_headline) {
+          ctx.fillStyle = '#ffffff'
+          ctx.font = 'bold 50px sans-serif'
+          ctx.textAlign = 'center'
+          ctx.fillText(currentScene.main_headline, width / 2, 1370)
+        }
+
+        // 6. Subtext
+        if (currentScene.sub_text) {
+          ctx.fillStyle = '#94a3b8'
+          ctx.font = '36px sans-serif'
+          ctx.textAlign = 'center'
+          ctx.fillText(currentScene.sub_text, width / 2, 1450)
+        }
+
+        // 7. Price Badge
+        if (script.product_price) {
+          const pillY = 1540
+          const pillWidth = 560
+          ctx.fillStyle = '#10b981'
+          ctx.beginPath()
+          if (ctx.roundRect) ctx.roundRect(width / 2 - pillWidth / 2, pillY, pillWidth, 96, 48)
+          else ctx.rect(width / 2 - pillWidth / 2, pillY, pillWidth, 96)
+          ctx.fill()
+
+          ctx.fillStyle = '#ffffff'
+          ctx.font = 'bold 44px sans-serif'
+          ctx.fillText(`$ ${script.product_price.toLocaleString('es-AR')}`, width / 2, pillY + 63)
+        }
+
+        // 8. Call to action footer
+        ctx.fillStyle = '#3b82f6'
+        ctx.font = 'bold 32px sans-serif'
+        ctx.fillText('📲 Hacé clic y comprá en HidroponiaRosario.com', width / 2, 1750)
+
+        // Progress bar
+        ctx.fillStyle = '#10b981'
+        ctx.fillRect(0, height - 12, (elapsedTotal / totalDurationSec) * width, 12)
+
+        requestAnimationFrame(drawFrame)
+      }
+
+      drawFrame()
+    })
+  }
+
+  const handleGenerateAIVideo = async () => {
+    if (!selectedProduct) {
+      alert("Por favor selecciona un producto del inventario para generar el Reel con IA.")
+      return
+    }
+    setGeneratingVideo(true)
+    setGeneratedVideoUrl('')
+    setVideoScriptData(null)
+
+    try {
+      const res = await fetch('/api/marketing/generate-video', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          product_ml_id: selectedProduct,
+          prompt: videoPrompt,
+          generator_type: videoEngine
+        })
+      })
+      const data = await res.json()
+      if (res.ok && data.success) {
+        if (data.engine === 'google_veo' || data.engine === 'pollinations') {
+          setGeneratedVideoUrl(data.video_url)
+          setMediaUrl(data.video_url)
+          setPostType('reel')
+        } else if (data.script) {
+          setVideoScriptData(data.script)
+          if (data.script.full_caption) {
+            setCaption(data.script.full_caption)
+          }
+          if (data.script.video_title) {
+            setPostTitle(data.script.video_title)
+          }
+          const videoBlobUrl = await renderReelCanvasVideo(data.script)
+          setGeneratedVideoUrl(videoBlobUrl)
+        }
+      } else {
+        alert("Error al generar video: " + (data.detail || data.error || "Error desconocido"))
+      }
+    } catch(err) {
+      alert("Error de conexión al generar video: " + err.message)
+    } finally {
+      setGeneratingVideo(false)
     }
   }
 
@@ -537,6 +790,101 @@ export default function Marketing() {
                   </div>
                 </div>
               )}
+
+              {/* Generador de Video / Reel IA Card */}
+              <div style={{
+                marginTop: 10,
+                padding: 15,
+                borderRadius: 10,
+                backgroundColor: 'rgba(59, 130, 246, 0.06)',
+                border: '1px solid rgba(59, 130, 246, 0.3)',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 12
+              }}>
+                <div style={{fontSize: '0.88rem', fontWeight: 700, color: 'var(--accent-blue)', display: 'flex', alignItems: 'center', gap: 8}}>
+                  <Video size={18} /> 🎬 Generar Video / Reel con IA (15s HD)
+                </div>
+
+                <label style={{fontSize: '0.82rem', fontWeight: 600}}>Prompt / Instrucción para el Video:
+                  <input 
+                    type="text" 
+                    value={videoPrompt} 
+                    onChange={e => setVideoPrompt(e.target.value)} 
+                    placeholder="Ej: Enfocar en oferta especial, envío gratis a Rosario y kit de regalo..."
+                    style={{width: '100%', marginTop: 5, padding: '7px 10px', borderRadius: 6, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-dark)', color: 'var(--text-primary)', fontSize: '0.82rem'}}
+                  />
+                </label>
+
+                <label style={{fontSize: '0.82rem', fontWeight: 600}}>Generador de Video IA:
+                  <select 
+                    value={videoEngine} 
+                    onChange={e => setVideoEngine(e.target.value)}
+                    style={{width: '100%', marginTop: 5, padding: '6px 10px', borderRadius: 6, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-dark)', color: 'var(--text-primary)', fontSize: '0.82rem'}}
+                  >
+                    <option value="gemini_canvas">🎬 Gemini IA + Comercial HD (Fotos HD + Precios - Gratis)</option>
+                    <option value="google_veo">🌟 Google Veo / Imagen Video (Vía Gemini API Key)</option>
+                    <option value="pollinations">🎨 Pollinations AI Generativo (Gratis)</option>
+                  </select>
+                </label>
+
+                <button 
+                  className="btn" 
+                  onClick={handleGenerateAIVideo}
+                  disabled={generatingVideo || !selectedProduct}
+                  style={{backgroundColor: 'var(--accent-blue)', color: '#fff', padding: '10px', fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8}}
+                >
+                  {generatingVideo ? <RefreshCw className="animate-spin" size={16} /> : <Video size={16} />}
+                  {generatingVideo ? 'Creando y renderizando Reel...' : '🎬 Generar y Previsualizar Reel con IA'}
+                </button>
+
+                {/* Reproductor de Previsualización de Video */}
+                {generatedVideoUrl && (
+                  <div style={{marginTop: 10, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10, backgroundColor: '#000', padding: 12, borderRadius: 10}}>
+                    <div style={{fontSize: '0.78rem', color: 'var(--accent-emerald)', fontWeight: 700, width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
+                      <span>🎥 Previsualización del Reel Generado (1080x1920):</span>
+                      <span style={{fontSize: '0.7rem', color: 'var(--text-secondary)'}}>Listo para Instagram/Facebook</span>
+                    </div>
+
+                    <video 
+                      src={generatedVideoUrl} 
+                      controls 
+                      autoPlay 
+                      loop 
+                      style={{maxHeight: 360, maxWidth: '100%', borderRadius: 8, boxShadow: '0 4px 16px rgba(0,0,0,0.6)', border: '2px solid var(--accent-blue)'}} 
+                    />
+
+                    <div style={{display: 'flex', gap: 8, width: '100%', marginTop: 5}}>
+                      <button 
+                        className="btn" 
+                        onClick={() => {
+                          setMediaUrl(generatedVideoUrl)
+                          setPostType('reel')
+                          alert("¡Video asignado a la publicación como Reel!")
+                        }}
+                        style={{flex: 1, padding: '6px 10px', fontSize: '0.75rem', backgroundColor: 'var(--accent-emerald)', color: '#fff', fontWeight: 600}}
+                      >
+                        ✨ Usar para Post
+                      </button>
+                      <button 
+                        className="btn" 
+                        onClick={handleGenerateAIVideo}
+                        style={{flex: 1, padding: '6px 10px', fontSize: '0.75rem', backgroundColor: 'var(--bg-dark)', color: 'var(--text-primary)', border: '1px solid var(--border-color)'}}
+                      >
+                        🔄 Alternativa
+                      </button>
+                      <a 
+                        href={generatedVideoUrl} 
+                        download="reel_hidroponia.webm"
+                        className="btn" 
+                        style={{padding: '6px 10px', fontSize: '0.75rem', backgroundColor: 'var(--bg-dark)', color: 'var(--accent-blue)', border: '1px solid var(--border-color)', textDecoration: 'none', display: 'flex', alignItems: 'center'}}
+                      >
+                        ⬇️ Descargar
+                      </a>
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
 
