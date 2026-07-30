@@ -2203,27 +2203,42 @@ def get_system_notifications():
             except Exception as err:
                 print("[Database] Error fetching INPI notifications:", err)
 
-            # 2. Nuevas Ventas Recientes (Últimas 24 horas)
+            # 2. Nuevas Ventas Recientes (Últimas ventas sincronizadas de MeLi, MP, Web, Local)
             try:
                 cursor.execute('''
-                    SELECT id, buyer_name, total_amount, status, created_at
-                    FROM sales
-                    WHERE created_at >= NOW() - INTERVAL '24 HOURS'
-                    ORDER BY created_at DESC
-                    LIMIT 5
+                    SELECT order_id, buyer_nickname, buyer_name, total_amount, source_platform, date_created
+                    FROM orders_cache
+                    ORDER BY date_created DESC
+                    LIMIT 10
                 ''')
                 sales_rows = cursor.fetchall()
                 for s in sales_rows:
-                    sale_id = s['id']
-                    buyer = s['buyer_name'] or 'Cliente'
+                    sale_id = s['order_id']
+                    buyer = s['buyer_name'] or s['buyer_nickname'] or 'Cliente'
                     total = float(s['total_amount'] or 0)
-                    time_str = s['created_at'].strftime('%H:%M hs') if s.get('created_at') else 'Hoy'
+                    platform = s['source_platform'] or 'Mercado Libre'
+                    raw_date = s.get('date_created')
+                    
+                    time_str = 'Hoy'
+                    if raw_date:
+                        try:
+                            clean_dt = str(raw_date).replace('Z', '')
+                            if 'T' in clean_dt:
+                                dt_part, tm_part = clean_dt.split('T')
+                                y, m, d = dt_part.split('-')
+                                time_hhmm = tm_part.split('.')[0][:5]
+                                time_str = f"{d}/{m} {time_hhmm} hs"
+                            else:
+                                time_str = str(raw_date)[:16]
+                        except Exception:
+                            time_str = 'Reciente'
+
                     notifications.append({
                         'id': f'sale_{sale_id}',
                         'category': 'sales',
                         'severity': 'info',
-                        'title': f'🛒 Nueva Venta de ${total:,.2f}',
-                        'message': f'Comprador: {buyer}',
+                        'title': f'🛒 Nueva Venta ({platform}): ${total:,.2f}',
+                        'message': f'Comprador: {buyer} (Orden #{sale_id})',
                         'link': '/sales',
                         'time': time_str
                     })
