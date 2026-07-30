@@ -1,4 +1,5 @@
 import json
+import time
 import urllib.request
 import urllib.parse
 import urllib.error
@@ -16,6 +17,29 @@ def get_meta_credentials():
         "instagram_account_id": instagram_id,
         "facebook_page_id": page_id
     }
+
+def wait_for_container_ready(container_id: str, access_token: str, max_wait_sec: int = 60):
+    status_url = f"{META_GRAPH_BASE_URL}/{container_id}?fields=status_code,status&access_token={access_token}"
+    elapsed = 0
+    poll_interval = 3
+    while elapsed < max_wait_sec:
+        time.sleep(poll_interval)
+        elapsed += poll_interval
+        try:
+            req = urllib.request.Request(status_url, method="GET")
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                res = json.loads(resp.read().decode('utf-8'))
+                st_code = res.get("status_code")
+                if st_code == "FINISHED":
+                    return True, "Ready"
+                elif st_code == "ERROR":
+                    err_msg = res.get("status", "El procesado del archivo falló en los servidores de Instagram.")
+                    return False, f"Instagram rechazó el archivo: {err_msg}"
+                elif st_code == "EXPIRED":
+                    return False, "El contenedor de Instagram expiró."
+        except Exception:
+            pass
+    return False, f"Tiempo de espera agotado ({max_wait_sec}s) procesando el video/imagen en los servidores de Instagram."
 
 def publish_to_instagram_photo(image_url: str, caption: str):
     creds = get_meta_credentials()
@@ -41,6 +65,11 @@ def publish_to_instagram_photo(image_url: str, caption: str):
 
         if not container_id:
             return False, "No se pudo crear el contenedor de imagen en Instagram."
+
+        # Step 1.5: Wait for container to be ready
+        ready_ok, ready_msg = wait_for_container_ready(container_id, access_token, max_wait_sec=20)
+        if not ready_ok:
+            return False, ready_msg
 
         # Step 2: Publish Container
         publish_url = f"{META_GRAPH_BASE_URL}/{ig_id}/media_publish"
@@ -94,6 +123,11 @@ def publish_to_instagram_reel(video_url: str, caption: str):
 
         if not container_id:
             return False, "No se pudo crear el contenedor de Reel en Instagram."
+
+        # Step 1.5: Wait for Instagram to download and process/encode the video
+        ready_ok, ready_msg = wait_for_container_ready(container_id, access_token, max_wait_sec=60)
+        if not ready_ok:
+            return False, ready_msg
 
         # Step 2: Publish Container
         publish_url = f"{META_GRAPH_BASE_URL}/{ig_id}/media_publish"
