@@ -387,24 +387,22 @@ def create_invoice(order: dict):
         return res_dict
         
     try:
-        # 1. Fetch updated buyer billing info from Mercado Libre if source_platform is MERCADOLIBRE
-        if order.get('source_platform') == 'MERCADOLIBRE':
+        # 1. Fetch updated buyer billing info from Mercado Libre if source_platform is MERCADOLIBRE (only if custom billing was not explicitly set)
+        buyer = order.get('buyer', {})
+        if not isinstance(buyer, dict):
+            buyer = {}
+
+        if order.get('source_platform') == 'MERCADOLIBRE' and not buyer.get('is_custom_billing'):
             from src import meli_api
             ml_billing = meli_api.fetch_order_billing_info(order['order_id'])
             if ml_billing:
-                # Merge Mercado Libre billing info into our order's buyer dictionary
-                buyer = order.get('buyer', {})
-                if not isinstance(buyer, dict):
-                    buyer = {}
-                
-                # Keep existing values if new ones are empty
-                if ml_billing.get('document_type'):
+                if ml_billing.get('document_type') and not buyer.get('document_type'):
                     buyer['document_type'] = ml_billing['document_type']
-                if ml_billing.get('document_number'):
+                if ml_billing.get('document_number') and not buyer.get('document_number'):
                     buyer['document_number'] = ml_billing['document_number']
-                if ml_billing.get('name'):
+                if ml_billing.get('name') and not buyer.get('name'):
                     buyer['name'] = ml_billing['name']
-                if ml_billing.get('address'):
+                if ml_billing.get('address') and not buyer.get('address'):
                     buyer['address'] = ml_billing['address']
                     
                 order['buyer'] = buyer
@@ -425,10 +423,15 @@ def create_invoice(order: dict):
             # Query official AFIP PersonaServiceA5 (Padron)
             afip_info = lookup_cuit(doc_num_str)
             if afip_info.get('success'):
-                # Override with verified Razón Social & Address
-                buyer['name'] = afip_info.get('razon_social', buyer.get('name'))
-                buyer['address'] = afip_info.get('direccion', buyer.get('address'))
+                # Override with verified Razón Social & Address if not explicitly customized
+                if not buyer.get('name') or buyer.get('name') == 'Consumidor Final':
+                    buyer['name'] = afip_info.get('razon_social', buyer.get('name'))
+                if afip_info.get('direccion') and not buyer.get('address'):
+                    buyer['address'] = afip_info.get('direccion')
                 buyer['document_type'] = 'CUIT'
+                if afip_info.get('iva_condition') and not buyer.get('iva_condition'):
+                    buyer['iva_condition'] = afip_info.get('iva_condition')
+                    buyer['taxpayer_type'] = afip_info.get('iva_condition')
                 order['buyer'] = buyer
 
         # 3. Persist these validated buyer details to local database

@@ -56,6 +56,39 @@ export default function Marketing() {
     meta_facebook_page_id: ''
   })
   const [savingConfig, setSavingConfig] = useState(false)
+  const [autodetectLoading, setAutodetectLoading] = useState(false)
+  const [showPermissionsGuide, setShowPermissionsGuide] = useState(false)
+
+  const handleAutodetectMeta = async () => {
+    if (!metaConfig.meta_access_token?.trim()) {
+      alert("Por favor pega tu Meta Access Token primero para autodetectar los IDs.")
+      return
+    }
+    setAutodetectLoading(true)
+    try {
+      const res = await fetch('/api/marketing/autodetect-meta-credentials', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ access_token: metaConfig.meta_access_token.trim() })
+      })
+      const data = await res.json()
+      if (res.ok && data.success) {
+        setMetaConfig(prev => ({
+          ...prev,
+          meta_access_token: data.access_token || prev.meta_access_token,
+          meta_facebook_page_id: data.facebook_page_id || prev.meta_facebook_page_id,
+          meta_instagram_account_id: data.instagram_account_id || prev.meta_instagram_account_id
+        }))
+        alert(`🎉 ${data.message}`)
+      } else {
+        alert("Error de autodetección: " + (data.detail || data.error || "No se pudieron obtener los IDs"))
+      }
+    } catch(err) {
+      alert("Error de conexión al autodetectar: " + err.message)
+    } finally {
+      setAutodetectLoading(false)
+    }
+  }
 
   // Comments / Inbox state
   const [commentsData, setCommentsData] = useState({ instagram: [], facebook: [] })
@@ -308,9 +341,16 @@ export default function Marketing() {
       const stream = canvas.captureStream(fps)
 
       let recorder
-      const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp9')
-        ? 'video/webm;codecs=vp9'
-        : 'video/webm'
+      let mimeType = 'video/webm'
+      if (MediaRecorder.isTypeSupported('video/mp4;codecs=h264')) {
+        mimeType = 'video/mp4;codecs=h264'
+      } else if (MediaRecorder.isTypeSupported('video/mp4')) {
+        mimeType = 'video/mp4'
+      } else if (MediaRecorder.isTypeSupported('video/webm;codecs=h264')) {
+        mimeType = 'video/webm;codecs=h264'
+      } else if (MediaRecorder.isTypeSupported('video/webm;codecs=vp9')) {
+        mimeType = 'video/webm;codecs=vp9'
+      }
 
       try {
         recorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 4000000 })
@@ -322,12 +362,15 @@ export default function Marketing() {
       recorder.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data) }
 
       recorder.onstop = async () => {
-        const blob = new Blob(chunks, { type: 'video/webm' })
+        const isMp4 = mimeType.includes('mp4')
+        const fileExt = isMp4 ? 'mp4' : 'webm'
+        const fileMime = isMp4 ? 'video/mp4' : 'video/webm'
+        const blob = new Blob(chunks, { type: fileMime })
         const blobUrl = URL.createObjectURL(blob)
         
         try {
           const formData = new FormData()
-          const file = new File([blob], `reel_${Date.now()}.webm`, { type: 'video/webm' })
+          const file = new File([blob], `reel_${Date.now()}.${fileExt}`, { type: fileMime })
           formData.append('file', file)
           const uploadRes = await fetch('/api/media/upload?path=reels', { method: 'POST', body: formData })
           const uploadData = await uploadRes.json()
@@ -603,10 +646,14 @@ export default function Marketing() {
     e.preventDefault()
     setSavingConfig(true)
     try {
+      const payload = {
+        ...metaConfig,
+        public_base_url: window.location.origin
+      }
       const res = await fetch('/api/marketing/config', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(metaConfig)
+        body: JSON.stringify(payload)
       })
       const data = await res.json()
       if (res.ok) {
@@ -823,7 +870,7 @@ export default function Marketing() {
                     style={{width: '100%', marginTop: 5, padding: '6px 10px', borderRadius: 6, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-dark)', color: 'var(--text-primary)', fontSize: '0.82rem'}}
                   >
                     <option value="gemini_canvas">🎬 Gemini IA + Comercial HD (Fotos HD + Precios - Gratis)</option>
-                    <option value="google_veo">🌟 Google Veo / Imagen Video (Vía Gemini API Key)</option>
+                    <option value="google_veo">🌟 Google Veo 3.1 Fast (Google AI Pro / Cloud - 8s HD)</option>
                     <option value="pollinations">🎨 Pollinations AI Generativo (Gratis)</option>
                   </select>
                 </label>
@@ -1338,11 +1385,105 @@ export default function Marketing() {
 
       {/* TAB 4: Configuración de Redes */}
       {activeTab === 'config' && (
-        <div className="card" style={{maxWidth: 650}}>
+        <div className="card" style={{maxWidth: 680}}>
           <h3 style={{marginTop: 0, marginBottom: 10}}>Conexión con Meta API (Instagram & Facebook)</h3>
-          <p style={{fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: 20}}>
+          <p style={{fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: 15}}>
             Ingresá las credenciales de tu aplicación de Meta for Developers para habilitar la publicación directa y autónoma de publicaciones y Reels.
           </p>
+
+          {/* Quick Access Toolbar */}
+          <div style={{
+            display: 'flex',
+            gap: 10,
+            flexWrap: 'wrap',
+            marginBottom: 20,
+            padding: 12,
+            backgroundColor: 'var(--bg-hover)',
+            borderRadius: 8,
+            border: '1px solid var(--border-color)'
+          }}>
+            <a 
+              href="https://developers.facebook.com/tools/explorer/" 
+              target="_blank" 
+              rel="noreferrer"
+              className="btn"
+              style={{
+                padding: '6px 12px',
+                fontSize: '0.8rem',
+                backgroundColor: 'var(--accent-blue)',
+                color: '#fff',
+                textDecoration: 'none',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                fontWeight: 600
+              }}
+            >
+              🔗 Abrir Meta Graph API Explorer
+            </a>
+
+            <button 
+              type="button" 
+              className="btn"
+              onClick={handleAutodetectMeta}
+              disabled={autodetectLoading}
+              style={{
+                padding: '6px 12px',
+                fontSize: '0.8rem',
+                backgroundColor: 'var(--accent-emerald)',
+                color: '#fff',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                fontWeight: 600
+              }}
+            >
+              {autodetectLoading ? <RefreshCw className="animate-spin" size={14} /> : <Sparkles size={14} />}
+              {autodetectLoading ? 'Detectando IDs...' : '🔍 Autodetectar IDs desde Token'}
+            </button>
+
+            <button 
+              type="button" 
+              className="btn"
+              onClick={() => setShowPermissionsGuide(!showPermissionsGuide)}
+              style={{
+                padding: '6px 12px',
+                fontSize: '0.8rem',
+                backgroundColor: 'var(--bg-dark)',
+                color: 'var(--text-primary)',
+                border: '1px solid var(--border-color)',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6
+              }}
+            >
+              📘 {showPermissionsGuide ? 'Ocultar Guía' : 'Ver Permisos Requeridos'}
+            </button>
+          </div>
+
+          {/* Expandable Permissions Guide */}
+          {showPermissionsGuide && (
+            <div style={{
+              backgroundColor: 'var(--bg-dark)',
+              padding: 14,
+              borderRadius: 8,
+              border: '1px dashed var(--accent-blue)',
+              marginBottom: 20,
+              fontSize: '0.8rem',
+              color: 'var(--text-secondary)'
+            }}>
+              <div style={{fontWeight: 'bold', color: 'var(--accent-blue)', marginBottom: 8}}>
+                🔑 Permisos requeridos al generar el Token en Graph API Explorer:
+              </div>
+              <ul style={{margin: '0 0 10px 18px', padding: 0, lineHeight: 1.6}}>
+                <li><strong>Facebook (Página):</strong> <code>pages_show_list</code>, <code>pages_read_engagement</code>, <code>pages_manage_posts</code>, <code>pages_manage_engagement</code></li>
+                <li><strong>Instagram (Empresa):</strong> <code>instagram_basic</code>, <code>instagram_content_publish</code>, <code>instagram_manage_comments</code></li>
+              </ul>
+              <div style={{fontSize: '0.78rem', color: 'var(--accent-orange)'}}>
+                💡 <strong>Tip rápido de renovación:</strong> Copiá el Token del Explorer, pégalo en la casilla de abajo y presioná <strong>"🔍 Autodetectar IDs desde Token"</strong> para autocompletar el Facebook Page ID y el Instagram Business Account ID en 1 clic.
+              </div>
+            </div>
+          )}
 
           <form onSubmit={handleSaveMetaConfig} style={{display: 'flex', flexDirection: 'column', gap: 15}}>
             <label style={{fontSize: '0.85rem'}}>Meta Access Token (Token de acceso de página o usuario)
@@ -1375,7 +1516,7 @@ export default function Marketing() {
               />
             </label>
 
-            <button type="submit" className="btn" disabled={savingConfig} style={{backgroundColor: 'var(--accent-blue)', color: '#fff', alignSelf: 'flex-start', marginTop: 10}}>
+            <button type="submit" className="btn" disabled={savingConfig} style={{backgroundColor: 'var(--accent-blue)', color: '#fff', alignSelf: 'flex-start', marginTop: 10, padding: '10px 20px', fontWeight: 'bold'}}>
               {savingConfig ? 'Guardando...' : '💾 Guardar Credenciales de Meta'}
             </button>
           </form>

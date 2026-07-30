@@ -53,11 +53,12 @@ def list_media(path: str = ""):
             # Check allowed file types
             lower_name = entry.name.lower()
             is_image = lower_name.endswith(('.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg'))
+            is_video = lower_name.endswith(('.mp4', '.mov', '.webm', '.mkv', '.avi', '.m4v'))
             is_pdf = lower_name.endswith('.pdf')
             is_doc = lower_name.endswith(('.doc', '.docx', '.zip', '.txt'))
             
-            if is_image or is_pdf or is_doc:
-                file_type = "image" if is_image else ("pdf" if is_pdf else "document")
+            if is_image or is_video or is_pdf or is_doc:
+                file_type = "image" if is_image else ("video" if is_video else ("pdf" if is_pdf else "document"))
                 files.append({
                     "name": entry.name,
                     "path": rel_path,
@@ -100,10 +101,10 @@ def create_folder(payload: FolderRequest):
 @router.post("/upload")
 async def upload_file(path: str = "", file: UploadFile = File(...)):
     # Validate allowed extensions
-    allowed_extensions = ('.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg', '.pdf', '.doc', '.docx', '.zip', '.txt')
+    allowed_extensions = ('.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg', '.mp4', '.mov', '.webm', '.mkv', '.avi', '.m4v', '.pdf', '.doc', '.docx', '.zip', '.txt')
     ext = os.path.splitext(file.filename)[1].lower()
     if ext not in allowed_extensions:
-        raise HTTPException(status_code=400, detail="Tipo de archivo no permitido. Solo se permiten imágenes, PDF y documentos (png, jpg, pdf, doc, zip, etc).")
+        raise HTTPException(status_code=400, detail="Tipo de archivo no permitido. Solo se permiten imágenes, videos (mp4, mov, webm, avi), PDF y documentos.")
         
     target_dir = get_safe_path(path)
     # Ensure directory exists

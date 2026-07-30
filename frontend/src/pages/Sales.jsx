@@ -85,6 +85,8 @@ export default function Sales() {
   const [customCuit, setCustomCuit] = useState('')
   const [customName, setCustomName] = useState('')
   const [customIvaCondition, setCustomIvaCondition] = useState('IVA Exento')
+  const [customShippingCost, setCustomShippingCost] = useState(0)
+  const [includeShippingInInvoice, setIncludeShippingInInvoice] = useState(true)
   const [cuitLookupLoading, setCuitLookupLoading] = useState(false)
   const [mlBillingInfo, setMlBillingInfo] = useState(null)
   const [mlBillingLoading, setMlBillingLoading] = useState(false)
@@ -104,6 +106,8 @@ export default function Sales() {
     setInvoiceModalOrder(order)
     setMlBillingInfo(null)
     setCustomIvaCondition('IVA Exento')
+    setCustomShippingCost(0)
+    setIncludeShippingInInvoice(true)
     
     const buyerDoc = order.buyer?.document_number || ''
     const buyerDocType = order.buyer?.document_type || ''
@@ -121,13 +125,17 @@ export default function Sales() {
       setCustomName('')
     }
 
-    // Fetch detailed billing info from backend/ML
+    // Fetch detailed billing info and shipping cost from backend/ML
     setMlBillingLoading(true)
     try {
       const res = await fetch(`/api/sales/${order.order_id}/billing-info`)
       if (res.ok) {
         const data = await res.json()
         setMlBillingInfo(data)
+        if (data.shipping_cost > 0) {
+          setCustomShippingCost(data.shipping_cost)
+          setIncludeShippingInInvoice(true)
+        }
         if (data.document_number && (data.document_number.length === 11 || data.document_type === 'CUIT' || data.document_type === 'CUIL')) {
           setCustomInvoiceDocType('CUIT')
           setCustomCuit(data.document_number)
@@ -201,7 +209,9 @@ export default function Sales() {
         doc_type: customInvoiceDocType,
         cuit: customInvoiceDocType === 'CUIT' ? customCuit : null,
         name: customInvoiceDocType === 'CUIT' ? customName : null,
-        iva_condition: customInvoiceDocType === 'CUIT' ? customIvaCondition : 'Consumidor Final'
+        iva_condition: customInvoiceDocType === 'CUIT' ? customIvaCondition : 'Consumidor Final',
+        include_shipping: includeShippingInInvoice,
+        shipping_cost: customShippingCost
       }
 
       const res = await fetch(`/api/sales/${orderId}/invoice`, {
@@ -1585,6 +1595,54 @@ export default function Sales() {
                   </label>
                 </div>
               )}
+
+              {/* Detalle e Ítems a Facturar (Corroboración Previa) */}
+              <div style={{
+                marginTop: 15,
+                padding: 12,
+                borderRadius: 8,
+                backgroundColor: 'var(--bg-hover)',
+                border: '1px solid var(--border-color)',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 8
+              }}>
+                <div style={{fontSize: '0.82rem', fontWeight: 'bold', color: 'var(--accent-blue)', display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
+                  <span>📄 Ítems a incluir en la Factura (Corroboración):</span>
+                  <span style={{fontSize: '0.88rem', color: 'var(--accent-emerald)', fontWeight: 800}}>
+                    Total: ${((invoiceModalOrder.items?.reduce((sum, it) => sum + (it.unit_price || it.price || 0) * (it.quantity || 1), 0) || invoiceModalOrder.total_amount || 0) + (includeShippingInInvoice ? customShippingCost : 0)).toLocaleString('es-AR', {minimumFractionDigits: 2})}
+                  </span>
+                </div>
+
+                <div style={{fontSize: '0.8rem', backgroundColor: 'var(--bg-dark)', borderRadius: 6, padding: '8px 12px', border: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', gap: 6}}>
+                  {invoiceModalOrder.items?.map((item, idx) => (
+                    <div key={idx} style={{display: 'flex', justifyContent: 'space-between', borderBottom: '1px dashed var(--border-color)', paddingBottom: 4}}>
+                      <span style={{fontWeight: 500}}>• {item.title || item.name} (x{item.quantity || 1})</span>
+                      <span style={{fontWeight: 600}}>${((item.unit_price || item.price || 0) * (item.quantity || 1)).toLocaleString('es-AR', {minimumFractionDigits: 2})}</span>
+                    </div>
+                  ))}
+
+                  {customShippingCost > 0 && (
+                    <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: 4, color: includeShippingInInvoice ? 'var(--accent-emerald)' : 'var(--text-secondary)'}}>
+                      <label style={{display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontWeight: 'bold'}}>
+                        <input 
+                          type="checkbox" 
+                          checked={includeShippingInInvoice} 
+                          onChange={e => setIncludeShippingInInvoice(e.target.checked)} 
+                        />
+                        <span>🚚 Servicio de Envío Mercado Libre</span>
+                      </label>
+                      <span style={{fontWeight: 'bold'}}>${customShippingCost.toLocaleString('es-AR', {minimumFractionDigits: 2})}</span>
+                    </div>
+                  )}
+                </div>
+
+                {customShippingCost > 0 && (
+                  <div style={{fontSize: '0.76rem', color: includeShippingInInvoice ? 'var(--accent-emerald)' : 'var(--accent-orange)'}}>
+                    💡 {includeShippingInInvoice ? ' Se agregará "Servicio de Envío Mercado Libre" como ítem a la factura.' : ' Cuidado: El costo de envío se ha excluido de la factura.'}
+                  </div>
+                )}
+              </div>
             </div>
 
             <div style={{display: 'flex', justifyContent: 'flex-end', gap: 10, borderTop: '1px solid var(--border-color)', paddingTop: 15}}>

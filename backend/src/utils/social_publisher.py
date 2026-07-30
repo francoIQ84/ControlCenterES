@@ -42,7 +42,82 @@ def wait_for_container_ready(container_id: str, access_token: str, max_wait_sec:
             pass
     return False, f"Tiempo de espera agotado ({max_wait_sec}s) procesando el video/imagen en los servidores de Instagram."
 
+import os
+import subprocess
+
+def ensure_mp4_h264(local_file_path: str) -> str:
+    """
+    If the file is a WebM or non-standard format video, uses ffmpeg to encode it to standard H.264 MP4.
+    """
+    if not os.path.exists(local_file_path):
+        return local_file_path
+
+    ext = os.path.splitext(local_file_path)[1].lower()
+    mp4_path = os.path.splitext(local_file_path)[0] + "_h264.mp4"
+    if local_file_path.endswith("_h264.mp4") and os.path.exists(local_file_path):
+        return local_file_path
+
+    try:
+        cmd = [
+            "ffmpeg", "-y", "-i", local_file_path,
+            "-c:v", "libx264", "-preset", "fast", "-pix_fmt", "yuv420p",
+            "-c:a", "aac", "-b:a", "128k",
+            "-movflags", "+faststart",
+            mp4_path
+        ]
+        res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=45)
+        if res.returncode == 0 and os.path.exists(mp4_path) and os.path.getsize(mp4_path) > 0:
+            return mp4_path
+    except Exception as e:
+        print(f"ffmpeg conversion warning: {e}")
+
+    return local_file_path
+
+def prepare_media_url_for_meta(raw_url: str) -> str:
+    """
+    Prepares media URL for Meta Graph API compliance:
+    1. If relative local file, converts WebM/non-H264 video to H.264 MP4 if needed via ffmpeg.
+    2. Builds a fully qualified, public HTTPS URL that Meta servers can download.
+    """
+    if not raw_url:
+        return ""
+
+    url = raw_url.strip()
+
+    # 1. Handle local file conversion if relative
+    clean_path = url.lstrip("/")
+    if clean_path.startswith("uploads/"):
+        local_disk_path = os.path.abspath(clean_path)
+        if os.path.exists(local_disk_path):
+            converted_path = ensure_mp4_h264(local_disk_path)
+            rel_path = os.path.relpath(converted_path, os.path.abspath("uploads")).replace("\\", "/")
+            url = f"/uploads/{rel_path}"
+
+    # 2. Make fully qualified absolute public URL
+    if not (url.startswith("http://") or url.startswith("https://")):
+        base_url = database.get_setting("public_base_url", "").strip()
+        if not base_url:
+            base_url = database.get_setting("storefront_url", "").strip()
+        if not base_url:
+            base_url = "https://admin.hidroponiarosario.com.ar"
+
+        base_url = base_url.rstrip("/")
+        if not base_url.startswith("http"):
+            base_url = "https://" + base_url
+
+        if not url.startswith("/"):
+            url = "/" + url
+
+        url = f"{base_url}{url}"
+
+    # Meta Graph API strictly requires HTTPS for non-localhost URLs
+    if url.startswith("http://") and not ("localhost" in url or "127.0.0.1" in url):
+        url = "https://" + url[7:]
+
+    return url
+
 def publish_to_instagram_photo(image_url: str, caption: str):
+    image_url = prepare_media_url_for_meta(image_url)
     creds = get_meta_credentials()
     access_token = creds["access_token"]
     ig_id = creds["instagram_account_id"]
@@ -100,6 +175,7 @@ def publish_to_instagram_photo(image_url: str, caption: str):
         return False, f"Error en Instagram API: {str(e)}"
 
 def publish_to_instagram_reel(video_url: str, caption: str):
+    video_url = prepare_media_url_for_meta(video_url)
     creds = get_meta_credentials()
     access_token = creds["access_token"]
     ig_id = creds["instagram_account_id"]
@@ -158,6 +234,7 @@ def publish_to_instagram_reel(video_url: str, caption: str):
         return False, f"Error en Instagram API (Reel): {str(e)}"
 
 def publish_to_facebook_page(media_url: str, caption: str, is_video: bool = False):
+    media_url = prepare_media_url_for_meta(media_url)
     creds = get_meta_credentials()
     access_token = creds["access_token"]
     page_id = creds["facebook_page_id"].strip() if creds["facebook_page_id"] else "me"
@@ -205,7 +282,7 @@ def publish_post_to_all_platforms(post_data: dict):
     post_type = (post_data.get("post_type") or "post").lower()
     caption = post_data.get("caption") or ""
     raw_media_url = (post_data.get("media_urls") or "").split(",")[0].strip()
-    media_url = get_high_res_image_url(raw_media_url)
+    media_url = prepare_media_url_for_meta(get_high_res_image_url(raw_media_url))
 
     creds = get_meta_credentials()
     results = []

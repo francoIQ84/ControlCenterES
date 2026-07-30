@@ -61,6 +61,8 @@ En el comercio moderno, gestionar Mercado Libre, una tienda online propia, factu
   - **Responsable Inscripto**: Emisión de **Factura B (`COD. 006`)** a Consumidores Finales y **Factura A (`COD. 001`)** a CUITs.
 - **Consulta al Padrón AFIP en Tiempo Real (`PersonaServiceA5`)**: Al ingresar un CUIT, autocompleta la Razón Social, Domicilio Fiscal y la **Condición frente al IVA del Comprador**.
 - **Selector de Condición IVA del Comprador**: Permite visualizar y seleccionar la condición frente al IVA (`IVA Exento`, `Responsable Inscripto`, `Responsable Monotributo`, `Consumidor Final`) para imprimirla en la factura.
+- **Inclusión Automática del Servicio de Envío Mercado Libre**: Obtención automática del costo de envío abonado por el comprador en ML e inclusión como ítem de servicio adicional (`Servicio de Envío Mercado Libre`) en la factura.
+- **Vista Previa de Corroboración Previa**: Desglose de ítems, precios, costo de envío y total final en la ventana modal antes de confirmar la emisión.
 - **Desglose de IVA 21%**: Generación correcta de campos `<AlicIva>`, `ImpNeto` e `ImpIVA` requeridos por la AFIP en Facturas A.
 - **Factura B Automática (Consumidor Final)**: Fallback inteligente si el comprador no presenta CUIT.
 - **Generación de PDF Oficial**: Descarga e impresión de comprobantes fiscales normativos.
@@ -95,24 +97,25 @@ El módulo de **Marketing** incluye un estudio completo para crear, previsualiza
 2. **Seleccionar un producto** del inventario (se cargarán automáticamente sus fotos HD y su precio).
 3. **Escribir un Prompt / Instrucción breve para el video** (ej: *"Resaltar oferta de primavera, 15% OFF en efectivo y envío gratis a Rosario"*).
 4. **Elegir el Generador de Video IA**:
-   - 🎬 **Gemini IA + Comercial HD (Fotos HD + Precios - Gratis & 0 Costo de Servidor)**: Gemini 3.6 Flash redacta el guión comercial y el motor visual ensambla las fotos HD del producto, marca "Hidroponía Rosario", precio animado, badges de oferta y transiciones fluidas a 60 FPS.
-   - 🌟 **Google Veo / Imagen Video (Vía Gemini API Key)**: Conexión directa con la API oficial de video de Google.
+   - 🌟 **Google Veo 3.1 Fast (Vía SDK google-genai / Gemini API Key)**: Utiliza el modelo oficial **`veo-3.1-fast-generate-preview`** (Google AI Pro / Cloud) para generar Reels cinematográficos HD de 8 segundos en formato 9:16 (1080x1920).
+   - 🎬 **Gemini IA + Comercial HD (Fotos HD + Precios - Gratis & 0 Costo de Servidor)**: Gemini 3.6 Flash redacta el guión comercial y el motor visual de la app ensambla las fotos HD del producto, marca "Hidroponía Rosario", precio animado, badges de oferta y transiciones fluidas a 60 FPS en formato compatible **MP4 (H.264)**.
    - 🎨 **Pollinations AI Generativo (Gratis)**: Clips animativos de código abierto.
 5. Presionar **`🎬 Generar y Previsualizar Reel con IA`**.
 
-#### B. Previsualización y Acciones Disponibles:
+#### B. Previsualización, Formato MP4 (H.264) & Acciones Disponibles:
+- **Codificación Compatible con Instagram Reels (MP4 / H.264)**: El motor graba y codifica los videos en formato MP4 nativo con códec H.264 para evitar errores de API en Meta Graph (como el código 2207085 de formatos no soportados).
 - **Reproductor en Pantalla**: Muestra el video en formato vertical 9:16 (1080x1920) con controles de Play, Pausa y Pantalla Completa.
 - **`✨ Usar para Post`**: Asigna la URL del video al editor de publicación y configura el tipo de post automáticamente como **Reel**.
 - **`🔄 Alternativa`**: Vuelve a ejecutar la IA para obtener otra propuesta diferente.
-- **`⬇️ Descargar`**: Guarda el archivo de video (.mp4 / .webm) directamente en tu computadora.
+- **`⬇️ Descargar`**: Guarda el archivo de video (.mp4) directamente en tu computadora.
 
 ---
 
-### 7. 🖼️ Gestión de Imágenes HD de Mercado Libre y Carga desde la PC
+### 7. 🖼️ Gestión de Imágenes HD de Mercado Libre y Subida de Videos/Fotos desde la PC
 
 - **Alta Calidad HD de Mercado Libre (`-O.jpg`)**: El sistema convierte automáticamente las miniaturas de Mercado Libre (`-I.jpg` de baja resolución) a la versión original de máxima calidad (`-O.jpg`, 1200x1200px+) y fuerza protocolo seguro `https://`.
 - **Galería de Selección del Producto**: Al elegir un producto en Marketing, podés hacer clic en cualquiera de sus fotos HD para usarla en el post.
-- **Subida de Archivos desde la PC (`📁 Subir de la PC`)**: Podés hacer clic en el botón de carga y seleccionar cualquier foto o video desde tu computadora para adjuntarlo a la publicación.
+- **Subida de Archivos de Video & Fotos desde la PC (`📁 Subir de la PC`)**: Podés hacer clic en el botón de carga y seleccionar cualquier foto (`.png`, `.jpg`, `.webp`) o **video (`.mp4`, `.webm`, `.mov`, `.avi`, `.mkv`)** desde tu computadora para adjuntarlo directamente a la publicación.
 
 ---
 

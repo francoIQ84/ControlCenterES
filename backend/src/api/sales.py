@@ -234,6 +234,8 @@ class InvoiceOptionsRequest(BaseModel):
     cuit: Optional[str] = None
     name: Optional[str] = None
     iva_condition: Optional[str] = None
+    include_shipping: Optional[bool] = True
+    shipping_cost: Optional[float] = None
 
 @router.get("/lookup-cuit/{cuit}")
 def lookup_cuit_endpoint(cuit: str):
@@ -262,7 +264,9 @@ def get_order_billing_info_endpoint(order_id: int):
         "name": "",
         "address": "",
         "taxpayer_type": "Consumidor Final",
-        "source": order.get("source_platform", "LOCAL")
+        "source": order.get("source_platform", "LOCAL"),
+        "shipping_cost": 0.0,
+        "items": order.get("items", [])
     }
 
     buyer = order.get("buyer", {})
@@ -290,8 +294,12 @@ def get_order_billing_info_endpoint(order_id: int):
                     result["address"] = ml_info["address"]
                 if ml_info.get("taxpayer_type"):
                     result["taxpayer_type"] = ml_info["taxpayer_type"]
+
+            # Fetch shipping cost paid by buyer on ML
+            ship_cost = meli_api.fetch_order_shipping_cost(order_id)
+            result["shipping_cost"] = ship_cost
         except Exception as e:
-            print(f"Error fetching ML billing info for order {order_id}: {e}")
+            print(f"Error fetching ML billing/shipping info for order {order_id}: {e}")
 
     return result
 
@@ -320,17 +328,42 @@ def create_invoice_endpoint(order_id: int, req: Optional[InvoiceOptionsRequest] 
             buyer['document_number'] = ''
             buyer['name'] = 'Consumidor Final'
             buyer['address'] = ''
+            buyer['is_custom_billing'] = True
             order['buyer'] = buyer
         elif req.doc_type == 'CUIT' and req.cuit:
             clean_cuit = "".join([c for c in str(req.cuit) if c.isdigit()])
             buyer['document_type'] = 'CUIT'
             buyer['document_number'] = clean_cuit
+            buyer['is_custom_billing'] = True
             if req.name and req.name != "None None":
                 buyer['name'] = req.name
             if req.iva_condition:
                 buyer['iva_condition'] = req.iva_condition
                 buyer['taxpayer_type'] = req.iva_condition
             order['buyer'] = buyer
+
+        # Handle shipping cost line item if included
+        shipping_val = req.shipping_cost
+        if shipping_val is None and order.get('source_platform') == 'MERCADOLIBRE':
+            try:
+                from src import meli_api
+                shipping_val = meli_api.fetch_order_shipping_cost(order_id)
+            except Exception:
+                shipping_val = 0.0
+
+        if req.include_shipping and shipping_val and shipping_val > 0:
+            items = list(order.get('items', []))
+            # Check if shipping is already in items
+            has_shipping_item = any("Envío" in str(it.get("title", "")) or "Envio" in str(it.get("title", "")) for it in items)
+            if not has_shipping_item:
+                items.append({
+                    "title": "Servicio de Envío Mercado Libre",
+                    "quantity": 1,
+                    "unit_price": shipping_val,
+                    "amount": shipping_val
+                })
+                order['items'] = items
+                order['total_amount'] = float(order.get('total_amount', 0)) + float(shipping_val)
 
     from src.utils.afip_ws import create_invoice
     res = create_invoice(order)

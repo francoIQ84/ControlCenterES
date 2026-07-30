@@ -870,6 +870,40 @@ def fetch_order_billing_info(order_id):
     except Exception:
         return {}
 
+def fetch_order_shipping_cost(order_id):
+    """
+    Fetches shipping cost for a Mercado Libre order if paid by the buyer.
+    """
+    if is_demo_mode():
+        return 0.0
+
+    try:
+        res = api_request("GET", f"/orders/{order_id}")
+        if not res or res.status_code != 200:
+            return 0.0
+        data = res.json()
+        
+        shipping_id = data.get("shipping", {}).get("id")
+        shipping_cost = 0.0
+
+        if shipping_id:
+            ship_res = api_request("GET", f"/shipments/{shipping_id}")
+            if ship_res and ship_res.status_code == 200:
+                ship_data = ship_res.json()
+                shipping_cost = float(ship_data.get("shipping_option", {}).get("cost", 0) or 0)
+                if shipping_cost == 0:
+                    shipping_cost = float(ship_data.get("base_cost", 0) or 0)
+        
+        if shipping_cost == 0 and data.get("total_amount") and data.get("order_items"):
+            items_sum = sum(float(item.get("unit_price", 0)) * int(item.get("quantity", 1)) for item in data.get("order_items", []))
+            if data["total_amount"] > items_sum:
+                shipping_cost = float(data["total_amount"] - items_sum)
+
+        return shipping_cost
+    except Exception as e:
+        print(f"Error fetching shipping cost for order {order_id}: {e}")
+        return 0.0
+
 def check_meli_invoice_exists(order_id):
     """
     Verifica rápidamente si existe una factura adjunta en Mercado Libre para la venta.
