@@ -56,23 +56,66 @@ export default function Inventory() {
 
   const getModifiedItems = React.useCallback(() => {
     const modified = []
+    const parseN = (v, isInt = false) => {
+      if (v === null || v === undefined || v === '') return 0
+      const p = isInt ? parseInt(v, 10) : parseFloat(v)
+      return isNaN(p) ? 0 : p
+    }
+    const parseB = (v, defaultVal = 1) => {
+      if (v === null || v === undefined || v === '') return defaultVal
+      if (v === true || v === 1 || v === '1' || v === 'true') return 1
+      if (v === false || v === 0 || v === '0' || v === 'false') return 0
+      return defaultVal
+    }
+
     for (const ml_id in drafts) {
       const orig = products.find(p => p.ml_id === ml_id)
       if (orig) {
         const d = drafts[ml_id]
+
+        const qtyChanged = parseN(d.qty, true) !== parseN(orig.available_quantity, true)
+        const priceChanged = Math.abs(parseN(d.price) - parseN(orig.price)) > 0.01
+        const costChanged = Math.abs(parseN(d.cost) - parseN(orig.cost_price)) > 0.01
+        const costMeliChanged = Math.abs(parseN(d.cost_meli) - parseN(orig.cost_meli)) > 0.01
+        const priceWebChanged = Math.abs(parseN(d.price_web) - parseN(orig.price_web)) > 0.01
+        const minStockChanged = parseN(d.min_stock, true) !== parseN(orig.min_stock, true)
+        const featuredOrderChanged = parseN(d.featured_order, true) !== parseN(orig.featured_order, true)
+
+        const webActiveChanged = parseB(d.is_web_active, 1) !== parseB(orig.is_web_active, 1)
+        const syncMeliChanged = parseB(d.sync_meli, 1) !== parseB(orig.sync_meli, 1)
+
+        const cat1 = d.category_id ? String(d.category_id) : ""
+        const cat2 = orig.category_id ? String(orig.category_id) : ""
+        const categoryChanged = cat1 !== cat2
+
+        const desc1 = (d.description || "").trim()
+        const desc2 = (orig.description || "").trim()
+        const descChanged = desc1 !== desc2
+
+        let imagesChanged = false
+        if (d.images !== undefined && d.images !== null) {
+          const img1 = (d.images || "").trim()
+          const img2 = (orig.images || "").trim()
+          const thumb = (orig.thumbnail || "").trim()
+          if (img1 !== img2 && img1 !== thumb && !(img1 === "" && (img2 === "" || img2 === thumb))) {
+            imagesChanged = true
+          }
+        }
+
         const isChanged =
-          d.qty !== (orig.available_quantity || 0) ||
-          d.price !== (orig.price || 0) ||
-          d.cost !== (orig.cost_price || 0) ||
-          d.cost_meli !== (orig.cost_meli || 0) ||
-          d.price_web !== (orig.price_web || 0) ||
-          d.images !== (orig.images || "") ||
-          d.description !== (orig.description || "") ||
-          d.is_web_active !== (orig.is_web_active ? 1 : 0) ||
-          (d.category_id || null) !== (orig.category_id || null) ||
-          d.sync_meli !== (orig.sync_meli === 0 ? 0 : 1) ||
-          d.min_stock !== (orig.min_stock || 0) ||
-          d.featured_order !== (orig.featured_order || 0);
+          qtyChanged ||
+          priceChanged ||
+          costChanged ||
+          costMeliChanged ||
+          priceWebChanged ||
+          minStockChanged ||
+          featuredOrderChanged ||
+          webActiveChanged ||
+          syncMeliChanged ||
+          categoryChanged ||
+          descChanged ||
+          imagesChanged
+
         if (isChanged) {
           modified.push(d)
         }
