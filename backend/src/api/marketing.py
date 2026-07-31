@@ -20,7 +20,9 @@ class GeneratePostRequest(BaseModel):
 class GenerateVideoRequest(BaseModel):
     product_ml_id: str
     prompt: Optional[str] = ""
-    generator_type: Optional[str] = "gemini_canvas" # gemini_canvas, google_veo, pollinations
+    generator_type: Optional[str] = "gemini_canvas" # gemini_canvas, google_veo, flux, imagen3, pollinations
+    post_type: Optional[str] = "reel"                # post, reel
+
 
 class CreatePostRequest(BaseModel):
     id: Optional[int] = None
@@ -141,10 +143,14 @@ def generate_ai_video(req: GenerateVideoRequest, _=Depends(verify_session)):
     from src.utils.video_generator import (
         generate_video_script_with_gemini, 
         generate_video_with_google_veo, 
-        generate_video_with_pollinations
+        generate_video_with_pollinations,
+        generate_video_with_flux,
+        generate_video_with_imagen3,
+        generate_image_with_gemini_native
     )
 
     gen_type = (req.generator_type or "gemini_canvas").lower()
+    is_post = (req.post_type or "").lower() == "post"
 
     try:
         if gen_type == "google_veo":
@@ -152,20 +158,67 @@ def generate_ai_video(req: GenerateVideoRequest, _=Depends(verify_session)):
             if not res.get("success"):
                 raise HTTPException(status_code=400, detail=res.get("error", "Error con Google Veo"))
             return res
-        elif gen_type == "pollinations":
-            res = generate_video_with_pollinations(req.prompt or f"{product.get('title')} hydroponics")
+        elif gen_type in ["imagen3", "imagen4"]:
+            res = generate_video_with_imagen3(req.prompt or f"{product.get('title')} hydroponic product photography", post_type=req.post_type)
             return res
+
         else: # gemini_canvas
-            script = generate_video_script_with_gemini(product, req.prompt)
-            return {
-                "success": True,
-                "engine": "gemini_canvas",
-                "script": script
-            }
+            # For posts: use Gemini native image generation (prompt-driven, real AI image)
+            # For reels: use canvas video script (template-based video)
+            if is_post:
+                res = generate_image_with_gemini_native(req.prompt, product, post_type=req.post_type)
+                return res
+            else:
+                script = generate_video_script_with_gemini(product, req.prompt)
+                return {
+                    "success": True,
+                    "engine": "gemini_canvas",
+                    "script": script
+                }
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error al generar video con IA: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error al generar contenido con IA: {str(e)}")
+
+
+
+@router.get("/ai-models")
+def list_available_ai_models(_=Depends(verify_session)):
+    """Lists all available Veo and Imagen models from the configured Gemini API Key."""
+    gemini_key = database.get_setting("gemini_api_key", "").strip()
+    if not gemini_key:
+        return {"success": False, "error": "No hay API Key de Gemini configurada."}
+    
+    try:
+        from google import genai
+        client = genai.Client(
+            http_options={"api_version": "v1beta"},
+            api_key=gemini_key,
+        )
+        
+        veo_models = []
+        imagen_models = []
+        gemini_models = []
+        
+        for m in client.models.list():
+            model_id = m.name.replace("models/", "") if m.name.startswith("models/") else m.name
+            if "veo" in model_id.lower():
+                veo_models.append(model_id)
+            elif "imagen" in model_id.lower():
+                imagen_models.append(model_id)
+            elif "gemini" in model_id.lower():
+                gemini_models.append(model_id)
+        
+        return {
+            "success": True,
+            "veo_models": veo_models,
+            "imagen_models": imagen_models,
+            "gemini_models": gemini_models,
+            "api_key_prefix": gemini_key[:8] + "..." if len(gemini_key) > 8 else "***"
+        }
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
 
 @router.get("/posts")
 def list_marketing_posts(status: Optional[str] = None, limit: int = 100, _=Depends(verify_session)):

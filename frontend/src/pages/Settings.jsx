@@ -168,6 +168,8 @@ export default function Settings() {
   const [testingKey, setTestingKey] = useState(false)
   const [testResult, setTestResult] = useState(null)
 
+  const [modelCapabilities, setModelCapabilities] = useState(null)
+
   const handleTestGeminiKey = async () => {
     if (!waConfig.gemini_api_key) {
       alert("Por favor ingresa una API Key de Gemini primero.")
@@ -175,6 +177,7 @@ export default function Settings() {
     }
     setTestingKey(true)
     setTestResult(null)
+    setModelCapabilities(null)
     try {
       const res = await fetch('/api/whatsapp/test-key', {
         method: 'POST',
@@ -184,6 +187,18 @@ export default function Settings() {
       const data = await res.json()
       if (data.success) {
         setTestResult({ success: true, message: data.message || "Conexión exitosa" })
+        // Fetch detailed model capabilities
+        try {
+          const capRes = await fetch('/api/marketing/ai-models')
+          if (capRes.ok) {
+            const capData = await capRes.json()
+            if (capData.success) {
+              setModelCapabilities(capData)
+            }
+          }
+        } catch (e) {
+          console.error("Error fetching AI model capabilities:", e)
+        }
       } else {
         setTestResult({ success: false, message: data.error || data.detail || "Error al conectar" })
       }
@@ -192,6 +207,18 @@ export default function Settings() {
     } finally {
       setTestingKey(false)
     }
+  }
+
+  const fetchModelCapabilities = async () => {
+    try {
+      const res = await fetch('/api/marketing/ai-models')
+      if (res.ok) {
+        const data = await res.json()
+        if (data.success) {
+          setModelCapabilities(data)
+        }
+      }
+    } catch (e) {}
   }
 
   const [inquiriesSummary, setInquiriesSummary] = useState(null)
@@ -259,6 +286,7 @@ export default function Settings() {
     fetchInquiries()
     fetchTokenUsage()
     fetchPausedChats()
+    fetchModelCapabilities()
   }
 
   const handleSaveWaConfig = async (e) => {
@@ -2223,8 +2251,58 @@ export default function Settings() {
                       {testResult.success ? '✓ ' : '✕ '} {testResult.message}
                     </div>
                   )}
-                  <small style={{display: 'block', marginTop: 4, color: 'var(--text-secondary)', fontSize: '0.75rem'}}>
-                    Obtén una clave gratuita de API en <a href="https://aistudio.google.com/" target="_blank" rel="noopener noreferrer" style={{color: 'var(--accent-blue)', textDecoration: 'underline'}}>Google AI Studio</a>.
+
+                  {modelCapabilities && (
+                    <div style={{
+                      marginTop: 10,
+                      padding: '12px 14px',
+                      borderRadius: 8,
+                      backgroundColor: 'var(--bg-dark)',
+                      border: '1px solid var(--border-color)',
+                      fontSize: '0.82rem'
+                    }}>
+                      <div style={{fontWeight: 600, marginBottom: 8, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', justifyContent: 'space-between'}}>
+                        <span>🤖 Servicios e IA Habilitados con esta API Key:</span>
+                        <span style={{fontSize: '0.75rem', opacity: 0.7}}>Clave: {modelCapabilities.api_key_prefix}</span>
+                      </div>
+                      
+                      <div style={{display: 'flex', flexDirection: 'column', gap: 6}}>
+                        {/* Gemini Text & Code */}
+                        <div style={{display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 10px', borderRadius: 6, backgroundColor: 'rgba(255,255,255,0.03)'}}>
+                          <span style={{display: 'flex', alignItems: 'center', gap: 6}}>
+                            <span style={{color: '#10B981'}}>🟢</span> 
+                            <strong>Google Gemini 2.0 Flash / Textos IA:</strong>
+                          </span>
+                          <span style={{color: '#10B981', fontWeight: 600}}>Habilitado (Gratis)</span>
+                        </div>
+
+                        {/* Imagen 3 */}
+                        <div style={{display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 10px', borderRadius: 6, backgroundColor: 'rgba(255,255,255,0.03)'}}>
+                          <span style={{display: 'flex', alignItems: 'center', gap: 6}}>
+                            <span>{modelCapabilities.imagen_models?.length > 0 ? '🟢' : '🟡'}</span> 
+                            <strong>Google Imagen 3.0 (Fotos IA):</strong>
+                          </span>
+                          <span style={{color: modelCapabilities.imagen_models?.length > 0 ? '#10B981' : '#F59E0B', fontWeight: 600}}>
+                            {modelCapabilities.imagen_models?.length > 0 ? `Activo (${modelCapabilities.imagen_models[0]})` : 'Requiere Habilitar en AI Studio'}
+                          </span>
+                        </div>
+
+                        {/* Google Veo */}
+                        <div style={{display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 10px', borderRadius: 6, backgroundColor: 'rgba(255,255,255,0.03)'}}>
+                          <span style={{display: 'flex', alignItems: 'center', gap: 6}}>
+                            <span>{modelCapabilities.veo_models?.length > 0 ? '🟢' : '🟡'}</span> 
+                            <strong>Google Veo 3.1 / 2.0 (Video IA):</strong>
+                          </span>
+                          <span style={{color: modelCapabilities.veo_models?.length > 0 ? '#10B981' : '#F59E0B', fontWeight: 600}}>
+                            {modelCapabilities.veo_models?.length > 0 ? `Activo (${modelCapabilities.veo_models.join(', ')})` : 'Requiere Habilitar en AI Studio / Billing'}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  <small style={{display: 'block', marginTop: 6, color: 'var(--text-secondary)', fontSize: '0.75rem'}}>
+                    Obtén o configura tus servicios en <a href="https://aistudio.google.com/" target="_blank" rel="noopener noreferrer" style={{color: 'var(--accent-blue)', textDecoration: 'underline'}}>Google AI Studio</a>.
                   </small>
                 </label>
 

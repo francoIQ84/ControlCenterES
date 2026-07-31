@@ -40,6 +40,16 @@ export default function Marketing() {
   const [generatedVideoUrl, setGeneratedVideoUrl] = useState('')
   const [videoScriptData, setVideoScriptData] = useState(null)
   
+  // Canvas Customizer states
+  const [canvasTheme, setCanvasTheme] = useState('emerald')
+  const [canvasBadgeText, setCanvasBadgeText] = useState('')
+  const [canvasBadgeColor, setCanvasBadgeColor] = useState('#f59e0b')
+  const [canvasShowPrice, setCanvasShowPrice] = useState(true)
+  const [canvasCustomTitle, setCanvasCustomTitle] = useState('')
+  const [canvasFooterText, setCanvasFooterText] = useState('📲 Comprá en HidroponiaRosario.com')
+  const [canvasTextColor, setCanvasTextColor] = useState('auto')
+  const [canvasShowBorder, setCanvasShowBorder] = useState(true)
+  
   const [postTitle, setPostTitle] = useState('')
   const [postType, setPostType] = useState('post') // 'post', 'reel', 'story'
   const [platforms, setPlatforms] = useState({ instagram: true, facebook: true })
@@ -377,8 +387,8 @@ export default function Marketing() {
           const uploadData = await uploadRes.json()
           if (uploadRes.ok && uploadData.url) {
             setMediaUrl(uploadData.url)
-            setPostType('reel')
           }
+
         } catch(e) {
           console.warn("Error uploading reel:", e)
         }
@@ -408,11 +418,25 @@ export default function Marketing() {
           }
         }
 
-        // 1. Background Gradient
+        // Theme colors
+        const isCleanWhite = canvasTheme === 'white_clean'
+        const theme = (canvasTheme === 'blue') ? { bg: ['#03182e', '#08203e', '#0d2a4a'], accent: '#3b82f6', header: 'rgba(59, 130, 246, 0.25)', defaultText: '#ffffff', defaultSubtext: '#94a3b8', border: '#3b82f6' } :
+                      (canvasTheme === 'purple') ? { bg: ['#230735', '#160424', '#0e0319'], accent: '#a855f7', header: 'rgba(168, 85, 247, 0.25)', defaultText: '#ffffff', defaultSubtext: '#94a3b8', border: '#a855f7' } :
+                      (canvasTheme === 'red') ? { bg: ['#2c0b0e', '#1f0507', '#140204'], accent: '#ef4444', header: 'rgba(239, 68, 68, 0.25)', defaultText: '#ffffff', defaultSubtext: '#94a3b8', border: '#ef4444' } :
+                      (canvasTheme === 'dark') ? { bg: ['#111827', '#0f172a', '#020617'], accent: '#64748b', header: 'rgba(148, 163, 184, 0.20)', defaultText: '#ffffff', defaultSubtext: '#94a3b8', border: '#64748b' } :
+                      (canvasTheme === 'white_clean') ? { bg: ['#ffffff', '#ffffff', '#ffffff'], accent: '#059669', header: 'transparent', defaultText: '#0f172a', defaultSubtext: '#475569', border: 'transparent' } :
+                      (canvasTheme === 'white') ? { bg: ['#ffffff', '#f8fafc', '#f1f5f9'], accent: '#059669', header: 'rgba(15, 23, 42, 0.05)', defaultText: '#0f172a', defaultSubtext: '#475569', border: '#059669' } :
+                      { bg: ['#041c14', '#050c18', '#0b1926'], accent: '#10b981', header: 'rgba(16, 185, 129, 0.25)', defaultText: '#ffffff', defaultSubtext: '#94a3b8', border: '#10b981' }
+
+        const mainTextColor = (canvasTextColor && canvasTextColor !== 'auto') ? canvasTextColor : theme.defaultText
+        const subTextColor = (canvasTextColor && canvasTextColor !== 'auto') ? canvasTextColor : theme.defaultSubtext
+        const drawBorder = canvasShowBorder && !isCleanWhite && theme.border !== 'transparent'
+
+        // 1. Background Gradient / Solid
         const grad = ctx.createLinearGradient(0, 0, 0, height)
-        grad.addColorStop(0, '#041c14')
-        grad.addColorStop(0.5, '#050c18')
-        grad.addColorStop(1, '#0b1926')
+        grad.addColorStop(0, theme.bg[0])
+        grad.addColorStop(0.5, theme.bg[1])
+        grad.addColorStop(1, theme.bg[2])
         ctx.fillStyle = grad
         ctx.fillRect(0, 0, width, height)
 
@@ -439,30 +463,37 @@ export default function Marketing() {
           ctx.drawImage(activeImg, xPos, yPos, targetW, targetH)
           ctx.restore()
 
-          ctx.lineWidth = 6
-          ctx.strokeStyle = '#10b981'
-          ctx.beginPath()
-          if (ctx.roundRect) ctx.roundRect(90, 260, 900, 900, 32)
-          else ctx.rect(90, 260, 900, 900)
-          ctx.stroke()
+          if (drawBorder) {
+            ctx.lineWidth = 6
+            ctx.strokeStyle = theme.border
+            ctx.beginPath()
+            if (ctx.roundRect) ctx.roundRect(90, 260, 900, 900, 32)
+            else ctx.rect(90, 260, 900, 900)
+            ctx.stroke()
+          }
         }
 
         // 3. Header Brand Bar
-        ctx.fillStyle = 'rgba(16, 185, 129, 0.25)'
-        ctx.fillRect(90, 100, 900, 90)
-        ctx.strokeStyle = '#10b981'
-        ctx.lineWidth = 2
-        ctx.strokeRect(90, 100, 900, 90)
+        if (theme.header !== 'transparent') {
+          ctx.fillStyle = theme.header
+          ctx.fillRect(90, 100, 900, 90)
+        }
+        if (drawBorder) {
+          ctx.strokeStyle = theme.border
+          ctx.lineWidth = 2
+          ctx.strokeRect(90, 100, 900, 90)
+        }
 
-        ctx.fillStyle = '#ffffff'
+        ctx.fillStyle = mainTextColor
         ctx.font = 'bold 36px sans-serif'
         ctx.textAlign = 'center'
         ctx.fillText('🌱 HIDROPONÍA ROSARIO', width / 2, 158)
 
         // 4. Badge
-        if (currentScene.badge_text) {
+        const badgeTxt = canvasBadgeText.trim() || currentScene.badge_text
+        if (badgeTxt) {
           const badgeY = 1220
-          ctx.fillStyle = '#f59e0b'
+          ctx.fillStyle = canvasBadgeColor || '#f59e0b'
           ctx.beginPath()
           if (ctx.roundRect) ctx.roundRect(width / 2 - 260, badgeY, 520, 64, 32)
           else ctx.rect(width / 2 - 260, badgeY, 520, 64)
@@ -470,30 +501,31 @@ export default function Marketing() {
 
           ctx.fillStyle = '#000000'
           ctx.font = 'bold 32px sans-serif'
-          ctx.fillText(currentScene.badge_text, width / 2, badgeY + 43)
+          ctx.fillText(badgeTxt, width / 2, badgeY + 43)
         }
 
         // 5. Headline
-        if (currentScene.main_headline) {
-          ctx.fillStyle = '#ffffff'
+        const headlineTxt = canvasCustomTitle.trim() || currentScene.main_headline
+        if (headlineTxt) {
+          ctx.fillStyle = mainTextColor
           ctx.font = 'bold 50px sans-serif'
           ctx.textAlign = 'center'
-          ctx.fillText(currentScene.main_headline, width / 2, 1370)
+          ctx.fillText(headlineTxt, width / 2, 1370)
         }
 
         // 6. Subtext
         if (currentScene.sub_text) {
-          ctx.fillStyle = '#94a3b8'
+          ctx.fillStyle = subTextColor
           ctx.font = '36px sans-serif'
           ctx.textAlign = 'center'
           ctx.fillText(currentScene.sub_text, width / 2, 1450)
         }
 
         // 7. Price Badge
-        if (script.product_price) {
+        if (canvasShowPrice && script.product_price) {
           const pillY = 1540
           const pillWidth = 560
-          ctx.fillStyle = '#10b981'
+          ctx.fillStyle = theme.accent
           ctx.beginPath()
           if (ctx.roundRect) ctx.roundRect(width / 2 - pillWidth / 2, pillY, pillWidth, 96, 48)
           else ctx.rect(width / 2 - pillWidth / 2, pillY, pillWidth, 96)
@@ -505,12 +537,12 @@ export default function Marketing() {
         }
 
         // 8. Call to action footer
-        ctx.fillStyle = '#3b82f6'
+        ctx.fillStyle = (isCleanWhite || canvasTheme === 'white') && (canvasTextColor === 'auto' || canvasTextColor === '#0f172a') ? '#059669' : mainTextColor
         ctx.font = 'bold 32px sans-serif'
-        ctx.fillText('📲 Hacé clic y comprá en HidroponiaRosario.com', width / 2, 1750)
+        ctx.fillText(canvasFooterText || '📲 Comprá en HidroponiaRosario.com', width / 2, 1750)
 
         // Progress bar
-        ctx.fillStyle = '#10b981'
+        ctx.fillStyle = theme.accent
         ctx.fillRect(0, height - 12, (elapsedTotal / totalDurationSec) * width, 12)
 
         requestAnimationFrame(drawFrame)
@@ -520,9 +552,173 @@ export default function Marketing() {
     })
   }
 
+  // Render a static 1080x1080 post image from Gemini Canvas script
+  const renderPostCanvasImage = async (script) => {
+    const size = 1080
+    const canvas = document.createElement('canvas')
+    canvas.width = size
+    canvas.height = size
+    const ctx = canvas.getContext('2d')
+
+    // Theme colors
+    const isCleanWhite = canvasTheme === 'white_clean'
+    const theme = (canvasTheme === 'blue') ? { bg: ['#03182e', '#08203e', '#0d2a4a'], accent: '#3b82f6', header: 'rgba(59, 130, 246, 0.25)', defaultText: '#ffffff', defaultSubtext: '#94a3b8', border: '#3b82f6' } :
+                  (canvasTheme === 'purple') ? { bg: ['#230735', '#160424', '#0e0319'], accent: '#a855f7', header: 'rgba(168, 85, 247, 0.25)', defaultText: '#ffffff', defaultSubtext: '#94a3b8', border: '#a855f7' } :
+                  (canvasTheme === 'red') ? { bg: ['#2c0b0e', '#1f0507', '#140204'], accent: '#ef4444', header: 'rgba(239, 68, 68, 0.25)', defaultText: '#ffffff', defaultSubtext: '#94a3b8', border: '#ef4444' } :
+                  (canvasTheme === 'dark') ? { bg: ['#111827', '#0f172a', '#020617'], accent: '#64748b', header: 'rgba(148, 163, 184, 0.20)', defaultText: '#ffffff', defaultSubtext: '#94a3b8', border: '#64748b' } :
+                  (canvasTheme === 'white_clean') ? { bg: ['#ffffff', '#ffffff', '#ffffff'], accent: '#059669', header: 'transparent', defaultText: '#0f172a', defaultSubtext: '#475569', border: 'transparent' } :
+                  (canvasTheme === 'white') ? { bg: ['#ffffff', '#f8fafc', '#f1f5f9'], accent: '#059669', header: 'rgba(15, 23, 42, 0.05)', defaultText: '#0f172a', defaultSubtext: '#475569', border: '#059669' } :
+                  { bg: ['#041c14', '#050c18', '#0b1926'], accent: '#10b981', header: 'rgba(16, 185, 129, 0.25)', defaultText: '#ffffff', defaultSubtext: '#94a3b8', border: '#10b981' }
+
+    const mainTextColor = (canvasTextColor && canvasTextColor !== 'auto') ? canvasTextColor : theme.defaultText
+    const subTextColor = (canvasTextColor && canvasTextColor !== 'auto') ? canvasTextColor : theme.defaultSubtext
+    const drawBorder = canvasShowBorder && !isCleanWhite && theme.border !== 'transparent'
+
+    // Load product images
+    const imagesList = script.images || []
+    const loadedImgs = await Promise.all(
+      imagesList.map(src => new Promise(res => {
+        const img = new Image()
+        img.crossOrigin = 'anonymous'
+        img.onload = () => res(img)
+        img.onerror = () => res(null)
+        img.src = src
+      }))
+    )
+    const validImgs = loadedImgs.filter(Boolean)
+    const scene = (script.scenes && script.scenes[0]) || { badge_text: 'PROMO EXCLUSIVA', main_headline: script.product_title || 'Hidroponía Rosario', sub_text: '¡Conocé el stock!' }
+
+    // 1. Background Gradient / Solid
+    const grad = ctx.createLinearGradient(0, 0, 0, size)
+    grad.addColorStop(0, theme.bg[0])
+    grad.addColorStop(0.5, theme.bg[1])
+    grad.addColorStop(1, theme.bg[2])
+    ctx.fillStyle = grad
+    ctx.fillRect(0, 0, size, size)
+
+    // 2. Header Brand Bar
+    if (theme.header !== 'transparent') {
+      ctx.fillStyle = theme.header
+      ctx.fillRect(60, 40, 960, 70)
+    }
+    if (drawBorder) {
+      ctx.strokeStyle = theme.border
+      ctx.lineWidth = 2
+      ctx.strokeRect(60, 40, 960, 70)
+    }
+    ctx.fillStyle = mainTextColor
+    ctx.font = 'bold 30px sans-serif'
+    ctx.textAlign = 'center'
+    ctx.fillText('🌱 HIDROPONÍA ROSARIO', size / 2, 85)
+
+    // 3. Product Image (centered, square)
+    const activeImg = validImgs[0]
+    if (activeImg) {
+      const imgAreaSize = 560
+      const imgAreaX = (size - imgAreaSize) / 2
+      const imgAreaY = 140
+
+      ctx.save()
+      ctx.beginPath()
+      if (ctx.roundRect) ctx.roundRect(imgAreaX, imgAreaY, imgAreaSize, imgAreaSize, 24)
+      else ctx.rect(imgAreaX, imgAreaY, imgAreaSize, imgAreaSize)
+      ctx.clip()
+      ctx.fillStyle = '#ffffff'
+      ctx.fillRect(imgAreaX, imgAreaY, imgAreaSize, imgAreaSize)
+
+      const imgW = activeImg.width
+      const imgH = activeImg.height
+      const scale = Math.max(imgAreaSize / imgW, imgAreaSize / imgH)
+      const drawW = imgW * scale
+      const drawH = imgH * scale
+      ctx.drawImage(activeImg, imgAreaX + (imgAreaSize - drawW) / 2, imgAreaY + (imgAreaSize - drawH) / 2, drawW, drawH)
+      ctx.restore()
+
+      if (drawBorder) {
+        ctx.lineWidth = 4
+        ctx.strokeStyle = theme.border
+        ctx.beginPath()
+        if (ctx.roundRect) ctx.roundRect(imgAreaX, imgAreaY, imgAreaSize, imgAreaSize, 24)
+        else ctx.rect(imgAreaX, imgAreaY, imgAreaSize, imgAreaSize)
+        ctx.stroke()
+      }
+    }
+
+    // 4. Badge
+    const badgeTxt = canvasBadgeText.trim() || scene.badge_text
+    if (badgeTxt) {
+      const badgeY = 730
+      ctx.fillStyle = canvasBadgeColor || '#f59e0b'
+      ctx.beginPath()
+      if (ctx.roundRect) ctx.roundRect(size / 2 - 220, badgeY, 440, 52, 26)
+      else ctx.rect(size / 2 - 220, badgeY, 440, 52)
+      ctx.fill()
+      ctx.fillStyle = '#000000'
+      ctx.font = 'bold 26px sans-serif'
+      ctx.textAlign = 'center'
+      ctx.fillText(badgeTxt, size / 2, badgeY + 36)
+    }
+
+    // 5. Headline
+    const headlineTxt = canvasCustomTitle.trim() || scene.main_headline
+    if (headlineTxt) {
+      ctx.fillStyle = mainTextColor
+      ctx.font = 'bold 40px sans-serif'
+      ctx.textAlign = 'center'
+      ctx.fillText(headlineTxt, size / 2, 840)
+    }
+
+    // 6. Subtext
+    if (scene.sub_text) {
+      ctx.fillStyle = subTextColor
+      ctx.font = '28px sans-serif'
+      ctx.textAlign = 'center'
+      ctx.fillText(scene.sub_text, size / 2, 890)
+    }
+
+    // 7. Price Badge
+    if (canvasShowPrice && script.product_price) {
+      const pillY = 920
+      const pillWidth = 420
+      ctx.fillStyle = theme.accent
+      ctx.beginPath()
+      if (ctx.roundRect) ctx.roundRect(size / 2 - pillWidth / 2, pillY, pillWidth, 72, 36)
+      else ctx.rect(size / 2 - pillWidth / 2, pillY, pillWidth, 72)
+      ctx.fill()
+      ctx.fillStyle = '#ffffff'
+      ctx.font = 'bold 36px sans-serif'
+      ctx.fillText(`$ ${script.product_price.toLocaleString('es-AR')}`, size / 2, pillY + 50)
+    }
+
+    // 8. Call to action
+    ctx.fillStyle = (isCleanWhite || canvasTheme === 'white') && (canvasTextColor === 'auto' || canvasTextColor === '#0f172a') ? '#059669' : mainTextColor
+    ctx.font = 'bold 24px sans-serif'
+    ctx.fillText(canvasFooterText || '📲 Comprá en HidroponiaRosario.com', size / 2, 1040)
+
+    // Export as PNG blob and upload
+    return new Promise((resolve) => {
+      canvas.toBlob(async (blob) => {
+        const blobUrl = URL.createObjectURL(blob)
+        try {
+          const formData = new FormData()
+          const file = new File([blob], `post_${Date.now()}.png`, { type: 'image/png' })
+          formData.append('file', file)
+          const uploadRes = await fetch('/api/media/upload?path=reels', { method: 'POST', body: formData })
+          const uploadData = await uploadRes.json()
+          if (uploadRes.ok && uploadData.url) {
+            setMediaUrl(uploadData.url)
+          }
+        } catch (e) {
+          console.warn("Error uploading post image:", e)
+        }
+        resolve(blobUrl)
+      }, 'image/png')
+    })
+  }
+
   const handleGenerateAIVideo = async () => {
     if (!selectedProduct) {
-      alert("Por favor selecciona un producto del inventario para generar el Reel con IA.")
+      alert("Por favor selecciona un producto del inventario.")
       return
     }
     setGeneratingVideo(true)
@@ -536,15 +732,15 @@ export default function Marketing() {
         body: JSON.stringify({
           product_ml_id: selectedProduct,
           prompt: videoPrompt,
-          generator_type: videoEngine
+          generator_type: videoEngine,
+          post_type: postType
         })
       })
       const data = await res.json()
       if (res.ok && data.success) {
-        if (data.engine === 'google_veo' || data.engine === 'pollinations') {
+        if (['google_veo', 'pollinations', 'flux', 'imagen3', 'gemini_native_img'].includes(data.engine)) {
           setGeneratedVideoUrl(data.video_url)
           setMediaUrl(data.video_url)
-          setPostType('reel')
         } else if (data.script) {
           setVideoScriptData(data.script)
           if (data.script.full_caption) {
@@ -553,18 +749,25 @@ export default function Marketing() {
           if (data.script.video_title) {
             setPostTitle(data.script.video_title)
           }
-          const videoBlobUrl = await renderReelCanvasVideo(data.script)
-          setGeneratedVideoUrl(videoBlobUrl)
+          // Generate image for posts, video for reels
+          if (postType === 'post') {
+            const imageBlobUrl = await renderPostCanvasImage(data.script)
+            setGeneratedVideoUrl(imageBlobUrl)
+          } else {
+            const videoBlobUrl = await renderReelCanvasVideo(data.script)
+            setGeneratedVideoUrl(videoBlobUrl)
+          }
         }
       } else {
-        alert("Error al generar video: " + (data.detail || data.error || "Error desconocido"))
+        alert("Error al generar contenido: " + (data.detail || data.error || "Error desconocido"))
       }
     } catch(err) {
-      alert("Error de conexión al generar video: " + err.message)
+      alert("Error de conexión al generar contenido: " + err.message)
     } finally {
       setGeneratingVideo(false)
     }
   }
+
 
   const handleSavePost = async (statusOverride = null) => {
     if (!postTitle.trim() || !caption.trim()) {
@@ -842,7 +1045,7 @@ export default function Marketing() {
                 </div>
               )}
 
-              {/* Generador de Video / Reel IA Card */}
+              {/* Generador de Imagen / Video IA Card */}
               <div style={{
                 marginTop: 10,
                 padding: 15,
@@ -854,30 +1057,147 @@ export default function Marketing() {
                 gap: 12
               }}>
                 <div style={{fontSize: '0.88rem', fontWeight: 700, color: 'var(--accent-blue)', display: 'flex', alignItems: 'center', gap: 8}}>
-                  <Video size={18} /> 🎬 Generar Video / Reel con IA (15s HD)
+                  <Sparkles size={18} /> 🎨 Generar Imagen o Video con IA para tu Publicación
                 </div>
 
-                <label style={{fontSize: '0.82rem', fontWeight: 600}}>Prompt / Instrucción para el Video:
+                <label style={{fontSize: '0.82rem', fontWeight: 600}}>Instrucción / Prompt para la IA:
                   <input 
                     type="text" 
                     value={videoPrompt} 
                     onChange={e => setVideoPrompt(e.target.value)} 
-                    placeholder="Ej: Enfocar en oferta especial, envío gratis a Rosario y kit de regalo..."
+                    placeholder={postType === 'post' ? "Ej: Imagen promocional hiperrealista para post de Facebook e Instagram..." : "Ej: Video publicitario corto enfocado en kit de regalo y envío gratis..."}
                     style={{width: '100%', marginTop: 5, padding: '7px 10px', borderRadius: 6, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-dark)', color: 'var(--text-primary)', fontSize: '0.82rem'}}
                   />
                 </label>
 
-                <label style={{fontSize: '0.82rem', fontWeight: 600}}>Generador de Video IA:
+                <label style={{fontSize: '0.82rem', fontWeight: 600}}>Generador de Video / Imagen IA:
                   <select 
                     value={videoEngine} 
                     onChange={e => setVideoEngine(e.target.value)}
                     style={{width: '100%', marginTop: 5, padding: '6px 10px', borderRadius: 6, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-dark)', color: 'var(--text-primary)', fontSize: '0.82rem'}}
                   >
-                    <option value="gemini_canvas">🎬 Gemini IA + Comercial HD (Fotos HD + Precios - Gratis)</option>
-                    <option value="google_veo">🌟 Google Veo 3.1 Fast (Google AI Pro / Cloud - 8s HD)</option>
-                    <option value="pollinations">🎨 Pollinations AI Generativo (Gratis)</option>
+                    <option value="gemini_canvas">🎨 Plantilla Comercial HD (Foto Real de Producto + Precio + Personalizable)</option>
+                    <option value="imagen3">🌟 Google Imagen 3.0 / 4.0 (Fotografía Hiperrealista por IA - Gemini API Key)</option>
+                    <option value="google_veo">🎬 Google Veo 3.1 Fast (Video IA de 8s en Alta Definición - Google AI Studio)</option>
                   </select>
                 </label>
+
+                {/* Panel de Personalización de Plantilla Comercial Canvas */}
+                {videoEngine === 'gemini_canvas' && (
+                  <div style={{marginTop: 6, padding: '10px 12px', borderRadius: 8, backgroundColor: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', gap: 8}}>
+                    <div style={{fontSize: '0.8rem', fontWeight: 700, color: 'var(--accent-blue)', display: 'flex', alignItems: 'center', gap: 6}}>
+                      <span>🎨 Personalizar Estilo de Plantilla:</span>
+                    </div>
+
+                    {/* Row 1: Tema & Color de Letras */}
+                    <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8}}>
+                      <label style={{fontSize: '0.78rem', fontWeight: 600}}>Tema de Fondo:
+                        <select 
+                          value={canvasTheme} 
+                          onChange={e => setCanvasTheme(e.target.value)}
+                          style={{width: '100%', marginTop: 3, padding: '4px 8px', borderRadius: 6, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-dark)', color: 'var(--text-primary)', fontSize: '0.78rem'}}
+                        >
+                          <option value="emerald">🌿 Verde Esmeralda (Hidroponía)</option>
+                          <option value="white_clean">⚪ Blanco Liso Minimalista (100% Blanco Sin Bordes)</option>
+                          <option value="white">⬜ Blanco Elegante (Con Bordes y Degradado)</option>
+                          <option value="blue">🔵 Azul Comercial / Pro</option>
+                          <option value="purple">🟣 Violeta Neón / Premium</option>
+                          <option value="red">🔴 Rojo Oferta Destacada</option>
+                          <option value="dark">🖤 Negro Elegante / Minimalista</option>
+                        </select>
+                      </label>
+
+                      <label style={{fontSize: '0.78rem', fontWeight: 600}}>Color de Letras / Textos:
+                        <select 
+                          value={canvasTextColor} 
+                          onChange={e => setCanvasTextColor(e.target.value)}
+                          style={{width: '100%', marginTop: 3, padding: '4px 8px', borderRadius: 6, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-dark)', color: 'var(--text-primary)', fontSize: '0.78rem'}}
+                        >
+                          <option value="auto">✨ Automático (Según Fondo)</option>
+                          <option value="#0f172a">🖤 Negro / Oscuro</option>
+                          <option value="#ffffff">🤍 Blanco Puro</option>
+                          <option value="#064e3b">🌿 Verde Oscuro</option>
+                          <option value="#1e3a8a">🔵 Azul Marino</option>
+                          <option value="#7f1d1d">🔴 Rojo Oscuro</option>
+                          <option value="#4c1d95">🟣 Violeta Oscuro</option>
+                        </select>
+                      </label>
+                    </div>
+
+                    {/* Row 2: Texto Etiqueta & Color Etiqueta */}
+                    <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8}}>
+                      <label style={{fontSize: '0.78rem', fontWeight: 600}}>Texto de Etiqueta (Badge):
+                        <input 
+                          type="text" 
+                          value={canvasBadgeText} 
+                          onChange={e => setCanvasBadgeText(e.target.value)}
+                          placeholder="Ej: ¡PROMO IMPERDIBLE!"
+                          style={{width: '100%', marginTop: 3, padding: '4px 8px', borderRadius: 6, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-dark)', color: 'var(--text-primary)', fontSize: '0.78rem'}}
+                        />
+                      </label>
+
+                      <label style={{fontSize: '0.78rem', fontWeight: 600}}>Color de Etiqueta:
+                        <select 
+                          value={canvasBadgeColor} 
+                          onChange={e => setCanvasBadgeColor(e.target.value)}
+                          style={{width: '100%', marginTop: 3, padding: '4px 8px', borderRadius: 6, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-dark)', color: 'var(--text-primary)', fontSize: '0.78rem'}}
+                        >
+                          <option value="#f59e0b">🟧 Naranja Promocional</option>
+                          <option value="#10b981">🟩 Verde Hidroponía</option>
+                          <option value="#ef4444">🟥 Rojo Intenso</option>
+                          <option value="#3b82f6">🟦 Azul Eléctrico</option>
+                          <option value="#eab308">🟨 Dorado Premium</option>
+                        </select>
+                      </label>
+                    </div>
+
+                    {/* Row 3: Titular & Pie */}
+                    <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8}}>
+                      <label style={{fontSize: '0.78rem', fontWeight: 600}}>Titular Personalizado (Opcional):
+                        <input 
+                          type="text" 
+                          value={canvasCustomTitle} 
+                          onChange={e => setCanvasCustomTitle(e.target.value)}
+                          placeholder="Usar texto redactado por Gemini..."
+                          style={{width: '100%', marginTop: 3, padding: '4px 8px', borderRadius: 6, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-dark)', color: 'var(--text-primary)', fontSize: '0.78rem'}}
+                        />
+                      </label>
+
+                      <label style={{fontSize: '0.78rem', fontWeight: 600}}>Texto de Pie (Llamado a la Acción):
+                        <input 
+                          type="text" 
+                          value={canvasFooterText} 
+                          onChange={e => setCanvasFooterText(e.target.value)}
+                          placeholder="📲 Comprá en HidroponiaRosario.com"
+                          style={{width: '100%', marginTop: 3, padding: '4px 8px', borderRadius: 6, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-dark)', color: 'var(--text-primary)', fontSize: '0.78rem'}}
+                        />
+                      </label>
+                    </div>
+
+                    {/* Row 4: Checkboxes */}
+                    <div style={{display: 'flex', gap: 16, alignItems: 'center', flexWrap: 'wrap'}}>
+                      <label style={{fontSize: '0.78rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer'}}>
+                        <input 
+                          type="checkbox" 
+                          checked={canvasShowPrice} 
+                          onChange={e => setCanvasShowPrice(e.target.checked)}
+                          style={{width: 'auto'}}
+                        />
+                        Mostrar Precio del Producto
+                      </label>
+
+                      <label style={{fontSize: '0.78rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer'}}>
+                        <input 
+                          type="checkbox" 
+                          checked={canvasShowBorder} 
+                          onChange={e => setCanvasShowBorder(e.target.checked)}
+                          style={{width: 'auto'}}
+                        />
+                        Mostrar Recuadro / Borde en Imagen y Encabezado
+                      </label>
+                    </div>
+                  </div>
+                )}
 
                 <button 
                   className="btn" 
@@ -885,59 +1205,70 @@ export default function Marketing() {
                   disabled={generatingVideo || !selectedProduct}
                   style={{backgroundColor: 'var(--accent-blue)', color: '#fff', padding: '10px', fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8}}
                 >
-                  {generatingVideo ? <RefreshCw className="animate-spin" size={16} /> : <Video size={16} />}
-                  {generatingVideo ? 'Creando y renderizando Reel...' : '🎬 Generar y Previsualizar Reel con IA'}
+                  {generatingVideo ? <RefreshCw className="animate-spin" size={16} /> : <Sparkles size={16} />}
+                  {generatingVideo ? 'Generando contenido con IA...' : (postType === 'post' ? '🎨 Generar Imagen IA para Post (1:1)' : '🎬 Generar Video / Reel con IA (9:16)')}
                 </button>
 
-                {/* Reproductor de Previsualización de Video */}
+                {/* Previsualización del Contenido Generado */}
                 {generatedVideoUrl && (
                   <div style={{marginTop: 10, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10, backgroundColor: '#000', padding: 12, borderRadius: 10}}>
                     <div style={{fontSize: '0.78rem', color: 'var(--accent-emerald)', fontWeight: 700, width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
-                      <span>🎥 Previsualización del Reel Generado (1080x1920):</span>
+                      <span>{postType === 'post' ? '🖼️ Previsualización de Imagen Generada (1:1):' : '🎥 Previsualización del Reel Generado (9:16):'}</span>
                       <span style={{fontSize: '0.7rem', color: 'var(--text-secondary)'}}>Listo para Instagram/Facebook</span>
                     </div>
 
-                    <video 
-                      src={generatedVideoUrl} 
-                      controls 
-                      autoPlay 
-                      loop 
-                      style={{maxHeight: 360, maxWidth: '100%', borderRadius: 8, boxShadow: '0 4px 16px rgba(0,0,0,0.6)', border: '2px solid var(--accent-blue)'}} 
-                    />
+                    {(postType !== 'post') && (generatedVideoUrl.includes('.mp4') || generatedVideoUrl.includes('.webm') || videoEngine === 'google_veo' || videoEngine === 'gemini_canvas') ? (
+                      <video 
+                        src={generatedVideoUrl} 
+                        controls 
+                        autoPlay 
+                        loop 
+                        style={{maxHeight: 360, maxWidth: '100%', borderRadius: 8, boxShadow: '0 4px 16px rgba(0,0,0,0.6)', border: '2px solid var(--accent-blue)'}} 
+                      />
+                    ) : (
+                      <img 
+                        src={generatedVideoUrl} 
+                        alt="Previsualización IA" 
+                        style={{maxHeight: 360, maxWidth: '100%', borderRadius: 8, boxShadow: '0 4px 16px rgba(0,0,0,0.6)', border: '2px solid var(--accent-blue)', objectFit: 'contain'}} 
+                      />
+                    )}
 
                     <div style={{display: 'flex', gap: 8, width: '100%', marginTop: 5}}>
                       <button 
                         className="btn" 
                         onClick={() => {
                           setMediaUrl(generatedVideoUrl)
-                          setPostType('reel')
-                          alert("¡Video asignado a la publicación como Reel!")
+                          alert(`¡${postType === 'post' ? 'Imagen' : 'Video'} asignado correctamente a la publicación!`)
                         }}
                         style={{flex: 1, padding: '6px 10px', fontSize: '0.75rem', backgroundColor: 'var(--accent-emerald)', color: '#fff', fontWeight: 600}}
                       >
-                        ✨ Usar para Post
+                        ✨ Usar en la Publicación
                       </button>
                       <button 
                         className="btn" 
                         onClick={handleGenerateAIVideo}
                         style={{flex: 1, padding: '6px 10px', fontSize: '0.75rem', backgroundColor: 'var(--bg-dark)', color: 'var(--text-primary)', border: '1px solid var(--border-color)'}}
                       >
-                        🔄 Alternativa
+                        🔄 Probar Otra Opción
                       </button>
                       <a 
                         href={generatedVideoUrl} 
-                        download="reel_hidroponia.webm"
+                        target="_blank"
+                        rel="noreferrer"
                         className="btn" 
                         style={{padding: '6px 10px', fontSize: '0.75rem', backgroundColor: 'var(--bg-dark)', color: 'var(--accent-blue)', border: '1px solid var(--border-color)', textDecoration: 'none', display: 'flex', alignItems: 'center'}}
                       >
-                        ⬇️ Descargar
+                        📥 Abrir
                       </a>
                     </div>
                   </div>
                 )}
+
               </div>
             </div>
           </div>
+
+
 
           {/* Columna Derecha: Previsualización & Programación */}
           <div className="card" style={{flex: 1.2, minWidth: 340}}>

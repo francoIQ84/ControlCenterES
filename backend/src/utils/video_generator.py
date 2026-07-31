@@ -96,8 +96,8 @@ def generate_video_script_with_gemini(product_data: dict, user_prompt: str = "")
 
 def generate_video_with_google_veo(prompt: str, image_url: str = ""):
     """
-    Calls Google Veo 3.1 Fast / Veo 2.0 API using configured Gemini API Key.
-    Requires the google-genai SDK: pip install google-genai
+    Calls Google Veo API using configured Gemini API Key.
+    Auto-discovers available Veo models from the API key.
     """
     gemini_key = database.get_setting("gemini_api_key", "").strip()
     if not gemini_key:
@@ -109,7 +109,6 @@ def generate_video_with_google_veo(prompt: str, image_url: str = ""):
     out_filename = f"veo_{int(time.time())}.mp4"
     out_path = os.path.join(out_dir, out_filename)
 
-    # Check if google-genai SDK is available
     try:
         from google import genai
         from google.genai import types
@@ -119,7 +118,7 @@ def generate_video_with_google_veo(prompt: str, image_url: str = ""):
             "Ejecutá 'pip install google-genai' en el VPS y reiniciá el backend."
         )
 
-    last_veo_err = ""
+    all_errors = []
 
     try:
         client = genai.Client(
@@ -127,27 +126,73 @@ def generate_video_with_google_veo(prompt: str, image_url: str = ""):
             api_key=gemini_key,
         )
 
-        video_config = types.GenerateVideosConfig(
-            aspect_ratio="9:16",  # Vertical Reel format
-            number_of_videos=1,
-            duration_seconds=8,
-            resolution="720p",
-        )
+        # Auto-discover available Veo models from the API key
+        discovered_veo_models = []
+        try:
+            for m in client.models.list():
+                model_id = m.name.replace("models/", "") if m.name.startswith("models/") else m.name
+                if "veo" in model_id.lower():
+                    discovered_veo_models.append(model_id)
+                    print(f"[Veo] Modelo Veo descubierto: {model_id}")
+        except Exception as list_err:
+            print(f"[Veo] Error listando modelos: {list_err}")
 
-        veo_models = [
+        # Hardcoded fallback list if discovery fails
+        fallback_models = [
+            "veo-2.0-generate-001",
             "veo-3.1-fast-generate-preview",
             "veo-3.1-generate-preview",
-            "veo-3.1-lite-generate-preview"
+            "veo-2.0-generate-preview",
         ]
+
+        # Use discovered models first, then fallback, removing duplicates
+        veo_models = discovered_veo_models.copy()
+        for fm in fallback_models:
+            if fm not in veo_models:
+                veo_models.append(fm)
+
+        if not veo_models:
+            return {
+                "success": False,
+                "error": "No se encontraron modelos Veo disponibles con tu API Key. "
+                         "Verificá que tu cuenta Google AI tenga acceso a Veo en aistudio.google.com."
+            }
+
+        print(f"[Veo] Modelos a probar (descubiertos + fallback): {veo_models}")
+
+        video_config = types.GenerateVideosConfig(
+            aspect_ratio="9:16",
+            number_of_videos=1,
+            duration_seconds=8,
+        )
 
         for veo_model in veo_models:
             try:
                 print(f"[Veo] Intentando generar video con modelo: {veo_model}")
-                operation = client.models.generate_videos(
-                    model=veo_model,
-                    source=types.GenerateVideosSource(prompt=prompt_clean),
-                    config=video_config,
-                )
+
+                # Try prompt= first, then source= syntax
+                operation = None
+                for call_style in ["prompt", "source"]:
+                    try:
+                        if call_style == "prompt":
+                            operation = client.models.generate_videos(
+                                model=veo_model,
+                                prompt=prompt_clean,
+                                config=video_config,
+                            )
+                        else:
+                            operation = client.models.generate_videos(
+                                model=veo_model,
+                                source=types.GenerateVideosSource(prompt=prompt_clean),
+                                config=video_config,
+                            )
+                        break  # If no exception, we have an operation
+                    except TypeError:
+                        continue  # Wrong call signature, try the other
+
+                if operation is None:
+                    all_errors.append(f"{veo_model}: no se pudo invocar generate_videos")
+                    continue
 
                 # Poll until done (max ~3.5 min)
                 max_polls = 40
@@ -159,70 +204,287 @@ def generate_video_with_google_veo(prompt: str, image_url: str = ""):
                     print(f"[Veo] Polling {poll_count}/{max_polls}...")
 
                 if not operation.done:
-                    last_veo_err = f"Timeout: el video no se generó en {max_polls * 5}s con {veo_model}"
+                    all_errors.append(f"{veo_model}: timeout ({max_polls * 5}s)")
                     continue
 
                 result = operation.result
                 if result and hasattr(result, 'generated_videos') and result.generated_videos:
                     video_obj = result.generated_videos[0].video
-                    
-                    # Method 1: Check if bytes are directly attached
+
+                    # Method 1: video_bytes
                     if hasattr(video_obj, 'video_bytes') and video_obj.video_bytes:
                         with open(out_path, "wb") as f:
                             f.write(video_obj.video_bytes)
                         print(f"[Veo] Video guardado desde video_bytes: {out_path}")
                         return {"success": True, "video_url": f"/uploads/reels/{out_filename}", "engine": "google_veo", "model": veo_model}
 
-                    # Method 2: Use client.files.download(file=video_obj)
+                    # Method 2: client.files.download
                     if hasattr(client, 'files') and hasattr(client.files, 'download'):
                         try:
                             video_bytes = client.files.download(file=video_obj)
                             if video_bytes:
                                 with open(out_path, "wb") as f:
                                     f.write(video_bytes)
-                                print(f"[Veo] Video descargado exitosamente via client.files.download: {out_path}")
+                                print(f"[Veo] Video descargado via client.files.download: {out_path}")
                                 return {"success": True, "video_url": f"/uploads/reels/{out_filename}", "engine": "google_veo", "model": veo_model}
                         except Exception as dl_err:
                             print(f"[Veo] Download error: {dl_err}")
 
-                    # Method 3: Download from video_obj.uri
+                    # Method 3: URI download
                     if hasattr(video_obj, 'uri') and video_obj.uri:
                         import urllib.request
                         urllib.request.urlretrieve(video_obj.uri, out_path)
-                        print(f"[Veo] Video descargado desde URI ({video_obj.uri}): {out_path}")
+                        print(f"[Veo] Video descargado desde URI: {out_path}")
                         return {"success": True, "video_url": f"/uploads/reels/{out_filename}", "engine": "google_veo", "model": veo_model}
 
-                    last_veo_err = f"El modelo {veo_model} completó pero no se pudieron obtener los bytes del video."
+                    all_errors.append(f"{veo_model}: completó pero no se pudieron obtener bytes del video")
                 else:
-                    last_veo_err = f"El modelo {veo_model} no devolvió resultados."
+                    all_errors.append(f"{veo_model}: no devolvió resultados")
             except Exception as model_err:
-                last_veo_err = str(model_err)
-                print(f"[Veo] Error con {veo_model}: {last_veo_err}")
-                if "429" in last_veo_err or "RESOURCE_EXHAUSTED" in last_veo_err:
-                    last_veo_err = "Se ha superado la cuota límite (Quota Exceeded) de tu API Key para Google Veo. Verificá los límites o la facturación en Google AI Studio (aistudio.google.com)."
+                err_str = str(model_err)
+                all_errors.append(f"{veo_model}: {err_str[:200]}")
+                print(f"[Veo] Error con {veo_model}: {err_str}")
+                if "429" in err_str or "RESOURCE_EXHAUSTED" in err_str:
+                    return {
+                        "success": False,
+                        "error": "Se ha superado la cuota límite (Quota Exceeded) de tu API Key para Google Veo. "
+                                 "Verificá los límites o la facturación en Google AI Studio (aistudio.google.com)."
+                    }
                 continue
 
     except Exception as e:
-        last_veo_err = str(e)
-        print(f"[Veo] Error general del SDK: {last_veo_err}")
+        all_errors.append(f"Error general SDK: {str(e)}")
+        print(f"[Veo] Error general del SDK: {e}")
 
+    discovered_info = f" Modelos Veo descubiertos: {discovered_veo_models}" if discovered_veo_models else " No se descubrieron modelos Veo con tu API Key."
+    errors_summary = " | ".join(all_errors[-3:]) if all_errors else "sin detalle"
     return {
         "success": False,
-        "error": f"Error con Google Veo 3.1: {last_veo_err}. Verificá que tu API Key tenga permisos de Veo en tu cuenta Google AI Pro / Cloud."
+        "error": f"Error con Google Veo.{discovered_info} Errores: {errors_summary}. "
+                 f"Verificá que tu API Key tenga acceso a Veo en aistudio.google.com."
     }
 
-def generate_video_with_pollinations(prompt: str):
+def generate_video_with_flux(prompt: str, post_type: str = "reel", product_data: dict = None):
     """
-    Uses Pollinations AI free image-to-video / text-to-video endpoint.
+    Uses FLUX.1 Realism AI model (Ultra-realistic HD free generation).
+    Supports post_type='post' (1:1 1080x1080) and post_type='reel' (9:16 1080x1920).
+    Automatically includes product context to generate accurate product shots.
     """
     try:
-        encoded_prompt = urllib.parse.quote(prompt or "hydroponics plant growth reel cinematic")
+        title = product_data.get("title", "") if isinstance(product_data, dict) else ""
+        
+        base_prompt = f"professional product photography of {title}, hydroponics commercial kit bottles, clean studio lighting, 8k resolution, photorealistic" if title else "hydroponics plant growth commercial product photo ultra realistic 8k"
+        if prompt and prompt.strip():
+            base_prompt += f", {prompt.strip()}"
+
+        encoded_prompt = urllib.parse.quote(base_prompt)
         seed = int(time.time())
-        pollinations_url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=1080&height=1920&seed={seed}&nologo=true"
+        is_post = (post_type or "").lower() == "post"
+        width = 1080
+        height = 1080 if is_post else 1920
+        flux_url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?model=flux-realism&width={width}&height={height}&seed={seed}&nologo=true"
         return {
             "success": True,
-            "video_url": pollinations_url,
-            "engine": "pollinations"
+            "video_url": flux_url,
+            "engine": "flux"
         }
     except Exception as e:
         return {"success": False, "error": str(e)}
+
+
+def generate_video_with_imagen3(prompt: str, post_type: str = "reel"):
+    """
+    Uses Google Imagen 3.0 via Gemini API Key for ultra-high quality visuals.
+    """
+    gemini_key = database.get_setting("gemini_api_key", "").strip()
+    if not gemini_key:
+        return {"success": False, "error": "Se requiere una API Key de Gemini configurada en Ajustes."}
+
+    is_post = (post_type or "").lower() == "post"
+    aspect_ratio = "1:1" if is_post else "9:16"
+    prompt_clean = prompt or "hydroponic system commercial product photography, 8k, cinematic, photorealistic"
+
+    # Try SDK first
+    try:
+        from google import genai
+        from google.genai import types
+
+        client = genai.Client(api_key=gemini_key)
+        for model_name in ["imagen-4.0-generate-001", "imagen-3.0-generate-002", "imagen-3.0-fast-generate-001"]:
+            try:
+                result = client.models.generate_images(
+                    model=model_name,
+                    prompt=prompt_clean,
+                    config=types.GenerateImagesConfig(
+                        number_of_images=1,
+                        aspect_ratio=aspect_ratio,
+                    )
+                )
+                if result and hasattr(result, 'generated_images') and result.generated_images:
+                    img_obj = result.generated_images[0].image
+                    img_bytes = getattr(img_obj, 'image_bytes', None) or getattr(img_obj, 'bytes', None)
+                    if img_bytes:
+                        out_dir = os.path.join("uploads", "reels")
+                        os.makedirs(out_dir, exist_ok=True)
+                        out_filename = f"imagen3_{int(time.time())}.png"
+                        out_path = os.path.join(out_dir, out_filename)
+                        with open(out_path, "wb") as f:
+                            f.write(img_bytes)
+                        return {"success": True, "video_url": f"/uploads/reels/{out_filename}", "engine": "imagen3"}
+            except Exception as e:
+                print(f"[Imagen3] SDK error with {model_name}: {e}")
+                continue
+    except Exception as e:
+        print(f"[Imagen3] SDK init error: {e}")
+
+    # Fallback to REST API
+    try:
+        import requests
+        for model_name in ["imagen-4.0-generate-001", "imagen-3.0-generate-002", "imagen-3.0-fast-generate-001"]:
+            try:
+                url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:predict?key={gemini_key}"
+                headers = {"Content-Type": "application/json"}
+                payload = {
+                    "instances": [{"prompt": prompt_clean}],
+                    "parameters": {"sampleCount": 1, "aspectRatio": aspect_ratio}
+                }
+                res = requests.post(url, json=payload, headers=headers, timeout=20)
+                if res.status_code == 200:
+                    data = res.json()
+                    predictions = data.get("predictions", [])
+                    if predictions and "bytesBase64Encoded" in predictions[0]:
+                        import base64
+                        img_bytes = base64.b64decode(predictions[0]["bytesBase64Encoded"])
+                        out_dir = os.path.join("uploads", "reels")
+                        os.makedirs(out_dir, exist_ok=True)
+                        out_filename = f"imagen3_{int(time.time())}.png"
+                        out_path = os.path.join(out_dir, out_filename)
+                        with open(out_path, "wb") as f:
+                            f.write(img_bytes)
+                        return {"success": True, "video_url": f"/uploads/reels/{out_filename}", "engine": "imagen3"}
+            except Exception:
+                continue
+    except Exception:
+        pass
+
+    return {
+        "success": False,
+        "error": "No se pudo generar la imagen con Google Imagen 3. Verificá tu API Key de Gemini."
+    }
+
+def generate_video_with_pollinations(prompt: str, post_type: str = "reel"):
+    """
+    Uses FLUX Realism free endpoint.
+    """
+    return generate_video_with_flux(prompt, post_type=post_type)
+
+
+def generate_image_with_gemini_native(prompt: str, product_data: dict, post_type: str = "post"):
+    """
+    Uses Google Imagen 3.0 via google-genai SDK or REST API to create a real AI image based on user's prompt.
+    If Imagen 3 is unavailable on the API key, falls back to the Gemini Canvas script.
+    """
+    gemini_key = database.get_setting("gemini_api_key", "").strip()
+    if not gemini_key:
+        return {"success": False, "error": "Se requiere una API Key de Gemini configurada en Ajustes."}
+
+    title = product_data.get("title", "")
+    price = product_data.get("price_web") or product_data.get("price") or 0
+
+    full_prompt = (
+        f"Professional high quality promotional social media product photography "
+        f"for {title} from Hidroponía Rosario. Price ${price:,.0f} ARS. "
+    )
+    if prompt and prompt.strip():
+        full_prompt += f"User instructions: {prompt}. "
+    full_prompt += "Photorealistic, 8k, commercial product shot."
+
+    is_post = (post_type or "").lower() == "post"
+    aspect_ratio = "1:1" if is_post else "9:16"
+
+    # Method 1: Try via google-genai SDK generate_images
+    try:
+        from google import genai
+        from google.genai import types
+
+        client = genai.Client(api_key=gemini_key)
+        for model_name in ["imagen-3.0-generate-002", "imagen-3.0-fast-generate-001"]:
+            try:
+                print(f"[Imagen3SDK] Generating image with {model_name}...")
+                result = client.models.generate_images(
+                    model=model_name,
+                    prompt=full_prompt,
+                    config=types.GenerateImagesConfig(
+                        number_of_images=1,
+                        aspect_ratio=aspect_ratio,
+                    )
+                )
+                if result and hasattr(result, 'generated_images') and result.generated_images:
+                    img_obj = result.generated_images[0].image
+                    img_bytes = getattr(img_obj, 'image_bytes', None) or getattr(img_obj, 'bytes', None)
+                    if img_bytes:
+                        out_dir = os.path.join("uploads", "reels")
+                        os.makedirs(out_dir, exist_ok=True)
+                        out_filename = f"imagen3_{int(time.time())}.png"
+                        out_path = os.path.join(out_dir, out_filename)
+                        with open(out_path, "wb") as f:
+                            f.write(img_bytes)
+                        print(f"[Imagen3SDK] SUCCESS: {out_path}")
+                        return {
+                            "success": True,
+                            "video_url": f"/uploads/reels/{out_filename}",
+                            "engine": "imagen3"
+                        }
+            except Exception as model_err:
+                print(f"[Imagen3SDK] Error with {model_name}: {model_err}")
+                continue
+    except Exception as sdk_err:
+        print(f"[Imagen3SDK] General SDK error: {sdk_err}")
+
+    # Method 2: Try via REST API
+    try:
+        import requests
+        for model_name in ["imagen-3.0-generate-002", "imagen-3.0-fast-generate-001"]:
+            try:
+                url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:predict?key={gemini_key}"
+                headers = {"Content-Type": "application/json"}
+                payload = {
+                    "instances": [{"prompt": full_prompt}],
+                    "parameters": {"sampleCount": 1, "aspectRatio": aspect_ratio}
+                }
+                res = requests.post(url, json=payload, headers=headers, timeout=20)
+                if res.status_code == 200:
+                    data = res.json()
+                    predictions = data.get("predictions", [])
+                    if predictions and "bytesBase64Encoded" in predictions[0]:
+                        import base64
+                        img_bytes = base64.b64decode(predictions[0]["bytesBase64Encoded"])
+                        out_dir = os.path.join("uploads", "reels")
+                        os.makedirs(out_dir, exist_ok=True)
+                        out_filename = f"imagen3_{int(time.time())}.png"
+                        out_path = os.path.join(out_dir, out_filename)
+                        with open(out_path, "wb") as f:
+                            f.write(img_bytes)
+                        print(f"[Imagen3REST] SUCCESS: {out_path}")
+                        return {
+                            "success": True,
+                            "video_url": f"/uploads/reels/{out_filename}",
+                            "engine": "imagen3"
+                        }
+                else:
+                    print(f"[Imagen3REST] {model_name} returned status {res.status_code}: {res.text}")
+            except Exception as rest_err:
+                print(f"[Imagen3REST] Error: {rest_err}")
+                continue
+    except Exception as e:
+        print(f"[Imagen3REST] General error: {e}")
+
+    # Fallback to Gemini Canvas script generation (never crashes with 404)
+    print("[GeminiNativeImg] Imagen 3 non-responsive or quota limited. Falling back to Canvas Template script.")
+    script = generate_video_script_with_gemini(product_data, prompt)
+    return {
+        "success": True,
+        "engine": "gemini_canvas",
+        "script": script
+    }
+
