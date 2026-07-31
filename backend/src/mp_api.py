@@ -259,24 +259,28 @@ def sync_mp_payments(date_from=None, limit=2000):
                         if not p_results:
                             break
 
+                        user_id_str = str(user_id) if user_id else ""
                         for p in p_results:
                             if p.get('status') != 'approved':
                                 continue
                             
                             payment_id = p.get('id')
                             date_created = p.get('date_created', '')
+                            fee_date = date_created.split('T')[0] if date_created and 'T' in date_created else (date_created[:10] if date_created else datetime.now().strftime('%Y-%m-%d'))
                             total_amount = float(p.get('transaction_amount', 0.0))
                             op_type = p.get('operation_type', '')
                             collector_id = str(p.get('collector_id') or p.get('collector', {}).get('id') or '')
                             pay_type = p.get('payment_type_id', '')
                             pay_method = p.get('payment_method_id', '')
+                            desc = str(p.get('description') or p.get('reason') or p.get('statement_descriptor') or '')
+                            ext_ref = str(p.get('external_reference') or '')
 
                             # Skip internal money transfers, incoming deposits, bank/CVU transfers, and credit card bill payments from operational expenses
-                            if op_type in ['money_transfer', 'account_fund'] or pay_method == 'cvu' or pay_type == 'bank_transfer' or collector_id == user_id_str or 'ccpaymentprod' in ext_ref.lower() or 'tarjeta' in desc.lower() or 'tarjeta' in ext_ref.lower():
+                            if op_type in ['money_transfer', 'account_fund'] or pay_method == 'cvu' or pay_type == 'bank_transfer' or (user_id_str and collector_id == user_id_str) or 'ccpaymentprod' in ext_ref.lower() or 'tarjeta' in desc.lower() or 'tarjeta' in ext_ref.lower():
                                 continue
 
                             cat = 'Compras / Insumos MP'
-                            fee_desc = f"Compra MP #{payment_id}: {desc or 'Pago a proveedor/servicio'}"
+                            fee_desc = f"Compra MP #{payment_id}: {desc or 'Compra de materia prima / insumos'}"
                             database.save_auto_mp_expense(fee_date, fee_desc, total_amount, cat, payment_id)
 
                         offset_p += 50

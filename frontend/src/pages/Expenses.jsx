@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { Plus, Trash2, Wallet, Calendar, DollarSign, Tag, TrendingDown, TrendingUp, PieChart, ArrowUpRight, ArrowDownRight, Layers, FileText, CheckCircle2, AlertTriangle, Search, ChevronDown, ChevronUp, Pencil } from 'lucide-react'
+import { Plus, Trash2, Wallet, Calendar, DollarSign, Tag, TrendingDown, TrendingUp, PieChart, ArrowUpRight, ArrowDownRight, Layers, FileText, CheckCircle2, AlertTriangle, Search, ChevronDown, ChevronUp, Pencil, RefreshCw } from 'lucide-react'
 
 export default function Expenses() {
   const [activeTab, setActiveTab] = useState('summary') // 'summary' | 'expenses' | 'incomes'
@@ -31,6 +31,29 @@ export default function Expenses() {
   const [newVariable, setNewVariable] = useState({ date: new Date().toISOString().split('T')[0], description: '', amount: '', category: 'Insumos' })
   const [newIncome, setNewIncome] = useState({ date: new Date().toISOString().split('T')[0], description: '', amount: '', category: 'Venta Directa / Extra' })
   const [editModal, setEditModal] = useState({ open: false, type: '', item: null })
+  const [syncMpLoading, setSyncMpLoading] = useState(false)
+
+  const handleSyncMp = async () => {
+    setSyncMpLoading(true)
+    try {
+      const res = await fetch('/api/mercadopago/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ limit: 100 })
+      })
+      const data = await res.json()
+      if (res.ok && data.success) {
+        alert(`¡Sincronización con Mercado Pago completada! Se procesaron las operaciones correctamente.`)
+        loadData()
+      } else {
+        alert("Error al sincronizar con Mercado Pago: " + (data.detail || data.error || 'Error desconocido'))
+      }
+    } catch (e) {
+      alert("Error de conexión: " + e.message)
+    } finally {
+      setSyncMpLoading(false)
+    }
+  }
 
   const fixedCategories = ['Sueldos', 'Alquiler', 'Impuestos', 'Servicios', 'Software/Suscripciones', 'Otros Fijos']
   const variableCategories = ['Insumos', 'Logística', 'Mantenimiento', 'Marketing', 'Otros Variables']
@@ -288,18 +311,31 @@ export default function Expenses() {
           <p className="page-subtitle" style={{ margin: '5px 0 0 0' }}>Gestiona tus ingresos, egresos y el balance mensual de tu negocio.</p>
         </div>
         
-        {/* Global Month & Year Selector */}
-        <div style={{ display: 'flex', gap: 10, backgroundColor: 'var(--bg-card)', padding: '10px 15px', borderRadius: 8, border: '1px solid var(--border-color)', alignItems: 'center' }}>
-          <Calendar size={18} color="var(--text-secondary)" />
-          <span style={{fontWeight: 'bold'}}>Período:</span>
-          <select value={selectedMonth} onChange={e => setSelectedMonth(parseInt(e.target.value))}>
-            {[1,2,3,4,5,6,7,8,9,10,11,12].map(m => (
-              <option key={m} value={m}>{new Date(2000, m-1, 1).toLocaleString('es-ES', { month: 'long' }).toUpperCase()}</option>
-            ))}
-          </select>
-          <select value={selectedYear} onChange={e => setSelectedYear(parseInt(e.target.value))}>
-            {[2024, 2025, 2026, 2027].map(y => <option key={y} value={y}>{y}</option>)}
-          </select>
+        {/* Global Month & Year Selector + Sync Button */}
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+          <button 
+            type="button"
+            className="btn btn-secondary" 
+            onClick={handleSyncMp}
+            disabled={syncMpLoading}
+            style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '9px 14px', fontSize: '0.85rem', fontWeight: 600, backgroundColor: 'rgba(59, 130, 246, 0.15)', color: '#3b82f6', border: '1px solid #3b82f6' }}
+          >
+            <RefreshCw className={syncMpLoading ? 'animate-spin' : ''} size={16} />
+            {syncMpLoading ? 'Sincronizando...' : '🔄 Sincronizar Gastos / Compras MP'}
+          </button>
+
+          <div style={{ display: 'flex', gap: 10, backgroundColor: 'var(--bg-card)', padding: '10px 15px', borderRadius: 8, border: '1px solid var(--border-color)', alignItems: 'center' }}>
+            <Calendar size={18} color="var(--text-secondary)" />
+            <span style={{fontWeight: 'bold'}}>Período:</span>
+            <select value={selectedMonth} onChange={e => setSelectedMonth(parseInt(e.target.value))}>
+              {[1,2,3,4,5,6,7,8,9,10,11,12].map(m => (
+                <option key={m} value={m}>{new Date(2000, m-1, 1).toLocaleString('es-ES', { month: 'long' }).toUpperCase()}</option>
+              ))}
+            </select>
+            <select value={selectedYear} onChange={e => setSelectedYear(parseInt(e.target.value))}>
+              {[2024, 2025, 2026, 2027].map(y => <option key={y} value={y}>{y}</option>)}
+            </select>
+          </div>
         </div>
       </div>
 

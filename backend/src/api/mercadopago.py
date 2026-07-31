@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from typing import Optional
 from src import mp_api
-from src.api.auth import require_permission
+from src.api.auth import require_permission, verify_session
 
 router = APIRouter()
 
@@ -23,7 +23,7 @@ def get_balance(_=Depends(require_permission("dashboard"))):
     return balance
 
 @router.post("/sync")
-def sync_payments(req: SyncMPRequest, _=Depends(require_permission("sales"))):
+def sync_payments(req: SyncMPRequest, _=Depends(verify_session)):
     ok, count_or_err = mp_api.sync_mp_payments(date_from=req.date_from, limit=req.limit)
     if ok:
         return {"success": True, "count": count_or_err}
