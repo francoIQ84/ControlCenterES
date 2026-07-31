@@ -36,6 +36,11 @@ export default function Customers() {
   const [saving, setSaving] = useState(false)
   const [errorMsg, setErrorMsg] = useState('')
 
+  // Selection & Bulk Actions State
+  const [selectedCustomerIds, setSelectedCustomerIds] = useState([])
+  const [deletingBulk, setDeletingBulk] = useState(false)
+
+
   const initialForm = {
     nickname: '',
     full_name: '',
@@ -214,6 +219,7 @@ export default function Customers() {
     try {
       const res = await fetch(`/api/customers/${customer.buyer_id}`, { method: 'DELETE' })
       if (!res.ok) throw new Error('Error al eliminar cliente')
+      setSelectedCustomerIds(prev => prev.filter(id => id !== customer.buyer_id))
       fetchCrmData()
     } catch (err) {
       alert(err.message)
@@ -309,6 +315,51 @@ export default function Customers() {
       return 0
     })
   }, [filteredCustomers, sortConfig])
+
+  // Multi-Selection Logic
+  const toggleSelectCustomer = (buyer_id) => {
+    setSelectedCustomerIds(prev =>
+      prev.includes(buyer_id) ? prev.filter(id => id !== buyer_id) : [...prev, buyer_id]
+    )
+  }
+
+  const visibleCustomerIds = useMemo(() => sortedCustomers.map(c => c.buyer_id), [sortedCustomers])
+
+  const isAllSelected = useMemo(() => {
+    return visibleCustomerIds.length > 0 && visibleCustomerIds.every(id => selectedCustomerIds.includes(id))
+  }, [visibleCustomerIds, selectedCustomerIds])
+
+  const toggleSelectAll = () => {
+    if (isAllSelected) {
+      setSelectedCustomerIds(prev => prev.filter(id => !visibleCustomerIds.includes(id)))
+    } else {
+      setSelectedCustomerIds(prev => Array.from(new Set([...prev, ...visibleCustomerIds])))
+    }
+  }
+
+  const handleBulkDelete = async () => {
+    const count = selectedCustomerIds.length
+    if (count === 0) return
+    if (!window.confirm(`¿Estás seguro de que deseas eliminar los ${count} contactos seleccionados? Esta acción no se puede deshacer.`)) return
+
+    setDeletingBulk(true)
+    try {
+      const res = await fetch('/api/customers/bulk-delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ buyer_ids: selectedCustomerIds })
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.detail || 'Error al eliminar los contactos seleccionados')
+
+      setSelectedCustomerIds([])
+      fetchCrmData()
+    } catch (err) {
+      alert(err.message)
+    } finally {
+      setDeletingBulk(false)
+    }
+  }
 
   // Helper Badge Render
   const renderPlatformBadge = (platform) => {
@@ -549,11 +600,73 @@ export default function Customers() {
             </div>
           </div>
 
+          {/* Batch Action Bar */}
+          {selectedCustomerIds.length > 0 && (
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              backgroundColor: 'rgba(239, 68, 68, 0.08)',
+              border: '1px solid rgba(239, 68, 68, 0.4)',
+              borderRadius: '10px',
+              padding: '12px 18px',
+              marginBottom: '16px'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <span style={{ fontWeight: '700', color: '#ef4444', fontSize: '14px' }}>
+                  {selectedCustomerIds.length} contacto{selectedCustomerIds.length > 1 ? 's' : ''} seleccionado{selectedCustomerIds.length > 1 ? 's' : ''}
+                </span>
+                <button
+                  onClick={() => setSelectedCustomerIds([])}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    color: 'var(--text-secondary)',
+                    fontSize: '13px',
+                    cursor: 'pointer',
+                    textDecoration: 'underline'
+                  }}
+                >
+                  Desmarcar todos
+                </button>
+              </div>
+              <button
+                onClick={handleBulkDelete}
+                disabled={deletingBulk}
+                style={{
+                  backgroundColor: '#ef4444',
+                  color: '#ffffff',
+                  border: 'none',
+                  padding: '8px 16px',
+                  borderRadius: '6px',
+                  fontWeight: '600',
+                  cursor: deletingBulk ? 'not-allowed' : 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  opacity: deletingBulk ? 0.7 : 1,
+                  boxShadow: '0 2px 8px rgba(239, 68, 68, 0.25)'
+                }}
+              >
+                <Trash2 size={16} /> {deletingBulk ? 'Eliminando...' : `Eliminar (${selectedCustomerIds.length})`}
+              </button>
+            </div>
+          )}
+
           {/* Customer Table */}
           <div className="table-responsive card">
             <table className="table">
               <thead>
                 <tr>
+                  <th style={{ width: '40px', textAlign: 'center' }}>
+                    <input
+                      type="checkbox"
+                      checked={isAllSelected}
+                      onChange={toggleSelectAll}
+                      style={{ cursor: 'pointer', width: '16px', height: '16px' }}
+                      title={isAllSelected ? "Deseleccionar todos" : "Seleccionar todos los visibles"}
+                    />
+                  </th>
                   <th onClick={() => handleRequestSort('full_name')} style={{ cursor: 'pointer', userSelect: 'none' }}>
                     Cliente{getSortIcon('full_name')}
                   </th>
@@ -575,14 +688,23 @@ export default function Customers() {
               </thead>
               <tbody>
                 {loading ? (
-                  <tr><td colSpan="7" style={{ textAlign: 'center', padding: '30px' }}>Cargando cartera de clientes...</td></tr>
+                  <tr><td colSpan="8" style={{ textAlign: 'center', padding: '30px' }}>Cargando cartera de clientes...</td></tr>
                 ) : sortedCustomers.length === 0 ? (
-                  <tr><td colSpan="7" style={{ textAlign: 'center', padding: '30px', color: 'var(--text-secondary)' }}>No se encontraron clientes.</td></tr>
+                  <tr><td colSpan="8" style={{ textAlign: 'center', padding: '30px', color: 'var(--text-secondary)' }}>No se encontraron clientes.</td></tr>
                 ) : (
                   sortedCustomers.map(c => {
                     const cleanPhone = (c.phone || '').replace(/[^0-9]/g, '')
+                    const isSelected = selectedCustomerIds.includes(c.buyer_id)
                     return (
-                      <tr key={c.buyer_id}>
+                      <tr key={c.buyer_id} style={{ backgroundColor: isSelected ? 'rgba(59, 130, 246, 0.08)' : 'transparent' }}>
+                        <td style={{ textAlign: 'center' }}>
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={() => toggleSelectCustomer(c.buyer_id)}
+                            style={{ cursor: 'pointer', width: '16px', height: '16px' }}
+                          />
+                        </td>
                         <td>
                           <div style={{ fontWeight: '700' }}>{c.full_name || c.nickname || `Cliente #${c.buyer_id}`}</div>
                           {c.nickname && c.nickname !== c.full_name && (
@@ -658,6 +780,7 @@ export default function Customers() {
                     )
                   })
                 )}
+
               </tbody>
             </table>
           </div>

@@ -89,29 +89,48 @@ Para habilitar la **generación de contenido con IA**, el **Generador de Videos 
 ---
 
 ### 6. 🎬 Generador de Videos & Reels por IA (10 a 30 segundos HD)
-
-El módulo de **Marketing** incluye un estudio completo para crear, previsualizar y publicar Reels animados sin costo de servidor:
-
 #### A. ¿Cómo operar el Generador de Videos?
 1. Ir a **Marketing & Redes Sociales** -> pestaña **Creador IA & Reels**.
 2. **Seleccionar un producto** del inventario (se cargarán automáticamente sus fotos HD y su precio).
 3. **Escribir un Prompt / Instrucción breve para el video** (ej: *"Resaltar oferta de primavera, 15% OFF en efectivo y envío gratis a Rosario"*).
 4. **Elegir el Generador de Video IA**:
-   - 🌟 **Google Veo 3.1 Fast (Vía SDK google-genai / Gemini API Key)**: Utiliza el modelo oficial **`veo-3.1-fast-generate-preview`** (Google AI Pro / Cloud) para generar Reels cinematográficos HD de 8 segundos en formato 9:16 (1080x1920).
-   - 🎬 **Gemini IA + Comercial HD (Fotos HD + Precios - Gratis & 0 Costo de Servidor)**: Gemini 3.6 Flash redacta el guión comercial y el motor visual de la app ensambla las fotos HD del producto, marca "Hidroponía Rosario", precio animado, badges de oferta y transiciones fluidas a 60 FPS en formato compatible **MP4 (H.264)**.
-   - 🎨 **Pollinations AI Generativo (Gratis)**: Clips animativos de código abierto.
+   - 🌟 **Google Veo 3.1 Fast (SDK google-genai / Google AI Studio)**: Utiliza el modelo oficial **`veo-3.1-fast-generate-preview`** para generar Reels cinematográficos HD de 8 segundos en formato vertical 9:16 (1080x1920).
+   - 🎬 **Gemini IA + Comercial HD (Gratis & 0 Costo de Servidor)**: Gemini 3.6 Flash redacta el guión comercial y el motor visual ensambla las fotos HD del producto, marca "Hidroponía Rosario", precio animado, badges de oferta y transiciones fluidas a 60 FPS en formato compatible **MP4 (H.264)**.
+   - 🎨 **Pollinations AI Generativo (Gratis)**: Clips animados de código abierto sin límite de cuota.
 5. Presionar **`🎬 Generar y Previsualizar Reel con IA`**.
-
-#### B. Previsualización, Formato MP4 (H.264) & Acciones Disponibles:
-- **Codificación Compatible con Instagram Reels (MP4 / H.264)**: El motor graba y codifica los videos en formato MP4 nativo con códec H.264 para evitar errores de API en Meta Graph (como el código 2207085 de formatos no soportados).
-- **Reproductor en Pantalla**: Muestra el video en formato vertical 9:16 (1080x1920) con controles de Play, Pausa y Pantalla Completa.
-- **`✨ Usar para Post`**: Asigna la URL del video al editor de publicación y configura el tipo de post automáticamente como **Reel**.
-- **`🔄 Alternativa`**: Vuelve a ejecutar la IA para obtener otra propuesta diferente.
-- **`⬇️ Descargar`**: Guarda el archivo de video (.mp4) directamente en tu computadora.
 
 ---
 
-### 7. 🖼️ Gestión de Imágenes HD de Mercado Libre y Subida de Videos/Fotos desde la PC
+#### B. 🎥 Configuración de Google Veo 3.1 & Facturación Pay-As-You-Go
+
+Para utilizar la generación de videos fotorrealistas con **Google Veo 3.1** desde la API Key de Gemini:
+
+1. **Requisito de Facturación en Google AI Studio**:
+   - En [Google AI Studio (aistudio.google.com)](https://aistudio.google.com/), los modelos de texto e imagen (Gemini 2.5/3.6 Flash) tienen un nivel gratuito (Free Tier).
+   - Los modelos de generación de video de alto consumo (**Google Veo 3.1**) requieren habilitar la facturación **Pay-As-You-Go (Pago por uso)** en tu proyecto.
+2. **$300 USD de Crédito Gratuito de Regalo**:
+   - Al hacer clic en **`Set up billing`** en Google AI Studio y vincular tu cuenta, Google otorga **$300 USD en créditos gratuitos** (Prueba de 90 días en Google Cloud).
+   - Este crédito inicial cubre entre **1.500 y 2.000 videos Reels con Veo 3.1** sin pagar nada de tu bolsillo.
+3. **Costo Estimado por Video (luego de consumir los $300 de regalo)**:
+   - Un video Reel de 8 segundos generado con `veo-3.1-fast-generate-preview` cuesta aprox **$0.10 a $0.15 USD** (15 centavos de dólar).
+4. **Modelos Veo 3.1 Oficiales Configurados**:
+   - `veo-3.1-fast-generate-preview` (Rápido, ideal para Reels).
+   - `veo-3.1-generate-preview` (Alta calidad cinematográfica).
+   - `veo-3.1-lite-generate-preview` (Ultra liviano).
+
+---
+
+#### C. 🚀 Publicación en Instagram Reels & Corrección de Errores de Meta (Código 2207085):
+- **Codificación MP4 / H.264 + AAC Automática**: Meta Graph API exige que los Reels estén comprimidos en códec **H.264 (video) + AAC (audio)** dentro de un contenedor `.mp4`. El backend convierte automáticamente cualquier video subido en formato WebM o códec no estándar mediante `ffmpeg` antes de enviar la orden a Meta.
+- **Convertidor de URLs a HTTPS Públicas**: Meta rechaza URLs relativas (`/uploads/...`) o puertos locales SSH. El backend transforma automáticamente las rutas internas a URLs absolutas seguras bajo el dominio `https://admin.hidroponiarosario.com.ar/uploads/...`.
+- **Privacidad del Usuario**: La URL de tu servidor VPS es utilizada **exclusivamente por la API en segundo plano** para que los servidores de Meta descarguen el video. **Los usuarios finales en Instagram o Facebook jamás ven este link**, ya que consumen el Reel publicado nativamente en la red social.
+- **Reproductor en Pantalla & Miniaturas HTML5**:
+  - En las tablas de publicaciones y comentarios, los videos Reels muestran una miniatura con fotograma real precargado (`preload="metadata"`) e insignia `🎬`.
+  - El botón de envío muestra retroalimentación en vivo (**`⏳ Publicando... Esperá`**) previniendo dobles clics.
+
+---
+
+### 7. 🖼️ Gestión de Imágenes HD de Mercado Libre y Subida desde la PC
 
 - **Alta Calidad HD de Mercado Libre (`-O.jpg`)**: El sistema convierte automáticamente las miniaturas de Mercado Libre (`-I.jpg` de baja resolución) a la versión original de máxima calidad (`-O.jpg`, 1200x1200px+) y fuerza protocolo seguro `https://`.
 - **Galería de Selección del Producto**: Al elegir un producto en Marketing, podés hacer clic en cualquiera de sus fotos HD para usarla en el post.

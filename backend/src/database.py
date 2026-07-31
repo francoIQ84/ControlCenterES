@@ -846,6 +846,15 @@ def delete_customer(buyer_id):
             cursor.execute("DELETE FROM customers WHERE buyer_id = %s", (buyer_id,))
             return True
 
+def delete_customers_bulk(buyer_ids):
+    if not buyer_ids:
+        return 0
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute("DELETE FROM customers WHERE buyer_id = ANY(%s)", (list(buyer_ids),))
+            return cursor.rowcount
+
+
 # --- Unified CRM & WhatsApp Extractor Operations ---
 
 def sync_whatsapp_contacts_bulk(contacts_list):

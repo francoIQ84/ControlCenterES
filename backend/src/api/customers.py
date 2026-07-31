@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException, File, UploadFile
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, List
 from src import database
 import requests
 
@@ -21,6 +21,10 @@ class CustomerCreate(CustomerBase):
 
 class CustomerUpdate(CustomerBase):
     pass
+
+class BulkDeleteRequest(BaseModel):
+    buyer_ids: List[int]
+
 
 @router.get("/")
 def get_customers():
@@ -103,6 +107,14 @@ def update_customer(buyer_id: int, data: CustomerUpdate):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+@router.post("/bulk-delete")
+def delete_customers_bulk(payload: BulkDeleteRequest):
+    try:
+        deleted_count = database.delete_customers_bulk(payload.buyer_ids)
+        return {"status": "success", "deleted_count": deleted_count}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 @router.delete("/{buyer_id}")
 def delete_customer(buyer_id: int):
     try:
@@ -110,3 +122,4 @@ def delete_customer(buyer_id: int):
         return {"status": "success", "buyer_id": buyer_id}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+

@@ -97,7 +97,7 @@ def generate_video_script_with_gemini(product_data: dict, user_prompt: str = "")
 def generate_video_with_google_veo(prompt: str, image_url: str = ""):
     """
     Calls Google Veo 3.1 Fast / Veo 2.0 API using configured Gemini API Key.
-    Supports google-genai SDK and HTTP REST API fallback.
+    Requires the google-genai SDK: pip install google-genai
     """
     gemini_key = database.get_setting("gemini_api_key", "").strip()
     if not gemini_key:
@@ -109,96 +109,102 @@ def generate_video_with_google_veo(prompt: str, image_url: str = ""):
     out_filename = f"veo_{int(time.time())}.mp4"
     out_path = os.path.join(out_dir, out_filename)
 
-    last_veo_err = ""
-
-    # 1. Try google-genai SDK first
+    # Check if google-genai SDK is available
     try:
         from google import genai
         from google.genai import types
+    except ImportError:
+        raise Exception(
+            "El paquete 'google-genai' no está instalado en el servidor. "
+            "Ejecutá 'pip install google-genai' en el VPS y reiniciá el backend."
+        )
 
-        os.environ["GEMINI_API_KEY"] = gemini_key
+    last_veo_err = ""
+
+    try:
         client = genai.Client(
             http_options={"api_version": "v1beta"},
             api_key=gemini_key,
         )
 
         video_config = types.GenerateVideosConfig(
-            person_generation="dont_allow",
-            aspect_ratio="9:16", # Vertical Reel format
+            aspect_ratio="9:16",  # Vertical Reel format
             number_of_videos=1,
             duration_seconds=8,
             resolution="720p",
         )
 
-        veo_models = ["veo-3.1-fast-generate-preview", "veo-2.0-generate-video"]
+        veo_models = [
+            "veo-3.1-fast-generate-preview",
+            "veo-3.1-generate-preview",
+            "veo-3.1-lite-generate-preview"
+        ]
 
         for veo_model in veo_models:
             try:
+                print(f"[Veo] Intentando generar video con modelo: {veo_model}")
                 operation = client.models.generate_videos(
                     model=veo_model,
-                    source=types.VideoGenerationSource(
-                        prompt=prompt_clean,
-                    ),
+                    source=types.GenerateVideosSource(prompt=prompt_clean),
                     config=video_config,
                 )
 
+                # Poll until done (max ~3.5 min)
                 max_polls = 40
                 poll_count = 0
                 while not operation.done and poll_count < max_polls:
                     time.sleep(5)
                     poll_count += 1
                     operation = client.operations.get(operation)
+                    print(f"[Veo] Polling {poll_count}/{max_polls}...")
+
+                if not operation.done:
+                    last_veo_err = f"Timeout: el video no se generó en {max_polls * 5}s con {veo_model}"
+                    continue
 
                 result = operation.result
                 if result and hasattr(result, 'generated_videos') and result.generated_videos:
                     video_obj = result.generated_videos[0].video
-                    if hasattr(client, 'files') and hasattr(client.files, 'download'):
-                        try:
-                            client.files.download(file=video_obj)
-                        except Exception:
-                            pass
+                    
+                    # Method 1: Check if bytes are directly attached
                     if hasattr(video_obj, 'video_bytes') and video_obj.video_bytes:
                         with open(out_path, "wb") as f:
                             f.write(video_obj.video_bytes)
+                        print(f"[Veo] Video guardado desde video_bytes: {out_path}")
                         return {"success": True, "video_url": f"/uploads/reels/{out_filename}", "engine": "google_veo", "model": veo_model}
-                    elif hasattr(video_obj, 'save'):
-                        video_obj.save(out_path)
+
+                    # Method 2: Use client.files.download(file=video_obj)
+                    if hasattr(client, 'files') and hasattr(client.files, 'download'):
+                        try:
+                            video_bytes = client.files.download(file=video_obj)
+                            if video_bytes:
+                                with open(out_path, "wb") as f:
+                                    f.write(video_bytes)
+                                print(f"[Veo] Video descargado exitosamente via client.files.download: {out_path}")
+                                return {"success": True, "video_url": f"/uploads/reels/{out_filename}", "engine": "google_veo", "model": veo_model}
+                        except Exception as dl_err:
+                            print(f"[Veo] Download error: {dl_err}")
+
+                    # Method 3: Download from video_obj.uri
+                    if hasattr(video_obj, 'uri') and video_obj.uri:
+                        import urllib.request
+                        urllib.request.urlretrieve(video_obj.uri, out_path)
+                        print(f"[Veo] Video descargado desde URI ({video_obj.uri}): {out_path}")
                         return {"success": True, "video_url": f"/uploads/reels/{out_filename}", "engine": "google_veo", "model": veo_model}
+
+                    last_veo_err = f"El modelo {veo_model} completó pero no se pudieron obtener los bytes del video."
+                else:
+                    last_veo_err = f"El modelo {veo_model} no devolvió resultados."
             except Exception as model_err:
                 last_veo_err = str(model_err)
+                print(f"[Veo] Error con {veo_model}: {last_veo_err}")
+                if "429" in last_veo_err or "RESOURCE_EXHAUSTED" in last_veo_err:
+                    last_veo_err = "Se ha superado la cuota límite (Quota Exceeded) de tu API Key para Google Veo. Verificá los límites o la facturación en Google AI Studio (aistudio.google.com)."
                 continue
 
-    except ImportError:
-        pass
     except Exception as e:
         last_veo_err = str(e)
-
-    # 2. HTTP REST API Fallback
-    try:
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/veo-3.1-fast-generate-preview:predict?key={gemini_key}"
-        payload = {
-            "instances": [{"prompt": prompt_clean}],
-            "parameters": {
-                "aspectRatio": "9:16",
-                "durationSeconds": 8
-            }
-        }
-        data_bytes = json.dumps(payload).encode('utf-8')
-        http_req = urllib.request.Request(url, data=data_bytes, headers={"Content-Type": "application/json"})
-
-        with urllib.request.urlopen(http_req, timeout=20) as response:
-            res_data = json.loads(response.read().decode('utf-8'))
-            predictions = res_data.get("predictions", [])
-            if predictions and predictions[0].get("bytesBase64Encoded"):
-                import base64
-                video_data = base64.b64decode(predictions[0]["bytesBase64Encoded"])
-                with open(out_path, "wb") as f:
-                    f.write(video_data)
-                return {"success": True, "video_url": f"/uploads/reels/{out_filename}", "engine": "google_veo", "model": "veo-3.1-fast-generate-preview"}
-            elif res_data.get("videoUri"):
-                return {"success": True, "video_url": res_data["videoUri"], "engine": "google_veo", "model": "veo-3.1-fast-generate-preview"}
-    except Exception as http_err:
-        last_veo_err = str(http_err)
+        print(f"[Veo] Error general del SDK: {last_veo_err}")
 
     return {
         "success": False,
