@@ -73,6 +73,30 @@ def get_current_user(token: str = Depends(verify_session)):
         raise HTTPException(status_code=401, detail="No autorizado: Usuario inválido")
     return user
 
+def require_platform_admin(current_user: dict = Depends(get_current_user)):
+    """Restringe un endpoint a los administradores de la plataforma.
+
+    Es admin de plataforma quien pertenece al Tenant Maestro y tiene permiso de
+    `settings`. La distinción importa: el administrador de un tenant cliente
+    manda sobre su propio negocio, pero no debe poder dar de alta inquilinos,
+    suspender suscripciones ni descargar respaldos que contienen datos de todos.
+    """
+    from src import tenancy
+
+    if tenancy.get_current_tenant_id() != tenancy.MASTER_TENANT_ID:
+        raise HTTPException(
+            status_code=403,
+            detail="Operación reservada a la administración de la plataforma")
+
+    permissions_str = current_user.get("permissions") or ""
+    allowed = [p.strip() for p in permissions_str.split(",") if p.strip()]
+    if allowed and "settings" not in allowed:
+        raise HTTPException(
+            status_code=403,
+            detail="Se requiere permiso de configuración")
+    return current_user
+
+
 def require_permission(permission: str):
     """FastAPI dependency to check if the current user has the required permission."""
     def dependency(current_user: dict = Depends(get_current_user)):

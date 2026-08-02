@@ -442,7 +442,7 @@ def create_invoice(order: dict):
                         INSERT INTO customers 
                         (buyer_id, nickname, full_name, document_type, document_number, address)
                         VALUES (%s, %s, %s, %s, %s, %s)
-                        ON CONFLICT (buyer_id) DO UPDATE SET
+                        ON CONFLICT (tenant_id, buyer_id) DO UPDATE SET
                             full_name = EXCLUDED.full_name,
                             document_type = EXCLUDED.document_type,
                             document_number = EXCLUDED.document_number,

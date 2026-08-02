@@ -59,10 +59,13 @@ def run_backup_dump(is_auto: bool = False):
         
     with zipfile.ZipFile(backup_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
         zipf.write(sql_path, arcname=sql_filename)
-        
-        if os.path.exists(".env"):
-            zipf.write(".env", arcname=".env")
-            
+
+        # El .env NO se incluye a propósito. Contiene la cadena de conexión a la
+        # base y la clave maestra de cifrado de credenciales; empaquetarlo junto
+        # al volcado convierte cualquier copia del respaldo en un compromiso
+        # total, y anula el cifrado en reposo de tenant_integrations (el dato
+        # cifrado y su llave viajarían en el mismo archivo).
+
         if os.path.exists("uploads"):
             for root, dirs, files in os.walk("uploads"):
                 for file in files:
@@ -144,13 +147,24 @@ def list_backups():
 
 @router.get("/download/{filename}")
 def download_backup(filename: str):
-    filepath = os.path.join(BACKUP_DIR, filename)
-    if not os.path.exists(filepath) or not filename.endswith('.zip'):
+    # `filename` viene de la URL: sin normalizar, un nombre como
+    # "../../otro/archivo.zip" se escapaba de BACKUP_DIR y servía cualquier .zip
+    # del disco. Se resuelve la ruta y se verifica que caiga dentro del
+    # directorio de respaldos.
+    if not filename.endswith('.zip'):
         raise HTTPException(status_code=404, detail="Backup not found")
-        
+
+    backup_root = os.path.realpath(BACKUP_DIR)
+    filepath = os.path.realpath(os.path.join(backup_root, filename))
+    if os.path.commonpath([backup_root, filepath]) != backup_root:
+        raise HTTPException(status_code=404, detail="Backup not found")
+
+    if not os.path.isfile(filepath):
+        raise HTTPException(status_code=404, detail="Backup not found")
+
     return FileResponse(
-        path=filepath, 
-        filename=filename, 
+        path=filepath,
+        filename=os.path.basename(filepath),
         media_type='application/zip'
     )
 

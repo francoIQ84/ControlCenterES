@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from 'react'
 import { Outlet, NavLink, useNavigate } from 'react-router-dom'
-import { LayoutDashboard, Package, Receipt, Users, Settings, Sun, Moon, RefreshCw, Zap, Image, LogOut, Menu, FileText, Wallet, BookOpen, ShieldCheck, Bell, CheckCircle2, X, Megaphone, UserCheck, MessageSquare } from 'lucide-react'
+import { LayoutDashboard, Package, Receipt, Users, Settings, Sun, Moon, RefreshCw, Zap, Image, LogOut, Menu, FileText, Wallet, BookOpen, ShieldCheck, Bell, CheckCircle2, X, Megaphone, UserCheck, MessageSquare, Building2 } from 'lucide-react'
+import { useTenant } from '../TenantContext'
 
 export default function Layout() {
   const navigate = useNavigate()
+  const { tenant, hasModule, isPlatformAdmin } = useTenant()
   const [lightMode, setLightMode] = useState(true)
   const [syncing, setSyncing] = useState(false)
   const [collapsed, setCollapsed] = useState(typeof window !== 'undefined' ? window.innerWidth < 768 : false)
@@ -159,6 +161,11 @@ export default function Layout() {
     return perms.includes(perm);
   };
 
+  // Permiso de usuario y módulo contratado son dos filtros distintos y se
+  // aplican los dos: el permiso dice qué puede hacer esta persona, el módulo
+  // dice qué contrató el negocio. Si no se pasa módulo, se usa el permiso.
+  const canShow = (perm, moduleName = perm) => hasPermission(perm) && hasModule(moduleName);
+
   const startPollingProgress = () => {
     const interval = setInterval(async () => {
       try {
@@ -266,68 +273,92 @@ export default function Layout() {
       )}
       <aside className={`sidebar ${collapsed ? 'collapsed' : ''}`}>
         <div className="sidebar-header">
-          <Zap className="text-blue-500" style={{ minWidth: 20 }} />
-          <span className="logo-text">ControlCenterES</span>
+          {tenant?.settings?.logo_url ? (
+            <img src={tenant.settings.logo_url} alt={tenant.name}
+                 style={{ width: 22, height: 22, minWidth: 22, objectFit: 'contain', borderRadius: 4 }} />
+          ) : (
+            <Zap className="text-blue-500" style={{ minWidth: 20 }} />
+          )}
+          <span className="logo-text" title={tenant?.name || 'ControlCenterES'}>
+            {tenant?.name || 'ControlCenterES'}
+          </span>
         </div>
+        {tenant && tenant.status === 'trial' && (
+          <div className="nav-text" style={{
+            margin: '0 12px 10px', padding: '5px 10px', borderRadius: 10,
+            fontSize: '0.7rem', fontWeight: 700, textAlign: 'center',
+            backgroundColor: 'rgba(37, 99, 235, 0.12)', color: 'var(--accent-blue)'
+          }}>
+            Período de prueba
+          </div>
+        )}
         <nav className="nav-links">
-          {hasPermission('dashboard') && (
+          {canShow('dashboard') && (
             <NavLink to="/" className={({isActive}) => `nav-link ${isActive ? 'active' : ''}`}>
               <LayoutDashboard size={20} style={{ minWidth: 20 }} />
               <span className="nav-text">Métricas</span>
             </NavLink>
           )}
-          {hasPermission('inventory') && (
+          {canShow('inventory') && (
             <NavLink to="/inventory" className={({isActive}) => `nav-link ${isActive ? 'active' : ''}`}>
               <Package size={20} style={{ minWidth: 20 }} />
               <span className="nav-text">Inventario</span>
             </NavLink>
           )}
-          {hasPermission('sales') && (
+          {canShow('sales') && (
             <NavLink to="/sales" className={({isActive}) => `nav-link ${isActive ? 'active' : ''}`}>
               <Receipt size={20} style={{ minWidth: 20 }} />
               <span className="nav-text">Ventas</span>
             </NavLink>
           )}
-          {hasPermission('billing') && (
+          {canShow('billing') && (
             <NavLink to="/billing" className={({isActive}) => `nav-link ${isActive ? 'active' : ''}`}>
               <FileText size={20} style={{ minWidth: 20 }} />
               <span className="nav-text">Facturación</span>
             </NavLink>
           )}
-          {hasPermission('expenses') && (
+          {canShow('expenses') && (
             <NavLink to="/expenses" className={({isActive}) => `nav-link ${isActive ? 'active' : ''}`}>
               <Wallet size={20} style={{ minWidth: 20 }} />
               <span className="nav-text">Finanzas</span>
             </NavLink>
           )}
-          {hasPermission('customers') && (
+          {canShow('customers') && (
             <NavLink to="/customers" className={({isActive}) => `nav-link ${isActive ? 'active' : ''}`}>
               <Users size={20} style={{ minWidth: 20 }} />
               <span className="nav-text">Clientes</span>
             </NavLink>
           )}
-          {hasPermission('media') && (
+          {canShow('media') && (
             <NavLink to="/media" className={({isActive}) => `nav-link ${isActive ? 'active' : ''}`}>
               <Image size={20} style={{ minWidth: 20 }} />
               <span className="nav-text">Archivos</span>
             </NavLink>
           )}
-          {hasPermission('settings') && (
+          {canShow('settings', 'blog') && (
             <NavLink to="/cms" className={({isActive}) => `nav-link ${isActive ? 'active' : ''}`}>
               <BookOpen size={20} style={{ minWidth: 20 }} />
               <span className="nav-text">Blog & Web</span>
             </NavLink>
           )}
-          {hasPermission('inpi') && (
+          {canShow('inpi') && (
             <NavLink to="/inpi" className={({isActive}) => `nav-link ${isActive ? 'active' : ''}`}>
               <ShieldCheck size={20} style={{ minWidth: 20 }} />
               <span className="nav-text">Propiedad Industrial</span>
             </NavLink>
           )}
-          <NavLink to="/marketing" className={({isActive}) => `nav-link ${isActive ? 'active' : ''}`}>
-            <Megaphone size={20} style={{ minWidth: 20 }} />
-            <span className="nav-text">Marketing & Redes</span>
-          </NavLink>
+          {hasModule('marketing') && (
+            <NavLink to="/marketing" className={({isActive}) => `nav-link ${isActive ? 'active' : ''}`}>
+              <Megaphone size={20} style={{ minWidth: 20 }} />
+              <span className="nav-text">Marketing & Redes</span>
+            </NavLink>
+          )}
+          {isPlatformAdmin && hasPermission('settings') && (
+            <NavLink to="/tenants" className={({isActive}) => `nav-link ${isActive ? 'active' : ''}`}>
+              <Building2 size={20} style={{ minWidth: 20 }} />
+              <span className="nav-text">Inquilinos</span>
+            </NavLink>
+          )}
           {hasPermission('settings') && (
             <NavLink to="/settings" className={({isActive}) => `nav-link ${isActive ? 'active' : ''}`}>
               <Settings size={20} style={{ minWidth: 20 }} />

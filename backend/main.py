@@ -6,6 +6,7 @@ import uvicorn
 
 from src import database, scheduler
 from src.api import api_router
+from src.middleware import TenantResolverMiddleware
 from src.utils.ssl_gen import ensure_ssl_certs
 
 # Initialize database
@@ -36,10 +37,24 @@ async def global_exception_handler(request: Request, exc: Exception):
     )
 
 
+# Resolve the tenant for every request before anything touches the database.
+# Added before CORS on purpose: add_middleware() puts the last one added on the
+# outside, so CORS stays outermost and still answers preflight requests (and
+# decorates the tenant middleware's own 403/404 responses).
+#
+# TENANT_TRUST_HEADER lets a plain X-Tenant-Slug header select the tenant. It is
+# for local development only, where there is no subdomain DNS. Never enable it
+# on an internet-facing deployment.
+app.add_middleware(
+    TenantResolverMiddleware,
+    trust_header=os.environ.get("TENANT_TRUST_HEADER", "0") == "1",
+)
+
 # Setup CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:3000"],
+    allow_origin_regex=r"https://[a-z0-9][a-z0-9-]*\.controlcenter\.app",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

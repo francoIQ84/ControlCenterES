@@ -1,5 +1,6 @@
 import React, { useState } from 'react'
-import { Lock, User, AlertCircle, Eye, EyeOff } from 'lucide-react'
+import { User, AlertCircle, Eye, EyeOff } from 'lucide-react'
+import BrandLogo from '../components/BrandLogo'
 
 export default function Login() {
   const [username, setUsername] = useState("")
@@ -59,20 +60,9 @@ export default function Login() {
         WebkitBackdropFilter: 'blur(8px)'
       }}>
         <div style={{textAlign: 'center', marginBottom: 25}}>
-          <div style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            width: 60,
-            height: 60,
-            borderRadius: '50%',
-            backgroundColor: 'rgba(59, 130, 246, 0.1)',
-            color: 'var(--accent-blue)',
-            marginBottom: 15
-          }}>
-            <Lock size={28} />
-          </div>
-          <h2 style={{margin: 0, fontSize: '1.8rem', fontWeight: 700}}>ControlCenterES</h2>
+          {/* Marca de la plataforma: el login ocurre antes de resolver el
+              inquilino, así que acá corresponde el logo del producto. */}
+          <BrandLogo height={52} showTagline style={{marginBottom: 18, width: '100%'}} />
           <p style={{color: 'var(--text-secondary)', fontSize: '0.9rem', marginTop: 5}}>Inicia sesión con tu cuenta de administrador</p>
         </div>
 

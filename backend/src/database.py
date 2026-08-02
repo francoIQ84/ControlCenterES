@@ -7,18 +7,66 @@ import psycopg2
 from psycopg2.extras import RealDictCursor
 from dotenv import load_dotenv
 
+from src import tenancy
+
 load_dotenv()
 
 DB_URL = os.environ.get('DATABASE_URL', 'postgresql://postgres:postgres@localhost:5432/controlcenter')
 
 def get_connection():
-    """Returns a psycopg2 connection to the database."""
+    """Returns a psycopg2 connection to the database, scoped to the active tenant.
+
+    Every connection declares which tenant it belongs to via the
+    `app.current_tenant` session variable. PostgreSQL's Row Level Security
+    policies then filter every statement issued on it, which is what allows the
+    existing hand-written SQL across the codebase to stay untouched: the
+    segregation is enforced by the engine, not by each query.
+
+    Outside a request (scheduler, maintenance scripts) the context defaults to
+    the master tenant, preserving the original single-tenant behaviour.
+    """
     conn = psycopg2.connect(DB_URL, cursor_factory=RealDictCursor)
     conn.autocommit = True
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute("SELECT set_config('app.current_tenant', %s, false)",
+                           (tenancy.get_current_tenant_id(),))
+    except psycopg2.Error:
+        # Migration 001 not applied yet: the setting is harmless to skip and the
+        # system keeps running exactly as it did before multi-tenancy.
+        pass
     return conn
 
+def _can_run_ddl():
+    """Whether the connected role is allowed to create/alter tables."""
+    try:
+        with get_connection() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    "SELECT has_schema_privilege(current_user, 'public', 'CREATE') AS ok")
+                return bool(cursor.fetchone()['ok'])
+    except psycopg2.Error:
+        return False
+
+
 def init_db():
-    """Initializes the PostgreSQL database and creates the necessary tables if they don't exist."""
+    """Initializes the PostgreSQL database and creates the necessary tables if they don't exist.
+
+    Under multi-tenancy the application connects with a least-privilege role
+    (`controlcenter_app`) that deliberately cannot run DDL, since owning the
+    tables would let it bypass its own RLS policies. In that setup the schema is
+    owned by the migration runner instead, so bootstrapping is skipped rather
+    than crashing the boot.
+
+    Deployments still connecting as a superuser keep the original self-migrating
+    behaviour untouched.
+    """
+    if not _can_run_ddl():
+        print("[DB] El rol de conexión no tiene privilegios DDL: se omite el "
+              "bootstrap de esquema. Las migraciones lo gestionan "
+              "(python -m migrations.run_migration --apply).")
+        return
+
     # Settings table
     with get_connection() as conn:
         with conn.cursor() as cursor:
@@ -309,6 +357,28 @@ def init_db():
                 )
             ''')
 
+            # Marketing posts table
+            # This table was being INSERTed into by create_marketing_post() without
+            # ever being created here, so it only existed where it had been added by
+            # hand. Declaring it keeps every environment on the same schema.
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS marketing_posts (
+                    id SERIAL PRIMARY KEY,
+                    product_ml_id TEXT,
+                    title VARCHAR(255) DEFAULT 'Publicación',
+                    post_type VARCHAR(50) DEFAULT 'post',
+                    platforms VARCHAR(255) DEFAULT 'instagram,facebook',
+                    caption TEXT,
+                    media_urls TEXT,
+                    scheduled_at TIMESTAMP,
+                    status VARCHAR(50) DEFAULT 'draft',
+                    external_post_id TEXT,
+                    published_at TEXT,
+                    error_message TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+
             cursor.execute('ALTER TABLE fixed_expenses ADD COLUMN IF NOT EXISTS month INT;')
             cursor.execute('ALTER TABLE fixed_expenses ADD COLUMN IF NOT EXISTS year INT;')
             cursor.execute('ALTER TABLE login_history ADD COLUMN IF NOT EXISTS username VARCHAR(100);')
@@ -342,7 +412,7 @@ def get_all_categories():
 def create_category(name: str, slug: str):
     with get_connection() as conn:
         with conn.cursor() as cursor:
-            cursor.execute("INSERT INTO categories (name, slug) VALUES (%s, %s) ON CONFLICT (name) DO UPDATE SET slug = EXCLUDED.slug RETURNING id", (name, slug))
+            cursor.execute("INSERT INTO categories (name, slug) VALUES (%s, %s) ON CONFLICT (tenant_id, name) DO UPDATE SET slug = EXCLUDED.slug RETURNING id", (name, slug))
             return cursor.fetchone()['id']
 
 def delete_category(category_id: int):
@@ -368,7 +438,7 @@ def set_setting(key, value):
         with conn.cursor() as cursor:
             cursor.execute('''
                 INSERT INTO settings (key, value) VALUES (%s, %s)
-                ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
+                ON CONFLICT (tenant_id, key) DO UPDATE SET value = EXCLUDED.value
             ''', (key, str(value)))
 
 def delete_setting(key):
@@ -399,7 +469,7 @@ def save_products(products_list):
                     INSERT INTO products_cache 
                     (ml_id, title, price, available_quantity, cost_price, cost_meli, permalink, thumbnail, status, last_sync, price_web, images, description, is_web_active, visits_meli, visits_web)
                     VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                    ON CONFLICT (ml_id) DO UPDATE SET
+                    ON CONFLICT (tenant_id, ml_id) DO UPDATE SET
                         title = EXCLUDED.title,
                         price = CASE WHEN COALESCE(products_cache.sync_meli, 1) = 1 THEN EXCLUDED.price ELSE products_cache.price END,
                         available_quantity = CASE WHEN COALESCE(products_cache.sync_meli, 1) = 1 THEN EXCLUDED.available_quantity ELSE products_cache.available_quantity END,
@@ -590,7 +660,7 @@ def save_orders_and_customers(orders_list):
                     INSERT INTO orders_cache 
                     (order_id, date_created, buyer_id, buyer_nickname, buyer_name, total_amount, currency_id, status, payment_status, shipping_status, items_json, invoice_generated, source_platform, payment_method, meli_invoice_attached, mp_payment_id, mp_fee_amount, inventory_linked, cost_amount)
                     VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                    ON CONFLICT (order_id) DO UPDATE SET
+                    ON CONFLICT (tenant_id, order_id) DO UPDATE SET
                         status = EXCLUDED.status,
                         payment_status = EXCLUDED.payment_status,
                         shipping_status = EXCLUDED.shipping_status,
@@ -612,7 +682,7 @@ def save_orders_and_customers(orders_list):
                     INSERT INTO customers 
                     (buyer_id, nickname, full_name, email, phone, document_type, document_number, address, source_platform)
                     VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-                    ON CONFLICT (buyer_id) DO UPDATE SET
+                    ON CONFLICT (tenant_id, buyer_id) DO UPDATE SET
                         nickname = EXCLUDED.nickname,
                         full_name = EXCLUDED.full_name,
                         email = CASE WHEN EXCLUDED.email IS NOT NULL AND EXCLUDED.email != '' THEN EXCLUDED.email ELSE customers.email END,
@@ -763,8 +833,13 @@ def get_all_customers():
                     COALESCE(SUM(o.total_amount), 0) as total_spent,
                     MAX(o.date_created) as last_order_date
                 FROM customers c
-                LEFT JOIN orders_cache o ON c.buyer_id = o.buyer_id
-                GROUP BY c.buyer_id
+                LEFT JOIN orders_cache o
+                       ON c.buyer_id = o.buyer_id AND c.tenant_id = o.tenant_id
+                -- tenant_id va en el GROUP BY porque la clave primaria de
+                -- customers pasó a ser (tenant_id, buyer_id): agrupar solo por
+                -- buyer_id ya no le alcanza a PostgreSQL para deducir la
+                -- dependencia funcional del resto de las columnas.
+                GROUP BY c.tenant_id, c.buyer_id
                 ORDER BY total_spent DESC, c.buyer_id DESC
             ''')
             rows = cursor.fetchall()
@@ -887,7 +962,7 @@ def sync_whatsapp_contacts_bulk(contacts_list):
                     cursor.execute("""
                         INSERT INTO customers (buyer_id, nickname, full_name, phone, source_platform)
                         VALUES (%s, %s, %s, %s, 'WHATSAPP')
-                        ON CONFLICT (buyer_id) DO NOTHING
+                        ON CONFLICT (tenant_id, buyer_id) DO NOTHING
                     """, (new_buyer_id, name, name, phone))
                 synced_count += 1
     return synced_count
@@ -1233,7 +1308,7 @@ def import_whatsapp_chat_file(file_content_str: str, filename: str, key_bytes: b
                     cursor.execute("""
                         INSERT INTO customers (buyer_id, nickname, full_name, phone, source_platform)
                         VALUES (%s, %s, %s, %s, 'WHATSAPP')
-                        ON CONFLICT (buyer_id) DO NOTHING
+                        ON CONFLICT (tenant_id, buyer_id) DO NOTHING
                     """, (new_buyer_id, name, name, clean_phone or key))
                     imported_contacts += 1
 
@@ -1951,7 +2026,7 @@ def pause_whatsapp_ai(sender: str, duration_hours: int = 24, reason: str = 'huma
             cursor.execute("""
                 INSERT INTO whatsapp_paused_chats (sender, paused_until, reason, created_at)
                 VALUES (%s, CURRENT_TIMESTAMP + (%s || ' hours')::interval, %s, CURRENT_TIMESTAMP)
-                ON CONFLICT (sender) DO UPDATE 
+                ON CONFLICT (tenant_id, sender) DO UPDATE
                 SET paused_until = CURRENT_TIMESTAMP + (%s || ' hours')::interval, reason = EXCLUDED.reason, created_at = CURRENT_TIMESTAMP
             """, (clean_sender, str(int(duration_hours)), reason, str(int(duration_hours))))
 
@@ -2011,7 +2086,7 @@ def save_lead(name: str, email: str, country: str = "Argentina", source: str = "
             cursor.execute("""
                 INSERT INTO leads (name, email, country, source, pdf_sent)
                 VALUES (%s, %s, %s, %s, %s)
-                ON CONFLICT (email) DO UPDATE SET
+                ON CONFLICT (tenant_id, email) DO UPDATE SET
                     name = CASE WHEN EXCLUDED.name != '' THEN EXCLUDED.name ELSE leads.name END,
                     country = CASE WHEN EXCLUDED.country != '' THEN EXCLUDED.country ELSE leads.country END,
                     source = EXCLUDED.source,
@@ -2106,7 +2181,7 @@ def add_monitored_trademark(item: dict):
                     estado, fecha_ingreso, fecha_concesion_estimada, fecha_vencimiento_10anos,
                     requiere_djumt, djumt_codigo, djumt_mensaje, image_url, notes, last_checked_at
                 ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
-                ON CONFLICT (acta) DO UPDATE SET
+                ON CONFLICT (tenant_id, acta) DO UPDATE SET
                     denominacion = EXCLUDED.denominacion,
                     clase = EXCLUDED.clase,
                     tipo_marca = EXCLUDED.tipo_marca,

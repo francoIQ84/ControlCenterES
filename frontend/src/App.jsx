@@ -13,6 +13,8 @@ import Billing from './pages/Billing'
 import BlogCMS from './pages/BlogCMS'
 import IndustrialProperty from './pages/IndustrialProperty'
 import Marketing from './pages/Marketing'
+import Tenants from './pages/Tenants'
+import { TenantProvider } from './TenantContext'
 
 // Global fetch interceptor to append authorization token
 const originalFetch = window.fetch
@@ -106,9 +108,12 @@ function PermissionRoute({ permission, children }) {
 function App() {
   return (
     <BrowserRouter>
+      {/* El TenantProvider envuelve las rutas protegidas para que Layout y las
+          páginas conozcan el inquilino activo y sus módulos contratados. */}
+      <TenantProvider>
       <Routes>
         <Route path="/login" element={<Login />} />
-        
+
         {/* Protected Admin Routes */}
         <Route element={<ProtectedRoute />}>
           <Route path="/" element={<Layout />}>
@@ -123,10 +128,14 @@ function App() {
             <Route path="expenses" element={<PermissionRoute permission="expenses"><Expenses /></PermissionRoute>} />
             <Route path="inpi" element={<PermissionRoute permission="inpi"><IndustrialProperty /></PermissionRoute>} />
             <Route path="marketing" element={<Marketing />} />
+            {/* Administración de la plataforma. La página se autoprotege y el
+                backend exige require_platform_admin de todas formas. */}
+            <Route path="tenants" element={<PermissionRoute permission="settings"><Tenants /></PermissionRoute>} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Route>
         </Route>
       </Routes>
+      </TenantProvider>
     </BrowserRouter>
   )
 }

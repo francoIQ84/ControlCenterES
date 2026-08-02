@@ -118,7 +118,7 @@ def sync_afip_endpoint(pto_vta: Optional[int] = None, cbte_tipo: Optional[int] =
                                 INSERT INTO customers 
                                 (buyer_id, nickname, full_name, document_type, document_number, address)
                                 VALUES (%s, %s, %s, %s, %s, %s)
-                                ON CONFLICT (buyer_id) DO UPDATE SET
+                                ON CONFLICT (tenant_id, buyer_id) DO UPDATE SET
                                     full_name = EXCLUDED.full_name,
                                     document_type = EXCLUDED.document_type,
                                     document_number = EXCLUDED.document_number,
@@ -148,7 +148,7 @@ def sync_afip_endpoint(pto_vta: Optional[int] = None, cbte_tipo: Optional[int] =
                             INSERT INTO orders_cache 
                             (order_id, date_created, buyer_id, buyer_nickname, buyer_name, total_amount, currency_id, status, payment_status, shipping_status, items_json, invoice_generated, source_platform, payment_method, invoice_number, afip_cae, afip_cae_exp)
                             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                            ON CONFLICT (order_id) DO UPDATE SET
+                            ON CONFLICT (tenant_id, order_id) DO UPDATE SET
                                 invoice_generated = 1,
                                 invoice_number = EXCLUDED.invoice_number,
                                 afip_cae = EXCLUDED.afip_cae,
