@@ -279,11 +279,16 @@ Los tokens generados en el Explorer vencen en 2 horas. Para usarlos en producci�
 
 ---
 
-### 10. 🔐 Seguridad Criptográfica & Registro de Accesos
-- Encriptación de contraseñas con el estándar **PBKDF2-HMAC-SHA256** (100.000 iteraciones + sal aleatoria).
-- Cifrado de credenciales de integraciones con **AES-256-GCM**. Se usa GCM y no CBC porque además de confidencialidad aporta autenticación: un ciphertext alterado en la base falla al descifrar en lugar de devolver datos corruptos en silencio. El `tenant_id` viaja como *Additional Authenticated Data*, de modo que un blob copiado de la fila de un inquilino a la de otro no descifra.
-- Aislamiento de datos entre inquilinos con **Row Level Security** de PostgreSQL (ver sección 11).
-- Registro de auditoría de inicio de sesión con geolocalización IP (País, Región y Ciudad).
+### 10. 🔐 Seguridad Criptográfica & Custodia de Credenciales de Clientes
+- **Carga Autónoma de Credenciales por Cliente**: Cada cliente (tenant) ingresa y gestiona sus propios datos exclusivos desde su subdominio exclusivo (`cliente.controlcenter.app` -> **Configuración > Integraciones**):
+  - **AFIP / ARCA**: Carga de CUIT, Punto de Venta, generación asistida de Clave Privada y Solicitud CSR desde la app, y subida del certificado `.crt` firmado por AFIP.
+  - **Integraciones Externas**: Carga de API Keys y Tokens de acceso exclusivos de Mercado Libre, Mercado Pago, Meta (Instagram/Facebook), WhatsApp y Google Gemini.
+- **Cifrado en Reposo (AES-256-GCM)**: Todos los secretos de cada cliente se almacenan cifrados en la columna `credentials_encrypted` de la tabla `tenant_integrations`. Se utiliza **AES-256-GCM** porque provee confidencialidad y autenticación de integridad: si un blob cifrado es alterado en la base de datos, el descifrado falla de inmediato.
+- **Aislamiento Criptográfico por Tenant (AAD)**: Al cifrar cada credencial, el `tenant_id` se inyecta como *Additional Authenticated Data (AAD)* en el algoritmo GCM. Esto garantiza que un blob cifrado de un tenant copiado a la fila de otro cliente **falle al descifrarse criptográficamente**.
+- **Clave Maestra de Cifrado (`CREDENTIALS_ENCRYPTION_KEY`)**: Reside exclusivamente en las variables de entorno del servidor. Nunca se almacena en la base de datos ni se incluye en los backups o repositorios. Sin ella, ningún volcado SQL de la base permite acceder a las claves o certificados de los clientes.
+- **Enmascaramiento en API & UI**: Los endpoints de lectura jamás exponen tokens ni certificados en texto plano (retornan cadenas enmascaradas como `••••3f9a` o flags booleanos de presencia `has_credentials`).
+- **Autenticación de Usuarios**: Encriptación de contraseñas con el estándar **PBKDF2-HMAC-SHA256** (100.000 iteraciones + sal aleatoria).
+- **Registro de Auditoría**: Historial de inicio de sesión con geolocalización IP (País, Región y Ciudad).
 
 ---
 
@@ -309,7 +314,7 @@ El SQL existente quedó intacto y no hay forma de "olvidarse" el filtro, porque 
 #### C. Esquema núcleo
 - `tenants`: id, slug, name, cuit, status, plan_id. Es el registro de ruteo y **la única tabla sin RLS**, porque hay que consultarla antes de saber quién es el inquilino; se protege por permisos (`GRANT`), no por políticas.
 - `tenant_settings`: logo, color corporativo, moneda, zona horaria y `active_modules` (JSONB).
-- `tenant_integrations`: credenciales cifradas con AES-256 por proveedor (`mercadolibre`, `mercadopago`, `afip`, `meta`, `google`, `whatsapp`), más el identificador público de la cuenta para resolver webhooks.
+- `tenant_integrations`: credenciales y secretos de cada inquilino (AFIP, MercadoLibre, MercadoPago, Google, Meta, WhatsApp) cifradas individualmente con **AES-256-GCM**, asociadas a `tenant_id` y con el identificador público de cuenta (`external_account_id`) en claro únicamente para el ruteo de webhooks entrantes.
 
 #### D. Rol de aplicación de mínimo privilegio
 PostgreSQL **ignora RLS por completo para superusuarios**, así que conectar como `postgres` volvería las políticas puramente decorativas. La aplicación usa el rol `controlcenter_app`, creado `NOSUPERUSER` y `NOBYPASSRLS`, sin privilegios de DDL: si fuera dueño de las tablas podría saltarse sus propias políticas.

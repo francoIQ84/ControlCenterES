@@ -285,7 +285,7 @@ def sync_mp_payments(date_from=None, limit=2000):
 
                         offset_p += 50
                         p_total = res_p_data.get('paging', {}).get('total', 0)
-                        if offset_p >= p_total or offset_p >= max_records:
+                        if offset_p >= p_total or offset_p >= max_records or offset_p >= 100:
                             break
                     else:
                         break

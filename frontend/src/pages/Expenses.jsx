@@ -39,14 +39,16 @@ export default function Expenses() {
       const res = await fetch('/api/mercadopago/sync', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ limit: 100 })
+        body: JSON.stringify({ limit: 50 })
       })
-      const data = await res.json()
+      const isJson = res.headers.get('content-type')?.includes('application/json')
+      const data = isJson ? await res.json() : {}
       if (res.ok && data.success) {
-        alert(`¡Sincronización con Mercado Pago completada! Se procesaron las operaciones correctamente.`)
+        alert(`¡Sincronización de Gastos/Compras completada con éxito!`)
         loadData()
       } else {
-        alert("Error al sincronizar con Mercado Pago: " + (data.detail || data.error || 'Error desconocido'))
+        const errMsg = data.detail || data.error || (res.status === 504 ? 'El servidor tardó en responder. Por favor intenta de nuevo.' : 'Error del servidor')
+        alert("Error al sincronizar con Mercado Pago: " + errMsg)
       }
     } catch (e) {
       alert("Error de conexión: " + e.message)
@@ -196,6 +198,22 @@ export default function Expenses() {
         fetchSummary()
       }
     } catch (e) {}
+  }
+
+  const handleCopyPreviousFixed = async () => {
+    if (!confirm(`¿Deseas traer los gastos fijos del mes anterior para ${selectedMonth}/${selectedYear}? (Esto actualizará los datos del mes actual)`)) return
+    try {
+      const res = await fetch(`/api/expenses/fixed/copy-previous?month=${selectedMonth}&year=${selectedYear}`, { method: 'POST' })
+      if (res.ok) {
+        fetchFixed()
+        fetchSummary()
+      } else {
+        const data = await res.json()
+        alert(data.detail || "Error al traer gastos fijos")
+      }
+    } catch (e) {
+      alert("Error de conexión: " + e.message)
+    }
   }
 
   const handleDeleteVariable = async (id) => {
@@ -521,12 +539,22 @@ export default function Expenses() {
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))', gap: '20px', alignItems: 'start' }}>
             {/* FIXED EXPENSES CARD */}
             <div className="card">
-              <h3 style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 0 }}>
-                <Wallet size={20} color="var(--accent-blue)" /> 
-                Gastos Fijos
-              </h3>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 5 }}>
+                <h3 style={{ display: 'flex', alignItems: 'center', gap: 10, margin: 0 }}>
+                  <Wallet size={20} color="var(--accent-blue)" /> 
+                  Gastos Fijos
+                </h3>
+                <button 
+                  className="btn" 
+                  onClick={handleCopyPreviousFixed}
+                  style={{ padding: '5px 12px', fontSize: '0.8rem', backgroundColor: 'var(--bg-hover)', border: '1px solid var(--border-color)', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--text-primary)' }}
+                  title="Traer gastos fijos del mes anterior"
+                >
+                  <RefreshCw size={14} /> Traer gastos fijos del mes anterior
+                </button>
+              </div>
               <p className="page-subtitle" style={{fontSize: '0.85rem', marginBottom: 20}}>
-                Gastos recurrentes para el mes (ej. Sueldos, Alquiler, Servicios).
+                Gastos recurrentes para el mes. Se heredan automáticamente del mes anterior si el mes está vacío.
               </p>
 
               <form onSubmit={handleAddFixed} style={{ display: 'flex', gap: 10, marginBottom: 20, flexWrap: 'wrap' }}>

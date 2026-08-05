@@ -24,6 +24,12 @@ def get_balance(_=Depends(require_permission("dashboard"))):
 
 @router.post("/sync")
 def sync_payments(req: SyncMPRequest, _=Depends(verify_session)):
+    from src import meli_api
+    try:
+        meli_api.sync_orders(limit=req.limit)
+    except Exception as e:
+        print(f"[Sync MP Endpoint] Error syncing MeLi orders: {e}")
+
     ok, count_or_err = mp_api.sync_mp_payments(date_from=req.date_from, limit=req.limit)
     if ok:
         return {"success": True, "count": count_or_err}

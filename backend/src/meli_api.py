@@ -498,7 +498,7 @@ def is_recent_order(date_str, max_hours=24):
         print(f"[Sync] Error parsing order date '{date_str}': {e}")
         return True # Default to True to avoid skipping messages if parsing fails
 
-def sync_orders(limit=50, date_from=None, date_to=None):
+def sync_orders(limit=50, date_from=None, date_to=None, quick=False):
     """Synchronizes sales orders from Meli to SQLite cache."""
     if is_demo_mode():
         # Generate mock orders and customers
@@ -599,13 +599,26 @@ def sync_orders(limit=50, date_from=None, date_to=None):
         
         for o in all_results:
             items = []
+            order_sale_fee = 0.0
             for item_wrapper in o.get('order_items', []):
                 item_details = item_wrapper.get('item', {})
+                unit_price = float(item_wrapper.get('unit_price', 0.0))
+                quantity = int(item_wrapper.get('quantity', 1))
+                fee_val = float(item_wrapper.get('sale_fee') or item_wrapper.get('sale_fee_amount') or 0.0)
+                
+                if fee_val <= 0 and unit_price > 0:
+                    listing_type = item_wrapper.get('listing_type_id', 'gold_pro')
+                    pct = 0.135 if listing_type == 'gold_special' else (0.155 if listing_type == 'gold_pro' else 0.14)
+                    fixed = 800.0 if (unit_price * quantity) < 15000 else 0.0
+                    fee_val = round((unit_price * quantity * pct) + fixed, 2)
+                    
+                order_sale_fee += fee_val
                 items.append({
                     'id': item_details.get('id'),
                     'title': item_details.get('title'),
-                    'price': float(item_wrapper.get('unit_price', 0.0)),
-                    'quantity': int(item_wrapper.get('quantity', 1))
+                    'price': unit_price,
+                    'quantity': quantity,
+                    'sale_fee': fee_val
                 })
                 
             buyer_info = o.get('buyer', {})
@@ -658,8 +671,21 @@ def sync_orders(limit=50, date_from=None, date_to=None):
                 }
                 payment_method = payment_method_map.get(payment_method_raw, payment_method_raw.capitalize())
                 
+            order_date_str = o['date_created'][:10] if len(o.get('date_created', '')) >= 10 else datetime.now().strftime('%Y-%m-%d')
+            order_id_val = o['id']
+
+            # Save sale commission into variable expenses if valid order
+            if o.get('status') not in ('cancelled', 'cancelado') and order_sale_fee > 0:
+                database.save_auto_mp_expense(
+                    order_date_str,
+                    f"Comisión MeLi Venta #{order_id_val}",
+                    order_sale_fee,
+                    "Comisión Mercado Libre",
+                    order_id_val
+                )
+
             orders.append({
-                'order_id': o['id'],
+                'order_id': order_id_val,
                 'date_created': o['date_created'],
                 'buyer': buyer,
                 'total_amount': float(o['total_amount']),
@@ -669,42 +695,44 @@ def sync_orders(limit=50, date_from=None, date_to=None):
                 'payment_method': payment_method,
                 'shipping_status': shipping_status,
                 'items': items,
-                'meli_invoice_attached': 0
+                'meli_invoice_attached': 0,
+                'mp_fee_amount': order_sale_fee
             })
             
-        # Check attached invoices and real shipment statuses in parallel
-        from concurrent.futures import ThreadPoolExecutor
-        update_progress(status="syncing_sales", progress=95, message="Verificando envío y facturas en Mercado Libre...")
-        
-        def enrich_order(pair):
-            order_dict, raw_order = pair
-            order_dict['meli_invoice_attached'] = 1 if check_meli_invoice_exists(order_dict['order_id']) else 0
-
-            # Check real shipment status from Mercado Libre /shipments API
-            shipping_info = raw_order.get('shipping') or {}
-            ship_id = shipping_info.get('id')
-            if ship_id:
-                try:
-                    s_res = api_request("GET", f"/shipments/{ship_id}")
-                    if s_res.status_code == 200:
-                        s_data = s_res.json()
-                        st = s_data.get('status')
-                        subst = s_data.get('substatus')
-                        if st in ('shipped', 'in_transit', 'active', 'out_for_delivery') or subst in ('dropped_off', 'shipped'):
-                            order_dict['shipping_status'] = 'shipped'
-                        elif st == 'delivered':
-                            order_dict['shipping_status'] = 'delivered'
-                        elif st in ('ready_to_ship', 'handling'):
-                            order_dict['shipping_status'] = 'ready_to_ship'
-                        elif st:
-                            order_dict['shipping_status'] = st
-                except Exception as e_ship:
-                    print(f"[Sync Shipment] Error fetching shipment {ship_id}: {e_ship}")
-
-            return order_dict
+        if not quick:
+            # Check attached invoices and real shipment statuses in parallel
+            from concurrent.futures import ThreadPoolExecutor
+            update_progress(status="syncing_sales", progress=95, message="Verificando envío y facturas en Mercado Libre...")
             
-        with ThreadPoolExecutor(max_workers=5) as executor:
-            orders = list(executor.map(enrich_order, zip(orders, all_results)))
+            def enrich_order(pair):
+                order_dict, raw_order = pair
+                order_dict['meli_invoice_attached'] = 1 if check_meli_invoice_exists(order_dict['order_id']) else 0
+
+                # Check real shipment status from Mercado Libre /shipments API
+                shipping_info = raw_order.get('shipping') or {}
+                ship_id = shipping_info.get('id')
+                if ship_id:
+                    try:
+                        s_res = api_request("GET", f"/shipments/{ship_id}")
+                        if s_res.status_code == 200:
+                            s_data = s_res.json()
+                            st = s_data.get('status')
+                            subst = s_data.get('substatus')
+                            if st in ('shipped', 'in_transit', 'active', 'out_for_delivery') or subst in ('dropped_off', 'shipped'):
+                                order_dict['shipping_status'] = 'shipped'
+                            elif st == 'delivered':
+                                order_dict['shipping_status'] = 'delivered'
+                            elif st in ('ready_to_ship', 'handling'):
+                                order_dict['shipping_status'] = 'ready_to_ship'
+                            elif st:
+                                order_dict['shipping_status'] = st
+                    except Exception as e_ship:
+                        print(f"[Sync Shipment] Error fetching shipment {ship_id}: {e_ship}")
+
+                return order_dict
+                
+            with ThreadPoolExecutor(max_workers=5) as executor:
+                orders = list(executor.map(enrich_order, zip(orders, all_results)))
             
         # Check which orders are new, and which orders transitioned to shipped
         new_order_ids = []

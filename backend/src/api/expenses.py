@@ -26,18 +26,116 @@ class IncomeCreate(BaseModel):
     amount: float
     category: str
 
+def ensure_fixed_expenses_for_month(conn, month: int, year: int):
+    """
+    Ensures fixed expenses exist for the specified month and year.
+    If no fixed expenses exist for (month, year), automatically copies 
+    the fixed expenses from the most recent prior month.
+    Also migrates any legacy rows with NULL month/year to July 2026 (7, 2026).
+    """
+    with conn.cursor() as cursor:
+        # Migrate legacy rows that have NULL month/year to July 2026 (7, 2026)
+        cursor.execute("UPDATE fixed_expenses SET month = 7, year = 2026 WHERE month IS NULL OR year IS NULL")
+        
+        # Check if records already exist for the requested month/year
+        cursor.execute("SELECT COUNT(*) as count FROM fixed_expenses WHERE month = %s AND year = %s", (month, year))
+        row = cursor.fetchone()
+        count = row['count'] if row else 0
+        
+        if count > 0:
+            return  # Already populated
+            
+        # Find the latest month/year prior to (year, month) that has fixed expenses
+        cursor.execute(
+            """
+            SELECT month, year 
+            FROM fixed_expenses 
+            WHERE (year < %s OR (year = %s AND month < %s))
+            ORDER BY year DESC, month DESC 
+            LIMIT 1
+            """,
+            (year, year, month)
+        )
+        prev = cursor.fetchone()
+        
+        if not prev:
+            # If no prior month exists before target, check if any month exists at all
+            cursor.execute(
+                """
+                SELECT month, year 
+                FROM fixed_expenses 
+                ORDER BY year ASC, month ASC 
+                LIMIT 1
+                """
+            )
+            prev = cursor.fetchone()
+            
+        if prev:
+            prev_m = prev['month']
+            prev_y = prev['year']
+            # Fetch fixed expenses from that base month
+            cursor.execute(
+                "SELECT description, amount, category FROM fixed_expenses WHERE month = %s AND year = %s",
+                (prev_m, prev_y)
+            )
+            prev_expenses = cursor.fetchall()
+            
+            for exp in prev_expenses:
+                cursor.execute(
+                    "INSERT INTO fixed_expenses (description, amount, category, month, year) VALUES (%s, %s, %s, %s, %s)",
+                    (exp['description'], exp['amount'], exp['category'], month, year)
+                )
+
 @router.get("/fixed")
 def get_fixed_expenses(month: Optional[int] = None, year: Optional[int] = None, current_user: dict = Depends(get_current_user)):
-    query = "SELECT * FROM fixed_expenses"
-    params = []
-    if month and year:
-        query += " WHERE month = %s AND year = %s"
-        params.extend([month, year])
-    query += " ORDER BY created_at DESC"
-    
     with database.get_connection() as conn:
+        if month and year:
+            ensure_fixed_expenses_for_month(conn, month, year)
+            
+        query = "SELECT * FROM fixed_expenses"
+        params = []
+        if month and year:
+            query += " WHERE month = %s AND year = %s"
+            params.extend([month, year])
+        query += " ORDER BY id ASC"
+        
         with conn.cursor() as cursor:
             cursor.execute(query, tuple(params))
+            return cursor.fetchall()
+
+@router.post("/fixed/copy-previous")
+def copy_previous_fixed_expenses(month: int = Query(...), year: int = Query(...), current_user: dict = Depends(get_current_user)):
+    with database.get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT month, year 
+                FROM fixed_expenses 
+                WHERE (year < %s OR (year = %s AND month < %s))
+                ORDER BY year DESC, month DESC 
+                LIMIT 1
+                """,
+                (year, year, month)
+            )
+            prev = cursor.fetchone()
+            if not prev:
+                raise HTTPException(status_code=400, detail="No hay gastos fijos de meses anteriores para copiar.")
+            
+            # Clear target month to re-copy
+            cursor.execute("DELETE FROM fixed_expenses WHERE month = %s AND year = %s", (month, year))
+            
+            cursor.execute(
+                "SELECT description, amount, category FROM fixed_expenses WHERE month = %s AND year = %s",
+                (prev['month'], prev['year'])
+            )
+            prev_expenses = cursor.fetchall()
+            for exp in prev_expenses:
+                cursor.execute(
+                    "INSERT INTO fixed_expenses (description, amount, category, month, year) VALUES (%s, %s, %s, %s, %s)",
+                    (exp['description'], exp['amount'], exp['category'], month, year)
+                )
+            
+            cursor.execute("SELECT * FROM fixed_expenses WHERE month = %s AND year = %s ORDER BY id ASC", (month, year))
             return cursor.fetchall()
 
 @router.post("/fixed")
@@ -202,6 +300,7 @@ def delete_income(income_id: int, current_user: dict = Depends(get_current_user)
 @router.get("/summary")
 def get_financial_summary(month: int, year: int, current_user: dict = Depends(get_current_user)):
     with database.get_connection() as conn:
+        ensure_fixed_expenses_for_month(conn, month, year)
         with conn.cursor() as cursor:
             cursor.execute("SELECT COALESCE(SUM(amount), 0) as total FROM fixed_expenses WHERE month = %s AND year = %s", (month, year))
             total_fixed = float(cursor.fetchone()['total'])
