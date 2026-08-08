@@ -379,6 +379,53 @@ def init_db():
                 )
             ''')
 
+            # Diffusion groups table
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS diffusion_groups (
+                    id SERIAL PRIMARY KEY,
+                    name VARCHAR(255) NOT NULL,
+                    description TEXT,
+                    channel_type VARCHAR(50) DEFAULT 'both',
+                    criteria_json TEXT DEFAULT '{}',
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+
+            # Diffusion group members table
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS diffusion_group_members (
+                    id SERIAL PRIMARY KEY,
+                    group_id INTEGER REFERENCES diffusion_groups(id) ON DELETE CASCADE,
+                    customer_id BIGINT,
+                    contact_name VARCHAR(255),
+                    phone VARCHAR(100),
+                    email VARCHAR(255),
+                    source VARCHAR(50) DEFAULT 'MANUAL',
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+
+            # Diffusion campaigns table
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS diffusion_campaigns (
+                    id SERIAL PRIMARY KEY,
+                    title VARCHAR(255) NOT NULL,
+                    channel VARCHAR(50) NOT NULL DEFAULT 'whatsapp',
+                    group_id INTEGER REFERENCES diffusion_groups(id) ON DELETE SET NULL,
+                    post_id INTEGER,
+                    message_text TEXT,
+                    media_url TEXT,
+                    status VARCHAR(50) DEFAULT 'pending',
+                    total_targets INTEGER DEFAULT 0,
+                    sent_count INTEGER DEFAULT 0,
+                    failed_count INTEGER DEFAULT 0,
+                    logs_json TEXT DEFAULT '[]',
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    completed_at TIMESTAMP
+                )
+            ''')
+
             cursor.execute('ALTER TABLE fixed_expenses ADD COLUMN IF NOT EXISTS month INT;')
             cursor.execute('ALTER TABLE fixed_expenses ADD COLUMN IF NOT EXISTS year INT;')
             cursor.execute('ALTER TABLE login_history ADD COLUMN IF NOT EXISTS username VARCHAR(100);')
@@ -2514,6 +2561,174 @@ def get_due_scheduled_marketing_posts():
                 ORDER BY scheduled_at ASC
             ''')
             return [dict(r) for r in cursor.fetchall()]
+
+# ---------------------------------------------------------------------
+# Diffusion Groups & Campaign Management Functions
+# ---------------------------------------------------------------------
+
+def create_diffusion_group(data):
+    name = data.get('name')
+    description = data.get('description', '')
+    channel_type = data.get('channel_type', 'both')
+    criteria_json = json.dumps(data.get('criteria_json', {})) if isinstance(data.get('criteria_json'), dict) else (data.get('criteria_json') or '{}')
+    
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute('''
+                INSERT INTO diffusion_groups (name, description, channel_type, criteria_json, created_at, updated_at)
+                VALUES (%s, %s, %s, %s, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                RETURNING id
+            ''', (name, description, channel_type, criteria_json))
+            row = cursor.fetchone()
+            return row['id'] if row else None
+
+def get_diffusion_groups():
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute('''
+                SELECT g.*, 
+                       COUNT(m.id) AS member_count,
+                       COUNT(CASE WHEN m.phone IS NOT NULL AND m.phone != '' THEN 1 END) AS whatsapp_member_count,
+                       COUNT(CASE WHEN m.email IS NOT NULL AND m.email != '' THEN 1 END) AS email_member_count
+                FROM diffusion_groups g
+                LEFT JOIN diffusion_group_members m ON g.id = m.group_id
+                GROUP BY g.id
+                ORDER BY g.created_at DESC
+            ''')
+            return [dict(r) for r in cursor.fetchall()]
+
+def get_diffusion_group_by_id(group_id):
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute('SELECT * FROM diffusion_groups WHERE id = %s', (group_id,))
+            row = cursor.fetchone()
+            return dict(row) if row else None
+
+def delete_diffusion_group(group_id):
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute('DELETE FROM diffusion_groups WHERE id = %s', (group_id,))
+            return True
+
+def add_group_members(group_id, members):
+    """
+    members: list of dicts with keys: customer_id, contact_name, phone, email, source
+    """
+    added_count = 0
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            for m in members:
+                c_id = m.get('customer_id')
+                name = m.get('contact_name') or m.get('full_name') or m.get('nickname') or ''
+                phone = m.get('phone') or ''
+                email = m.get('email') or ''
+                source = m.get('source') or 'MANUAL'
+                
+                # Clean phone number (keep numbers only)
+                clean_phone = "".join([ch for ch in phone if ch.isdigit()])
+                
+                # Check for duplicate in same group
+                if clean_phone:
+                    cursor.execute('SELECT id FROM diffusion_group_members WHERE group_id = %s AND phone = %s', (group_id, clean_phone))
+                    if cursor.fetchone():
+                        continue
+                elif email:
+                    cursor.execute('SELECT id FROM diffusion_group_members WHERE group_id = %s AND LOWER(email) = LOWER(%s)', (group_id, email))
+                    if cursor.fetchone():
+                        continue
+
+                cursor.execute('''
+                    INSERT INTO diffusion_group_members (group_id, customer_id, contact_name, phone, email, source)
+                    VALUES (%s, %s, %s, %s, %s, %s)
+                ''', (group_id, c_id, name, clean_phone, email, source))
+                added_count += 1
+
+            # Update updated_at of group
+            cursor.execute('UPDATE diffusion_groups SET updated_at = CURRENT_TIMESTAMP WHERE id = %s', (group_id,))
+    return added_count
+
+def get_group_members(group_id):
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute('SELECT * FROM diffusion_group_members WHERE group_id = %s ORDER BY created_at DESC', (group_id,))
+            return [dict(r) for r in cursor.fetchall()]
+
+def delete_group_member(member_id):
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute('DELETE FROM diffusion_group_members WHERE id = %s', (member_id,))
+            return True
+
+def create_diffusion_campaign(data):
+    title = data.get('title', 'Campaña de Difusión')
+    channel = data.get('channel', 'whatsapp')
+    group_id = data.get('group_id')
+    post_id = data.get('post_id')
+    message_text = data.get('message_text', '')
+    media_url = data.get('media_url', '')
+    total_targets = data.get('total_targets', 0)
+    
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute('''
+                INSERT INTO diffusion_campaigns 
+                (title, channel, group_id, post_id, message_text, media_url, status, total_targets, sent_count, failed_count, logs_json, created_at)
+                VALUES (%s, %s, %s, %s, %s, %s, 'sending', %s, 0, 0, '[]', CURRENT_TIMESTAMP)
+                RETURNING id
+            ''', (title, channel, group_id, post_id, message_text, media_url, total_targets))
+            row = cursor.fetchone()
+            return row['id'] if row else None
+
+def get_diffusion_campaigns():
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute('''
+                SELECT c.*, g.name AS group_name
+                FROM diffusion_campaigns c
+                LEFT JOIN diffusion_groups g ON c.group_id = g.id
+                ORDER BY c.created_at DESC
+            ''')
+            return [dict(r) for r in cursor.fetchall()]
+
+def get_diffusion_campaign_by_id(campaign_id):
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute('SELECT * FROM diffusion_campaigns WHERE id = %s', (campaign_id,))
+            row = cursor.fetchone()
+            return dict(row) if row else None
+
+def update_diffusion_campaign(campaign_id, updates):
+    """
+    updates can contain: status, sent_count, failed_count, logs_json, completed_at
+    """
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            fields = []
+            values = []
+            if 'status' in updates:
+                fields.append('status = %s')
+                values.append(updates['status'])
+            if 'sent_count' in updates:
+                fields.append('sent_count = %s')
+                values.append(updates['sent_count'])
+            if 'failed_count' in updates:
+                fields.append('failed_count = %s')
+                values.append(updates['failed_count'])
+            if 'logs_json' in updates:
+                logs_val = updates['logs_json']
+                if isinstance(logs_val, (list, dict)):
+                    logs_val = json.dumps(logs_val)
+                fields.append('logs_json = %s')
+                values.append(logs_val)
+            if updates.get('completed'):
+                fields.append('completed_at = CURRENT_TIMESTAMP')
+            
+            if fields:
+                query = f"UPDATE diffusion_campaigns SET {', '.join(fields)} WHERE id = %s"
+                values.append(campaign_id)
+                cursor.execute(query, tuple(values))
+    return True
+
 
 
 

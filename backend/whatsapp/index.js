@@ -294,6 +294,67 @@ const server = http.createServer(async (req, res) => {
             res.writeHead(500, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({ success: false, error: err.message }));
         }
+    } else if (req.method === 'POST' && req.url === '/send-broadcast') {
+        let body = '';
+        req.on('data', chunk => { body += chunk.toString(); });
+        req.on('end', async () => {
+            try {
+                if (!currentSock) {
+                    res.writeHead(400, { 'Content-Type': 'application/json' });
+                    return res.end(JSON.stringify({ success: false, error: 'WhatsApp no está conectado' }));
+                }
+
+                const data = JSON.parse(body || '{}');
+                const recipients = data.recipients || [];
+                const message = data.message || '';
+                const mediaUrl = data.mediaUrl || '';
+                const delaySeconds = data.delaySeconds || 5;
+
+                console.log(`[Broadcast] Iniciando envío a ${recipients.length} destinatarios...`);
+                let sent_count = 0;
+                let failed_count = 0;
+
+                for (const recipient of recipients) {
+                    const rawPhone = recipient.phone || '';
+                    const cleanPhone = rawPhone.replace(/\D/g, '');
+                    if (!cleanPhone) {
+                        failed_count++;
+                        continue;
+                    }
+
+                    const jid = `${cleanPhone}@s.whatsapp.net`;
+                    try {
+                        if (mediaUrl) {
+                            const isVid = mediaUrl.toLowerCase().split('?')[0].match(/\.(mp4|mov|webm)$/);
+                            if (isVid) {
+                                await currentSock.sendMessage(jid, { video: { url: mediaUrl }, caption: message });
+                            } else {
+                                await currentSock.sendMessage(jid, { image: { url: mediaUrl }, caption: message });
+                            }
+                        } else {
+                            await currentSock.sendMessage(jid, { text: message });
+                        }
+                        sent_count++;
+                        console.log(`[Broadcast] Mensaje enviado a ${cleanPhone}`);
+                    } catch (sendErr) {
+                        console.error(`[Broadcast Error] Falló envío a ${cleanPhone}:`, sendErr.message);
+                        failed_count++;
+                    }
+
+                    // Anti-spam delay between messages
+                    if (recipients.length > 1) {
+                        await new Promise(r => setTimeout(r, delaySeconds * 1000));
+                    }
+                }
+
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ success: true, sent_count, failed_count }));
+            } catch (err) {
+                console.error('Error in /send-broadcast:', err.message);
+                res.writeHead(500, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ success: false, error: err.message }));
+            }
+        });
     } else {
         res.writeHead(404);
         res.end();

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { Megaphone, Sparkles, Calendar, Settings as SettingsIcon, Send, Video, Image as ImageIcon, Trash2, CheckCircle, Clock, AlertCircle, RefreshCw, ExternalLink, MessageSquare } from 'lucide-react'
+import { Megaphone, Sparkles, Calendar, Settings as SettingsIcon, Send, Video, Image as ImageIcon, Trash2, CheckCircle, Clock, AlertCircle, RefreshCw, ExternalLink, MessageSquare, Users, Plus, Mail, Phone, Share2, Play, Check, Layers, UserPlus, X } from 'lucide-react'
 
 const toHighResMlImage = (url) => {
   if (!url) return ''
@@ -108,10 +108,243 @@ export default function Marketing() {
   const [replyingId, setReplyingId] = useState(null)
   const [suggestingId, setSuggestingId] = useState(null)
 
+  // Diffusion & Campaign state
+  const [diffusionGroups, setDiffusionGroups] = useState([])
+  const [diffusionCampaigns, setDiffusionCampaigns] = useState([])
+  const [crmContacts, setCrmContacts] = useState([])
+  const [loadingDiffusion, setLoadingDiffusion] = useState(false)
+  const [showCreateGroupModal, setShowCreateGroupModal] = useState(false)
+
+  // Group creation form
+  const [newGroupName, setNewGroupName] = useState('')
+  const [newGroupDesc, setNewGroupDesc] = useState('')
+  const [newGroupChannel, setNewGroupChannel] = useState('both')
+  const [selectedBuyerIds, setSelectedBuyerIds] = useState([])
+  const [contactSearchQuery, setContactSearchQuery] = useState('')
+  const [manualName, setManualName] = useState('')
+  const [manualPhone, setManualPhone] = useState('')
+  const [manualEmail, setManualEmail] = useState('')
+  const [manualMemberList, setManualMemberList] = useState([])
+  const [creatingGroup, setCreatingGroup] = useState(false)
+
+  // Computed filtered CRM Contacts based on selected channel and search input
+  const filteredCrmContacts = crmContacts.filter(c => {
+    // 1. Channel requirement filter
+    if (newGroupChannel === 'whatsapp') {
+      if (!c.phone || !c.phone.trim()) return false
+    } else if (newGroupChannel === 'email') {
+      if (!c.email || !c.email.trim()) return false
+    } else if (newGroupChannel === 'both') {
+      if ((!c.phone || !c.phone.trim()) && (!c.email || !c.email.trim())) return false
+    }
+
+    // 2. Search query filter
+    if (contactSearchQuery.trim()) {
+      const q = contactSearchQuery.toLowerCase().trim()
+      const nameMatch = (c.full_name || '').toLowerCase().includes(q)
+      const nickMatch = (c.nickname || '').toLowerCase().includes(q)
+      const phoneMatch = (c.phone || '').includes(q)
+      const emailMatch = (c.email || '').toLowerCase().includes(q)
+      return nameMatch || nickMatch || phoneMatch || emailMatch
+    }
+    return true
+  })
+
+  // Campaign launch form
+  const [selectedTargetGroupId, setSelectedTargetGroupId] = useState('')
+  const [campaignTitle, setCampaignTitle] = useState('')
+  const [campaignChannel, setCampaignChannel] = useState('both')
+  const [campaignMessage, setCampaignMessage] = useState('')
+  const [campaignMediaUrl, setCampaignMediaUrl] = useState('')
+  const [campaignDelay, setCampaignDelay] = useState(5)
+  const [sendingCampaign, setSendingCampaign] = useState(false)
+
+  // Group Members modal
+  const [viewingMembersGroup, setViewingMembersGroup] = useState(null)
+  const [groupMembers, setGroupMembers] = useState([])
+  const [loadingMembers, setLoadingMembers] = useState(false)
+
+  const fetchDiffusionData = async () => {
+    setLoadingDiffusion(true)
+    try {
+      const [resGroups, resCampaigns, resCrm] = await Promise.all([
+        fetch('/api/diffusion/groups'),
+        fetch('/api/diffusion/campaigns'),
+        fetch('/api/diffusion/crm-contacts')
+      ])
+      if (resGroups.ok) {
+        const d = await resGroups.json()
+        if (d.groups) setDiffusionGroups(d.groups)
+      }
+      if (resCampaigns.ok) {
+        const d = await resCampaigns.json()
+        if (d.campaigns) setDiffusionCampaigns(d.campaigns)
+      }
+      if (resCrm.ok) {
+        const d = await resCrm.json()
+        if (d.contacts) setCrmContacts(d.contacts)
+      }
+    } catch (e) {
+      console.error("Error fetching diffusion data:", e)
+    } finally {
+      setLoadingDiffusion(false)
+    }
+  }
+
+  const handleCreateGroup = async (e) => {
+    e.preventDefault()
+    if (!newGroupName.trim()) return alert("Por favor ingresa un nombre para el grupo")
+
+    setCreatingGroup(true)
+    try {
+      const res = await fetch('/api/diffusion/groups', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: newGroupName.trim(),
+          description: newGroupDesc.trim(),
+          channel_type: newGroupChannel
+        })
+      })
+      const data = await res.json()
+      if (!res.ok || !data.group_id) {
+        alert("Error creando grupo: " + (data.detail || "Error desconocido"))
+        return
+      }
+
+      const groupId = data.group_id
+      const members = []
+
+      // Find contacts selected by buyer_id / unique key
+      crmContacts.forEach(c => {
+        const key = c.buyer_id ? String(c.buyer_id) : (c.phone || c.email)
+        if (selectedBuyerIds.includes(key)) {
+          members.push({
+            customer_id: c.buyer_id,
+            contact_name: c.full_name || c.nickname || 'Cliente CRM',
+            phone: c.phone || '',
+            email: c.email || '',
+            source: c.source_platform || 'CRM'
+          })
+        }
+      })
+
+      manualMemberList.forEach(m => {
+        members.push({
+          contact_name: m.name,
+          phone: m.phone,
+          email: m.email,
+          source: 'MANUAL'
+        })
+      })
+
+      if (members.length > 0) {
+        await fetch(`/api/diffusion/groups/${groupId}/members`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ members })
+        })
+      }
+
+      alert("🎉 Grupo de Difusión creado con éxito")
+      setShowCreateGroupModal(false)
+      setNewGroupName('')
+      setNewGroupDesc('')
+      setSelectedBuyerIds([])
+      setContactSearchQuery('')
+      setManualMemberList([])
+      fetchDiffusionData()
+    } catch (err) {
+      alert("Error al guardar grupo: " + err.message)
+    } finally {
+      setCreatingGroup(false)
+    }
+  }
+
+  const handleDeleteGroup = async (groupId) => {
+    if (!window.confirm("¿Seguro que deseas eliminar este grupo de difusión?")) return
+    try {
+      const res = await fetch(`/api/diffusion/groups/${groupId}`, { method: 'DELETE' })
+      if (res.ok) {
+        fetchDiffusionData()
+      } else {
+        alert("Error al eliminar grupo")
+      }
+    } catch (e) {
+      alert("Error: " + e.message)
+    }
+  }
+
+  const handleOpenMembersModal = async (group) => {
+    setViewingMembersGroup(group)
+    setLoadingMembers(true)
+    try {
+      const res = await fetch(`/api/diffusion/groups/${group.id}/members`)
+      if (res.ok) {
+        const d = await res.json()
+        setGroupMembers(d.members || [])
+      }
+    } catch (e) {
+      console.error(e)
+    } finally {
+      setLoadingMembers(false)
+    }
+  }
+
+  const handleDeleteMember = async (memberId) => {
+    if (!viewingMembersGroup) return
+    try {
+      const res = await fetch(`/api/diffusion/groups/${viewingMembersGroup.id}/members/${memberId}`, { method: 'DELETE' })
+      if (res.ok) {
+        setGroupMembers(prev => prev.filter(m => m.id !== memberId))
+        fetchDiffusionData()
+      }
+    } catch (e) {
+      alert("Error: " + e.message)
+    }
+  }
+
+  const handleLaunchCampaign = async (e) => {
+    e.preventDefault()
+    if (!selectedTargetGroupId) return alert("Seleccioná un grupo destinatario")
+    if (!campaignMessage.trim()) return alert("Ingresá el mensaje o copy de la publicidad")
+
+    const group = diffusionGroups.find(g => String(g.id) === String(selectedTargetGroupId))
+    const title = campaignTitle.trim() || `Difusión: ${group ? group.name : 'Promoción'}`
+
+    setSendingCampaign(true)
+    try {
+      const res = await fetch('/api/diffusion/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: title,
+          group_id: parseInt(selectedTargetGroupId),
+          channel: campaignChannel,
+          message_text: campaignMessage,
+          media_url: campaignMediaUrl,
+          delay_seconds: campaignDelay
+        })
+      })
+      const data = await res.json()
+      if (res.ok && data.status === 'success') {
+        alert("🚀 " + data.message)
+        fetchDiffusionData()
+      } else {
+        alert("Error al iniciar campaña: " + (data.detail || "Error en backend"))
+      }
+    } catch (err) {
+      alert("Error de conexión: " + err.message)
+    } finally {
+      setSendingCampaign(false)
+    }
+  }
+
   useEffect(() => {
     fetchProducts()
     fetchPosts()
     fetchMetaConfig()
+    fetchDiffusionData()
   }, [])
 
   useEffect(() => {
@@ -928,6 +1161,20 @@ export default function Marketing() {
           }}
         >
           <MessageSquare size={16} /> 💬 Inbox de Comentarios
+        </button>
+        <button 
+          className="btn" 
+          onClick={() => { setActiveTab('diffusion'); fetchDiffusionData(); }}
+          style={{
+            backgroundColor: activeTab === 'diffusion' ? 'var(--accent-blue)' : 'var(--bg-card)',
+            color: activeTab === 'diffusion' ? '#fff' : 'var(--text-primary)',
+            border: '1px solid var(--border-color)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6
+          }}
+        >
+          <Send size={16} /> 📢 Difusión & Envíos Masivos ({diffusionGroups.length})
         </button>
         <button 
           className="btn" 
@@ -1760,6 +2007,577 @@ export default function Marketing() {
               </div>
             )
           )}
+        </div>
+      )}
+
+      {/* TAB: Difusión & Envíos Masivos */}
+      {activeTab === 'diffusion' && (
+        <div style={{display: 'flex', flexDirection: 'column', gap: 25}}>
+          {/* Quick Metrics Header */}
+          <div style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 15}}>
+            <div className="card" style={{padding: 16, display: 'flex', alignItems: 'center', gap: 14}}>
+              <div style={{width: 44, height: 44, borderRadius: 10, backgroundColor: 'rgba(16, 185, 129, 0.15)', color: '#10b981', display: 'flex', alignItems: 'center', justifyContent: 'center'}}>
+                <Users size={22} />
+              </div>
+              <div>
+                <div style={{fontSize: '0.8rem', color: 'var(--text-secondary)'}}>Grupos de Difusión</div>
+                <div style={{fontSize: '1.4rem', fontWeight: 'bold'}}>{diffusionGroups.length} guardados</div>
+              </div>
+            </div>
+
+            <div className="card" style={{padding: 16, display: 'flex', alignItems: 'center', gap: 14}}>
+              <div style={{width: 44, height: 44, borderRadius: 10, backgroundColor: 'rgba(59, 130, 246, 0.15)', color: '#3b82f6', display: 'flex', alignItems: 'center', justifyContent: 'center'}}>
+                <Send size={22} />
+              </div>
+              <div>
+                <div style={{fontSize: '0.8rem', color: 'var(--text-secondary)'}}>Campañas Enviadas</div>
+                <div style={{fontSize: '1.4rem', fontWeight: 'bold'}}>{diffusionCampaigns.length} lanzadas</div>
+              </div>
+            </div>
+
+            <div className="card" style={{padding: 16, display: 'flex', alignItems: 'center', gap: 14}}>
+              <div style={{width: 44, height: 44, borderRadius: 10, backgroundColor: 'rgba(34, 197, 94, 0.15)', color: '#22c55e', display: 'flex', alignItems: 'center', justifyContent: 'center'}}>
+                <Phone size={22} />
+              </div>
+              <div>
+                <div style={{fontSize: '0.8rem', color: 'var(--text-secondary)'}}>Canal WhatsApp (Baileys)</div>
+                <div style={{fontSize: '0.95rem', fontWeight: 600, color: '#22c55e', display: 'flex', alignItems: 'center', gap: 5}}>
+                  <CheckCircle size={14} /> Listo con Delay Anti-Spam
+                </div>
+              </div>
+            </div>
+
+            <div className="card" style={{padding: 16, display: 'flex', alignItems: 'center', gap: 14}}>
+              <div style={{width: 44, height: 44, borderRadius: 10, backgroundColor: 'rgba(168, 85, 247, 0.15)', color: '#a855f7', display: 'flex', alignItems: 'center', justifyContent: 'center'}}>
+                <Mail size={22} />
+              </div>
+              <div>
+                <div style={{fontSize: '0.8rem', color: 'var(--text-secondary)'}}>Canal Email (SMTP)</div>
+                <div style={{fontSize: '0.95rem', fontWeight: 600, color: '#a855f7', display: 'flex', alignItems: 'center', gap: 5}}>
+                  <CheckCircle size={14} /> Plantilla HTML Card Pro
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Section 1: Grupos Guardados */}
+          <div className="card" style={{padding: 20}}>
+            <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15, flexWrap: 'wrap', gap: 10}}>
+              <div>
+                <h3 style={{margin: 0, display: 'flex', alignItems: 'center', gap: 8}}>
+                  <Users size={20} style={{color: 'var(--accent-blue)'}} /> Grupos de Difusión Guardados
+                </h3>
+                <p style={{fontSize: '0.82rem', color: 'var(--text-secondary)', margin: '4px 0 0 0'}}>
+                  Formá y reutilizá grupos de clientes de Mercado Libre, consultas de WhatsApp o contactos manuales.
+                </p>
+              </div>
+              <button 
+                className="btn" 
+                onClick={() => setShowCreateGroupModal(true)}
+                style={{backgroundColor: 'var(--accent-blue)', color: '#fff', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: 6}}
+              >
+                <Plus size={16} /> Crear Nuevo Grupo de Difusión
+              </button>
+            </div>
+
+            {diffusionGroups.length === 0 ? (
+              <div style={{textAlign: 'center', padding: '30px 20px', color: 'var(--text-secondary)', backgroundColor: 'var(--bg-dark)', borderRadius: 10, border: '1px dashed var(--border-color)'}}>
+                <Users size={32} style={{marginBottom: 8, opacity: 0.5}} />
+                <div>No tenés grupos de difusión guardados todavía.</div>
+                <button className="btn" onClick={() => setShowCreateGroupModal(true)} style={{marginTop: 12, backgroundColor: 'var(--bg-card)', border: '1px solid var(--border-color)', color: 'var(--text-primary)'}}>
+                  ➕ Crear primer grupo ahora
+                </button>
+              </div>
+            ) : (
+              <div style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 15}}>
+                {diffusionGroups.map(group => (
+                  <div key={group.id} style={{backgroundColor: 'var(--bg-dark)', padding: 16, borderRadius: 10, border: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', justifyContent: 'space-between'}}>
+                    <div>
+                      <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 6}}>
+                        <div style={{fontWeight: 700, fontSize: '1rem', color: 'var(--text-primary)'}}>{group.name}</div>
+                        <span style={{fontSize: '0.72rem', padding: '3px 8px', borderRadius: 12, fontWeight: 600, backgroundColor: group.channel_type === 'whatsapp' ? 'rgba(34, 197, 94, 0.15)' : group.channel_type === 'email' ? 'rgba(168, 85, 247, 0.15)' : 'rgba(59, 130, 246, 0.15)', color: group.channel_type === 'whatsapp' ? '#22c55e' : group.channel_type === 'email' ? '#a855f7' : '#3b82f6'}}>
+                          {group.channel_type === 'whatsapp' ? '🟢 WhatsApp' : group.channel_type === 'email' ? '📧 Email' : '👥 Ambos'}
+                        </span>
+                      </div>
+                      <p style={{fontSize: '0.82rem', color: 'var(--text-secondary)', marginBottom: 12, minHeight: 32}}>
+                        {group.description || 'Sin descripción'}
+                      </p>
+                      <div style={{fontSize: '0.8rem', display: 'flex', gap: 12, color: 'var(--text-secondary)', marginBottom: 15}}>
+                        <span>👥 <strong>{group.member_count}</strong> miembros</span>
+                        <span>🟢 <strong>{group.whatsapp_member_count}</strong> WhatsApp</span>
+                        <span>📧 <strong>{group.email_member_count}</strong> Email</span>
+                      </div>
+                    </div>
+                    <div style={{display: 'flex', gap: 8, borderTop: '1px solid var(--border-color)', pt: 10}}>
+                      <button 
+                        className="btn" 
+                        onClick={() => handleOpenMembersModal(group)}
+                        style={{flex: 1, fontSize: '0.8rem', backgroundColor: 'var(--bg-card)', border: '1px solid var(--border-color)', color: 'var(--text-primary)'}}
+                      >
+                        👁️ Ver / Editar Miembros
+                      </button>
+                      <button 
+                        className="btn-icon" 
+                        onClick={() => handleDeleteGroup(group.id)}
+                        style={{color: '#ef4444', backgroundColor: 'rgba(239, 68, 68, 0.1)'}}
+                        title="Eliminar grupo"
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Section 2: Armar y Lanzar Difusión */}
+          <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20}}>
+            {/* Left: Form */}
+            <div className="card" style={{padding: 20}}>
+              <h3 style={{margin: '0 0 15px 0', display: 'flex', alignItems: 'center', gap: 8}}>
+                <Send size={20} style={{color: 'var(--accent-blue)'}} /> Armar Campaña de Difusión
+              </h3>
+
+              <form onSubmit={handleLaunchCampaign} style={{display: 'flex', flexDirection: 'column', gap: 14}}>
+                <label style={{fontSize: '0.85rem', fontWeight: 600}}>
+                  1. Grupo Destinatario
+                  <select 
+                    value={selectedTargetGroupId} 
+                    onChange={e => setSelectedTargetGroupId(e.target.value)}
+                    style={{width: '100%', marginTop: 5, padding: 10, borderRadius: 8, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-dark)', color: 'var(--text-primary)'}}
+                  >
+                    <option value="">-- Seleccionar Grupo Guardado --</option>
+                    {diffusionGroups.map(g => (
+                      <option key={g.id} value={g.id}>
+                        {g.name} ({g.member_count} miembros)
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10}}>
+                  <label style={{fontSize: '0.85rem', fontWeight: 600}}>
+                    2. Canal de Envío
+                    <select 
+                      value={campaignChannel} 
+                      onChange={e => setCampaignChannel(e.target.value)}
+                      style={{width: '100%', marginTop: 5, padding: 10, borderRadius: 8, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-dark)', color: 'var(--text-primary)'}}
+                    >
+                      <option value="both">👥 Ambos (WhatsApp & Email)</option>
+                      <option value="whatsapp">🟢 Solo WhatsApp</option>
+                      <option value="email">📧 Solo Email</option>
+                    </select>
+                  </label>
+
+                  <label style={{fontSize: '0.85rem', fontWeight: 600}}>
+                    Delay WhatsApp (Segundos)
+                    <select 
+                      value={campaignDelay} 
+                      onChange={e => setCampaignDelay(parseInt(e.target.value))}
+                      style={{width: '100%', marginTop: 5, padding: 10, borderRadius: 8, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-dark)', color: 'var(--text-primary)'}}
+                    >
+                      <option value={4}>⚡ 4 Segundos (Rápido)</option>
+                      <option value={6}>🛡️ 6 Segundos (Recomendado Anti-Spam)</option>
+                      <option value={10}>🔒 10 Segundos (Ultra Seguro)</option>
+                    </select>
+                  </label>
+                </div>
+
+                <label style={{fontSize: '0.85rem', fontWeight: 600}}>
+                  3. Título de la Campaña (Interno / Asunto de Email)
+                  <input 
+                    type="text"
+                    value={campaignTitle}
+                    onChange={e => setCampaignTitle(e.target.value)}
+                    placeholder="Ej: 🔥 Oferta Especial de Primavera - 15% OFF"
+                    style={{width: '100%', marginTop: 5, padding: 10, borderRadius: 8, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-dark)', color: 'var(--text-primary)'}}
+                  />
+                </label>
+
+                {/* Quick Auto-fill from Products / Generated Post */}
+                <div style={{backgroundColor: 'var(--bg-dark)', padding: 12, borderRadius: 8, border: '1px solid var(--border-color)'}}>
+                  <div style={{fontSize: '0.8rem', fontWeight: 700, marginBottom: 6, color: 'var(--accent-blue)'}}>
+                    ✨ Autocompletar con un Producto o Post con IA
+                  </div>
+                  <select 
+                    onChange={e => {
+                      const mlId = e.target.value
+                      if (!mlId) return
+                      const p = products.find(prod => prod.ml_id === mlId)
+                      if (p) {
+                        const price = p.price_web || p.price || 0
+                        setCampaignTitle(`🔥 ¡Gran oferta en ${p.title}!`)
+                        setCampaignMessage(`¡Hola! Te compartimos una súper oferta exclusiva de Hidroponía Rosario:\n\n🌿 *${p.title}*\n💰 Precio especial: *$${price.toLocaleString('es-AR')} ARS*\n\n🚚 Envíos a todo el país. ¡Comprá el tuyo directo en nuestra Tienda Web!\n📲 Visitanos en nuestra web oficial.`)
+                        const imgs = p.images ? p.images.split(',') : (p.thumbnail ? [p.thumbnail] : [])
+                        if (imgs.length > 0) setCampaignMediaUrl(toHighResMlImage(imgs[0].trim()))
+                      }
+                    }}
+                    style={{width: '100%', padding: 8, borderRadius: 6, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)', fontSize: '0.82rem'}}
+                  >
+                    <option value="">-- Cargar datos de producto del inventario --</option>
+                    {products.map(p => (
+                      <option key={p.ml_id} value={p.ml_id}>{p.title} (${p.price_web || p.price})</option>
+                    ))}
+                  </select>
+                </div>
+
+                <label style={{fontSize: '0.85rem', fontWeight: 600}}>
+                  4. Mensaje Publicitario / Copy
+                  <textarea 
+                    rows={5}
+                    value={campaignMessage}
+                    onChange={e => setCampaignMessage(e.target.value)}
+                    placeholder="Escribí el texto persuasivo con emojis, detalles de oferta y llamado a la acción..."
+                    style={{width: '100%', marginTop: 5, padding: 10, borderRadius: 8, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-dark)', color: 'var(--text-primary)', fontFamily: 'inherit'}}
+                  />
+                </label>
+
+                <label style={{fontSize: '0.85rem', fontWeight: 600}}>
+                  5. URL de Imagen / Banner Publicitario (Media)
+                  <input 
+                    type="text"
+                    value={campaignMediaUrl}
+                    onChange={e => setCampaignMediaUrl(e.target.value)}
+                    placeholder="https://... (Foto HD del producto o gráfica de oferta)"
+                    style={{width: '100%', marginTop: 5, padding: 10, borderRadius: 8, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-dark)', color: 'var(--text-primary)'}}
+                  />
+                </label>
+
+                <button 
+                  type="submit" 
+                  className="btn" 
+                  disabled={sendingCampaign}
+                  style={{backgroundColor: '#10b981', color: '#fff', fontWeight: 'bold', padding: '12px 20px', fontSize: '1rem', marginTop: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8}}
+                >
+                  {sendingCampaign ? <RefreshCw className="spin" size={18} /> : <Send size={18} />}
+                  {sendingCampaign ? 'Enviando Difusión...' : '🚀 Lanzar Campaña de Difusión Masiva'}
+                </button>
+              </form>
+            </div>
+
+            {/* Right: Live Preview */}
+            <div className="card" style={{padding: 20}}>
+              <h3 style={{margin: '0 0 15px 0', display: 'flex', alignItems: 'center', gap: 8}}>
+                <Sparkles size={20} style={{color: 'var(--accent-blue)'}} /> Vista Previa del Anuncio (Preview)
+              </h3>
+
+              {/* WhatsApp Mockup */}
+              <div style={{marginBottom: 20}}>
+                <div style={{fontSize: '0.82rem', fontWeight: 700, color: '#22c55e', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 5}}>
+                  <Phone size={14} /> Vista Previa en WhatsApp Chat
+                </div>
+                <div style={{backgroundColor: '#0b141a', padding: 14, borderRadius: 12, border: '1px solid #202c33', maxWidth: 360}}>
+                  <div style={{backgroundColor: '#005c4b', padding: 10, borderRadius: '8px 8px 8px 0', color: '#e9edef', fontSize: '0.85rem', lineHeight: 1.4}}>
+                    {campaignMediaUrl && (
+                      <img src={campaignMediaUrl} alt="Preview" style={{width: '100%', height: 160, objectFit: 'cover', borderRadius: 6, marginBottom: 8}} />
+                    )}
+                    <div style={{whiteSpace: 'pre-wrap'}}>{campaignMessage || 'Tu mensaje publicitario aparecerá aquí...'}</div>
+                    <div style={{fontSize: '0.68rem', color: '#8696a0', textAlign: 'right', marginTop: 4}}>21:49 ✓✓</div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Email HTML Card Mockup */}
+              <div>
+                <div style={{fontSize: '0.82rem', fontWeight: 700, color: '#a855f7', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 5}}>
+                  <Mail size={14} /> Vista Previa en Email HTML Card
+                </div>
+                <div style={{backgroundColor: '#ffffff', color: '#1e293b', borderRadius: 12, overflow: 'hidden', border: '1px solid #cbd5e1', boxShadow: '0 4px 12px rgba(0,0,0,0.1)'}}>
+                  <div style={{background: 'linear-gradient(135deg, #10b981, #059669)', color: '#ffffff', padding: '12px 16px', fontWeight: 'bold', fontSize: '0.9rem', textAlign: 'center'}}>
+                    🌿 Hidroponía Rosario — Novedades & Ofertas
+                  </div>
+                  <div style={{padding: 16}}>
+                    {campaignMediaUrl && (
+                      <img src={campaignMediaUrl} alt="Preview" style={{width: '100%', height: 140, objectFit: 'cover', borderRadius: 8, marginBottom: 10}} />
+                    )}
+                    <div style={{fontSize: '0.82rem', lineHeight: 1.5, color: '#334155', whiteSpace: 'pre-wrap'}}>
+                      {campaignMessage || 'El diseño responsivo del correo publicitario se renderizará aquí con colores acordes a tu marca.'}
+                    </div>
+                  </div>
+                  <div style={{backgroundColor: '#f8fafc', padding: 8, textAlign: 'center', fontSize: '0.7rem', color: '#64748b', borderTop: '1px solid #e2e8f0'}}>
+                    Hidroponía Rosario • Tienda Oficial
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Section 3: Historial de Campañas */}
+          <div className="card" style={{padding: 20}}>
+            <h3 style={{margin: '0 0 15px 0', display: 'flex', alignItems: 'center', gap: 8}}>
+              <Clock size={20} style={{color: 'var(--accent-blue)'}} /> Historial de Campañas Lanzadas
+            </h3>
+
+            {diffusionCampaigns.length === 0 ? (
+              <div style={{textAlign: 'center', padding: 20, color: 'var(--text-secondary)'}}>
+                No has realizado envíos masivos todavía.
+              </div>
+            ) : (
+              <div style={{overflowX: 'auto'}}>
+                <table style={{width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem'}}>
+                  <thead>
+                    <tr style={{borderBottom: '1px solid var(--border-color)', textAlign: 'left'}}>
+                      <th style={{padding: 10}}>Fecha</th>
+                      <th style={{padding: 10}}>Título</th>
+                      <th style={{padding: 10}}>Grupo</th>
+                      <th style={{padding: 10}}>Canal</th>
+                      <th style={{padding: 10}}>Alcance</th>
+                      <th style={{padding: 10}}>Estado</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {diffusionCampaigns.map(c => (
+                      <tr key={c.id} style={{borderBottom: '1px solid var(--border-color)'}}>
+                        <td style={{padding: 10, color: 'var(--text-secondary)'}}>
+                          {new Date(c.created_at).toLocaleString('es-AR')}
+                        </td>
+                        <td style={{padding: 10, fontWeight: 600}}>{c.title}</td>
+                        <td style={{padding: 10}}>{c.group_name || 'Grupo Eliminado'}</td>
+                        <td style={{padding: 10}}>
+                          <span style={{fontSize: '0.75rem', padding: '2px 6px', borderRadius: 4, backgroundColor: 'var(--bg-dark)'}}>
+                            {c.channel === 'whatsapp' ? '🟢 WhatsApp' : c.channel === 'email' ? '📧 Email' : '👥 Ambos'}
+                          </span>
+                        </td>
+                        <td style={{padding: 10}}>
+                          ✅ {c.sent_count} / {c.total_targets} enviados {c.failed_count > 0 && <span style={{color: '#ef4444'}}>({c.failed_count} fallidos)</span>}
+                        </td>
+                        <td style={{padding: 10}}>
+                          <span style={{fontSize: '0.75rem', padding: '3px 8px', borderRadius: 12, fontWeight: 700, backgroundColor: c.status.startsWith('completed') ? 'rgba(34, 197, 94, 0.15)' : 'rgba(234, 179, 8, 0.15)', color: c.status.startsWith('completed') ? '#22c55e' : '#eab308'}}>
+                            {c.status === 'completed' ? 'Completado' : c.status}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: Crear Grupo de Difusión */}
+      {showCreateGroupModal && (
+        <div style={{position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.7)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20}}>
+          <div className="card" style={{maxWidth: 680, width: '100%', maxHeight: '90vh', overflowY: 'auto', padding: 24, position: 'relative'}}>
+            <button onClick={() => setShowCreateGroupModal(false)} style={{position: 'absolute', top: 15, right: 15, background: 'none', border: 'none', color: 'var(--text-primary)', cursor: 'pointer'}}>
+              <X size={20} />
+            </button>
+            <h3 style={{marginTop: 0, marginBottom: 15, display: 'flex', alignItems: 'center', gap: 8}}>
+              <Users size={20} style={{color: 'var(--accent-blue)'}} /> Crear Grupo de Difusión
+            </h3>
+
+            <form onSubmit={handleCreateGroup} style={{display: 'flex', flexDirection: 'column', gap: 14}}>
+              <label style={{fontSize: '0.85rem', fontWeight: 600}}>
+                Nombre del Grupo *
+                <input 
+                  type="text" 
+                  required
+                  value={newGroupName} 
+                  onChange={e => setNewGroupName(e.target.value)} 
+                  placeholder="Ej: Clientes VIP Hidroponía" 
+                  style={{width: '100%', marginTop: 5, padding: 10, borderRadius: 8, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-dark)', color: 'var(--text-primary)'}}
+                />
+              </label>
+
+              <label style={{fontSize: '0.85rem', fontWeight: 600}}>
+                Descripción
+                <input 
+                  type="text" 
+                  value={newGroupDesc} 
+                  onChange={e => setNewGroupDesc(e.target.value)} 
+                  placeholder="Ej: Compradores recurrentes interesados en fertilizantes" 
+                  style={{width: '100%', marginTop: 5, padding: 10, borderRadius: 8, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-dark)', color: 'var(--text-primary)'}}
+                />
+              </label>
+
+              <label style={{fontSize: '0.85rem', fontWeight: 600}}>
+                Canal Destino Preferido
+                <select 
+                  value={newGroupChannel} 
+                  onChange={e => setNewGroupChannel(e.target.value)} 
+                  style={{width: '100%', marginTop: 5, padding: 10, borderRadius: 8, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-dark)', color: 'var(--text-primary)'}}
+                >
+                  <option value="both">👥 Ambos (WhatsApp & Email)</option>
+                  <option value="whatsapp">🟢 Solo WhatsApp</option>
+                  <option value="email">📧 Solo Email</option>
+                </select>
+              </label>
+
+              {/* CRM Contact Selection */}
+              <div style={{borderTop: '1px solid var(--border-color)', pt: 12}}>
+                <div style={{fontSize: '0.9rem', fontWeight: 700, marginBottom: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 6}}>
+                  <div>
+                    Importar Contactos del CRM ({filteredCrmContacts.length} filtrados de {crmContacts.length})
+                    <div style={{fontSize: '0.75rem', fontWeight: 'normal', color: 'var(--text-secondary)'}}>
+                      {newGroupChannel === 'whatsapp' ? '🟢 Filtrando por contactos con WhatsApp (Teléfono)' : newGroupChannel === 'email' ? '📧 Filtrando por contactos con Correo Email' : '👥 Mostrando todos los contactos con datos'}
+                    </div>
+                  </div>
+                  <div style={{display: 'flex', gap: 6}}>
+                    <button 
+                      type="button" 
+                      className="btn" 
+                      onClick={() => {
+                        const visibleKeys = filteredCrmContacts.map(c => c.buyer_id ? String(c.buyer_id) : (c.phone || c.email))
+                        const merged = Array.from(new Set([...selectedBuyerIds, ...visibleKeys]))
+                        setSelectedBuyerIds(merged)
+                      }}
+                      style={{fontSize: '0.75rem', backgroundColor: 'var(--accent-blue)', color: '#fff'}}
+                    >
+                      Seleccionar Visibles ({filteredCrmContacts.length})
+                    </button>
+                    <button 
+                      type="button" 
+                      className="btn" 
+                      onClick={() => setSelectedBuyerIds([])}
+                      style={{fontSize: '0.75rem', backgroundColor: 'var(--bg-dark)', border: '1px solid var(--border-color)', color: 'var(--text-primary)'}}
+                    >
+                      Deseleccionar Todos
+                    </button>
+                  </div>
+                </div>
+
+                {/* Search input for contacts */}
+                <input 
+                  type="text" 
+                  placeholder="🔍 Buscar contacto por nombre, apodo, teléfono o email..." 
+                  value={contactSearchQuery}
+                  onChange={e => setContactSearchQuery(e.target.value)}
+                  style={{width: '100%', marginBottom: 10, padding: '8px 12px', borderRadius: 6, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-dark)', color: 'var(--text-primary)', fontSize: '0.82rem'}}
+                />
+
+                <div style={{maxHeight: 200, overflowY: 'auto', backgroundColor: 'var(--bg-dark)', borderRadius: 8, padding: 10, border: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', gap: 6}}>
+                  {filteredCrmContacts.length === 0 ? (
+                    <div style={{fontSize: '0.82rem', color: 'var(--text-secondary)', textAlign: 'center', padding: 12}}>
+                      No se encontraron contactos que coincidan con la búsqueda o con el canal seleccionado ({newGroupChannel}).
+                    </div>
+                  ) : (
+                    filteredCrmContacts.map((c, i) => {
+                      const key = c.buyer_id ? String(c.buyer_id) : (c.phone || c.email)
+                      const isSelected = selectedBuyerIds.includes(key)
+                      return (
+                        <label key={i} style={{fontSize: '0.82rem', display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', padding: '4px 6px', borderRadius: 4, backgroundColor: isSelected ? 'rgba(59, 130, 246, 0.18)' : 'transparent'}}>
+                          <input 
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={e => {
+                              if (e.target.checked) setSelectedBuyerIds([...selectedBuyerIds, key])
+                              else setSelectedBuyerIds(selectedBuyerIds.filter(x => x !== key))
+                            }}
+                          />
+                          <span style={{fontWeight: 600, color: 'var(--text-primary)'}}>{c.full_name || c.nickname || 'Cliente CRM'}</span>
+                          <span style={{fontSize: '0.75rem', color: 'var(--text-secondary)'}}>
+                            {c.phone ? `📱 ${c.phone}` : ''} {c.email ? `✉️ ${c.email}` : ''} ({c.source_platform})
+                          </span>
+                        </label>
+                      )
+                    })
+                  )}
+                </div>
+              </div>
+
+              {/* Manual Member Input */}
+              <div style={{borderTop: '1px solid var(--border-color)', pt: 12}}>
+                <div style={{fontSize: '0.9rem', fontWeight: 700, marginBottom: 8}}>Agregar Contacto Manual</div>
+                <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr 1fr auto', gap: 8, alignItems: 'center'}}>
+                  <input type="text" placeholder="Nombre" value={manualName} onChange={e => setManualName(e.target.value)} style={{padding: 8, borderRadius: 6, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-dark)', color: 'var(--text-primary)', fontSize: '0.82rem'}} />
+                  <input type="text" placeholder="Teléfono WhatsApp" value={manualPhone} onChange={e => setManualPhone(e.target.value)} style={{padding: 8, borderRadius: 6, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-dark)', color: 'var(--text-primary)', fontSize: '0.82rem'}} />
+                  <input type="email" placeholder="Correo Email" value={manualEmail} onChange={e => setManualEmail(e.target.value)} style={{padding: 8, borderRadius: 6, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-dark)', color: 'var(--text-primary)', fontSize: '0.82rem'}} />
+                  <button 
+                    type="button" 
+                    className="btn" 
+                    onClick={() => {
+                      if (!manualName && !manualPhone && !manualEmail) return
+                      setManualMemberList([...manualMemberList, { name: manualName, phone: manualPhone, email: manualEmail }])
+                      setManualName('')
+                      setManualPhone('')
+                      setManualEmail('')
+                    }}
+                    style={{backgroundColor: 'var(--accent-blue)', color: '#fff', padding: '8px 12px', fontSize: '0.82rem'}}
+                  >
+                    <UserPlus size={14} />
+                  </button>
+                </div>
+
+                {manualMemberList.length > 0 && (
+                  <div style={{marginTop: 8, display: 'flex', flexWrap: 'wrap', gap: 6}}>
+                    {manualMemberList.map((m, idx) => (
+                      <span key={idx} style={{fontSize: '0.75rem', backgroundColor: 'var(--bg-dark)', padding: '4px 8px', borderRadius: 12, border: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', gap: 4}}>
+                        {m.name} ({m.phone || m.email})
+                        <button type="button" onClick={() => setManualMemberList(manualMemberList.filter((_, i) => i !== idx))} style={{background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', padding: 0}}>
+                          <X size={12} />
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div style={{display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 10}}>
+                <button type="button" className="btn" onClick={() => setShowCreateGroupModal(false)} style={{backgroundColor: 'var(--bg-dark)', border: '1px solid var(--border-color)', color: 'var(--text-primary)'}}>
+                  Cancelar
+                </button>
+                <button type="submit" className="btn" disabled={creatingGroup} style={{backgroundColor: 'var(--accent-blue)', color: '#fff', fontWeight: 'bold'}}>
+                  {creatingGroup ? 'Guardando...' : '💾 Guardar Grupo de Difusión'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: Ver / Editar Miembros del Grupo */}
+      {viewingMembersGroup && (
+        <div style={{position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.7)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20}}>
+          <div className="card" style={{maxWidth: 680, width: '100%', maxHeight: '85vh', overflowY: 'auto', padding: 24, position: 'relative'}}>
+            <button onClick={() => setViewingMembersGroup(null)} style={{position: 'absolute', top: 15, right: 15, background: 'none', border: 'none', color: 'var(--text-primary)', cursor: 'pointer'}}>
+              <X size={20} />
+            </button>
+            <h3 style={{marginTop: 0, marginBottom: 5}}>
+              Miembros de: <span style={{color: 'var(--accent-blue)'}}>{viewingMembersGroup.name}</span>
+            </h3>
+            <p style={{fontSize: '0.82rem', color: 'var(--text-secondary)', marginBottom: 15}}>
+              Lista de contactos que recibirán las publicaciones enviadas a este grupo.
+            </p>
+
+            {loadingMembers ? (
+              <div style={{textAlign: 'center', padding: 20}}>Cargando miembros...</div>
+            ) : groupMembers.length === 0 ? (
+              <div style={{textAlign: 'center', padding: 20, color: 'var(--text-secondary)'}}>
+                Este grupo no tiene miembros asignados aún.
+              </div>
+            ) : (
+              <div style={{maxHeight: 400, overflowY: 'auto'}}>
+                <table style={{width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem'}}>
+                  <thead>
+                    <tr style={{borderBottom: '1px solid var(--border-color)', textAlign: 'left'}}>
+                      <th style={{padding: 8}}>Contacto</th>
+                      <th style={{padding: 8}}>Teléfono WhatsApp</th>
+                      <th style={{padding: 8}}>Email</th>
+                      <th style={{padding: 8}}>Origen</th>
+                      <th style={{padding: 8}}>Acción</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {groupMembers.map(m => (
+                      <tr key={m.id} style={{borderBottom: '1px solid var(--border-color)'}}>
+                        <td style={{padding: 8, fontWeight: 600}}>{m.contact_name || 'Sin Nombre'}</td>
+                        <td style={{padding: 8}}>{m.phone ? `📱 ${m.phone}` : '-'}</td>
+                        <td style={{padding: 8}}>{m.email ? `✉️ ${m.email}` : '-'}</td>
+                        <td style={{padding: 8, fontSize: '0.75rem', color: 'var(--text-secondary)'}}>{m.source}</td>
+                        <td style={{padding: 8}}>
+                          <button onClick={() => handleDeleteMember(m.id)} style={{background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer'}} title="Quitar del grupo">
+                            <Trash2 size={15} />
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
         </div>
       )}
 

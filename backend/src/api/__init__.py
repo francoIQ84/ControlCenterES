@@ -17,6 +17,7 @@ from .mercadopago import router as mercadopago_router
 from .blog import router as blog_router
 from .inpi import router as inpi_router
 from .marketing import router as marketing_router
+from .diffusion import router as diffusion_router
 
 api_router = APIRouter()
 
@@ -47,4 +48,6 @@ api_router.include_router(mercadopago_router, prefix="/mercadopago", tags=["merc
 api_router.include_router(blog_router, prefix="/blog", tags=["blog"], dependencies=[Depends(verify_session), Depends(require_permission("settings"))])
 api_router.include_router(inpi_router, prefix="/inpi", tags=["inpi"], dependencies=[Depends(verify_session)])
 api_router.include_router(marketing_router, prefix="/marketing", tags=["marketing"], dependencies=[Depends(verify_session)])
+api_router.include_router(diffusion_router, prefix="/diffusion", tags=["diffusion"], dependencies=[Depends(verify_session)])
+
 
