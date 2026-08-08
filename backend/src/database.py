@@ -439,6 +439,13 @@ def init_db():
             except Exception:
                 pass
 
+            # Auto-migrate existing users to have 'marketing' and 'blog' permissions
+            try:
+                cursor.execute("UPDATE users SET permissions = permissions || ',marketing' WHERE permissions NOT LIKE '%marketing%' AND (permissions LIKE '%settings%' OR permissions LIKE '%dashboard%');")
+                cursor.execute("UPDATE users SET permissions = permissions || ',blog' WHERE permissions NOT LIKE '%blog%' AND (permissions LIKE '%settings%' OR permissions LIKE '%dashboard%');")
+            except Exception:
+                pass
+
             # Seed default admin user if no users exist
             cursor.execute("SELECT COUNT(*) as count FROM users")
             if cursor.fetchone()['count'] == 0:
@@ -446,7 +453,7 @@ def init_db():
                 cursor.execute('''
                     INSERT INTO users (username, password_hash, full_name, permissions)
                     VALUES (%s, %s, %s, %s)
-                ''', ("admin", admin_pw_hash, "Administrador", "dashboard,inventory,sales,billing,expenses,customers,media,settings,inpi"))
+                ''', ("admin", admin_pw_hash, "Administrador", "dashboard,inventory,sales,billing,expenses,customers,media,settings,inpi,marketing,blog"))
 
 # --- Categories Operations ---
 
@@ -1743,7 +1750,7 @@ def get_all_users():
 
 def create_user(username, password, full_name, permissions=None):
     if permissions is None:
-        permissions = "dashboard,inventory,sales,billing,expenses,customers,media,settings,inpi"
+        permissions = "dashboard,inventory,sales,billing,expenses,customers,media,settings,inpi,marketing,blog"
     pw_hash = hash_password(password)
     with get_connection() as conn:
         with conn.cursor() as cursor:

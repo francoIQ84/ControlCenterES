@@ -123,11 +123,11 @@ function App() {
             <Route path="billing" element={<PermissionRoute permission="billing"><Billing /></PermissionRoute>} />
             <Route path="customers" element={<PermissionRoute permission="customers"><Customers /></PermissionRoute>} />
             <Route path="settings" element={<PermissionRoute permission="settings"><Settings /></PermissionRoute>} />
-            <Route path="cms" element={<PermissionRoute permission="settings"><BlogCMS /></PermissionRoute>} />
+            <Route path="cms" element={<PermissionRoute permission="blog"><BlogCMS /></PermissionRoute>} />
             <Route path="media" element={<PermissionRoute permission="media"><MediaManager /></PermissionRoute>} />
             <Route path="expenses" element={<PermissionRoute permission="expenses"><Expenses /></PermissionRoute>} />
             <Route path="inpi" element={<PermissionRoute permission="inpi"><IndustrialProperty /></PermissionRoute>} />
-            <Route path="marketing" element={<Marketing />} />
+            <Route path="marketing" element={<PermissionRoute permission="marketing"><Marketing /></PermissionRoute>} />
             {/* Administración de la plataforma. La página se autoprotege y el
                 backend exige require_platform_admin de todas formas. */}
             <Route path="tenants" element={<PermissionRoute permission="settings"><Tenants /></PermissionRoute>} />

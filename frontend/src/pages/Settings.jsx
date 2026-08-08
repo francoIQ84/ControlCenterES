@@ -87,7 +87,9 @@ export default function Settings() {
     customers: true,
     media: true,
     settings: true,
-    inpi: true
+    inpi: true,
+    marketing: true,
+    blog: true
   })
   
   // Change Password / Permissions Form State
@@ -103,7 +105,9 @@ export default function Settings() {
     customers: false,
     media: false,
     settings: false,
-    inpi: false
+    inpi: false,
+    marketing: false,
+    blog: false
   })
 
   // Web Config State
@@ -757,7 +761,9 @@ export default function Settings() {
           customers: true,
           media: true,
           settings: true,
-          inpi: true
+          inpi: true,
+          marketing: true,
+          blog: true
         })
         fetchUsers()
       } else {
@@ -781,7 +787,9 @@ export default function Settings() {
       customers: list.includes('customers'),
       media: list.includes('media'),
       settings: list.includes('settings'),
-      inpi: list.includes('inpi')
+      inpi: list.includes('inpi'),
+      marketing: list.includes('marketing'),
+      blog: list.includes('blog')
     })
   }
 
@@ -1276,6 +1284,14 @@ export default function Settings() {
                       <input type="checkbox" checked={newPerms.inpi} onChange={e => setNewPerms(prev => ({...prev, inpi: e.target.checked}))} />
                       Propiedad Industrial
                     </label>
+                    <label style={{display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer'}}>
+                      <input type="checkbox" checked={newPerms.marketing} onChange={e => setNewPerms(prev => ({...prev, marketing: e.target.checked}))} />
+                      Marketing & Redes
+                    </label>
+                    <label style={{display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer'}}>
+                      <input type="checkbox" checked={newPerms.blog} onChange={e => setNewPerms(prev => ({...prev, blog: e.target.checked}))} />
+                      Blog & Web
+                    </label>
                   </div>
                 </div>
 
@@ -1360,6 +1376,14 @@ export default function Settings() {
                     <label style={{display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer'}}>
                       <input type="checkbox" checked={editPerms.inpi} onChange={e => setEditPerms(prev => ({...prev, inpi: e.target.checked}))} />
                       Propiedad Industrial
+                    </label>
+                    <label style={{display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer'}}>
+                      <input type="checkbox" checked={editPerms.marketing} onChange={e => setEditPerms(prev => ({...prev, marketing: e.target.checked}))} />
+                      Marketing & Redes
+                    </label>
+                    <label style={{display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer'}}>
+                      <input type="checkbox" checked={editPerms.blog} onChange={e => setEditPerms(prev => ({...prev, blog: e.target.checked}))} />
+                      Blog & Web
                     </label>
                   </div>
                   <div style={{display: 'flex', gap: 10, marginTop: 5}}>

@@ -335,7 +335,7 @@ export default function Layout() {
               <span className="nav-text">Archivos</span>
             </NavLink>
           )}
-          {canShow('settings', 'blog') && (
+          {canShow('blog', 'blog') && (
             <NavLink to="/cms" className={({isActive}) => `nav-link ${isActive ? 'active' : ''}`}>
               <BookOpen size={20} style={{ minWidth: 20 }} />
               <span className="nav-text">Blog & Web</span>
@@ -347,7 +347,7 @@ export default function Layout() {
               <span className="nav-text">Propiedad Industrial</span>
             </NavLink>
           )}
-          {hasModule('marketing') && (
+          {canShow('marketing') && (
             <NavLink to="/marketing" className={({isActive}) => `nav-link ${isActive ? 'active' : ''}`}>
               <Megaphone size={20} style={{ minWidth: 20 }} />
               <span className="nav-text">Marketing & Redes</span>
