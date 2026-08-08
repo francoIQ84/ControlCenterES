@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { Megaphone, Sparkles, Calendar, Settings as SettingsIcon, Send, Video, Image as ImageIcon, Trash2, CheckCircle, Clock, AlertCircle, RefreshCw, ExternalLink, MessageSquare, Users, Plus, Mail, Phone, Share2, Play, Check, Layers, UserPlus, X } from 'lucide-react'
+import { useTenant } from '../TenantContext'
 
 const toHighResMlImage = (url) => {
   if (!url) return ''
@@ -17,6 +18,9 @@ const isVideoUrl = (url) => {
 }
 
 export default function Marketing() {
+  const { tenant } = useTenant()
+  const storeName = tenant?.name || 'Tienda Oficial'
+
   const [activeTab, setActiveTab] = useState('creator') // 'creator', 'calendar', 'comments', 'config'
   
   // Data states
@@ -34,21 +38,35 @@ export default function Marketing() {
   const [generatedData, setGeneratedData] = useState(null)
 
   // AI Video Generator state
-  const [videoPrompt, setVideoPrompt] = useState('')
+  const [videoPrompt, setVideoPrompt] = useState('Imagen promocional para redes sociales')
   const [videoEngine, setVideoEngine] = useState('gemini_canvas')
   const [generatingVideo, setGeneratingVideo] = useState(false)
   const [generatedVideoUrl, setGeneratedVideoUrl] = useState('')
   const [videoScriptData, setVideoScriptData] = useState(null)
   
   // Canvas Customizer states
+  const [canvasLayout, setCanvasLayout] = useState('glassmorphism') // 'glassmorphism' default
+  const [canvasFont, setCanvasFont] = useState('outfit') // 'outfit', 'montserrat', 'poppins', 'jakarta'
+  const [canvasLogoUrl, setCanvasLogoUrl] = useState('')
   const [canvasTheme, setCanvasTheme] = useState('emerald')
   const [canvasBadgeText, setCanvasBadgeText] = useState('')
   const [canvasBadgeColor, setCanvasBadgeColor] = useState('#f59e0b')
   const [canvasShowPrice, setCanvasShowPrice] = useState(true)
   const [canvasCustomTitle, setCanvasCustomTitle] = useState('')
-  const [canvasFooterText, setCanvasFooterText] = useState('📲 Comprá en HidroponiaRosario.com')
+  const [canvasFooterText, setCanvasFooterText] = useState('')
   const [canvasTextColor, setCanvasTextColor] = useState('auto')
   const [canvasShowBorder, setCanvasShowBorder] = useState(true)
+
+  useEffect(() => {
+    fetch('/api/settings/web-config')
+      .then(res => res.json())
+      .then(data => {
+        if (data && data.logo_url) {
+          setCanvasLogoUrl(data.logo_url)
+        }
+      })
+      .catch(() => {})
+  }, [])
   
   const [postTitle, setPostTitle] = useState('')
   const [postType, setPostType] = useState('post') // 'post', 'reel', 'story'
@@ -520,7 +538,7 @@ export default function Marketing() {
 
   const handleGenerateAI = async () => {
     if (!selectedProduct) {
-      alert("Por favor selecciona un producto del inventario para generar la publicación.")
+      alert("⚠️ Por favor selecciona primero un producto del inventario en la lista desplegable superior para poder generar la publicación.")
       return
     }
     setGenerating(true)
@@ -553,6 +571,24 @@ export default function Marketing() {
     }
   }
 
+  const getFontFamily = (key) => {
+    if (key === 'montserrat') return '"Montserrat", "Outfit", system-ui, sans-serif'
+    if (key === 'poppins') return '"Poppins", "Inter", system-ui, sans-serif'
+    if (key === 'jakarta') return '"Plus Jakarta Sans", "Outfit", system-ui, sans-serif'
+    return '"Outfit", "Plus Jakarta Sans", "Montserrat", system-ui, sans-serif'
+  }
+
+  const loadCanvasLogo = (url) => {
+    if (!url) return Promise.resolve(null)
+    return new Promise(res => {
+      const img = new Image()
+      img.crossOrigin = 'anonymous'
+      img.onload = () => res(img)
+      img.onerror = () => res(null)
+      img.src = url
+    })
+  }
+
   const renderReelCanvasVideo = async (script) => {
     return new Promise(async (resolve) => {
       const width = 1080
@@ -561,6 +597,9 @@ export default function Marketing() {
       canvas.width = width
       canvas.height = height
       const ctx = canvas.getContext('2d')
+
+      const fontFamily = getFontFamily(canvasFont)
+      const logoImg = await loadCanvasLogo(canvasLogoUrl)
 
       const imagesList = script.images || []
       const loadedImgs = await Promise.all(
@@ -575,9 +614,9 @@ export default function Marketing() {
       const validImgs = loadedImgs.filter(Boolean)
 
       const scenes = script.scenes || [
-        { duration_sec: 4, badge_text: 'PROMO EXCLUSIVA', main_headline: script.product_title || 'Hidroponía Rosario', sub_text: '¡Conocé el stock!' },
+        { duration_sec: 4, badge_text: 'PROMO EXCLUSIVA', main_headline: script.product_title || storeName, sub_text: '¡Conocé el stock!' },
         { duration_sec: 4, badge_text: 'PRECIO ESPECIAL', main_headline: `$ ${script.product_price?.toLocaleString() || ''}`, sub_text: 'Envíos a todo el país' },
-        { duration_sec: 4, badge_text: 'COMPRÁ HOY', main_headline: 'Hidroponía Rosario', sub_text: 'Contactanos por WhatsApp' }
+        { duration_sec: 4, badge_text: 'COMPRÁ HOY', main_headline: storeName, sub_text: 'Contactanos por WhatsApp' }
       ]
 
       const fps = 30
@@ -664,115 +703,440 @@ export default function Marketing() {
         const mainTextColor = (canvasTextColor && canvasTextColor !== 'auto') ? canvasTextColor : theme.defaultText
         const subTextColor = (canvasTextColor && canvasTextColor !== 'auto') ? canvasTextColor : theme.defaultSubtext
         const drawBorder = canvasShowBorder && !isCleanWhite && theme.border !== 'transparent'
-
-        // 1. Background Gradient / Solid
-        const grad = ctx.createLinearGradient(0, 0, 0, height)
-        grad.addColorStop(0, theme.bg[0])
-        grad.addColorStop(0.5, theme.bg[1])
-        grad.addColorStop(1, theme.bg[2])
-        ctx.fillStyle = grad
-        ctx.fillRect(0, 0, width, height)
-
-        // 2. Product Image with Zoom
         const activeImg = validImgs[currentSceneIdx % validImgs.length] || validImgs[0]
-        if (activeImg) {
-          const scale = 1.02 + (elapsedScene / sceneDuration) * 0.08
-          const imgW = activeImg.width
-          const imgH = activeImg.height
-          const targetW = 900 * scale
-          const targetH = (imgH / imgW) * targetW
+        const badgeTxt = canvasBadgeText.trim() || currentScene.badge_text
+        const headlineTxt = canvasCustomTitle.trim() || currentScene.main_headline
+        const footerTxt = canvasFooterText.trim() || `📱 Comprá en ${storeName}`
 
-          ctx.save()
-          ctx.beginPath()
-          if (ctx.roundRect) ctx.roundRect(90, 260, 900, 900, 32)
-          else ctx.rect(90, 260, 900, 900)
-          ctx.clip()
+        if (canvasLayout === 'modern_split') {
+          // --- SPLIT EDITORIAL REEL ---
+          const grad = ctx.createLinearGradient(0, 0, 0, height)
+          grad.addColorStop(0, theme.bg[0])
+          grad.addColorStop(1, theme.bg[2])
+          ctx.fillStyle = grad
+          ctx.fillRect(0, 0, width, height)
 
+          // Top 60% Hero Image with Zoom
+          if (activeImg) {
+            const scale = 1.02 + (elapsedScene / sceneDuration) * 0.08
+            const drawW = 1000 * scale
+            const drawH = (activeImg.height / activeImg.width) * drawW
+
+            ctx.save()
+            ctx.beginPath()
+            if (ctx.roundRect) ctx.roundRect(40, 40, 1000, 1100, 36)
+            else ctx.rect(40, 40, 1000, 1100)
+            ctx.clip()
+
+            ctx.fillStyle = '#ffffff'
+            ctx.fillRect(40, 40, 1000, 1100)
+            ctx.drawImage(activeImg, 40 + (1000 - drawW) / 2, 40 + (1100 - drawH) / 2, drawW, drawH)
+
+            // Dark gradient overlay
+            const imgGrad = ctx.createLinearGradient(0, 800, 0, 1140)
+            imgGrad.addColorStop(0, 'rgba(0,0,0,0)')
+            imgGrad.addColorStop(1, 'rgba(0,0,0,0.70)')
+            ctx.fillStyle = imgGrad
+            ctx.fillRect(40, 800, 1000, 340)
+            ctx.restore()
+          }
+
+          // Top Pills Overlaid
+          if (logoImg) {
+            const maxLogoW = 340
+            const maxLogoH = 50
+            const lScale = Math.min(maxLogoW / logoImg.width, maxLogoH / logoImg.height)
+            const lW = logoImg.width * lScale
+            const lH = logoImg.height * lScale
+
+            ctx.fillStyle = 'rgba(15, 23, 42, 0.85)'
+            ctx.beginPath()
+            if (ctx.roundRect) ctx.roundRect(70, 70, 360, 56, 28)
+            else ctx.rect(70, 70, 360, 56)
+            ctx.fill()
+            ctx.drawImage(logoImg, 70 + (360 - lW) / 2, 70 + (56 - lH) / 2, lW, lH)
+          } else {
+            ctx.fillStyle = 'rgba(15, 23, 42, 0.75)'
+            ctx.beginPath()
+            if (ctx.roundRect) ctx.roundRect(70, 70, 360, 56, 28)
+            else ctx.rect(70, 70, 360, 56)
+            ctx.fill()
+            ctx.fillStyle = '#ffffff'
+            ctx.font = `bold 26px ${fontFamily}`
+            ctx.textAlign = 'center'
+            ctx.fillText(`🌿 ${storeName.toUpperCase()}`, 70 + 180, 70 + 38)
+          }
+
+          if (badgeTxt) {
+            ctx.fillStyle = canvasBadgeColor || '#f59e0b'
+            ctx.beginPath()
+            if (ctx.roundRect) ctx.roundRect(650, 70, 360, 56, 28)
+            else ctx.rect(650, 70, 360, 56)
+            ctx.fill()
+            ctx.fillStyle = '#000000'
+            ctx.font = `bold 26px ${fontFamily}`
+            ctx.textAlign = 'center'
+            ctx.fillText(badgeTxt, 650 + 180, 70 + 38)
+          }
+
+          // Bottom Info Section
+          if (headlineTxt) {
+            ctx.fillStyle = mainTextColor
+            ctx.font = `bold 48px ${fontFamily}`
+            ctx.textAlign = 'center'
+            ctx.fillText(headlineTxt, width / 2, 1260)
+          }
+
+          if (currentScene.sub_text) {
+            ctx.fillStyle = subTextColor
+            ctx.font = `34px ${fontFamily}`
+            ctx.textAlign = 'center'
+            ctx.fillText(currentScene.sub_text, width / 2, 1340)
+          }
+
+          if (canvasShowPrice && script.product_price) {
+            const barY = 1440
+            ctx.fillStyle = theme.accent
+            ctx.beginPath()
+            if (ctx.roundRect) ctx.roundRect(width / 2 - 320, barY, 640, 96, 48)
+            else ctx.rect(width / 2 - 320, barY, 640, 96)
+            ctx.fill()
+            ctx.fillStyle = '#ffffff'
+            ctx.font = `bold 42px ${fontFamily}`
+            ctx.textAlign = 'center'
+            ctx.fillText(`$ ${script.product_price.toLocaleString('es-AR')}  •  COMPRAR`, width / 2, barY + 63)
+          }
+
+          ctx.fillStyle = (isCleanWhite || canvasTheme === 'white') && (canvasTextColor === 'auto' || canvasTextColor === '#0f172a') ? '#059669' : mainTextColor
+          ctx.font = `bold 30px ${fontFamily}`
+          ctx.textAlign = 'center'
+          ctx.fillText(footerTxt, width / 2, 1720)
+
+        } else if (canvasLayout === 'bold_promo') {
+          // --- BOLD PROMO REEL ---
+          const grad = ctx.createLinearGradient(0, 0, width, height)
+          grad.addColorStop(0, theme.bg[0])
+          grad.addColorStop(0.5, theme.bg[1])
+          grad.addColorStop(1, theme.bg[2])
+          ctx.fillStyle = grad
+          ctx.fillRect(0, 0, width, height)
+
+          // Brand Header / Logo
+          if (logoImg) {
+            const maxW = 420
+            const maxH = 75
+            const lScale = Math.min(maxW / logoImg.width, maxH / logoImg.height)
+            const lW = logoImg.width * lScale
+            const lH = logoImg.height * lScale
+            ctx.drawImage(logoImg, (width - lW) / 2, 60, lW, lH)
+          } else {
+            ctx.fillStyle = mainTextColor
+            ctx.font = `bold 36px ${fontFamily}`
+            ctx.textAlign = 'center'
+            ctx.fillText(`🔥 ${storeName.toUpperCase()}`, width / 2, 110)
+          }
+
+          // Product Image with Offset Pop Frame
+          if (activeImg) {
+            const scale = 1.02 + (elapsedScene / sceneDuration) * 0.08
+            const imgSize = 840
+            const imgX = (width - imgSize) / 2
+            const imgY = 170
+
+            ctx.fillStyle = theme.accent
+            ctx.beginPath()
+            if (ctx.roundRect) ctx.roundRect(imgX + 20, imgY + 20, imgSize, imgSize, 36)
+            else ctx.rect(imgX + 20, imgY + 20, imgSize, imgSize)
+            ctx.fill()
+
+            ctx.save()
+            ctx.beginPath()
+            if (ctx.roundRect) ctx.roundRect(imgX, imgY, imgSize, imgSize, 36)
+            else ctx.rect(imgX, imgY, imgSize, imgSize)
+            ctx.clip()
+
+            ctx.fillStyle = '#ffffff'
+            ctx.fillRect(imgX, imgY, imgSize, imgSize)
+
+            const targetW = imgSize * scale
+            const targetH = (activeImg.height / activeImg.width) * targetW
+            ctx.drawImage(activeImg, imgX + (imgSize - targetW) / 2, imgY + (imgSize - targetH) / 2, targetW, targetH)
+            ctx.restore()
+
+            // Corner Price Explosive Badge
+            if (canvasShowPrice && script.product_price) {
+              const badgeX = imgX + imgSize - 50
+              const badgeY = imgY + 50
+              ctx.fillStyle = canvasBadgeColor || '#ef4444'
+              ctx.beginPath()
+              ctx.arc(badgeX, badgeY, 115, 0, Math.PI * 2)
+              ctx.fill()
+              ctx.lineWidth = 6
+              ctx.strokeStyle = '#ffffff'
+              ctx.stroke()
+
+              ctx.fillStyle = '#ffffff'
+              ctx.font = 'bold 24px sans-serif'
+              ctx.textAlign = 'center'
+              ctx.fillText('¡OFERTA!', badgeX, badgeY - 32)
+              ctx.font = 'bold 38px sans-serif'
+              ctx.fillText(`$${script.product_price.toLocaleString('es-AR')}`, badgeX, badgeY + 16)
+              ctx.font = 'bold 22px sans-serif'
+              ctx.fillText('EN STOCK', badgeX, badgeY + 52)
+            }
+          }
+
+          // Full-width Badge Banner
+          if (badgeTxt) {
+            ctx.fillStyle = canvasBadgeColor || '#f59e0b'
+            ctx.fillRect(0, 1080, width, 72)
+            ctx.fillStyle = '#000000'
+            ctx.font = 'bold 36px sans-serif'
+            ctx.textAlign = 'center'
+            ctx.fillText(badgeTxt, width / 2, 1128)
+          }
+
+          if (headlineTxt) {
+            ctx.fillStyle = mainTextColor
+            ctx.font = 'bold 50px sans-serif'
+            ctx.textAlign = 'center'
+            ctx.fillText(headlineTxt, width / 2, 1260)
+          }
+
+          if (currentScene.sub_text) {
+            ctx.fillStyle = subTextColor
+            ctx.font = '34px sans-serif'
+            ctx.textAlign = 'center'
+            ctx.fillText(currentScene.sub_text, width / 2, 1340)
+          }
+
+          // Bottom Accent Banner
+          ctx.fillStyle = theme.accent
+          ctx.fillRect(0, 1680, width, 140)
           ctx.fillStyle = '#ffffff'
-          ctx.fillRect(90, 260, 900, 900)
+          ctx.font = 'bold 36px sans-serif'
+          ctx.textAlign = 'center'
+          ctx.fillText(footerTxt, width / 2, 1762)
 
-          const xPos = 90 + (900 - targetW) / 2
-          const yPos = 260 + (900 - targetH) / 2
-          ctx.drawImage(activeImg, xPos, yPos, targetW, targetH)
-          ctx.restore()
+        } else if (canvasLayout === 'glassmorphism') {
+          // --- GLASSMORPHISM REEL ---
+          if (activeImg) {
+            const scale = 1.05 + (elapsedScene / sceneDuration) * 0.05
+            const drawW = width * scale
+            const drawH = (activeImg.height / activeImg.width) * drawW
+            ctx.drawImage(activeImg, (width - drawW) / 2, (height - drawH) / 2, drawW, drawH)
+          } else {
+            const grad = ctx.createLinearGradient(0, 0, 0, height)
+            grad.addColorStop(0, theme.bg[0])
+            grad.addColorStop(1, theme.bg[2])
+            ctx.fillStyle = grad
+            ctx.fillRect(0, 0, width, height)
+          }
 
-          if (drawBorder) {
-            ctx.lineWidth = 6
-            ctx.strokeStyle = theme.border
+          // Overlay
+          const isDarkTheme = canvasTheme === 'dark' || canvasTheme === 'blue' || canvasTheme === 'purple' || canvasTheme === 'emerald' || canvasTheme === 'red'
+          ctx.fillStyle = isDarkTheme ? 'rgba(15, 23, 42, 0.65)' : 'rgba(255, 255, 255, 0.70)'
+          ctx.fillRect(0, 0, width, height)
+
+          // Floating Glass Container (940x1680)
+          const cardX = 70
+          const cardY = 100
+          const cardW = 940
+          const cardH = 1680
+
+          ctx.fillStyle = isDarkTheme ? 'rgba(15, 23, 42, 0.88)' : 'rgba(255, 255, 255, 0.92)'
+          ctx.beginPath()
+          if (ctx.roundRect) ctx.roundRect(cardX, cardY, cardW, cardH, 44)
+          else ctx.rect(cardX, cardY, cardW, cardH)
+          ctx.fill()
+          ctx.lineWidth = 3
+          ctx.strokeStyle = isDarkTheme ? 'rgba(255, 255, 255, 0.2)' : 'rgba(0, 0, 0, 0.1)'
+          ctx.stroke()
+
+          // Brand Header / Logo
+          if (logoImg) {
+            const maxW = 480
+            const maxH = 80
+            const lScale = Math.min(maxW / logoImg.width, maxH / logoImg.height)
+            const lW = logoImg.width * lScale
+            const lH = logoImg.height * lScale
+            ctx.drawImage(logoImg, (width - lW) / 2, cardY + 30, lW, lH)
+          } else {
+            ctx.fillStyle = mainTextColor
+            ctx.font = `bold 36px ${fontFamily}`
+            ctx.textAlign = 'center'
+            ctx.fillText(`✨ ${storeName.toUpperCase()}`, width / 2, cardY + 80)
+          }
+
+          // Product Image Inside Glass Box
+          if (activeImg) {
+            const imgBoxSize = 720
+            const imgBoxX = (width - imgBoxSize) / 2
+            const imgBoxY = cardY + 120
+
+            ctx.save()
+            ctx.beginPath()
+            if (ctx.roundRect) ctx.roundRect(imgBoxX, imgBoxY, imgBoxSize, imgBoxSize, 32)
+            else ctx.rect(imgBoxX, imgBoxY, imgBoxSize, imgBoxSize)
+            ctx.clip()
+
+            ctx.fillStyle = '#ffffff'
+            ctx.fillRect(imgBoxX, imgBoxY, imgBoxSize, imgBoxSize)
+
+            const scale = 1.0 + (elapsedScene / sceneDuration) * 0.06
+            const targetW = imgBoxSize * scale
+            const targetH = (activeImg.height / activeImg.width) * targetW
+            ctx.drawImage(activeImg, imgBoxX + (imgBoxSize - targetW) / 2, imgBoxY + (imgBoxSize - targetH) / 2, targetW, targetH)
+            ctx.restore()
+
+            ctx.lineWidth = 4
+            ctx.strokeStyle = theme.accent
+            ctx.beginPath()
+            if (ctx.roundRect) ctx.roundRect(imgBoxX, imgBoxY, imgBoxSize, imgBoxSize, 32)
+            else ctx.rect(imgBoxX, imgBoxY, imgBoxSize, imgBoxSize)
+            ctx.stroke()
+          }
+
+          if (badgeTxt) {
+            const badgeY = cardY + 900
+            ctx.fillStyle = canvasBadgeColor || '#f59e0b'
+            ctx.beginPath()
+            if (ctx.roundRect) ctx.roundRect(width / 2 - 240, badgeY, 480, 56, 28)
+            else ctx.rect(width / 2 - 240, badgeY, 480, 56)
+            ctx.fill()
+            ctx.fillStyle = '#000000'
+            ctx.font = 'bold 28px sans-serif'
+            ctx.textAlign = 'center'
+            ctx.fillText(badgeTxt, width / 2, badgeY + 38)
+          }
+
+          if (headlineTxt) {
+            ctx.fillStyle = mainTextColor
+            ctx.font = 'bold 46px sans-serif'
+            ctx.textAlign = 'center'
+            ctx.fillText(headlineTxt, width / 2, cardY + 1040)
+          }
+
+          if (currentScene.sub_text) {
+            ctx.fillStyle = subTextColor
+            ctx.font = '32px sans-serif'
+            ctx.textAlign = 'center'
+            ctx.fillText(currentScene.sub_text, width / 2, cardY + 1110)
+          }
+
+          if (canvasShowPrice && script.product_price) {
+            const pillY = cardY + 1200
+            const pillWidth = 520
+            ctx.fillStyle = theme.accent
+            ctx.beginPath()
+            if (ctx.roundRect) ctx.roundRect(width / 2 - pillWidth / 2, pillY, pillWidth, 84, 42)
+            else ctx.rect(width / 2 - pillWidth / 2, pillY, pillWidth, 84)
+            ctx.fill()
+            ctx.fillStyle = '#ffffff'
+            ctx.font = 'bold 40px sans-serif'
+            ctx.fillText(`$ ${script.product_price.toLocaleString('es-AR')}`, width / 2, pillY + 56)
+          }
+
+          ctx.fillStyle = mainTextColor
+          ctx.font = 'bold 28px sans-serif'
+          ctx.textAlign = 'center'
+          ctx.fillText(footerTxt, width / 2, cardY + cardH - 55)
+
+        } else {
+          // --- CLASSIC REEL ---
+          const grad = ctx.createLinearGradient(0, 0, 0, height)
+          grad.addColorStop(0, theme.bg[0])
+          grad.addColorStop(0.5, theme.bg[1])
+          grad.addColorStop(1, theme.bg[2])
+          ctx.fillStyle = grad
+          ctx.fillRect(0, 0, width, height)
+
+          if (activeImg) {
+            const scale = 1.02 + (elapsedScene / sceneDuration) * 0.08
+            const imgW = activeImg.width
+            const imgH = activeImg.height
+            const targetW = 900 * scale
+            const targetH = (imgH / imgW) * targetW
+
+            ctx.save()
             ctx.beginPath()
             if (ctx.roundRect) ctx.roundRect(90, 260, 900, 900, 32)
             else ctx.rect(90, 260, 900, 900)
-            ctx.stroke()
+            ctx.clip()
+
+            ctx.fillStyle = '#ffffff'
+            ctx.fillRect(90, 260, 900, 900)
+            ctx.drawImage(activeImg, 90 + (900 - targetW) / 2, 260 + (900 - targetH) / 2, targetW, targetH)
+            ctx.restore()
+
+            if (drawBorder) {
+              ctx.lineWidth = 6
+              ctx.strokeStyle = theme.border
+              ctx.beginPath()
+              if (ctx.roundRect) ctx.roundRect(90, 260, 900, 900, 32)
+              else ctx.rect(90, 260, 900, 900)
+              ctx.stroke()
+            }
           }
-        }
 
-        // 3. Header Brand Bar
-        if (theme.header !== 'transparent') {
-          ctx.fillStyle = theme.header
-          ctx.fillRect(90, 100, 900, 90)
-        }
-        if (drawBorder) {
-          ctx.strokeStyle = theme.border
-          ctx.lineWidth = 2
-          ctx.strokeRect(90, 100, 900, 90)
-        }
+          if (theme.header !== 'transparent') {
+            ctx.fillStyle = theme.header
+            ctx.fillRect(90, 100, 900, 90)
+          }
+          if (drawBorder) {
+            ctx.strokeStyle = theme.border
+            ctx.lineWidth = 2
+            ctx.strokeRect(90, 100, 900, 90)
+          }
 
-        ctx.fillStyle = mainTextColor
-        ctx.font = 'bold 36px sans-serif'
-        ctx.textAlign = 'center'
-        ctx.fillText('🌱 HIDROPONÍA ROSARIO', width / 2, 158)
-
-        // 4. Badge
-        const badgeTxt = canvasBadgeText.trim() || currentScene.badge_text
-        if (badgeTxt) {
-          const badgeY = 1220
-          ctx.fillStyle = canvasBadgeColor || '#f59e0b'
-          ctx.beginPath()
-          if (ctx.roundRect) ctx.roundRect(width / 2 - 260, badgeY, 520, 64, 32)
-          else ctx.rect(width / 2 - 260, badgeY, 520, 64)
-          ctx.fill()
-
-          ctx.fillStyle = '#000000'
-          ctx.font = 'bold 32px sans-serif'
-          ctx.fillText(badgeTxt, width / 2, badgeY + 43)
-        }
-
-        // 5. Headline
-        const headlineTxt = canvasCustomTitle.trim() || currentScene.main_headline
-        if (headlineTxt) {
           ctx.fillStyle = mainTextColor
-          ctx.font = 'bold 50px sans-serif'
+          ctx.font = 'bold 36px sans-serif'
           ctx.textAlign = 'center'
-          ctx.fillText(headlineTxt, width / 2, 1370)
+          ctx.fillText(`🌱 ${storeName.toUpperCase()}`, width / 2, 158)
+
+          if (badgeTxt) {
+            const badgeY = 1220
+            ctx.fillStyle = canvasBadgeColor || '#f59e0b'
+            ctx.beginPath()
+            if (ctx.roundRect) ctx.roundRect(width / 2 - 260, badgeY, 520, 64, 32)
+            else ctx.rect(width / 2 - 260, badgeY, 520, 64)
+            ctx.fill()
+            ctx.fillStyle = '#000000'
+            ctx.font = 'bold 32px sans-serif'
+            ctx.fillText(badgeTxt, width / 2, badgeY + 43)
+          }
+
+          if (headlineTxt) {
+            ctx.fillStyle = mainTextColor
+            ctx.font = 'bold 50px sans-serif'
+            ctx.textAlign = 'center'
+            ctx.fillText(headlineTxt, width / 2, 1370)
+          }
+
+          if (currentScene.sub_text) {
+            ctx.fillStyle = subTextColor
+            ctx.font = '36px sans-serif'
+            ctx.textAlign = 'center'
+            ctx.fillText(currentScene.sub_text, width / 2, 1450)
+          }
+
+          if (canvasShowPrice && script.product_price) {
+            const pillY = 1540
+            const pillWidth = 560
+            ctx.fillStyle = theme.accent
+            ctx.beginPath()
+            if (ctx.roundRect) ctx.roundRect(width / 2 - pillWidth / 2, pillY, pillWidth, 96, 48)
+            else ctx.rect(width / 2 - pillWidth / 2, pillY, pillWidth, 96)
+            ctx.fill()
+            ctx.fillStyle = '#ffffff'
+            ctx.font = 'bold 44px sans-serif'
+            ctx.fillText(`$ ${script.product_price.toLocaleString('es-AR')}`, width / 2, pillY + 63)
+          }
+
+          ctx.fillStyle = (isCleanWhite || canvasTheme === 'white') && (canvasTextColor === 'auto' || canvasTextColor === '#0f172a') ? '#059669' : mainTextColor
+          ctx.font = 'bold 32px sans-serif'
+          ctx.fillText(footerTxt, width / 2, 1750)
         }
-
-        // 6. Subtext
-        if (currentScene.sub_text) {
-          ctx.fillStyle = subTextColor
-          ctx.font = '36px sans-serif'
-          ctx.textAlign = 'center'
-          ctx.fillText(currentScene.sub_text, width / 2, 1450)
-        }
-
-        // 7. Price Badge
-        if (canvasShowPrice && script.product_price) {
-          const pillY = 1540
-          const pillWidth = 560
-          ctx.fillStyle = theme.accent
-          ctx.beginPath()
-          if (ctx.roundRect) ctx.roundRect(width / 2 - pillWidth / 2, pillY, pillWidth, 96, 48)
-          else ctx.rect(width / 2 - pillWidth / 2, pillY, pillWidth, 96)
-          ctx.fill()
-
-          ctx.fillStyle = '#ffffff'
-          ctx.font = 'bold 44px sans-serif'
-          ctx.fillText(`$ ${script.product_price.toLocaleString('es-AR')}`, width / 2, pillY + 63)
-        }
-
-        // 8. Call to action footer
-        ctx.fillStyle = (isCleanWhite || canvasTheme === 'white') && (canvasTextColor === 'auto' || canvasTextColor === '#0f172a') ? '#059669' : mainTextColor
-        ctx.font = 'bold 32px sans-serif'
-        ctx.fillText(canvasFooterText || '📲 Comprá en HidroponiaRosario.com', width / 2, 1750)
 
         // Progress bar
         ctx.fillStyle = theme.accent
@@ -793,6 +1157,10 @@ export default function Marketing() {
     canvas.height = size
     const ctx = canvas.getContext('2d')
 
+    const activeStoreName = storeName
+    const fontFamily = getFontFamily(canvasFont)
+    const logoImg = await loadCanvasLogo(canvasLogoUrl)
+
     // Theme colors
     const isCleanWhite = canvasTheme === 'white_clean'
     const theme = (canvasTheme === 'blue') ? { bg: ['#03182e', '#08203e', '#0d2a4a'], accent: '#3b82f6', header: 'rgba(59, 130, 246, 0.25)', defaultText: '#ffffff', defaultSubtext: '#94a3b8', border: '#3b82f6' } :
@@ -807,7 +1175,6 @@ export default function Marketing() {
     const subTextColor = (canvasTextColor && canvasTextColor !== 'auto') ? canvasTextColor : theme.defaultSubtext
     const drawBorder = canvasShowBorder && !isCleanWhite && theme.border !== 'transparent'
 
-    // Load product images
     const imagesList = script.images || []
     const loadedImgs = await Promise.all(
       imagesList.map(src => new Promise(res => {
@@ -819,114 +1186,469 @@ export default function Marketing() {
       }))
     )
     const validImgs = loadedImgs.filter(Boolean)
-    const scene = (script.scenes && script.scenes[0]) || { badge_text: 'PROMO EXCLUSIVA', main_headline: script.product_title || 'Hidroponía Rosario', sub_text: '¡Conocé el stock!' }
-
-    // 1. Background Gradient / Solid
-    const grad = ctx.createLinearGradient(0, 0, 0, size)
-    grad.addColorStop(0, theme.bg[0])
-    grad.addColorStop(0.5, theme.bg[1])
-    grad.addColorStop(1, theme.bg[2])
-    ctx.fillStyle = grad
-    ctx.fillRect(0, 0, size, size)
-
-    // 2. Header Brand Bar
-    if (theme.header !== 'transparent') {
-      ctx.fillStyle = theme.header
-      ctx.fillRect(60, 40, 960, 70)
-    }
-    if (drawBorder) {
-      ctx.strokeStyle = theme.border
-      ctx.lineWidth = 2
-      ctx.strokeRect(60, 40, 960, 70)
-    }
-    ctx.fillStyle = mainTextColor
-    ctx.font = 'bold 30px sans-serif'
-    ctx.textAlign = 'center'
-    ctx.fillText('🌱 HIDROPONÍA ROSARIO', size / 2, 85)
-
-    // 3. Product Image (centered, square)
+    const scene = (script.scenes && script.scenes[0]) || { badge_text: 'PROMO EXCLUSIVA', main_headline: script.product_title || activeStoreName, sub_text: '¡Conocé el stock!' }
     const activeImg = validImgs[0]
-    if (activeImg) {
-      const imgAreaSize = 560
-      const imgAreaX = (size - imgAreaSize) / 2
-      const imgAreaY = 140
+    const badgeTxt = canvasBadgeText.trim() || scene.badge_text
+    const headlineTxt = canvasCustomTitle.trim() || scene.main_headline
+    const footerTxt = canvasFooterText.trim() || `📱 Comprá en ${activeStoreName}`
+
+    if (canvasLayout === 'modern_split') {
+      // --- PLANTILLA 2: SPLIT EDITORIAL MODERNO ---
+      const grad = ctx.createLinearGradient(0, 0, 0, size)
+      grad.addColorStop(0, theme.bg[0])
+      grad.addColorStop(1, theme.bg[2])
+      ctx.fillStyle = grad
+      ctx.fillRect(0, 0, size, size)
+
+      if (activeImg) {
+        ctx.save()
+        ctx.beginPath()
+        if (ctx.roundRect) ctx.roundRect(40, 40, 1000, 580, 28)
+        else ctx.rect(40, 40, 1000, 580)
+        ctx.clip()
+
+        ctx.fillStyle = '#ffffff'
+        ctx.fillRect(40, 40, 1000, 580)
+
+        const scale = Math.max(1000 / activeImg.width, 580 / activeImg.height)
+        const drawW = activeImg.width * scale
+        const drawH = activeImg.height * scale
+        ctx.drawImage(activeImg, 40 + (1000 - drawW) / 2, 40 + (580 - drawH) / 2, drawW, drawH)
+
+        const imgGrad = ctx.createLinearGradient(0, 400, 0, 620)
+        imgGrad.addColorStop(0, 'rgba(0,0,0,0)')
+        imgGrad.addColorStop(1, 'rgba(0,0,0,0.65)')
+        ctx.fillStyle = imgGrad
+        ctx.fillRect(40, 400, 1000, 220)
+        ctx.restore()
+
+        if (drawBorder) {
+          ctx.lineWidth = 3
+          ctx.strokeStyle = theme.border
+          ctx.beginPath()
+          if (ctx.roundRect) ctx.roundRect(40, 40, 1000, 580, 28)
+          else ctx.rect(40, 40, 1000, 580)
+          ctx.stroke()
+        }
+      }
+
+      if (logoImg) {
+        const maxLogoW = 320
+        const maxLogoH = 44
+        const lScale = Math.min(maxLogoW / logoImg.width, maxLogoH / logoImg.height)
+        const lW = logoImg.width * lScale
+        const lH = logoImg.height * lScale
+
+        ctx.fillStyle = 'rgba(15, 23, 42, 0.80)'
+        ctx.beginPath()
+        if (ctx.roundRect) ctx.roundRect(65, 65, 340, 48, 24)
+        else ctx.rect(65, 65, 340, 48)
+        ctx.fill()
+        ctx.drawImage(logoImg, 65 + (340 - lW) / 2, 65 + (48 - lH) / 2, lW, lH)
+      } else {
+        ctx.fillStyle = 'rgba(15, 23, 42, 0.75)'
+        ctx.beginPath()
+        if (ctx.roundRect) ctx.roundRect(65, 65, 340, 48, 24)
+        else ctx.rect(65, 65, 340, 48)
+        ctx.fill()
+        ctx.fillStyle = '#ffffff'
+        ctx.font = `bold 22px ${fontFamily}`
+        ctx.textAlign = 'center'
+        ctx.fillText(`🌿 ${activeStoreName.toUpperCase()}`, 65 + 170, 65 + 32)
+      }
+
+      if (badgeTxt) {
+        ctx.fillStyle = canvasBadgeColor || '#f59e0b'
+        ctx.beginPath()
+        if (ctx.roundRect) ctx.roundRect(675, 65, 340, 48, 24)
+        else ctx.rect(675, 65, 340, 48)
+        ctx.fill()
+        ctx.fillStyle = '#000000'
+        ctx.font = `bold 22px ${fontFamily}`
+        ctx.textAlign = 'center'
+        ctx.fillText(badgeTxt, 675 + 170, 65 + 32)
+      }
+
+      if (headlineTxt) {
+        ctx.fillStyle = mainTextColor
+        ctx.font = `bold 42px ${fontFamily}`
+        ctx.textAlign = 'center'
+        ctx.fillText(headlineTxt, size / 2, 705)
+      }
+
+      if (scene.sub_text) {
+        ctx.fillStyle = subTextColor
+        ctx.font = `28px ${fontFamily}`
+        ctx.textAlign = 'center'
+        ctx.fillText(scene.sub_text, size / 2, 760)
+      }
+
+      if (canvasShowPrice && script.product_price) {
+        const barY = 820
+        ctx.fillStyle = theme.accent
+        ctx.beginPath()
+        if (ctx.roundRect) ctx.roundRect(size / 2 - 280, barY, 560, 80, 40)
+        else ctx.rect(size / 2 - 280, barY, 560, 80)
+        ctx.fill()
+
+        ctx.fillStyle = '#ffffff'
+        ctx.font = `bold 36px ${fontFamily}`
+        ctx.textAlign = 'center'
+        ctx.fillText(`$ ${script.product_price.toLocaleString('es-AR')}  •  COMPRAR`, size / 2, barY + 53)
+      }
+
+      ctx.fillStyle = (isCleanWhite || canvasTheme === 'white') && (canvasTextColor === 'auto' || canvasTextColor === '#0f172a') ? '#059669' : mainTextColor
+      ctx.font = `bold 24px ${fontFamily}`
+      ctx.textAlign = 'center'
+      ctx.fillText(footerTxt, size / 2, 1020)
+
+    } else if (canvasLayout === 'bold_promo') {
+      // --- PLANTILLA 3: IMPACTO / PROMO DESTACADA ---
+      const grad = ctx.createLinearGradient(0, 0, size, size)
+      grad.addColorStop(0, theme.bg[0])
+      grad.addColorStop(0.5, theme.bg[1])
+      grad.addColorStop(1, theme.bg[2])
+      ctx.fillStyle = grad
+      ctx.fillRect(0, 0, size, size)
+
+      ctx.fillStyle = theme.accent + '25'
+      ctx.beginPath()
+      ctx.arc(950, 120, 320, 0, Math.PI * 2)
+      ctx.fill()
+
+      if (logoImg) {
+        const maxLogoW = 380
+        const maxLogoH = 65
+        const lScale = Math.min(maxLogoW / logoImg.width, maxLogoH / logoImg.height)
+        const lW = logoImg.width * lScale
+        const lH = logoImg.height * lScale
+        ctx.drawImage(logoImg, (size - lW) / 2, 35, lW, lH)
+      } else {
+        ctx.fillStyle = mainTextColor
+        ctx.font = `bold 32px ${fontFamily}`
+        ctx.textAlign = 'center'
+        ctx.fillText(`🔥 ${activeStoreName.toUpperCase()}`, size / 2, 75)
+      }
+
+      if (activeImg) {
+        const imgSize = 540
+        const imgX = (size - imgSize) / 2
+        const imgY = 115
+
+        ctx.fillStyle = theme.accent
+        ctx.beginPath()
+        if (ctx.roundRect) ctx.roundRect(imgX + 16, imgY + 16, imgSize, imgSize, 28)
+        else ctx.rect(imgX + 16, imgY + 16, imgSize, imgSize)
+        ctx.fill()
+
+        ctx.save()
+        ctx.beginPath()
+        if (ctx.roundRect) ctx.roundRect(imgX, imgY, imgSize, imgSize, 28)
+        else ctx.rect(imgX, imgY, imgSize, imgSize)
+        ctx.clip()
+
+        ctx.fillStyle = '#ffffff'
+        ctx.fillRect(imgX, imgY, imgSize, imgSize)
+
+        const scale = Math.max(imgSize / activeImg.width, imgSize / activeImg.height)
+        const drawW = activeImg.width * scale
+        const drawH = activeImg.height * scale
+        ctx.drawImage(activeImg, imgX + (imgSize - drawW) / 2, imgY + (imgSize - drawH) / 2, drawW, drawH)
+        ctx.restore()
+
+        if (canvasShowPrice && script.product_price) {
+          const badgeX = imgX + imgSize - 40
+          const badgeY = imgY + 40
+          const radius = 95
+
+          ctx.fillStyle = canvasBadgeColor || '#ef4444'
+          ctx.beginPath()
+          ctx.arc(badgeX, badgeY, radius, 0, Math.PI * 2)
+          ctx.fill()
+          ctx.lineWidth = 5
+          ctx.strokeStyle = '#ffffff'
+          ctx.stroke()
+
+          ctx.fillStyle = '#ffffff'
+          ctx.font = 'bold 20px sans-serif'
+          ctx.textAlign = 'center'
+          ctx.fillText('¡OFERTA!', badgeX, badgeY - 26)
+          ctx.font = 'bold 32px sans-serif'
+          ctx.fillText(`$${script.product_price.toLocaleString('es-AR')}`, badgeX, badgeY + 14)
+          ctx.font = 'bold 18px sans-serif'
+          ctx.fillText('EN STOCK', badgeX, badgeY + 42)
+        }
+      }
+
+      if (badgeTxt) {
+        ctx.fillStyle = canvasBadgeColor || '#f59e0b'
+        ctx.fillRect(0, 690, size, 56)
+        ctx.fillStyle = '#000000'
+        ctx.font = 'bold 28px sans-serif'
+        ctx.textAlign = 'center'
+        ctx.fillText(badgeTxt, size / 2, 728)
+      }
+
+      if (headlineTxt) {
+        ctx.fillStyle = mainTextColor
+        ctx.font = 'bold 44px sans-serif'
+        ctx.textAlign = 'center'
+        ctx.fillText(headlineTxt, size / 2, 805)
+      }
+
+      if (scene.sub_text) {
+        ctx.fillStyle = subTextColor
+        ctx.font = '28px sans-serif'
+        ctx.textAlign = 'center'
+        ctx.fillText(scene.sub_text, size / 2, 860)
+      }
+
+      ctx.fillStyle = theme.accent
+      ctx.fillRect(0, 970, size, 110)
+      ctx.fillStyle = '#ffffff'
+      ctx.font = 'bold 30px sans-serif'
+      ctx.textAlign = 'center'
+      ctx.fillText(footerTxt, size / 2, 1035)
+
+    } else if (canvasLayout === 'glassmorphism') {
+      // --- PLANTILLA 4: GLASSMORPHISM HERO CANVA STYLE ---
+      if (activeImg) {
+        const scale = Math.max(size / activeImg.width, size / activeImg.height)
+        const drawW = activeImg.width * scale
+        const drawH = activeImg.height * scale
+        ctx.drawImage(activeImg, (size - drawW) / 2, (size - drawH) / 2, drawW, drawH)
+      } else {
+        const grad = ctx.createLinearGradient(0, 0, 0, size)
+        grad.addColorStop(0, theme.bg[0])
+        grad.addColorStop(1, theme.bg[2])
+        ctx.fillStyle = grad
+        ctx.fillRect(0, 0, size, size)
+      }
+
+      const isDarkTheme = canvasTheme === 'dark' || canvasTheme === 'blue' || canvasTheme === 'purple' || canvasTheme === 'emerald' || canvasTheme === 'red'
+      ctx.fillStyle = isDarkTheme ? 'rgba(15, 23, 42, 0.65)' : 'rgba(255, 255, 255, 0.70)'
+      ctx.fillRect(0, 0, size, size)
+
+      const cardX = 70
+      const cardY = 70
+      const cardW = 940
+      const cardH = 940
 
       ctx.save()
+      ctx.fillStyle = isDarkTheme ? 'rgba(15, 23, 42, 0.86)' : 'rgba(255, 255, 255, 0.90)'
       ctx.beginPath()
-      if (ctx.roundRect) ctx.roundRect(imgAreaX, imgAreaY, imgAreaSize, imgAreaSize, 24)
-      else ctx.rect(imgAreaX, imgAreaY, imgAreaSize, imgAreaSize)
-      ctx.clip()
-      ctx.fillStyle = '#ffffff'
-      ctx.fillRect(imgAreaX, imgAreaY, imgAreaSize, imgAreaSize)
+      if (ctx.roundRect) ctx.roundRect(cardX, cardY, cardW, cardH, 36)
+      else ctx.rect(cardX, cardY, cardW, cardH)
+      ctx.fill()
+      ctx.lineWidth = 3
+      ctx.strokeStyle = isDarkTheme ? 'rgba(255, 255, 255, 0.2)' : 'rgba(0, 0, 0, 0.1)'
+      ctx.stroke()
 
-      const imgW = activeImg.width
-      const imgH = activeImg.height
-      const scale = Math.max(imgAreaSize / imgW, imgAreaSize / imgH)
-      const drawW = imgW * scale
-      const drawH = imgH * scale
-      ctx.drawImage(activeImg, imgAreaX + (imgAreaSize - drawW) / 2, imgAreaY + (imgAreaSize - drawH) / 2, drawW, drawH)
+      if (logoImg) {
+        const maxLogoW = 380
+        const maxLogoH = 65
+        const lScale = Math.min(maxLogoW / logoImg.width, maxLogoH / logoImg.height)
+        const lW = logoImg.width * lScale
+        const lH = logoImg.height * lScale
+        ctx.drawImage(logoImg, (size - lW) / 2, cardY + 25, lW, lH)
+      } else {
+        ctx.fillStyle = mainTextColor
+        ctx.font = `bold 30px ${fontFamily}`
+        ctx.textAlign = 'center'
+        ctx.fillText(`✨ ${activeStoreName.toUpperCase()}`, size / 2, cardY + 65)
+      }
+
+      if (activeImg) {
+        const imgBoxSize = 460
+        const imgBoxX = (size - imgBoxSize) / 2
+        const imgBoxY = cardY + 95
+
+        ctx.save()
+        ctx.beginPath()
+        if (ctx.roundRect) ctx.roundRect(imgBoxX, imgBoxY, imgBoxSize, imgBoxSize, 24)
+        else ctx.rect(imgBoxX, imgBoxY, imgBoxSize, imgBoxSize)
+        ctx.clip()
+
+        ctx.fillStyle = '#ffffff'
+        ctx.fillRect(imgBoxX, imgBoxY, imgBoxSize, imgBoxSize)
+
+        const scale = Math.max(imgBoxSize / activeImg.width, imgBoxSize / activeImg.height)
+        const drawW = activeImg.width * scale
+        const drawH = activeImg.height * scale
+        ctx.drawImage(activeImg, imgBoxX + (imgBoxSize - drawW) / 2, imgBoxY + (imgBoxSize - drawH) / 2, drawW, drawH)
+        ctx.restore()
+
+        ctx.lineWidth = 3
+        ctx.strokeStyle = theme.accent
+        ctx.beginPath()
+        if (ctx.roundRect) ctx.roundRect(imgBoxX, imgBoxY, imgBoxSize, imgBoxSize, 24)
+        else ctx.rect(imgBoxX, imgBoxY, imgBoxSize, imgBoxSize)
+        ctx.stroke()
+      }
+
+      if (badgeTxt) {
+        const badgeY = cardY + 580
+        ctx.fillStyle = canvasBadgeColor || '#f59e0b'
+        ctx.beginPath()
+        if (ctx.roundRect) ctx.roundRect(size / 2 - 200, badgeY, 400, 46, 23)
+        else ctx.rect(size / 2 - 200, badgeY, 400, 46)
+        ctx.fill()
+        ctx.fillStyle = '#000000'
+        ctx.font = `bold 24px ${fontFamily}`
+        ctx.textAlign = 'center'
+        ctx.fillText(badgeTxt, size / 2, badgeY + 31)
+      }
+
+      if (headlineTxt) {
+        ctx.fillStyle = mainTextColor
+        ctx.font = `bold 38px ${fontFamily}`
+        ctx.textAlign = 'center'
+        ctx.fillText(headlineTxt, size / 2, cardY + 675)
+      }
+
+      if (scene.sub_text) {
+        ctx.fillStyle = subTextColor
+        ctx.font = `26px ${fontFamily}`
+        ctx.textAlign = 'center'
+        ctx.fillText(scene.sub_text, size / 2, cardY + 725)
+      }
+
+      if (canvasShowPrice && script.product_price) {
+        const pillY = cardY + 760
+        const pillWidth = 400
+        ctx.fillStyle = theme.accent
+        ctx.beginPath()
+        if (ctx.roundRect) ctx.roundRect(size / 2 - pillWidth / 2, pillY, pillWidth, 64, 32)
+        else ctx.rect(size / 2 - pillWidth / 2, pillY, pillWidth, 64)
+        ctx.fill()
+        ctx.fillStyle = '#ffffff'
+        ctx.font = `bold 34px ${fontFamily}`
+        ctx.fillText(`$ ${script.product_price.toLocaleString('es-AR')}`, size / 2, pillY + 44)
+      }
+
+      ctx.fillStyle = mainTextColor
+      ctx.font = `bold 22px ${fontFamily}`
+      ctx.textAlign = 'center'
+      ctx.fillText(footerTxt, size / 2, cardY + cardH - 35)
       ctx.restore()
 
-      if (drawBorder) {
-        ctx.lineWidth = 4
-        ctx.strokeStyle = theme.border
+    } else {
+      // --- PLANTILLA 1: CLÁSICO RECUADRO ---
+      const grad = ctx.createLinearGradient(0, 0, 0, size)
+      grad.addColorStop(0, theme.bg[0])
+      grad.addColorStop(0.5, theme.bg[1])
+      grad.addColorStop(1, theme.bg[2])
+      ctx.fillStyle = grad
+      ctx.fillRect(0, 0, size, size)
+
+      if (logoImg) {
+        const maxLogoW = 380
+        const maxLogoH = 55
+        const lScale = Math.min(maxLogoW / logoImg.width, maxLogoH / logoImg.height)
+        const lW = logoImg.width * lScale
+        const lH = logoImg.height * lScale
+
+        if (theme.header !== 'transparent') {
+          ctx.fillStyle = theme.header
+          ctx.fillRect(60, 40, 960, 70)
+        }
+        if (drawBorder) {
+          ctx.strokeStyle = theme.border
+          ctx.lineWidth = 2
+          ctx.strokeRect(60, 40, 960, 70)
+        }
+        ctx.drawImage(logoImg, (size - lW) / 2, 40 + (70 - lH) / 2, lW, lH)
+      } else {
+        if (theme.header !== 'transparent') {
+          ctx.fillStyle = theme.header
+          ctx.fillRect(60, 40, 960, 70)
+        }
+        if (drawBorder) {
+          ctx.strokeStyle = theme.border
+          ctx.lineWidth = 2
+          ctx.strokeRect(60, 40, 960, 70)
+        }
+        ctx.fillStyle = mainTextColor
+        ctx.font = `bold 30px ${fontFamily}`
+        ctx.textAlign = 'center'
+        ctx.fillText(`🌱 ${activeStoreName.toUpperCase()}`, size / 2, 85)
+      }
+
+      if (activeImg) {
+        const imgAreaSize = 560
+        const imgAreaX = (size - imgAreaSize) / 2
+        const imgAreaY = 140
+
+        ctx.save()
         ctx.beginPath()
         if (ctx.roundRect) ctx.roundRect(imgAreaX, imgAreaY, imgAreaSize, imgAreaSize, 24)
         else ctx.rect(imgAreaX, imgAreaY, imgAreaSize, imgAreaSize)
-        ctx.stroke()
+        ctx.clip()
+
+        ctx.fillStyle = '#ffffff'
+        ctx.fillRect(imgAreaX, imgAreaY, imgAreaSize, imgAreaSize)
+
+        const scale = Math.max(imgAreaSize / activeImg.width, imgAreaSize / activeImg.height)
+        const drawW = activeImg.width * scale
+        const drawH = activeImg.height * scale
+        ctx.drawImage(activeImg, imgAreaX + (imgAreaSize - drawW) / 2, imgAreaY + (imgAreaSize - drawH) / 2, drawW, drawH)
+        ctx.restore()
+
+        if (drawBorder) {
+          ctx.lineWidth = 4
+          ctx.strokeStyle = theme.border
+          ctx.beginPath()
+          if (ctx.roundRect) ctx.roundRect(imgAreaX, imgAreaY, imgAreaSize, imgAreaSize, 24)
+          else ctx.rect(imgAreaX, imgAreaY, imgAreaSize, imgAreaSize)
+          ctx.stroke()
+        }
       }
-    }
 
-    // 4. Badge
-    const badgeTxt = canvasBadgeText.trim() || scene.badge_text
-    if (badgeTxt) {
-      const badgeY = 730
-      ctx.fillStyle = canvasBadgeColor || '#f59e0b'
-      ctx.beginPath()
-      if (ctx.roundRect) ctx.roundRect(size / 2 - 220, badgeY, 440, 52, 26)
-      else ctx.rect(size / 2 - 220, badgeY, 440, 52)
-      ctx.fill()
-      ctx.fillStyle = '#000000'
-      ctx.font = 'bold 26px sans-serif'
+      if (badgeTxt) {
+        const badgeY = 730
+        ctx.fillStyle = canvasBadgeColor || '#f59e0b'
+        ctx.beginPath()
+        if (ctx.roundRect) ctx.roundRect(size / 2 - 220, badgeY, 440, 52, 26)
+        else ctx.rect(size / 2 - 220, badgeY, 440, 52)
+        ctx.fill()
+        ctx.fillStyle = '#000000'
+        ctx.font = 'bold 26px sans-serif'
+        ctx.textAlign = 'center'
+        ctx.fillText(badgeTxt, size / 2, badgeY + 36)
+      }
+
+      if (headlineTxt) {
+        ctx.fillStyle = mainTextColor
+        ctx.font = 'bold 40px sans-serif'
+        ctx.textAlign = 'center'
+        ctx.fillText(headlineTxt, size / 2, 840)
+      }
+
+      if (scene.sub_text) {
+        ctx.fillStyle = subTextColor
+        ctx.font = '28px sans-serif'
+        ctx.textAlign = 'center'
+        ctx.fillText(scene.sub_text, size / 2, 890)
+      }
+
+      if (canvasShowPrice && script.product_price) {
+        const pillY = 920
+        const pillWidth = 420
+        ctx.fillStyle = theme.accent
+        ctx.beginPath()
+        if (ctx.roundRect) ctx.roundRect(size / 2 - pillWidth / 2, pillY, pillWidth, 72, 36)
+        else ctx.rect(size / 2 - pillWidth / 2, pillY, pillWidth, 72)
+        ctx.fill()
+        ctx.fillStyle = '#ffffff'
+        ctx.font = 'bold 36px sans-serif'
+        ctx.fillText(`$ ${script.product_price.toLocaleString('es-AR')}`, size / 2, pillY + 50)
+      }
+
+      ctx.fillStyle = (isCleanWhite || canvasTheme === 'white') && (canvasTextColor === 'auto' || canvasTextColor === '#0f172a') ? '#059669' : mainTextColor
+      ctx.font = 'bold 24px sans-serif'
       ctx.textAlign = 'center'
-      ctx.fillText(badgeTxt, size / 2, badgeY + 36)
+      ctx.fillText(footerTxt, size / 2, 1040)
     }
-
-    // 5. Headline
-    const headlineTxt = canvasCustomTitle.trim() || scene.main_headline
-    if (headlineTxt) {
-      ctx.fillStyle = mainTextColor
-      ctx.font = 'bold 40px sans-serif'
-      ctx.textAlign = 'center'
-      ctx.fillText(headlineTxt, size / 2, 840)
-    }
-
-    // 6. Subtext
-    if (scene.sub_text) {
-      ctx.fillStyle = subTextColor
-      ctx.font = '28px sans-serif'
-      ctx.textAlign = 'center'
-      ctx.fillText(scene.sub_text, size / 2, 890)
-    }
-
-    // 7. Price Badge
-    if (canvasShowPrice && script.product_price) {
-      const pillY = 920
-      const pillWidth = 420
-      ctx.fillStyle = theme.accent
-      ctx.beginPath()
-      if (ctx.roundRect) ctx.roundRect(size / 2 - pillWidth / 2, pillY, pillWidth, 72, 36)
-      else ctx.rect(size / 2 - pillWidth / 2, pillY, pillWidth, 72)
-      ctx.fill()
-      ctx.fillStyle = '#ffffff'
-      ctx.font = 'bold 36px sans-serif'
-      ctx.fillText(`$ ${script.product_price.toLocaleString('es-AR')}`, size / 2, pillY + 50)
-    }
-
-    // 8. Call to action
-    ctx.fillStyle = (isCleanWhite || canvasTheme === 'white') && (canvasTextColor === 'auto' || canvasTextColor === '#0f172a') ? '#059669' : mainTextColor
-    ctx.font = 'bold 24px sans-serif'
-    ctx.fillText(canvasFooterText || '📲 Comprá en HidroponiaRosario.com', size / 2, 1040)
 
     // Export as PNG blob and upload
     return new Promise((resolve) => {
@@ -951,7 +1673,11 @@ export default function Marketing() {
 
   const handleGenerateAIVideo = async () => {
     if (!selectedProduct) {
-      alert("Por favor selecciona un producto del inventario.")
+      alert("⚠️ Por favor selecciona primero un producto del inventario en la lista desplegable superior para poder generar la imagen o video publicitario.")
+      return
+    }
+    if (['imagen3', 'google_veo', 'pollinations', 'flux'].includes(videoEngine) && !videoPrompt.trim()) {
+      alert("⚠️ Por favor ingresa una instrucción o prompt para la IA.")
       return
     }
     setGeneratingVideo(true)
@@ -1274,8 +2000,8 @@ export default function Marketing() {
               <button 
                 className="btn" 
                 onClick={handleGenerateAI}
-                disabled={generating || !selectedProduct}
-                style={{backgroundColor: 'var(--accent-emerald)', color: '#fff', padding: '10px 15px', fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8}}
+                disabled={generating}
+                style={{backgroundColor: 'var(--accent-emerald)', color: '#fff', padding: '10px 15px', fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, opacity: generating ? 0.7 : 1}}
               >
                 {generating ? <RefreshCw className="animate-spin" size={16} /> : <Sparkles size={16} />}
                 {generating ? 'Generando copy con IA...' : '✨ Generar Publicación con Gemini IA'}
@@ -1335,6 +2061,61 @@ export default function Marketing() {
                     <div style={{fontSize: '0.8rem', fontWeight: 700, color: 'var(--accent-blue)', display: 'flex', alignItems: 'center', gap: 6}}>
                       <span>🎨 Personalizar Estilo de Plantilla:</span>
                     </div>
+
+                    {/* Row 0: Plantilla / Layout de Diseño */}
+                    <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8}}>
+                      <label style={{fontSize: '0.78rem', fontWeight: 600}}>Plantilla Visual de Diseño:
+                        <select 
+                          value={canvasLayout} 
+                          onChange={e => setCanvasLayout(e.target.value)}
+                          style={{width: '100%', marginTop: 3, padding: '5px 8px', borderRadius: 6, border: '1px solid var(--accent-blue)', backgroundColor: 'var(--bg-dark)', color: 'var(--text-primary)', fontSize: '0.78rem', fontWeight: 700}}
+                        >
+                          <option value="glassmorphism">✨ Glassmorphism Canva Style (Fondo difuminado + tarjeta cristal - Recomendado)</option>
+                          <option value="modern_split">⚡ Split Editorial Moderno (Foto Full Hero arriba + Info abajo)</option>
+                          <option value="bold_promo">🔥 Impacto / Oferta Destacada (Estilo de alto contraste y precio gigante)</option>
+                          <option value="classic_box">📦 Clásico Recuadro (Marco tradicional con cabecera y foto centrada)</option>
+                        </select>
+                      </label>
+
+                      <label style={{fontSize: '0.78rem', fontWeight: 600}}>Estilo de Fuente / Tipografía:
+                        <select 
+                          value={canvasFont} 
+                          onChange={e => setCanvasFont(e.target.value)}
+                          style={{width: '100%', marginTop: 3, padding: '5px 8px', borderRadius: 6, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-dark)', color: 'var(--text-primary)', fontSize: '0.78rem'}}
+                        >
+                          <option value="outfit">✨ Outfit (Ultra-Moderno & Antialiased Pro)</option>
+                          <option value="montserrat">⚡ Montserrat (Titulares Negrita de Alto Impacto)</option>
+                          <option value="poppins">🌿 Poppins (Limpio & Geométrico)</option>
+                          <option value="jakarta">💎 Plus Jakarta Sans (Elegante Editorial)</option>
+                        </select>
+                      </label>
+                    </div>
+
+                    {/* Row 0.5: Logotipo de la Marca */}
+                    <label style={{fontSize: '0.78rem', fontWeight: 600}}>Logotipo de la Tienda (PNG Transparente):
+                      <div style={{display: 'flex', gap: 8, marginTop: 3, alignItems: 'center'}}>
+                        <input 
+                          type="text" 
+                          value={canvasLogoUrl} 
+                          onChange={e => setCanvasLogoUrl(e.target.value)}
+                          placeholder="Cargar URL de Logo PNG de la Tienda (opcional)"
+                          style={{flex: 1, padding: '4px 8px', borderRadius: 6, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-dark)', color: 'var(--text-primary)', fontSize: '0.78rem'}}
+                        />
+                        {canvasLogoUrl && (
+                          <div style={{display: 'flex', alignItems: 'center', gap: 6, backgroundColor: 'rgba(255,255,255,0.08)', padding: '2px 6px', borderRadius: 6}}>
+                            <img src={canvasLogoUrl} alt="Logo" style={{height: 24, maxWidth: 60, objectFit: 'contain'}} />
+                            <button 
+                              type="button" 
+                              onClick={() => setCanvasLogoUrl('')}
+                              style={{background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 700}}
+                              title="Quitar logo y usar texto"
+                            >
+                              ✕
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    </label>
 
                     {/* Row 1: Tema & Color de Letras */}
                     <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8}}>
@@ -1449,8 +2230,8 @@ export default function Marketing() {
                 <button 
                   className="btn" 
                   onClick={handleGenerateAIVideo}
-                  disabled={generatingVideo || !selectedProduct}
-                  style={{backgroundColor: 'var(--accent-blue)', color: '#fff', padding: '10px', fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8}}
+                  disabled={generatingVideo}
+                  style={{backgroundColor: 'var(--accent-blue)', color: '#fff', padding: '10px', fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, opacity: generatingVideo ? 0.7 : 1}}
                 >
                   {generatingVideo ? <RefreshCw className="animate-spin" size={16} /> : <Sparkles size={16} />}
                   {generatingVideo ? 'Generando contenido con IA...' : (postType === 'post' ? '🎨 Generar Imagen IA para Post (1:1)' : '🎬 Generar Video / Reel con IA (9:16)')}
