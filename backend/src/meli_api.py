@@ -1202,3 +1202,97 @@ def send_post_sale_message(order_id, text_content):
             return False, f"Error de Mercado Libre ({res.status_code}): {err_msg}"
     except Exception as e:
         return False, f"Error al enviar mensaje posventa: {str(e)}"
+
+
+# --- Mercado Libre Questions & Answers API ---
+
+def get_question_detail(question_id):
+    """Obtiene el detalle completo de una pregunta de Mercado Libre."""
+    if is_demo_mode():
+        return {
+            "id": int(question_id) if str(question_id).isdigit() else 99887766,
+            "item_id": "MLA99887766",
+            "date_created": datetime.now().isoformat(),
+            "status": "UNANSWERED",
+            "text": "¿Tienen stock en color negro y hacen envíos a Rosario?",
+            "from": {
+                "id": 10020304,
+                "nickname": "COMPRADOR_DEMO"
+            }
+        }
+
+    try:
+        res = api_request("GET", f"/questions/{question_id}")
+        if res and res.status_code == 200:
+            return res.json()
+        return None
+    except Exception as e:
+        print(f"[Meli API] Error al obtener pregunta {question_id}: {e}")
+        return None
+
+
+def post_question_answer(question_id, text):
+    """Envía la respuesta a una pregunta en Mercado Libre."""
+    if is_demo_mode():
+        return True, "Respuesta enviada exitosamente (Modo Demo)"
+
+    try:
+        check_and_refresh_token()
+        url = f"{API_BASE_URL}/answers"
+        headers = {
+            'Authorization': f"Bearer {config.get_access_token()}",
+            'Content-Type': 'application/json'
+        }
+        payload = {
+            "question_id": int(question_id) if str(question_id).isdigit() else question_id,
+            "text": text
+        }
+        res = requests.post(url, headers=headers, json=payload, timeout=15)
+        if res.status_code in (200, 201):
+            return True, "Respuesta publicada en Mercado Libre con éxito"
+        else:
+            err_msg = res.text[:250]
+            try:
+                err_msg = res.json().get('message', err_msg)
+            except Exception:
+                pass
+            return False, f"Error de Mercado Libre ({res.status_code}): {err_msg}"
+    except Exception as e:
+        return False, f"Excepción al publicar respuesta: {str(e)}"
+
+
+def fetch_unanswered_questions(limit=20):
+    """Busca preguntas pendientes de respuesta en Mercado Libre."""
+    if is_demo_mode():
+        return [
+            {
+                "id": 123456001,
+                "item_id": "MLA1001",
+                "status": "UNANSWERED",
+                "text": "¿Tienen stock disponible y hacen envíos a Córdoba?",
+                "date_created": datetime.now().isoformat(),
+                "from": {"id": 10020304, "nickname": "JUAN_PEREZ88"}
+            },
+            {
+                "id": 123456002,
+                "item_id": "MLA1002",
+                "status": "UNANSWERED",
+                "text": "¿El producto cuenta con garantía oficial y factura A?",
+                "date_created": datetime.now().isoformat(),
+                "from": {"id": 10050607, "nickname": "MARIA_GOMEZ_92"}
+            }
+        ]
+
+    user_id = config.get_user_id()
+    if not user_id:
+        return []
+
+    try:
+        res = api_request("GET", f"/questions/search?seller_id={user_id}&status=UNANSWERED&limit={limit}")
+        if res and res.status_code == 200:
+            return res.json().get('questions', [])
+        return []
+    except Exception as e:
+        print(f"[Meli API] Error al buscar preguntas sin responder: {e}")
+        return []
+

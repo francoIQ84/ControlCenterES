@@ -18,6 +18,7 @@ from .blog import router as blog_router
 from .inpi import router as inpi_router
 from .marketing import router as marketing_router
 from .diffusion import router as diffusion_router
+from .meli_questions import router as meli_questions_router
 
 api_router = APIRouter()
 
@@ -49,5 +50,7 @@ api_router.include_router(blog_router, prefix="/blog", tags=["blog"], dependenci
 api_router.include_router(inpi_router, prefix="/inpi", tags=["inpi"], dependencies=[Depends(verify_session)])
 api_router.include_router(marketing_router, prefix="/marketing", tags=["marketing"], dependencies=[Depends(verify_session)])
 api_router.include_router(diffusion_router, prefix="/diffusion", tags=["diffusion"], dependencies=[Depends(verify_session)])
+api_router.include_router(meli_questions_router)
+
 
 

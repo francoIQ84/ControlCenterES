@@ -60,6 +60,15 @@ def _sync_one_tenant(tenant):
             meli_api.sync_orders(limit=20)
             print(f"[Scheduler][{slug}] Sincronización de demostración finalizada.")
 
+    # Auto-responder de preguntas de Mercado Libre (Gemini AI)
+    try:
+        from src.utils.meli_questions_service import process_pending_questions
+        processed_q = process_pending_questions()
+        if processed_q:
+            print(f"[Scheduler][{slug}] Preguntas MeLi procesadas con Gemini AI: {len(processed_q)}")
+    except Exception as q_err:
+        print(f"[Scheduler][{slug}] Error en auto-responder de preguntas MeLi: {q_err}")
+
     # Sincronización diaria de marcas monitoreadas en INPI
     try:
         from src.api.inpi import sync_monitored_trademarks
@@ -67,6 +76,7 @@ def _sync_one_tenant(tenant):
         print(f"[Scheduler][{slug}] Sincronización INPI: {sync_res.get('message')}")
     except Exception as inpi_err:
         print(f"[Scheduler][{slug}] Error en sincronización INPI: {inpi_err}")
+
 
 
 def background_sync_loop():

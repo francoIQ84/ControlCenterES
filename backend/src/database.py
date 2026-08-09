@@ -426,6 +426,27 @@ def init_db():
                 )
             ''')
 
+            # Mercado Libre AI Questions table
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS meli_questions (
+                    id SERIAL PRIMARY KEY,
+                    question_id VARCHAR(100) UNIQUE NOT NULL,
+                    item_id VARCHAR(100) NOT NULL,
+                    item_title TEXT,
+                    buyer_id VARCHAR(100),
+                    buyer_nickname VARCHAR(150),
+                    question_text TEXT NOT NULL,
+                    answer_text TEXT,
+                    ai_model_used VARCHAR(100) DEFAULT 'gemini-3.6-flash',
+                    status VARCHAR(50) DEFAULT 'ANSWERED_AUTO',
+                    auto_replied BOOLEAN DEFAULT TRUE,
+                    response_time_ms INTEGER DEFAULT 0,
+                    error_message TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    answered_at TIMESTAMP
+                )
+            ''')
+
             cursor.execute('ALTER TABLE fixed_expenses ADD COLUMN IF NOT EXISTS month INT;')
             cursor.execute('ALTER TABLE fixed_expenses ADD COLUMN IF NOT EXISTS year INT;')
             cursor.execute('ALTER TABLE login_history ADD COLUMN IF NOT EXISTS username VARCHAR(100);')
@@ -2735,6 +2756,135 @@ def update_diffusion_campaign(campaign_id, updates):
                 values.append(campaign_id)
                 cursor.execute(query, tuple(values))
     return True
+
+
+# --- Mercado Libre AI Questions Operations ---
+
+def create_or_update_meli_question(q_data: dict):
+    """
+    q_data keys:
+    question_id, item_id, item_title, buyer_id, buyer_nickname, question_text,
+    answer_text, ai_model_used, status, auto_replied, response_time_ms, error_message, answered_at
+    """
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute('''
+                INSERT INTO meli_questions (
+                    question_id, item_id, item_title, buyer_id, buyer_nickname,
+                    question_text, answer_text, ai_model_used, status, auto_replied,
+                    response_time_ms, error_message, answered_at
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (question_id) DO UPDATE SET
+                    item_id = EXCLUDED.item_id,
+                    item_title = EXCLUDED.item_title,
+                    buyer_id = EXCLUDED.buyer_id,
+                    buyer_nickname = EXCLUDED.buyer_nickname,
+                    question_text = EXCLUDED.question_text,
+                    answer_text = EXCLUDED.answer_text,
+                    ai_model_used = EXCLUDED.ai_model_used,
+                    status = EXCLUDED.status,
+                    auto_replied = EXCLUDED.auto_replied,
+                    response_time_ms = EXCLUDED.response_time_ms,
+                    error_message = EXCLUDED.error_message,
+                    answered_at = EXCLUDED.answered_at
+            ''', (
+                str(q_data.get('question_id')),
+                str(q_data.get('item_id')),
+                q_data.get('item_title', ''),
+                str(q_data.get('buyer_id', '')),
+                q_data.get('buyer_nickname', ''),
+                q_data.get('question_text', ''),
+                q_data.get('answer_text'),
+                q_data.get('ai_model_used', 'gemini-3.6-flash'),
+                q_data.get('status', 'PENDING_APPROVAL'),
+                q_data.get('auto_replied', False),
+                q_data.get('response_time_ms', 0),
+                q_data.get('error_message'),
+                q_data.get('answered_at')
+            ))
+    return True
+
+
+def get_meli_questions(limit=50, offset=0, status=None, search=None):
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            query = "SELECT * FROM meli_questions WHERE 1=1"
+            params = []
+            if status:
+                query += " AND status = %s"
+                params.append(status)
+            if search:
+                query += " AND (question_text ILIKE %s OR item_title ILIKE %s OR buyer_nickname ILIKE %s OR item_id ILIKE %s)"
+                s_param = f"%{search}%"
+                params.extend([s_param, s_param, s_param, s_param])
+
+            query += " ORDER BY id DESC LIMIT %s OFFSET %s"
+            params.extend([limit, offset])
+
+            cursor.execute(query, tuple(params))
+            rows = cursor.fetchall()
+            return [dict(r) for r in rows]
+
+
+def get_meli_questions_count(status=None, search=None):
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            query = "SELECT COUNT(*) as count FROM meli_questions WHERE 1=1"
+            params = []
+            if status:
+                query += " AND status = %s"
+                params.append(status)
+            if search:
+                query += " AND (question_text ILIKE %s OR item_title ILIKE %s OR buyer_nickname ILIKE %s OR item_id ILIKE %s)"
+                s_param = f"%{search}%"
+                params.extend([s_param, s_param, s_param, s_param])
+
+            cursor.execute(query, tuple(params))
+            row = cursor.fetchone()
+            return row['count'] if row else 0
+
+
+def get_meli_question_by_id(question_id):
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute("SELECT * FROM meli_questions WHERE question_id = %s", (str(question_id),))
+            row = cursor.fetchone()
+            return dict(row) if row else None
+
+
+def update_meli_question_answer(question_id, answer_text, status='ANSWERED_AUTO', response_time_ms=0, ai_model_used='gemini-3.6-flash', error_message=None):
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute('''
+                UPDATE meli_questions
+                SET answer_text = %s,
+                    status = %s,
+                    response_time_ms = %s,
+                    ai_model_used = %s,
+                    error_message = %s,
+                    answered_at = CURRENT_TIMESTAMP
+                WHERE question_id = %s
+            ''', (answer_text, status, response_time_ms, ai_model_used, error_message, str(question_id)))
+    return True
+
+
+def get_meli_questions_stats():
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute('''
+                SELECT
+                    COUNT(*) as total,
+                    COUNT(CASE WHEN status LIKE 'ANSWERED%' THEN 1 END) as answered,
+                    COUNT(CASE WHEN status = 'PENDING_APPROVAL' THEN 1 END) as pending,
+                    COUNT(CASE WHEN status = 'ERROR' THEN 1 END) as failed,
+                    COALESCE(AVG(CASE WHEN response_time_ms > 0 THEN response_time_ms END), 0) as avg_response_ms
+                FROM meli_questions
+            ''')
+            row = cursor.fetchone()
+            return dict(row) if row else {
+                'total': 0, 'answered': 0, 'pending': 0, 'failed': 0, 'avg_response_ms': 0
+            }
+
 
 
 

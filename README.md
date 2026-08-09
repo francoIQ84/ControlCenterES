@@ -22,6 +22,7 @@ En el comercio moderno, gestionar Mercado Libre, una tienda online propia, factu
 4. **Generador y Programador de Marketing & Reels (IA)**: Redacción automática de publicaciones y guiones de Reels + auto-publicación autónoma a Instagram y Facebook via Meta Graph API.
 5. **Tienda Online Pública (Storefront Next.js)**: Catálogo ultrarrápido optimizado para SEO y conversión.
 6. **Custodia de Marcas (INPI)**: Alertas automáticas para proteger tu marca registrada frente a oposiciones.
+7. **Auto-Responder de Preguntas de Mercado Libre (Gemini AI)**: Atención pre-venta autónoma en segundos (24/7), registrando la auditoría completa (pregunta, publicación, comprador, respuesta e IA) con guardrails estrictos anti-sanciones.
 
 ---
 
@@ -276,6 +277,18 @@ Los tokens generados en el Explorer vencen en 2 horas. Para usarlos en producci�
 - Regla de retención de los 12 respaldos mensuales más recientes.
 - **Reservado a la administración de la plataforma.** El volcado abarca la base completa —es decir, los datos de *todos* los inquilinos—, por lo que el módulo exige `require_platform_admin` y no el permiso `settings`: de lo contrario el administrador de cualquier cliente podría descargarse la información de los demás.
 - El archivo `.env` **no** se incluye en el `.zip`. Contiene la cadena de conexión a la base y la clave maestra de cifrado; empaquetarlo junto al volcado anularía el cifrado en reposo, porque el dato cifrado y su llave viajarían en el mismo archivo.
+
+---
+
+### 10. 🤖 Auto-Responder de Preguntas de Mercado Libre (Gemini AI 24/7)
+- **Respuesta Pre-Venta Autónoma en Segundos**: Integración directa con la API de Mercado Libre mediante Webhooks en tiempo real (`topic: questions`) y polling de respaldo en el VPS.
+- **Conexión con Inventario Real**: Gemini AI consulta el stock activo, precio, características y variantes del producto antes de responder para evitar vender sin stock.
+- **Guardrails Anti-Sanciones**: Filtro automático que intercepta y sanitiza las respuestas de Gemini AI para evitar cualquier mención prohibida de teléfonos, WhatsApp, emails o enlaces externos que puedan suspender la publicación.
+- **Modos de Respuesta Configurables**:
+  - *Modo 100% Automático*: Publicación instantánea de la respuesta en Mercado Libre.
+  - *Modo Borrador / Supervisado*: Generación de la sugerencia guardada en la base de datos para aprobación con un clic.
+- **Auditoría e Historial (`meli_questions`)**: Panel interactivo con buscador por usuario o publicación, métricas acumuladas y simulador de pruebas de respuestas en vivo.
+
 
 ---
 

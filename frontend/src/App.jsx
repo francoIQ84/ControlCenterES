@@ -14,6 +14,7 @@ import BlogCMS from './pages/BlogCMS'
 import IndustrialProperty from './pages/IndustrialProperty'
 import Marketing from './pages/Marketing'
 import Tenants from './pages/Tenants'
+import MeliQuestions from './pages/MeliQuestions'
 import { TenantProvider } from './TenantContext'
 
 // Global fetch interceptor to append authorization token
@@ -128,6 +129,7 @@ function App() {
             <Route path="expenses" element={<PermissionRoute permission="expenses"><Expenses /></PermissionRoute>} />
             <Route path="inpi" element={<PermissionRoute permission="inpi"><IndustrialProperty /></PermissionRoute>} />
             <Route path="marketing" element={<PermissionRoute permission="marketing"><Marketing /></PermissionRoute>} />
+            <Route path="mercadolibre/preguntas" element={<PermissionRoute permission="inventory"><MeliQuestions /></PermissionRoute>} />
             {/* Administración de la plataforma. La página se autoprotege y el
                 backend exige require_platform_admin de todas formas. */}
             <Route path="tenants" element={<PermissionRoute permission="settings"><Tenants /></PermissionRoute>} />

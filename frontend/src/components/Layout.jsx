@@ -353,6 +353,12 @@ export default function Layout() {
               <span className="nav-text">Marketing & Redes</span>
             </NavLink>
           )}
+          {canShow('inventory') && (
+            <NavLink to="/mercadolibre/preguntas" className={({isActive}) => `nav-link ${isActive ? 'active' : ''}`}>
+              <MessageSquare size={20} style={{ minWidth: 20 }} />
+              <span className="nav-text">Preguntas MeLi (IA)</span>
+            </NavLink>
+          )}
           {isPlatformAdmin && hasPermission('settings') && (
             <NavLink to="/tenants" className={({isActive}) => `nav-link ${isActive ? 'active' : ''}`}>
               <Building2 size={20} style={{ minWidth: 20 }} />
