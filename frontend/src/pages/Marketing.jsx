@@ -25,8 +25,13 @@ export default function Marketing() {
   
   // Data states
   const [products, setProducts] = useState([])
+  const [categories, setCategories] = useState([])
   const [posts, setPosts] = useState([])
   const [loadingPosts, setLoadingPosts] = useState(false)
+
+  // Product Filter State in Marketing
+  const [productSearch, setProductSearch] = useState('')
+  const [productCategoryFilter, setProductCategoryFilter] = useState('ALL')
 
   // Creator state
   const [selectedProduct, setSelectedProduct] = useState('')
@@ -360,6 +365,7 @@ export default function Marketing() {
 
   useEffect(() => {
     fetchProducts()
+    fetchCategories()
     fetchPosts()
     fetchMetaConfig()
     fetchDiffusionData()
@@ -519,6 +525,35 @@ export default function Marketing() {
       .then(data => setProducts(data.products || []))
       .catch(err => console.error(err))
   }
+
+  const fetchCategories = () => {
+    fetch('/api/categories/')
+      .then(r => r.ok ? r.json() : { categories: [] })
+      .then(data => setCategories(data.categories || []))
+      .catch(err => console.error(err))
+  }
+
+  const filteredMarketingProducts = React.useMemo(() => {
+    return products.filter(p => {
+      // 1. Category Filter
+      if (productCategoryFilter === 'UNCATEGORIZED') {
+        if (p.category_id && p.category_id !== 0 && String(p.category_id) !== '0') return false
+      } else if (productCategoryFilter !== 'ALL') {
+        if (String(p.category_id) !== String(productCategoryFilter)) return false
+      }
+
+      // 2. Search Text
+      if (productSearch.trim()) {
+        const q = productSearch.toLowerCase().trim()
+        const matchTitle = (p.title || '').toLowerCase().includes(q)
+        const matchId = (p.ml_id || '').toLowerCase().includes(q)
+        const matchCat = (p.category_name || '').toLowerCase().includes(q)
+        if (!matchTitle && !matchId && !matchCat) return false
+      }
+
+      return true
+    })
+  }, [products, productCategoryFilter, productSearch])
 
   const fetchPosts = () => {
     setLoadingPosts(true)
@@ -1936,20 +1971,80 @@ export default function Marketing() {
             </div>
 
             <div style={{display: 'flex', flexDirection: 'column', gap: 15}}>
-              <label style={{fontSize: '0.85rem', fontWeight: 600}}>Producto del Inventario *
+              <div style={{display: 'flex', flexDirection: 'column', gap: 8}}>
+                <label style={{fontSize: '0.85rem', fontWeight: 600}}>
+                  Producto del Inventario *
+                </label>
+
+                {/* Filtros de Categoría y Búsqueda por Nombre */}
+                <div style={{display: 'flex', gap: 8, flexWrap: 'wrap'}}>
+                  <select
+                    value={productCategoryFilter}
+                    onChange={e => setProductCategoryFilter(e.target.value)}
+                    style={{
+                      flex: 1,
+                      minWidth: 150,
+                      padding: '7px 10px',
+                      borderRadius: 6,
+                      border: productCategoryFilter === 'UNCATEGORIZED' ? '1px solid #f59e0b' : '1px solid var(--border-color)',
+                      backgroundColor: productCategoryFilter === 'UNCATEGORIZED' ? 'rgba(245, 158, 11, 0.15)' : 'var(--bg-dark)',
+                      color: productCategoryFilter === 'UNCATEGORIZED' ? '#f59e0b' : 'var(--text-primary)',
+                      fontSize: '0.82rem',
+                      fontWeight: productCategoryFilter === 'UNCATEGORIZED' ? '700' : 'normal'
+                    }}
+                  >
+                    <option value="ALL">📁 Categoría (Todas)</option>
+                    <option value="UNCATEGORIZED">⚠️ Sin Categoría</option>
+                    {categories.map(c => (
+                      <option key={c.id} value={c.id}>📁 {c.name}</option>
+                    ))}
+                  </select>
+
+                  <input
+                    type="text"
+                    placeholder="🔍 Buscar por nombre..."
+                    value={productSearch}
+                    onChange={e => setProductSearch(e.target.value)}
+                    style={{
+                      flex: 1.2,
+                      minWidth: 170,
+                      padding: '7px 10px',
+                      borderRadius: 6,
+                      border: '1px solid var(--border-color)',
+                      backgroundColor: 'var(--bg-dark)',
+                      color: 'var(--text-primary)',
+                      fontSize: '0.82rem'
+                    }}
+                  />
+                </div>
+
+                {/* Selector de Producto Filtrado */}
                 <select 
                   value={selectedProduct} 
                   onChange={e => setSelectedProduct(e.target.value)}
-                  style={{width: '100%', marginTop: 5, padding: '8px 10px', borderRadius: 6, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-dark)', color: 'var(--text-primary)'}}
+                  style={{
+                    width: '100%',
+                    padding: '8px 10px',
+                    borderRadius: 6,
+                    border: '1px solid var(--border-color)',
+                    backgroundColor: 'var(--bg-dark)',
+                    color: 'var(--text-primary)',
+                    fontSize: '0.85rem'
+                  }}
                 >
-                  <option value="">-- Selecciona un producto para promocionar --</option>
-                  {products.map(p => (
+                  <option value="">-- Selecciona un producto ({filteredMarketingProducts.length} disponibles) --</option>
+                  {filteredMarketingProducts.map(p => (
                     <option key={p.ml_id} value={p.ml_id}>
-                      {p.title} (${p.price_web > 0 ? p.price_web : p.price})
+                      {p.category_name ? `[${p.category_name}] ` : '[Sin Cat] '}{p.title} (${p.price_web > 0 ? `$${p.price_web}` : `$${p.price}`})
                     </option>
                   ))}
                 </select>
-              </label>
+                {filteredMarketingProducts.length === 0 && (
+                  <div style={{fontSize: '0.78rem', color: '#f59e0b', fontStyle: 'italic'}}>
+                    ⚠️ No se encontraron productos con la categoría o búsqueda seleccionada.
+                  </div>
+                )}
+              </div>
 
               {productImages.length > 0 && (
                 <div style={{marginTop: -5, marginBottom: 5}}>

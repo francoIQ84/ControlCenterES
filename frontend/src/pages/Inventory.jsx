@@ -19,6 +19,7 @@ export default function Inventory() {
   
   // Categories State
   const [categories, setCategories] = useState([])
+  const [categoryFilter, setCategoryFilter] = useState("ALL") // "ALL" | "UNCATEGORIZED" | category_id
   const [showCategoriesModal, setShowCategoriesModal] = useState(false)
   const [newCategoryName, setNewCategoryName] = useState("")
 
@@ -467,8 +468,27 @@ export default function Inventory() {
     return sortConfig.direction === 'asc' ? ' ▲' : ' ▼'
   }
 
+  const uncategorizedCount = React.useMemo(() => {
+    return products.filter(p => {
+      const draftCat = drafts[p.ml_id]?.category_id
+      const catId = draftCat !== undefined ? draftCat : p.category_id
+      return !catId || catId === 0 || String(catId) === '0' || String(catId) === ''
+    }).length
+  }, [products, drafts])
+
   const sortedProducts = React.useMemo(() => {
-    let sortableItems = [...products]
+    let sortableItems = products.filter(p => {
+      const draftCat = drafts[p.ml_id]?.category_id
+      const catId = draftCat !== undefined ? draftCat : p.category_id
+
+      if (categoryFilter === 'UNCATEGORIZED') {
+        if (catId && catId !== 0 && String(catId) !== '0' && String(catId) !== '') return false
+      } else if (categoryFilter !== 'ALL') {
+        if (String(catId) !== String(categoryFilter)) return false
+      }
+      return true
+    })
+
     if (sortConfig.key !== null) {
       sortableItems.sort((a, b) => {
         let aVal = a[sortConfig.key]
@@ -495,7 +515,7 @@ export default function Inventory() {
       })
     }
     return sortableItems
-  }, [products, sortConfig])
+  }, [products, drafts, categoryFilter, sortConfig])
 
   const modifiedCount = getModifiedItems().length
 
@@ -508,12 +528,39 @@ export default function Inventory() {
         <div style={{display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap'}}>
           <input 
             type="text" 
-            placeholder="Buscar producto..." 
+            placeholder="Buscar por nombre o ID..." 
             value={query} 
             onChange={e => setQuery(e.target.value)} 
             className="search-input"
-            style={{width: 250, marginBottom: 0}}
+            style={{width: 220, marginBottom: 0}}
           />
+          <select
+            value={categoryFilter}
+            onChange={e => setCategoryFilter(e.target.value)}
+            className="search-input"
+            style={{
+              width: 230,
+              marginBottom: 0,
+              padding: '6px 10px',
+              fontSize: '0.82rem',
+              borderRadius: 6,
+              border: categoryFilter === 'UNCATEGORIZED' ? '1px solid #f59e0b' : '1px solid var(--border-color)',
+              backgroundColor: categoryFilter === 'UNCATEGORIZED' ? 'rgba(245, 158, 11, 0.15)' : 'var(--bg-card)',
+              color: categoryFilter === 'UNCATEGORIZED' ? '#f59e0b' : 'var(--text-primary)',
+              fontWeight: categoryFilter === 'UNCATEGORIZED' ? '700' : 'normal',
+              cursor: 'pointer'
+            }}
+          >
+            <option value="ALL">📁 Todas las Categorías ({products.length})</option>
+            <option value="UNCATEGORIZED">
+              ⚠️ Sin Categoría ({uncategorizedCount})
+            </option>
+            {categories.map(c => (
+              <option key={c.id} value={c.id}>
+                📁 {c.name}
+              </option>
+            ))}
+          </select>
           <div style={{display: 'inline-flex', border: '1px solid var(--border-color)', borderRadius: 6, overflow: 'hidden'}}>
             <button 
               type="button"
@@ -1014,7 +1061,7 @@ function ProductRow({ p, onSave, onOpenGallery, onDraftChange, categories, viewM
             </div>
             <div style={{display: 'flex', alignItems: 'center', gap: 6, marginTop: 4, flexWrap: 'wrap'}}>
               <span style={{color: 'var(--text-secondary)', fontSize: '0.7rem', fontFamily: 'monospace'}}>{p.ml_id}</span>
-              {p.category_name && (
+              {p.category_name ? (
                 <span style={{
                   display: 'inline-flex',
                   alignItems: 'center',
@@ -1025,6 +1072,19 @@ function ProductRow({ p, onSave, onOpenGallery, onDraftChange, categories, viewM
                   color: 'var(--text-secondary)'
                 }}>
                   📁 {p.category_name}
+                </span>
+              ) : (
+                <span style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  padding: '1px 6px',
+                  fontSize: '0.65rem',
+                  borderRadius: 3,
+                  backgroundColor: 'rgba(245, 158, 11, 0.2)',
+                  color: '#d97706',
+                  fontWeight: 600
+                }}>
+                  ⚠️ Sin Categoría
                 </span>
               )}
               {p.is_hidden === 1 && (

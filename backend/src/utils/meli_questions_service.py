@@ -84,7 +84,10 @@ Estado de la publicación: {status}
 Usuario: {buyer_nickname or 'Comprador'}
 Pregunta: "{question_text}"
 
-Escribí una respuesta amable, directa y comercial (máximo 300 caracteres).
+REGLAS OBLIGATORIAS:
+- Escribí una respuesta comercial amable, clara, directa y COMPLETA.
+- NUNCA dejes oraciones, frases o palabras cortadas a la mitad. Asegurate de cerrar la idea y terminar siempre con un punto final, signo de exclamación o de interrogación.
+- Longitud recomendada: entre 100 y 350 caracteres.
     """.strip()
 
     payload = {
@@ -97,7 +100,7 @@ Escribí una respuesta amable, directa y comercial (máximo 300 caracteres).
         ],
         "generationConfig": {
             "temperature": 0.3,
-            "maxOutputTokens": 350
+            "maxOutputTokens": 1024
         }
     }
 

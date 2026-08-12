@@ -6,7 +6,7 @@ from src import database, meli_api
 from src.api.auth import get_current_user
 from src.utils.meli_questions_service import process_question, process_pending_questions, generate_ai_answer, sanitize_and_validate_answer
 
-router = APIRouter(prefix="/api/meli/questions", tags=["Mercado Libre Questions"])
+router = APIRouter(prefix="/meli/questions", tags=["Mercado Libre Questions"])
 
 
 class AnswerQuestionPayload(BaseModel):
