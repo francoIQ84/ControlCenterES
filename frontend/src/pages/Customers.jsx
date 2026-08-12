@@ -1,12 +1,21 @@
 import React, { useState, useEffect, useMemo } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { 
   Users, MessageSquare, TrendingUp, RefreshCw, Sparkles, Filter, Search, Plus, 
   Trash2, Edit2, Download, ExternalLink, Mail, Phone, ShoppingBag, UserCheck, 
   CheckCircle2, AlertTriangle, Layers, HelpCircle, Upload, FileText
 } from 'lucide-react'
+import MeliQuestions from './MeliQuestions'
 
 export default function Customers() {
-  const [activeTab, setActiveTab] = useState('customers') // 'customers' | 'inquiries' | 'leads' | 'whatsapp'
+  const [searchParams] = useSearchParams()
+  const initialTab = searchParams.get('tab') || 'customers'
+  const [activeTab, setActiveTab] = useState(initialTab) // 'customers' | 'meli_questions' | 'inquiries' | 'leads' | 'whatsapp'
+
+  useEffect(() => {
+    const t = searchParams.get('tab')
+    if (t) setActiveTab(t)
+  }, [searchParams])
   const [loading, setLoading] = useState(true)
   const [syncingWa, setSyncingWa] = useState(false)
   const [analyzingInquiries, setAnalyzingInquiries] = useState(false)
@@ -385,17 +394,17 @@ export default function Customers() {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '15px', marginBottom: '20px' }}>
         <div>
           <h1 className="page-title" style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <Users style={{ color: 'var(--accent-blue)' }} /> Central Unificada de Clientes & Consultas
+            <Users style={{ color: 'var(--accent-blue)' }} /> CRM & Clientes
           </h1>
           <p className="page-subtitle">
-            Consolidado general de compradores, contactos de WhatsApp últimos o históricos, leads web y analítica de productos más consultados.
+            Gestión omnicanal centralizada: Cartera de compradores, auto-responder de Mercado Libre con IA, consultas de productos y leads.
           </p>
         </div>
-        <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
           <button
             onClick={() => setIsImportModalOpen(true)}
             className="btn btn-secondary"
-            style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '9px 15px', borderRadius: '8px', fontWeight: '600', backgroundColor: 'rgba(37, 211, 102, 0.15)', color: '#25D366', border: '1px solid #25D366' }}
+            style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '9px 15px', borderRadius: '8px', fontWeight: '600' }}
           >
             <Upload size={16} /> Importar Copia WA
           </button>
@@ -486,7 +495,7 @@ export default function Customers() {
           </div>
           <div>
             <div style={{ fontSize: '24px', fontWeight: '700' }}>{crmData.metrics.total_inquiries}</div>
-            <div style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>Consultas de Productos</div>
+            <div style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>Productos Más Consultados</div>
           </div>
         </div>
       </div>
@@ -509,6 +518,24 @@ export default function Customers() {
           }}
         >
           <Users size={18} /> Cartera de Clientes ({crmData.customers.length})
+        </button>
+
+        <button
+          onClick={() => setActiveTab('meli_questions')}
+          style={{
+            padding: '12px 20px',
+            border: 'none',
+            background: 'none',
+            borderBottom: activeTab === 'meli_questions' ? '3px solid #f59e0b' : '3px solid transparent',
+            color: activeTab === 'meli_questions' ? '#f59e0b' : 'var(--text-secondary)',
+            fontWeight: '700',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px'
+          }}
+        >
+          <Sparkles size={18} /> Preguntas Mercado Libre (IA)
         </button>
 
         <button
@@ -565,6 +592,11 @@ export default function Customers() {
           <MessageSquare size={18} /> Extractor de WhatsApp ({crmData.whatsapp_chats.length})
         </button>
       </div>
+
+      {/* TAB 2: Preguntas Mercado Libre (IA) */}
+      {activeTab === 'meli_questions' && (
+        <MeliQuestions embedded={true} />
+      )}
 
       {/* TAB 1: Cartera de Clientes */}
       {activeTab === 'customers' && (

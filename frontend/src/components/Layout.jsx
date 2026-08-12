@@ -326,7 +326,7 @@ export default function Layout() {
           {canShow('customers') && (
             <NavLink to="/customers" className={({isActive}) => `nav-link ${isActive ? 'active' : ''}`}>
               <Users size={20} style={{ minWidth: 20 }} />
-              <span className="nav-text">Clientes</span>
+              <span className="nav-text">CRM & Clientes</span>
             </NavLink>
           )}
           {canShow('media') && (
@@ -351,12 +351,6 @@ export default function Layout() {
             <NavLink to="/marketing" className={({isActive}) => `nav-link ${isActive ? 'active' : ''}`}>
               <Megaphone size={20} style={{ minWidth: 20 }} />
               <span className="nav-text">Marketing & Redes</span>
-            </NavLink>
-          )}
-          {canShow('inventory') && (
-            <NavLink to="/mercadolibre/preguntas" className={({isActive}) => `nav-link ${isActive ? 'active' : ''}`}>
-              <MessageSquare size={20} style={{ minWidth: 20 }} />
-              <span className="nav-text">Preguntas MeLi (IA)</span>
             </NavLink>
           )}
           {isPlatformAdmin && hasPermission('settings') && (

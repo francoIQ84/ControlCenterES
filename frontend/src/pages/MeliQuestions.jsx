@@ -4,7 +4,7 @@ import {
   Settings, Play, Send, Search, Filter, HelpCircle, ShieldAlert, Zap, Edit3, X, Eye
 } from 'lucide-react'
 
-export default function MeliQuestions() {
+export default function MeliQuestions({ embedded = false }) {
   const [questions, setQuestions] = useState([])
   const [stats, setStats] = useState({ total: 0, answered: 0, pending: 0, failed: 0, avg_response_ms: 0 })
   const [loading, setLoading] = useState(true)
@@ -201,49 +201,82 @@ export default function MeliQuestions() {
   }
 
   return (
-    <div style={{ padding: '24px', maxWidth: '1400px', margin: '0 auto' }}>
+    <div style={{ padding: embedded ? '10px 0' : '24px', maxWidth: '1400px', margin: '0 auto' }}>
       
       {/* HEADER PAGE */}
-      <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: 16, marginBottom: 24 }}>
-        <div>
-          <h1 style={{ fontSize: '1.75rem', fontWeight: 800, margin: 0, display: 'flex', alignItems: 'center', gap: 10 }}>
-            <MessageSquare className="text-yellow-500" size={28} />
-            Preguntas Mercado Libre (Gemini AI)
-          </h1>
-          <p style={{ margin: '4px 0 0', color: 'var(--text-muted, #9ca3af)', fontSize: '0.9rem' }}>
-            Respuesta autónoma pre-venta en segundos conectada con tu inventario real.
-          </p>
-        </div>
+      {!embedded && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: 16, marginBottom: 24 }}>
+          <div>
+            <h1 style={{ fontSize: '1.75rem', fontWeight: 800, margin: 0, display: 'flex', alignItems: 'center', gap: 10 }}>
+              <MessageSquare className="text-yellow-500" size={28} />
+              Preguntas Mercado Libre (Gemini AI)
+            </h1>
+            <p style={{ margin: '4px 0 0', color: 'var(--text-muted, #9ca3af)', fontSize: '0.9rem' }}>
+              Respuesta autónoma pre-venta en segundos conectada con tu inventario real.
+            </p>
+          </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <button
+              onClick={handleSyncNow}
+              disabled={syncing}
+              style={{
+                padding: '9px 16px', borderRadius: 8, border: '1px solid var(--border-color, #374151)',
+                backgroundColor: 'var(--bg-card, #1f2937)', color: 'var(--text-main, #f3f4f6)',
+                cursor: syncing ? 'not-allowed' : 'pointer', fontWeight: 600, fontSize: '0.85rem',
+                display: 'flex', alignItems: 'center', gap: 8
+              }}
+            >
+              <RefreshCw size={16} className={syncing ? 'spin' : ''} />
+              {syncing ? 'Comprobando...' : 'Comprobar Pendientes'}
+            </button>
+
+            <button
+              onClick={() => setShowSettings(true)}
+              style={{
+                padding: '9px 16px', borderRadius: 8, border: 'none',
+                background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)', color: '#ffffff',
+                cursor: 'pointer', fontWeight: 600, fontSize: '0.85rem',
+                display: 'flex', alignItems: 'center', gap: 8, boxShadow: '0 4px 12px rgba(245, 158, 11, 0.25)'
+              }}
+            >
+              <Settings size={16} />
+              Configurar Auto-Responder
+            </button>
+          </div>
+        </div>
+      )}
+
+      {embedded && (
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginBottom: 16 }}>
           <button
             onClick={handleSyncNow}
             disabled={syncing}
             style={{
-              padding: '9px 16px', borderRadius: 8, border: '1px solid var(--border-color, #374151)',
+              padding: '8px 14px', borderRadius: 8, border: '1px solid var(--border-color, #374151)',
               backgroundColor: 'var(--bg-card, #1f2937)', color: 'var(--text-main, #f3f4f6)',
-              cursor: syncing ? 'not-allowed' : 'pointer', fontWeight: 600, fontSize: '0.85rem',
+              cursor: syncing ? 'not-allowed' : 'pointer', fontWeight: 600, fontSize: '0.82rem',
               display: 'flex', alignItems: 'center', gap: 8
             }}
           >
-            <RefreshCw size={16} className={syncing ? 'spin' : ''} />
+            <RefreshCw size={15} className={syncing ? 'spin' : ''} />
             {syncing ? 'Comprobando...' : 'Comprobar Pendientes'}
           </button>
 
           <button
             onClick={() => setShowSettings(true)}
             style={{
-              padding: '9px 16px', borderRadius: 8, border: 'none',
+              padding: '8px 14px', borderRadius: 8, border: 'none',
               background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)', color: '#ffffff',
-              cursor: 'pointer', fontWeight: 600, fontSize: '0.85rem',
+              cursor: 'pointer', fontWeight: 600, fontSize: '0.82rem',
               display: 'flex', alignItems: 'center', gap: 8, boxShadow: '0 4px 12px rgba(245, 158, 11, 0.25)'
             }}
           >
-            <Settings size={16} />
+            <Settings size={15} />
             Configurar Auto-Responder
           </button>
         </div>
-      </div>
+      )}
 
       {/* METRICS METRIC CARDS */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 16, marginBottom: 24 }}>
