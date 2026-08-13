@@ -348,6 +348,49 @@ A partir de ahí, una consulta sin inquilino explícito no lee ni escribe nada, 
 
 ---
 
+### 12. 🔄 Sincronización Automática en VPS & Renovación de Credenciales (Piloto Automático)
+
+Esta sección explica explícitamente cómo opera el sistema de manera **100% autónoma en el VPS**, sin depender del frontend ni requerir renovaciones manuales periódicas por parte de humanos.
+
+#### A. Sincronización Autónoma 24/7 en Segundo Plano (Sin Frontend)
+El backend que corre en el VPS ejecuta un **Daemon Scheduler** (`src/scheduler.py`) al iniciarse el servidor. El sistema no requiere tener ninguna pestaña del navegador abierta ni usuarios conectados:
+- ⏱️ **Ciclo de Sincronización (Cada 30 min por defecto)**: Iteración automática por cada inquilino activo en la base de datos para sincronizar:
+  - Ventas y estado de órdenes en **Mercado Libre** (`meli_api.sync_orders`).
+  - Productos y publicaciones en **Mercado Libre** (`meli_api.sync_products`).
+  - Cobros y movimientos en **Mercado Pago** (`mp_api.sync_mp_payments`).
+  - **Auto-Responder de Preguntas con IA (Gemini)**: Atención inmediata pre-venta.
+  - Sincronización de marcas monitoreadas en **INPI** y respaldos automáticos de base de datos.
+- ⚡ **Ciclo Rápido de Marketing (Cada 30 segundos)**: Procesamiento de publicaciones programadas para redes sociales.
+- 📡 **Webhooks en Tiempo Real**: Recepción instantánea de notificaciones desde Mercado Libre, Mercado Pago y WhatsApp cuando ocurren eventos.
+
+#### B. Renovación Automática de Tokens & Certificados sin Intervención Humana
+El sistema utiliza mecanismos de autenticación autorenovables para evitar que un humano deba ingresar claves manualmente:
+- **Mercado Libre (OAuth 2.0)**: Utiliza un `refresh_token`. Cuando el `access_token` expira, el backend solicita uno nuevo de forma transparente en segundo plano y actualiza las credenciales cifradas.
+- **AFIP / ARCA (WSAA - Facturación Electrónica)**: El usuario sube el certificado `.crt` y la clave privada `.key` (válidos por 1 a 2 años). El servicio **WSAA de AFIP** genera automáticamente el *Ticket de Acceso (Token + Sign)* en segundo plano cada 12 horas.
+- **Meta Graph API (Instagram & Facebook)**:
+  - *Long-Lived Page Access Token*: Válido por 60 días, renovable programáticamente.
+  - *System User Token (Meta Business)*: Token permanente generado desde Meta Business Manager que **nunca expira**.
+  - *Acceso a Configuración*: En la app podés acceder desde **Marketing ➔ Configuración de Redes**, con enlace directo a [Meta Graph API Explorer](https://developers.facebook.com/tools/explorer/) y botón de autodetección de IDs.
+- **INPI**: Scraping y consulta de fuentes públicas sin necesidad de API Keys.
+- **Google Gemini IA & SMTP Mail**: Llaves estáticas de servicio que no vencen salvo revocación explícita.
+
+#### C. Multi-Tenancy: Responsabilidades del Proveedor vs Inquilino (Tenant)
+En una arquitectura multi-tenant, la distribución de credenciales se estructura de la siguiente manera:
+
+1. **Lo que hace el Proveedor de la Plataforma (Una sola vez)**:
+   - Registrar la **App Oficial de la Plataforma** en [Meta for Developers](https://developers.facebook.com) y en [Mercado Libre Developers](https://developers.mercadolibre.com) (obteniendo el `App ID` y `App Secret` globales).
+   - Desplegar la infraestructura del VPS, base de datos y llaves globales de IA.
+
+2. **Lo que hace Cada Inquilino / Cliente**:
+   - Cada cliente ingresa o autoriza **sus propias cuentas comerciales** (su CUIT de AFIP para emitir facturas a su nombre, su cuenta de vendedor de Mercado Libre y su Fanpage / Instagram de negocio).
+   - **Flujo de Conexión Simplificado**: El cliente puede conectar su cuenta en 1 clic mediante el botón **OAuth** ("Conectar Mercado Libre / Facebook") o el proveedor puede asistirlo cargando sus tokens iniciales durante el *onboarding*.
+
+3. **Seguridad y Aislamiento por Cliente**:
+   - Las credenciales se almacenan en la tabla `tenant_integrations` con cifrado **AES-256-GCM** inyectando el `tenant_id` como *Additional Authenticated Data (AAD)*.
+   - Las políticas RLS de PostgreSQL garantizan que un cliente jamás pueda acceder a las credenciales o facturar con los datos de otro.
+
+---
+
 ## 🛠️ Arquitectura Técnica (Monorepo)
 
 ```
