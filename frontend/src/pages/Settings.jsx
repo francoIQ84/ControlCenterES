@@ -171,8 +171,17 @@ export default function Settings() {
   })
   const [testingKey, setTestingKey] = useState(false)
   const [testResult, setTestResult] = useState(null)
+  const [showPromptModal, setShowPromptModal] = useState(false)
+  const [useMonospacePrompt, setUseMonospacePrompt] = useState(true)
 
   const [modelCapabilities, setModelCapabilities] = useState(null)
+
+  const promptText = waConfig.bot_instructions || ""
+  const promptCharCount = promptText.length
+  const promptWordCount = promptText.trim() ? promptText.trim().split(/\s+/).filter(Boolean).length : 0
+  const promptTokenEst = Math.ceil(promptCharCount / 4)
+  const promptLineCount = promptText ? promptText.split('\n').length : 0
+
 
   const handleTestGeminiKey = async () => {
     if (!waConfig.gemini_api_key) {
@@ -2330,7 +2339,26 @@ export default function Settings() {
                   </small>
                 </label>
 
-                <label>Instrucciones de Personalización (System Instructions)
+                <div>
+                  <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6, flexWrap: 'wrap', gap: 10}}>
+                    <label style={{margin: 0, fontWeight: 600}}>
+                      Instrucciones de Personalización (System Instructions)
+                    </label>
+                    <div style={{display: 'flex', gap: 8, alignItems: 'center'}}>
+                      <span style={{fontSize: '0.75rem', color: 'var(--text-secondary)', backgroundColor: 'var(--bg-dark)', padding: '3px 8px', borderRadius: 4, border: '1px solid var(--border-color)'}}>
+                        📊 {promptCharCount.toLocaleString()} chars | {promptWordCount.toLocaleString()} palabras | ~{promptTokenEst.toLocaleString()} tokens
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setShowPromptModal(true)}
+                        className="btn btn-secondary"
+                        style={{padding: '4px 10px', fontSize: '0.78rem', display: 'flex', alignItems: 'center', gap: 4}}
+                      >
+                        🔍 Ampliar Editor
+                      </button>
+                    </div>
+                  </div>
+
                   <textarea 
                     value={waConfig.bot_instructions || ""} 
                     onChange={e => setWaConfig({...waConfig, bot_instructions: e.target.value})} 
@@ -2338,21 +2366,35 @@ export default function Settings() {
                     style={{
                       width: '100%', 
                       marginTop: 5, 
-                      minHeight: 180, 
-                      padding: 10, 
-                      backgroundColor: 'var(--bg-card)', 
+                      minHeight: 280, 
+                      padding: 12, 
+                      backgroundColor: 'var(--bg-dark)', 
                       color: 'var(--text-primary)', 
                       border: '1px solid var(--border-color)', 
-                      borderRadius: 4,
-                      fontFamily: 'inherit',
-                      fontSize: '0.85rem'
+                      borderRadius: 6,
+                      fontFamily: useMonospacePrompt ? 'Consolas, Monaco, "Courier New", monospace' : 'inherit',
+                      fontSize: '0.85rem',
+                      lineHeight: '1.5',
+                      resize: 'vertical'
                     }}
                     required
                   />
-                  <small style={{display: 'block', marginTop: 4, color: 'var(--text-secondary)', fontSize: '0.75rem'}}>
-                    Define el tono del bot, reglas de cortesía, y cómo debe responder a preguntas frecuentes. El catálogo y stock vigentes de tu web se anexarán automáticamente a su memoria.
-                  </small>
-                </label>
+
+                  <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 6, flexWrap: 'wrap', gap: 8}}>
+                    <small style={{color: 'var(--text-secondary)', fontSize: '0.75rem', flex: 1}}>
+                      💡 <strong>Prompts Extensos Soportados:</strong> Gemini soporta hasta <strong>1.000.000 de tokens</strong> (~750.000 palabras). Podés agregar políticas de envío, FAQs, reglas de atención y horarios sin límite.
+                    </small>
+                    <label style={{fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'inline-flex', alignItems: 'center', gap: 5, cursor: 'pointer', margin: 0}}>
+                      <input 
+                        type="checkbox" 
+                        checked={useMonospacePrompt} 
+                        onChange={e => setUseMonospacePrompt(e.target.checked)}
+                        style={{width: 'auto', margin: 0}}
+                      />
+                      Fuente Monoespaciada
+                    </label>
+                  </div>
+                </div>
 
                 <button type="submit" className="btn" style={{alignSelf: 'flex-start'}}>Guardar Configuración</button>
               </form>
@@ -2729,6 +2771,190 @@ export default function Settings() {
                 setWebConfig(prev => ({ ...prev, [selectorTarget]: url }))
                 setShowImageSelector(false)
               }} />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Expanded Prompt Editor Modal */}
+      {showPromptModal && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0,0,0,0.85)',
+          backdropFilter: 'blur(5px)',
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          zIndex: 99999,
+          padding: 20
+        }}>
+          <div className="card shadow-2xl" style={{
+            width: 1100,
+            maxWidth: '98%',
+            height: '92vh',
+            display: 'flex',
+            flexDirection: 'column',
+            padding: 25,
+            overflow: 'hidden',
+            backgroundColor: 'var(--bg-card)',
+            borderRadius: 12,
+            border: '1px solid var(--border-color)'
+          }}>
+            {/* Modal Header */}
+            <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15, borderBottom: '1px solid var(--border-color)', paddingBottom: 12}}>
+              <div>
+                <h3 style={{margin: 0, fontSize: '1.2rem', display: 'flex', alignItems: 'center', gap: 8}}>
+                  🤖 Editor Ampliado de Instrucciones (System Prompt)
+                </h3>
+                <p style={{margin: '4px 0 0 0', fontSize: '0.8rem', color: 'var(--text-secondary)'}}>
+                  Redacta y organiza de forma cómoda el comportamiento completo del asistente de WhatsApp.
+                </p>
+              </div>
+              <div style={{display: 'flex', alignItems: 'center', gap: 12}}>
+                <span style={{fontSize: '0.8rem', color: 'var(--text-secondary)', backgroundColor: 'var(--bg-dark)', padding: '5px 10px', borderRadius: 6, border: '1px solid var(--border-color)'}}>
+                  📊 <strong>{promptCharCount.toLocaleString()}</strong> caracteres | <strong>{promptWordCount.toLocaleString()}</strong> palabras | <strong>{promptLineCount}</strong> líneas | ~<strong>{promptTokenEst.toLocaleString()}</strong> tokens Gemini
+                </span>
+                <button 
+                  type="button" 
+                  className="btn btn-secondary" 
+                  style={{padding: '6px 12px', fontSize: '0.85rem'}}
+                  onClick={() => setShowPromptModal(false)}
+                >
+                  ✕ Cerrar
+                </button>
+              </div>
+            </div>
+
+            {/* Quick Templates Toolbar */}
+            <div style={{display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginBottom: 12, backgroundColor: 'var(--bg-dark)', padding: '10px 12px', borderRadius: 8, border: '1px solid var(--border-color)'}}>
+              <span style={{fontSize: '0.78rem', color: 'var(--text-secondary)', fontWeight: 600}}>⚡ Insertar Secciones Recomendadas:</span>
+              
+              <button
+                type="button"
+                className="btn btn-secondary"
+                style={{padding: '3px 8px', fontSize: '0.75rem'}}
+                onClick={() => {
+                  const snippet = `\n\nREGLAS DE ATENCIÓN Y TONO:\n- Saluda de manera amable y profesional.\n- Responde en español neutro / argentino de forma clara y directa.\n- Prioriza responder dudas frecuentes con listas con viñetas.`
+                  setWaConfig(prev => ({ ...prev, bot_instructions: (prev.bot_instructions || "") + snippet }))
+                }}
+              >
+                + Tono y Reglas
+              </button>
+
+              <button
+                type="button"
+                className="btn btn-secondary"
+                style={{padding: '3px 8px', fontSize: '0.75rem'}}
+                onClick={() => {
+                  const snippet = `\n\nINFORMACIÓN DE ENVÍOS Y ENTREGAS:\n- Realizamos envíos a todo el país.\n- Despacho dentro de las 24-48 hs hábiles de confirmado el pago.\n- Retiros por sucursal en horario comercial de Lunes a Viernes de 9 a 18 hs.`
+                  setWaConfig(prev => ({ ...prev, bot_instructions: (prev.bot_instructions || "") + snippet }))
+                }}
+              >
+                + Envíos y Entregas
+              </button>
+
+              <button
+                type="button"
+                className="btn btn-secondary"
+                style={{padding: '3px 8px', fontSize: '0.75rem'}}
+                onClick={() => {
+                  const snippet = `\n\nMEDIOS DE PAGO Y FACTURACIÓN:\n- Aceptamos Mercado Pago, Transferencia Bancaria y Tarjetas de Crédito/Débito.\n- Emitimos Factura A y B oficial.`
+                  setWaConfig(prev => ({ ...prev, bot_instructions: (prev.bot_instructions || "") + snippet }))
+                }}
+              >
+                + Pagos y Facturación
+              </button>
+
+              <button
+                type="button"
+                className="btn btn-secondary"
+                style={{padding: '3px 8px', fontSize: '0.75rem'}}
+                onClick={() => {
+                  const snippet = `\n\nPREGUNTAS FRECUENTES (FAQ):\n- ¿Los precios incluyen IVA?: Sí, todos los precios incluyen IVA.\n- ¿Hacen presupuestos mayoristas?: Sí, consultá con nuestros asesores.`
+                  setWaConfig(prev => ({ ...prev, bot_instructions: (prev.bot_instructions || "") + snippet }))
+                }}
+              >
+                + Preguntas Frecuentes
+              </button>
+
+              <button
+                type="button"
+                className="btn btn-secondary"
+                style={{padding: '3px 8px', fontSize: '0.75rem'}}
+                onClick={() => {
+                  const snippet = `\n\nRESTRICCIONES:\n- No inventes stock ni precios que no figuren en la memoria del sistema.\n- Si el usuario solicita hablar con una persona real o requiere atención personalizada, indica amablemente que un representante humano tomará la consulta.`
+                  setWaConfig(prev => ({ ...prev, bot_instructions: (prev.bot_instructions || "") + snippet }))
+                }}
+              >
+                + Restricciones y Seguridad
+              </button>
+            </div>
+
+            {/* Main Full-Size Textarea */}
+            <div style={{flex: 1, display: 'flex', flexDirection: 'column', position: 'relative'}}>
+              <textarea 
+                value={waConfig.bot_instructions || ""} 
+                onChange={e => setWaConfig({...waConfig, bot_instructions: e.target.value})} 
+                placeholder="Escribe aquí las instrucciones detalladas para el asistente virtual..."
+                style={{
+                  width: '100%', 
+                  height: '100%', 
+                  padding: 15, 
+                  backgroundColor: 'var(--bg-dark)', 
+                  color: 'var(--text-primary)', 
+                  border: '1px solid var(--border-color)', 
+                  borderRadius: 8,
+                  fontFamily: useMonospacePrompt ? 'Consolas, Monaco, "Courier New", monospace' : 'inherit',
+                  fontSize: '0.9rem',
+                  lineHeight: '1.6',
+                  outline: 'none',
+                  resize: 'none'
+                }}
+              />
+            </div>
+
+            {/* Modal Footer */}
+            <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 15, paddingTop: 12, borderTop: '1px solid var(--border-color)'}}>
+              <div style={{display: 'flex', gap: 10, alignItems: 'center'}}>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  style={{padding: '6px 12px', fontSize: '0.8rem'}}
+                  onClick={() => {
+                    navigator.clipboard.writeText(waConfig.bot_instructions || "")
+                    alert("¡Prompt copiado al portapapeles!")
+                  }}
+                >
+                  📋 Copiar Texto
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  style={{padding: '6px 12px', fontSize: '0.8rem', color: 'var(--accent-red)'}}
+                  onClick={() => {
+                    if (window.confirm("¿Seguro que deseas limpiar todo el contenido del prompt?")) {
+                      setWaConfig(prev => ({ ...prev, bot_instructions: "" }))
+                    }
+                  }}
+                >
+                  🗑️ Limpiar
+                </button>
+              </div>
+
+              <div style={{display: 'flex', gap: 10, alignItems: 'center'}}>
+                <button 
+                  type="button"
+                  className="btn" 
+                  style={{padding: '8px 20px', fontSize: '0.9rem', backgroundColor: 'var(--accent-emerald)', color: '#fff'}}
+                  onClick={() => setShowPromptModal(false)}
+                >
+                  ✓ Aplicar al Asistente
+                </button>
+              </div>
             </div>
           </div>
         </div>
