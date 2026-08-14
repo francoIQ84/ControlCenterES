@@ -354,7 +354,16 @@ export default function Settings() {
       const interval = setInterval(() => {
         fetch('/api/whatsapp/config')
           .then(r => r.json())
-          .then(setWaConfig)
+          .then(data => {
+            if (data) {
+              setWaConfig(prev => ({
+                ...prev,
+                status: data.status,
+                phone: data.phone,
+                qr: data.qr
+              }))
+            }
+          })
           .catch(err => console.error("Error polling WhatsApp config:", err))
         fetchPausedChats()
       }, 4000)
