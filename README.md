@@ -220,27 +220,32 @@ Copiar el valor numérico dentro de `instagram_business_account.id` (ej: `178414
 
 ---
 
-##### 5️⃣ PASO 5: Generar un Token de Larga Duración (Long-Lived Page Access Token - 60 Días / Perpetuo)
-Los tokens generados en el Explorer vencen en 2 horas. Para usarlos en producción:
-1. Ir al panel de la App en Developers -> **Configuración de la App > Básica**.
-2. Copiar el **App ID** y la **Clave Secreta de la App (App Secret)**.
-3. En la barra de direcciones del navegador o postman, realizar la consulta reemplazando los valores:
-   ```http
-   GET https://graph.facebook.com/v19.0/oauth/access_token?grant_type=fb_exchange_token&client_id={APP_ID}&client_secret={APP_SECRET}&fb_exchange_token={USER_ACCESS_TOKEN_DEL_EXPLORER}
-   ```
-4. La respuesta entregará un `access_token` de larga duración válido por **60 días**.
-5. *(Recomendado para Token Perpetuo)*: Crear un **System User** (Usuario de Sistema) en Meta Business Settings -> Usuarios de Sistema -> Generar Token permanente.
+##### 5️⃣ PASO 5: Configurar Credenciales de la App Meta (App ID & App Secret - Proveedor)
+Para habilitar el intercambio automático de tokens perpetuos para todos los inquilinos:
+1. Ir al portal [Meta for Developers](https://developers.facebook.com/apps/) y seleccionar la App de la plataforma.
+2. En el menú lateral, ir a **Configuración de la app > Básica** (o ingresar directamente a `https://developers.facebook.com/apps/{TU_APP_ID}/settings/basic/`).
+3. Copiar el **Id. de la app (App ID)**.
+4. En **Clave secreta de la app (App Secret)**, hacer clic en **Mostrar** (pedirá ingresar la contraseña de Facebook) y copiar la clave secreta.
+5. En el panel de **ControlCenterES ➔ Marketing ➔ Configuración de Redes** (pestaña ⚙️), pegar el `App ID` y `App Secret` en el bloque naranja reservado al Administrador de la Plataforma y presionar **`💾 Guardar Credenciales de Meta`**.
 
 ---
 
-##### 6️⃣ PASO 6: Cargar las Credenciales en el Panel de ControlCenterES
-1. Ingresar al panel de **ControlCenterES** -> **Marketing & Redes Sociales**.
-2. Ir a la pestaña **`⚙️ Configuración de Redes`**.
-3. Completar los 3 campos:
-   - **Meta Access Token**: Pegar el Token de Larga Duración (empieza con `EAA...`).
-   - **Instagram Business Account ID**: Pegar el ID numérico de Instagram (`17841400012345678`).
-   - **Facebook Page ID**: Pegar el ID numérico de Facebook (`102938475612345`).
-4. Presionar **`💾 Guardar Credenciales de Meta`**.
+##### 6️⃣ PASO 6: Generar e Intercambiar el Token Perpetuo en 1 Clic (Por Tenant/Cliente)
+Los tokens generados en el Graph API Explorer vencen en 2 horas. Para convertirlos en un **Token Perpetuo de Página** que nunca expira:
+
+1. Ingresar a [Meta Graph API Explorer](https://developers.facebook.com/tools/explorer/).
+2. Presionar el botón azul **Generate Access Token** para obtener un **token fresco y activo**.
+3. Copiar el token generado y pegarlo en el campo **Meta Access Token** de ControlCenterES.
+4. Presionar el botón verde **`🔄 Obtener Token de Larga Duración (Perpetuo)`**.
+5. **El sistema ejecuta el intercambio en 2 pasos en segundo plano**:
+   - *Paso 1*: Short-Lived User Token (2 hs) ➔ Long-Lived User Token (60 días).
+   - *Paso 2*: Long-Lived User Token ➔ **Long-Lived Page Token (Perpetuo ♾️)** + autodetección automática del `Facebook Page ID` y del `Instagram Business Account ID`.
+6. Presionar **`💾 Guardar Credenciales de Meta`**.
+
+> [!TIP]
+> **Resolución de Errores Comunes:**
+> - ❌ *Error: "Session has expired..."*: Ocurre si intentás intercambiar un token que generaste hace más de 2 horas. Simplemente volvé al Graph API Explorer, tocá **Generate Access Token** de nuevo, pegá el nuevo token y presioná **Obtener Token Perpetuo**.
+> - ❌ *Error: "Faltan las credenciales de la App de Meta..."*: Asegurate de haber guardado previamente el `App ID` y `App Secret` de la plataforma (Paso 5).
 
 ---
 
