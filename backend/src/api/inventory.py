@@ -193,6 +193,78 @@ def bulk_update_products(payload: BulkUpdateRequest):
 
     return {"success": True, "warnings": warnings}
 
+class BulkHideRequest(BaseModel):
+    ml_ids: list[str]
+    is_hidden: int = 1
+
+class BulkWebActiveRequest(BaseModel):
+    ml_ids: list[str]
+    is_web_active: int = 1
+
+class BulkCategoryRequest(BaseModel):
+    ml_ids: list[str]
+    category_id: Optional[int] = None
+
+class BulkSyncMeliRequest(BaseModel):
+    ml_ids: list[str]
+    sync_meli: int = 1
+
+class BulkPriceAdjustRequest(BaseModel):
+    ml_ids: list[str]
+    target: str = "both"  # 'meli', 'web', 'both'
+    adjustment_type: str = "percentage"  # 'percentage', 'fixed'
+    value: float = 0.0
+
+@router.put("/bulk-hide")
+def bulk_hide_products(payload: BulkHideRequest):
+    if not payload.ml_ids:
+        raise HTTPException(status_code=400, detail="No se especificaron productos para la acción masiva")
+    database.bulk_update_hidden_status(payload.ml_ids, payload.is_hidden)
+    action_text = "ocultados" if payload.is_hidden == 1 else "visibles"
+    return {"success": True, "count": len(payload.ml_ids), "message": f"{len(payload.ml_ids)} productos marcados como {action_text}."}
+
+@router.put("/bulk-web-active")
+def bulk_web_active_products(payload: BulkWebActiveRequest):
+    if not payload.ml_ids:
+        raise HTTPException(status_code=400, detail="No se especificaron productos")
+    database.bulk_update_web_active_status(payload.ml_ids, payload.is_web_active)
+    state_text = "activados" if payload.is_web_active == 1 else "desactivados"
+    return {"success": True, "count": len(payload.ml_ids), "message": f"{len(payload.ml_ids)} productos {state_text} en Tienda Web."}
+
+@router.put("/bulk-category")
+def bulk_category_products(payload: BulkCategoryRequest):
+    if not payload.ml_ids:
+        raise HTTPException(status_code=400, detail="No se especificaron productos")
+    database.bulk_update_category(payload.ml_ids, payload.category_id)
+    return {"success": True, "count": len(payload.ml_ids), "message": f"Categoría actualizada para {len(payload.ml_ids)} productos."}
+
+@router.put("/bulk-sync-meli")
+def bulk_sync_meli_products(payload: BulkSyncMeliRequest):
+    if not payload.ml_ids:
+        raise HTTPException(status_code=400, detail="No se especificaron productos")
+    database.bulk_update_sync_meli(payload.ml_ids, payload.sync_meli)
+    sync_text = "activada" if payload.sync_meli == 1 else "desactivada"
+    return {"success": True, "count": len(payload.ml_ids), "message": f"Sincronización con Mercado Libre {sync_text} para {len(payload.ml_ids)} productos."}
+
+@router.put("/bulk-price-adjust")
+def bulk_price_adjust_products(payload: BulkPriceAdjustRequest):
+    if not payload.ml_ids:
+        raise HTTPException(status_code=400, detail="No se especificaron productos")
+    database.bulk_adjust_prices(payload.ml_ids, payload.target, payload.adjustment_type, payload.value)
+    
+    warnings = []
+    if payload.target in ('meli', 'both'):
+        for ml_id in payload.ml_ids:
+            is_local = ml_id.startswith('LOCAL-') or ml_id.startswith('WEB-')
+            if not is_local:
+                prod = database.get_product_by_ml_id(ml_id)
+                if prod and prod.get('status') in ('active', 'paused') and prod.get('sync_meli', 1) == 1:
+                    ok, msg = meli_api.update_stock_and_price(ml_id, prod.get('available_quantity', 0), prod.get('price', 0.0))
+                    if not ok:
+                        warnings.append(f"{ml_id}: Falló la sincronización con MeLi: {msg}")
+
+    return {"success": True, "count": len(payload.ml_ids), "warnings": warnings, "message": f"Precios ajustados para {len(payload.ml_ids)} productos."}
+
 @router.put("/{ml_id}")
 def update_product(ml_id: str, payload: UpdateProductRequest):
     # Get current product status from local cache

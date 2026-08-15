@@ -23,6 +23,15 @@ export default function Inventory() {
   const [showCategoriesModal, setShowCategoriesModal] = useState(false)
   const [newCategoryName, setNewCategoryName] = useState("")
 
+  // Multi-selection & Bulk Actions state
+  const [selectedIds, setSelectedIds] = useState([])
+  const [showBulkCategoryModal, setShowBulkCategoryModal] = useState(false)
+  const [showBulkPriceModal, setShowBulkPriceModal] = useState(false)
+  const [bulkTargetCategory, setBulkTargetCategory] = useState("")
+  const [bulkPriceTarget, setBulkPriceTarget] = useState("both") // 'meli', 'web', 'both'
+  const [bulkPriceType, setBulkPriceType] = useState("percentage") // 'percentage', 'fixed'
+  const [bulkPriceValue, setBulkPriceValue] = useState(0)
+
   const initialNewProduct = {
     title: "",
     qty: 0,
@@ -476,6 +485,19 @@ export default function Inventory() {
     }).length
   }, [products, drafts])
 
+  const categoryCounts = React.useMemo(() => {
+    const counts = {}
+    products.forEach(p => {
+      const draftCat = drafts[p.ml_id]?.category_id
+      const catId = draftCat !== undefined ? draftCat : p.category_id
+      if (catId && catId !== 0 && String(catId) !== '0' && String(catId) !== '') {
+        const key = String(catId)
+        counts[key] = (counts[key] || 0) + 1
+      }
+    })
+    return counts
+  }, [products, drafts])
+
   const sortedProducts = React.useMemo(() => {
     let sortableItems = products.filter(p => {
       const draftCat = drafts[p.ml_id]?.category_id
@@ -517,6 +539,189 @@ export default function Inventory() {
     return sortableItems
   }, [products, drafts, categoryFilter, sortConfig])
 
+  const handleToggleSelectProduct = (ml_id) => {
+    setSelectedIds(prev => 
+      prev.includes(ml_id) ? prev.filter(id => id !== ml_id) : [...prev, ml_id]
+    )
+  }
+
+  const handleToggleSelectAll = () => {
+    if (!sortedProducts || sortedProducts.length === 0) return
+    const visibleIds = sortedProducts.map(p => p.ml_id)
+    const allSelected = visibleIds.every(id => selectedIds.includes(id))
+    if (allSelected) {
+      setSelectedIds(prev => prev.filter(id => !visibleIds.includes(id)))
+    } else {
+      setSelectedIds(prev => Array.from(new Set([...prev, ...visibleIds])))
+    }
+  }
+
+  const clearSelection = () => {
+    setSelectedIds([])
+  }
+
+  const handleBulkHide = async (is_hidden) => {
+    if (selectedIds.length === 0) return
+    const actionText = is_hidden === 1 ? "ocultar" : "volver a mostrar"
+    if (!confirm(`¿Estás seguro de que deseas ${actionText} ${selectedIds.length} producto(s)?`)) return
+
+    try {
+      setLoading(true)
+      const res = await fetch('/api/inventory/bulk-hide', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ml_ids: selectedIds, is_hidden })
+      })
+      if (res.ok) {
+        const data = await res.json()
+        alert(data.message || "Operación realizada correctamente")
+        clearSelection()
+        fetchProducts()
+      } else {
+        alert("Error al realizar la acción masiva")
+        setLoading(false)
+      }
+    } catch(e) {
+      alert("Error: " + e.message)
+      setLoading(false)
+    }
+  }
+
+  const handleBulkWebActive = async (is_web_active) => {
+    if (selectedIds.length === 0) return
+    const actionText = is_web_active === 1 ? "activar" : "desactivar"
+    if (!confirm(`¿Estás seguro de que deseas ${actionText} en la Tienda Web a ${selectedIds.length} producto(s)?`)) return
+
+    try {
+      setLoading(true)
+      const res = await fetch('/api/inventory/bulk-web-active', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ml_ids: selectedIds, is_web_active })
+      })
+      if (res.ok) {
+        const data = await res.json()
+        alert(data.message || "Operación realizada correctamente")
+        clearSelection()
+        fetchProducts()
+      } else {
+        alert("Error al realizar la acción masiva")
+        setLoading(false)
+      }
+    } catch(e) {
+      alert("Error: " + e.message)
+      setLoading(false)
+    }
+  }
+
+  const handleBulkSyncMeli = async (sync_meli) => {
+    if (selectedIds.length === 0) return
+    const actionText = sync_meli === 1 ? "activar" : "desactivar"
+    if (!confirm(`¿Estás seguro de que deseas ${actionText} la sincronización con Mercado Libre para ${selectedIds.length} producto(s)?`)) return
+
+    try {
+      setLoading(true)
+      const res = await fetch('/api/inventory/bulk-sync-meli', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ml_ids: selectedIds, sync_meli })
+      })
+      if (res.ok) {
+        const data = await res.json()
+        alert(data.message || "Operación realizada correctamente")
+        clearSelection()
+        fetchProducts()
+      } else {
+        alert("Error al realizar la acción masiva")
+        setLoading(false)
+      }
+    } catch(e) {
+      alert("Error: " + e.message)
+      setLoading(false)
+    }
+  }
+
+  const handleApplyBulkCategory = async (e) => {
+    e.preventDefault()
+    if (selectedIds.length === 0) return
+    try {
+      setLoading(true)
+      const catId = bulkTargetCategory ? parseInt(bulkTargetCategory) : null
+      const res = await fetch('/api/inventory/bulk-category', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ml_ids: selectedIds, category_id: catId })
+      })
+      if (res.ok) {
+        const data = await res.json()
+        alert(data.message || "Categoría actualizada correctamente")
+        setShowBulkCategoryModal(false)
+        setBulkTargetCategory("")
+        clearSelection()
+        fetchProducts()
+      } else {
+        alert("Error al asignar categoría masiva")
+        setLoading(false)
+      }
+    } catch(e) {
+      alert("Error: " + e.message)
+      setLoading(false)
+    }
+  }
+
+  const handleApplyBulkPriceAdjust = async (e) => {
+    e.preventDefault()
+    if (selectedIds.length === 0) return
+    const val = parseFloat(bulkPriceValue)
+    if (isNaN(val) || val === 0) {
+      alert("Por favor ingresa un valor de ajuste válido distinto de cero.")
+      return
+    }
+    if (!confirm(`¿Confirmas aplicar el ajuste de precio (${val > 0 ? '+' : ''}${val}${bulkPriceType === 'percentage' ? '%' : '$'}) a ${selectedIds.length} producto(s)?`)) return
+
+    try {
+      setLoading(true)
+      const res = await fetch('/api/inventory/bulk-price-adjust', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ml_ids: selectedIds,
+          target: bulkPriceTarget,
+          adjustment_type: bulkPriceType,
+          value: val
+        })
+      })
+      if (res.ok) {
+        const data = await res.json()
+        if (data.warnings && data.warnings.length > 0) {
+          alert(data.message + "\nAdvertencias:\n" + data.warnings.join('\n'))
+        } else {
+          alert(data.message || "Precios ajustados correctamente")
+        }
+        setShowBulkPriceModal(false)
+        setBulkPriceValue(0)
+        clearSelection()
+        fetchProducts()
+      } else {
+        alert("Error al ajustar precios")
+        setLoading(false)
+      }
+    } catch(e) {
+      alert("Error: " + e.message)
+      setLoading(false)
+    }
+  }
+
+  const isAllVisibleSelected = React.useMemo(() => {
+    if (!sortedProducts || sortedProducts.length === 0) return false
+    return sortedProducts.every(p => selectedIds.includes(p.ml_id))
+  }, [sortedProducts, selectedIds])
+
+  const isSomeVisibleSelected = React.useMemo(() => {
+    if (!sortedProducts || sortedProducts.length === 0) return false
+    return sortedProducts.some(p => selectedIds.includes(p.ml_id)) && !isAllVisibleSelected
+  }, [sortedProducts, selectedIds, isAllVisibleSelected])
+
   const modifiedCount = getModifiedItems().length
 
   return (
@@ -557,7 +762,7 @@ export default function Inventory() {
             </option>
             {categories.map(c => (
               <option key={c.id} value={c.id}>
-                📁 {c.name}
+                📁 {c.name} ({categoryCounts[String(c.id)] || 0})
               </option>
             ))}
           </select>
@@ -723,7 +928,7 @@ export default function Inventory() {
                 >
                   <option value="">Sin Categoría</option>
                   {categories.map(c => (
-                    <option key={c.id} value={c.id}>{c.name}</option>
+                    <option key={c.id} value={c.id}>{c.name} ({categoryCounts[String(c.id)] || 0})</option>
                   ))}
                 </select>
               </label>
@@ -768,6 +973,126 @@ export default function Inventory() {
         </div>
       )}
 
+      {selectedIds.length > 0 && (
+        <div style={{
+          position: 'sticky',
+          top: 10,
+          zIndex: 100,
+          marginBottom: 15,
+          padding: '12px 18px',
+          borderRadius: 10,
+          backgroundColor: 'var(--bg-card)',
+          border: '1px solid var(--accent-blue)',
+          boxShadow: '0 4px 15px rgba(0, 0, 0, 0.2)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: 12,
+          flexWrap: 'wrap'
+        }}>
+          <div style={{display: 'flex', alignItems: 'center', gap: 10}}>
+            <span style={{
+              backgroundColor: 'var(--accent-blue)',
+              color: '#fff',
+              padding: '3px 10px',
+              borderRadius: 12,
+              fontWeight: 'bold',
+              fontSize: '0.85rem'
+            }}>
+              {selectedIds.length} seleccionado{selectedIds.length > 1 ? 's' : ''}
+            </span>
+            <span style={{fontSize: '0.85rem', color: 'var(--text-secondary)'}}>
+              Acciones masivas:
+            </span>
+          </div>
+          
+          <div style={{display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center'}}>
+            <button 
+              type="button" 
+              className="btn" 
+              style={{padding: '5px 10px', fontSize: '0.78rem', backgroundColor: 'rgba(239, 68, 68, 0.15)', color: '#ef4444', border: '1px solid rgba(239, 68, 68, 0.3)', display: 'inline-flex', alignItems: 'center', gap: 4}}
+              onClick={() => handleBulkHide(1)}
+              title="Ocultar del inventario"
+            >
+              <EyeOff size={14} /> Ocultar
+            </button>
+
+            <button 
+              type="button" 
+              className="btn" 
+              style={{padding: '5px 10px', fontSize: '0.78rem', backgroundColor: 'rgba(16, 185, 129, 0.15)', color: '#10b981', border: '1px solid rgba(16, 185, 129, 0.3)', display: 'inline-flex', alignItems: 'center', gap: 4}}
+              onClick={() => handleBulkHide(0)}
+              title="Mostrar en el inventario"
+            >
+              <Eye size={14} /> Mostrar
+            </button>
+
+            <div style={{width: 1, height: 20, backgroundColor: 'var(--border-color)', margin: '0 4px'}} />
+
+            <button 
+              type="button" 
+              className="btn" 
+              style={{padding: '5px 10px', fontSize: '0.78rem', backgroundColor: 'rgba(59, 130, 246, 0.15)', color: '#2563eb', border: '1px solid rgba(59, 130, 246, 0.3)', display: 'inline-flex', alignItems: 'center', gap: 4}}
+              onClick={() => handleBulkWebActive(1)}
+              title="Activar en Tienda Web"
+            >
+              Activar Web
+            </button>
+
+            <button 
+              type="button" 
+              className="btn" 
+              style={{padding: '5px 10px', fontSize: '0.78rem', backgroundColor: 'var(--bg-hover)', color: 'var(--text-secondary)', border: '1px solid var(--border-color)', display: 'inline-flex', alignItems: 'center', gap: 4}}
+              onClick={() => handleBulkWebActive(0)}
+              title="Desactivar en Tienda Web"
+            >
+              Desactivar Web
+            </button>
+
+            <div style={{width: 1, height: 20, backgroundColor: 'var(--border-color)', margin: '0 4px'}} />
+
+            <button 
+              type="button" 
+              className="btn" 
+              style={{padding: '5px 10px', fontSize: '0.78rem', backgroundColor: 'rgba(245, 158, 11, 0.15)', color: '#d97706', border: '1px solid rgba(245, 158, 11, 0.3)', display: 'inline-flex', alignItems: 'center', gap: 4}}
+              onClick={() => setShowBulkCategoryModal(true)}
+            >
+              📁 Asignar Categoría
+            </button>
+
+            <button 
+              type="button" 
+              className="btn" 
+              style={{padding: '5px 10px', fontSize: '0.78rem', backgroundColor: 'rgba(139, 92, 246, 0.15)', color: '#8b5cf6', border: '1px solid rgba(139, 92, 246, 0.3)', display: 'inline-flex', alignItems: 'center', gap: 4}}
+              onClick={() => setShowBulkPriceModal(true)}
+            >
+              🏷️ Ajustar Precios
+            </button>
+
+            <button 
+              type="button" 
+              className="btn" 
+              style={{padding: '5px 10px', fontSize: '0.78rem', backgroundColor: 'var(--bg-card)', color: 'var(--text-secondary)', border: '1px solid var(--border-color)', display: 'inline-flex', alignItems: 'center', gap: 4}}
+              onClick={() => handleBulkSyncMeli(1)}
+              title="Activar Sincro MeLi"
+            >
+              <Cloud size={13} /> Sincro MeLi
+            </button>
+
+            <div style={{width: 1, height: 20, backgroundColor: 'var(--border-color)', margin: '0 4px'}} />
+
+            <button 
+              type="button" 
+              className="btn" 
+              style={{padding: '5px 10px', fontSize: '0.78rem', backgroundColor: 'transparent', color: 'var(--text-secondary)', border: 'none', cursor: 'pointer'}}
+              onClick={clearSelection}
+            >
+              ✕ Cancelar
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="card table-card">
         {loading ? <p>Cargando...</p> : (
           <div className="data-table-wrapper">
@@ -775,6 +1100,16 @@ export default function Inventory() {
               <thead>
                 {viewMode === 'compact' ? (
                   <tr>
+                    <th style={{width: 35, textAlign: 'center'}}>
+                      <input 
+                        type="checkbox" 
+                        checked={isAllVisibleSelected}
+                        ref={el => { if (el) el.indeterminate = isSomeVisibleSelected }}
+                        onChange={handleToggleSelectAll}
+                        style={{cursor: 'pointer'}}
+                        title="Seleccionar / Deseleccionar todos los visibles"
+                      />
+                    </th>
                     <th style={{width: 45}}>IMG</th>
                     <th onClick={() => requestSort('title')} style={{cursor: 'pointer', userSelect: 'none', minWidth: 220}}>Detalle{getSortIcon('title')}</th>
                     <th onClick={() => requestSort('status')} style={{cursor: 'pointer', userSelect: 'none', width: 90}}>Estado{getSortIcon('status')}</th>
@@ -788,6 +1123,16 @@ export default function Inventory() {
                   </tr>
                 ) : (
                   <tr>
+                    <th style={{width: 35, textAlign: 'center'}}>
+                      <input 
+                        type="checkbox" 
+                        checked={isAllVisibleSelected}
+                        ref={el => { if (el) el.indeterminate = isSomeVisibleSelected }}
+                        onChange={handleToggleSelectAll}
+                        style={{cursor: 'pointer'}}
+                        title="Seleccionar / Deseleccionar todos los visibles"
+                      />
+                    </th>
                     <th>IMG</th>
                     <th onClick={() => requestSort('title')} style={{cursor: 'pointer', userSelect: 'none'}}>Detalle{getSortIcon('title')}</th>
                     <th onClick={() => requestSort('status')} style={{cursor: 'pointer', userSelect: 'none'}}>Status (ML){getSortIcon('status')}</th>
@@ -806,7 +1151,10 @@ export default function Inventory() {
                     onOpenGallery={openGallery} 
                     onDraftChange={handleDraftChange} 
                     categories={categories} 
+                    categoryCounts={categoryCounts}
                     viewMode={viewMode}
+                    isSelected={selectedIds.includes(p.ml_id)}
+                    onToggleSelect={handleToggleSelectProduct}
                     onOpenQrModal={(prod) => {
                       setSelectedProductForQr(prod)
                       setShowQrPrintModal(true)
@@ -920,7 +1268,7 @@ export default function Inventory() {
                 <ul style={{listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: 8, maxHeight: '30vh', overflowY: 'auto'}}>
                   {categories.map(c => (
                     <li key={c.id} style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 12px', border: '1px solid var(--border-color)', borderRadius: 6, backgroundColor: 'rgba(0,0,0,0.02)'}}>
-                      <span style={{fontWeight: 500, fontSize: '0.9rem'}}>{c.name} <small style={{color: 'var(--text-secondary)', fontWeight: 'normal'}}>({c.slug})</small></span>
+                      <span style={{fontWeight: 500, fontSize: '0.9rem'}}>{c.name} <small style={{color: 'var(--text-secondary)', fontWeight: 'normal'}}>({categoryCounts[String(c.id)] || 0} productos)</small></span>
                       <button 
                         type="button" 
                         className="btn" 
@@ -950,11 +1298,137 @@ export default function Inventory() {
           }}
         />
       )}
+      {showBulkCategoryModal && (
+        <div style={{
+          position: 'fixed',
+          top: 0, left: 0, right: 0, bottom: 0,
+          backgroundColor: 'rgba(0,0,0,0.7)',
+          display: 'flex', justifyContent: 'center', alignItems: 'center',
+          zIndex: 1050
+        }}>
+          <div className="card" style={{
+            width: 420, maxWidth: '90%', padding: 25,
+            backgroundColor: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: 12
+          }}>
+            <h3 style={{marginTop: 0, marginBottom: 15}}>Asignar Categoría en Lote</h3>
+            <p style={{fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: 15}}>
+              Se asignará la categoría elegida a los <strong>{selectedIds.length}</strong> productos seleccionados.
+            </p>
+            <form onSubmit={handleApplyBulkCategory} style={{display: 'flex', flexDirection: 'column', gap: 15}}>
+              <label style={{fontSize: '0.85rem'}}>Categoría:
+                <select 
+                  value={bulkTargetCategory}
+                  onChange={e => setBulkTargetCategory(e.target.value)}
+                  style={{width: '100%', marginTop: 6, padding: '8px 10px', borderRadius: 6, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)'}}
+                >
+                  <option value="">Sin Categoría ({uncategorizedCount})</option>
+                  {categories.map(c => (
+                    <option key={c.id} value={c.id}>{c.name} ({categoryCounts[String(c.id)] || 0})</option>
+                  ))}
+                </select>
+              </label>
+              <div style={{display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 10}}>
+                <button type="button" className="btn" style={{backgroundColor: 'transparent', border: '1px solid var(--border-color)', color: 'var(--text-primary)'}} onClick={() => setShowBulkCategoryModal(false)}>
+                  Cancelar
+                </button>
+                <button type="submit" className="btn" style={{backgroundColor: 'var(--accent-blue)', color: '#fff'}}>
+                  Aplicar a {selectedIds.length} Productos
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {showBulkPriceModal && (
+        <div style={{
+          position: 'fixed',
+          top: 0, left: 0, right: 0, bottom: 0,
+          backgroundColor: 'rgba(0,0,0,0.7)',
+          display: 'flex', justifyContent: 'center', alignItems: 'center',
+          zIndex: 1050
+        }}>
+          <div className="card" style={{
+            width: 480, maxWidth: '90%', padding: 25,
+            backgroundColor: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: 12
+          }}>
+            <h3 style={{marginTop: 0, marginBottom: 15}}>Ajuste Masivo de Precios</h3>
+            <p style={{fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: 15}}>
+              Modificar el precio de los <strong>{selectedIds.length}</strong> productos seleccionados.
+            </p>
+
+            <form onSubmit={handleApplyBulkPriceAdjust} style={{display: 'flex', flexDirection: 'column', gap: 15}}>
+              <label style={{fontSize: '0.85rem'}}>Aplicar a:
+                <select 
+                  value={bulkPriceTarget} 
+                  onChange={e => setBulkPriceTarget(e.target.value)}
+                  style={{width: '100%', marginTop: 5, padding: '7px 10px', borderRadius: 6, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)'}}
+                >
+                  <option value="both">Ambos (Precio MeLi y Precio Web)</option>
+                  <option value="meli">Solo Precio Mercado Libre</option>
+                  <option value="web">Solo Precio Tienda Web</option>
+                </select>
+              </label>
+
+              <div style={{display: 'flex', gap: 12}}>
+                <label style={{flex: 1, fontSize: '0.85rem'}}>Tipo de Ajuste:
+                  <select 
+                    value={bulkPriceType} 
+                    onChange={e => setBulkPriceType(e.target.value)}
+                    style={{width: '100%', marginTop: 5, padding: '7px 10px', borderRadius: 6, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)'}}
+                  >
+                    <option value="percentage">Porcentaje (%)</option>
+                    <option value="fixed">Monto Fijo ($)</option>
+                  </select>
+                </label>
+
+                <label style={{flex: 1, fontSize: '0.85rem'}}>Valor ({bulkPriceType === 'percentage' ? '%' : '$'}):
+                  <input 
+                    type="number" 
+                    step="any"
+                    required 
+                    value={bulkPriceValue}
+                    onChange={e => setBulkPriceValue(e.target.value)}
+                    placeholder="ej: 10 o -5"
+                    style={{width: '100%', marginTop: 5, padding: '7px 10px', borderRadius: 6, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)'}}
+                  />
+                </label>
+              </div>
+
+              <div style={{
+                padding: '10px 14px',
+                borderRadius: 6,
+                backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                border: '1px solid rgba(59, 130, 246, 0.2)',
+                fontSize: '0.8rem',
+                color: 'var(--accent-blue)'
+              }}>
+                💡 <strong>Resumen del ajuste:</strong> {
+                  parseFloat(bulkPriceValue) === 0 ? "Sin cambio" : (
+                    parseFloat(bulkPriceValue) > 0 
+                      ? `Aumentará los precios un ${bulkPriceType === 'percentage' ? `${bulkPriceValue}%` : `$${bulkPriceValue}`}`
+                      : `Reducirá los precios un ${bulkPriceType === 'percentage' ? `${Math.abs(bulkPriceValue)}%` : `$${Math.abs(bulkPriceValue)}`}`
+                  )
+                } en los productos seleccionados.
+              </div>
+
+              <div style={{display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 10}}>
+                <button type="button" className="btn" style={{backgroundColor: 'transparent', border: '1px solid var(--border-color)', color: 'var(--text-primary)'}} onClick={() => setShowBulkPriceModal(false)}>
+                  Cancelar
+                </button>
+                <button type="submit" className="btn" style={{backgroundColor: 'var(--accent-emerald)', color: '#fff'}}>
+                  Aplicar Ajuste
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
 
-function ProductRow({ p, onSave, onOpenGallery, onDraftChange, categories, viewMode, onOpenQrModal, onToggleHide }) {
+function ProductRow({ p, onSave, onOpenGallery, onDraftChange, categories, categoryCounts, viewMode, onOpenQrModal, onToggleHide, isSelected, onToggleSelect }) {
   const [qty, setQty] = useState(p.available_quantity)
   const [price, setPrice] = useState(p.price)
   const [cost, setCost] = useState(p.cost_price)
@@ -1038,7 +1512,15 @@ function ProductRow({ p, onSave, onOpenGallery, onDraftChange, categories, viewM
   if (viewMode === 'compact') {
     return (
       <React.Fragment>
-        <tr className="product-row-card compact-tr" style={{borderBottom: '1px solid var(--border-color)', fontSize: '0.85rem'}}>
+        <tr className="product-row-card compact-tr" style={{borderBottom: '1px solid var(--border-color)', fontSize: '0.85rem', backgroundColor: isSelected ? 'rgba(59, 130, 246, 0.12)' : undefined}}>
+          <td data-label="Selección" style={{padding: '5px 8px', textAlign: 'center'}}>
+            <input 
+              type="checkbox" 
+              checked={isSelected}
+              onChange={() => onToggleSelect(p.ml_id)}
+              style={{cursor: 'pointer'}}
+            />
+          </td>
           <td data-label="Imagen" style={{padding: '5px 8px'}}>
             <img 
               src={p.thumbnail || 'https://via.placeholder.com/35'} 
@@ -1117,26 +1599,49 @@ function ProductRow({ p, onSave, onOpenGallery, onDraftChange, categories, viewM
                 </span>
               )}
               {p.status !== 'local' && (
-                <a 
-                  href={p.permalink || `https://articulo.mercadolibre.com.ar/${p.ml_id.replace('MLA', 'MLA-')}`} 
-                  target="_blank" 
-                  rel="noopener noreferrer"
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: 2,
-                    padding: '1px 5px',
-                    fontSize: '0.65rem',
-                    fontWeight: 600,
-                    borderRadius: 3,
-                    backgroundColor: 'rgba(245, 158, 11, 0.15)',
-                    color: '#d97706',
-                    textDecoration: 'none'
-                  }}
-                  title="Ver publicación en Mercado Libre"
-                >
-                  <ExternalLink size={10} /> MeLi ↗
-                </a>
+                <>
+                  <a 
+                    href={p.permalink || `https://articulo.mercadolibre.com.ar/${p.ml_id.replace('MLA', 'MLA-')}`} 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 2,
+                      padding: '1px 5px',
+                      fontSize: '0.65rem',
+                      fontWeight: 600,
+                      borderRadius: 3,
+                      backgroundColor: 'rgba(245, 158, 11, 0.15)',
+                      color: '#d97706',
+                      textDecoration: 'none'
+                    }}
+                    title="Ver publicación pública en Mercado Libre (Vista Comprador)"
+                  >
+                    <ExternalLink size={10} /> MeLi ↗
+                  </a>
+                  <a 
+                    href={`https://vendedores.mercadolibre.com.ar/publicaciones/listado?search=${p.ml_id}`} 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 2,
+                      padding: '1px 5px',
+                      fontSize: '0.65rem',
+                      fontWeight: 600,
+                      borderRadius: 3,
+                      backgroundColor: 'rgba(245, 158, 11, 0.25)',
+                      color: '#b45309',
+                      textDecoration: 'none',
+                      border: '1px solid rgba(245, 158, 11, 0.4)'
+                    }}
+                    title="Buscar y modificar en Central de Vendedores de Mercado Libre"
+                  >
+                    ✏️ MeLi (Editar) ↗
+                  </a>
+                </>
               )}
               {isWebActive && (
                 <a 
@@ -1226,7 +1731,7 @@ function ProductRow({ p, onSave, onOpenGallery, onDraftChange, categories, viewM
         </tr>
         {showWebDetails && (
           <tr className="web-details-row" style={{backgroundColor: 'var(--bg-dark)'}}>
-            <td colSpan="10" style={{padding: 15}}>
+            <td colSpan="11" style={{padding: 15}}>
               <div style={{display: 'flex', gap: 20, flexWrap: 'wrap'}}>
                 {/* Columna 1: Imagen Principal */}
                 <div style={{flex: 1, minWidth: 200, display: 'flex', flexDirection: 'column', gap: 8}}>
@@ -1261,7 +1766,7 @@ function ProductRow({ p, onSave, onOpenGallery, onDraftChange, categories, viewM
                     <label style={{fontSize: '0.8rem', fontWeight: 'bold', display: 'block', marginBottom: 4}}>Categoría</label>
                     <select value={categoryId} onChange={e => setCategoryId(e.target.value ? parseInt(e.target.value) : "")} style={{width: '100%', padding: '4px 8px', fontSize: '0.75rem', backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)', border: '1px solid var(--border-color)', borderRadius: 4}}>
                       <option value="">Sin Categoría</option>
-                      {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                      {categories.map(c => <option key={c.id} value={c.id}>{c.name} {categoryCounts && categoryCounts[String(c.id)] !== undefined ? `(${categoryCounts[String(c.id)]})` : ''}</option>)}
                     </select>
                   </div>
                   <div style={{display: 'flex', alignItems: 'center', gap: 10, marginTop: 4, flexWrap: 'wrap'}}>
@@ -1313,7 +1818,15 @@ function ProductRow({ p, onSave, onOpenGallery, onDraftChange, categories, viewM
 
   return (
     <React.Fragment>
-      <tr className="product-row-card">
+      <tr className="product-row-card" style={{backgroundColor: isSelected ? 'rgba(59, 130, 246, 0.12)' : undefined}}>
+        <td data-label="Selección" style={{padding: '5px 8px', textAlign: 'center'}}>
+          <input 
+            type="checkbox" 
+            checked={isSelected}
+            onChange={() => onToggleSelect(p.ml_id)}
+            style={{cursor: 'pointer'}}
+          />
+        </td>
         <td data-label="Imagen">
           <img 
             src={p.thumbnail || 'https://via.placeholder.com/50'} 
@@ -1342,27 +1855,50 @@ function ProductRow({ p, onSave, onOpenGallery, onDraftChange, categories, viewM
               </span>
             )}
             {p.status !== 'local' && (
-              <a 
-                href={p.permalink || `https://articulo.mercadolibre.com.ar/${p.ml_id.replace('MLA', 'MLA-')}`} 
-                target="_blank" 
-                rel="noopener noreferrer"
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: 4,
-                  padding: '2px 8px',
-                  fontSize: '0.72rem',
-                  fontWeight: 600,
-                  borderRadius: 4,
-                  backgroundColor: 'rgba(245, 158, 11, 0.15)',
-                  color: '#d97706',
-                  textDecoration: 'none',
-                  border: '1px solid rgba(245, 158, 11, 0.3)'
-                }}
-                title="Ver publicación en Mercado Libre"
-              >
-                <ExternalLink size={12} /> MeLi ↗
-              </a>
+              <>
+                <a 
+                  href={p.permalink || `https://articulo.mercadolibre.com.ar/${p.ml_id.replace('MLA', 'MLA-')}`} 
+                  target="_blank" 
+                  rel="noopener noreferrer"
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 4,
+                    padding: '2px 8px',
+                    fontSize: '0.72rem',
+                    fontWeight: 600,
+                    borderRadius: 4,
+                    backgroundColor: 'rgba(245, 158, 11, 0.15)',
+                    color: '#d97706',
+                    textDecoration: 'none',
+                    border: '1px solid rgba(245, 158, 11, 0.3)'
+                  }}
+                  title="Ver publicación pública en Mercado Libre (Vista Comprador)"
+                >
+                  <ExternalLink size={12} /> MeLi ↗
+                </a>
+                <a 
+                  href={`https://vendedores.mercadolibre.com.ar/publicaciones/listado?search=${p.ml_id}`} 
+                  target="_blank" 
+                  rel="noopener noreferrer"
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 4,
+                    padding: '2px 8px',
+                    fontSize: '0.72rem',
+                    fontWeight: 600,
+                    borderRadius: 4,
+                    backgroundColor: 'rgba(245, 158, 11, 0.25)',
+                    color: '#b45309',
+                    textDecoration: 'none',
+                    border: '1px solid rgba(245, 158, 11, 0.4)'
+                  }}
+                  title="Buscar y modificar en Central de Vendedores de Mercado Libre"
+                >
+                  ✏️ MeLi (Editar) ↗
+                </a>
+              </>
             )}
             {isWebActive && (
               <a 
@@ -1472,7 +2008,7 @@ function ProductRow({ p, onSave, onOpenGallery, onDraftChange, categories, viewM
       </tr>
       {showWebDetails && (
         <tr className="web-details-row" style={{backgroundColor: 'var(--bg-dark)'}}>
-          <td colSpan="6" style={{padding: 20}}>
+          <td colSpan="7" style={{padding: 20}}>
             <div style={{display: 'flex', gap: 20, flexWrap: 'wrap'}}>
               {/* Columna 1: Imagen Principal y Previsualización */}
               <div style={{flex: 1, minWidth: 220, display: 'flex', flexDirection: 'column', gap: 10}}>

@@ -661,6 +661,80 @@ def update_product_hidden_status(ml_id: str, is_hidden: int):
         with conn.cursor() as cursor:
             cursor.execute("UPDATE products_cache SET is_hidden = %s, last_modified = %s WHERE ml_id = %s", (int(is_hidden), now, ml_id))
 
+def bulk_update_hidden_status(ml_ids: list, is_hidden: int):
+    if not ml_ids:
+        return
+    now = datetime.now().isoformat()
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            format_strings = ','.join(['%s'] * len(ml_ids))
+            cursor.execute(f"UPDATE products_cache SET is_hidden = %s, last_modified = %s WHERE ml_id IN ({format_strings})", [int(is_hidden), now] + list(ml_ids))
+
+def bulk_update_web_active_status(ml_ids: list, is_web_active: int):
+    if not ml_ids:
+        return
+    now = datetime.now().isoformat()
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            format_strings = ','.join(['%s'] * len(ml_ids))
+            cursor.execute(f"UPDATE products_cache SET is_web_active = %s, last_modified = %s WHERE ml_id IN ({format_strings})", [int(is_web_active), now] + list(ml_ids))
+
+def bulk_update_category(ml_ids: list, category_id):
+    if not ml_ids:
+        return
+    now = datetime.now().isoformat()
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            format_strings = ','.join(['%s'] * len(ml_ids))
+            cat_val = int(category_id) if category_id is not None and str(category_id) != "" and int(category_id) > 0 else None
+            cursor.execute(f"UPDATE products_cache SET category_id = %s, last_modified = %s WHERE ml_id IN ({format_strings})", [cat_val, now] + list(ml_ids))
+
+def bulk_update_sync_meli(ml_ids: list, sync_meli: int):
+    if not ml_ids:
+        return
+    now = datetime.now().isoformat()
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            format_strings = ','.join(['%s'] * len(ml_ids))
+            cursor.execute(f"UPDATE products_cache SET sync_meli = %s, last_modified = %s WHERE ml_id IN ({format_strings})", [int(sync_meli), now] + list(ml_ids))
+
+def bulk_adjust_prices(ml_ids: list, target: str, adjustment_type: str, value: float):
+    if not ml_ids:
+        return
+    now = datetime.now().isoformat()
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            for ml_id in ml_ids:
+                cursor.execute("SELECT price, price_web, prev_price, prev_price_web FROM products_cache WHERE ml_id = %s", (ml_id,))
+                row = cursor.fetchone()
+                if not row:
+                    continue
+                
+                curr_price = float(row.get('price') or 0.0)
+                curr_price_web = float(row.get('price_web') or 0.0)
+
+                new_price = curr_price
+                new_price_web = curr_price_web
+
+                if target in ('meli', 'both'):
+                    if adjustment_type == 'percentage':
+                        new_price = round(curr_price * (1.0 + value / 100.0), 2)
+                    else:
+                        new_price = round(max(0.0, curr_price + value), 2)
+
+                if target in ('web', 'both'):
+                    if adjustment_type == 'percentage':
+                        new_price_web = round(curr_price_web * (1.0 + value / 100.0), 2)
+                    else:
+                        new_price_web = round(max(0.0, curr_price_web + value), 2)
+
+                cursor.execute('''
+                    UPDATE products_cache 
+                    SET price = %s, price_web = %s, prev_price = %s, prev_price_web = %s, last_modified = %s 
+                    WHERE ml_id = %s
+                ''', (new_price, new_price_web, curr_price, curr_price_web, now, ml_id))
+
+
 def get_all_products(query=None, status_filter=None, is_web_active=None, category_slug=None, include_hidden=False, is_hidden=None):
     with get_connection() as conn:
         with conn.cursor() as cursor:
