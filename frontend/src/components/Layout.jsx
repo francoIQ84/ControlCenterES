@@ -1,10 +1,152 @@
 import React, { useState, useEffect } from 'react'
-import { Outlet, NavLink, useNavigate } from 'react-router-dom'
-import { LayoutDashboard, Package, Receipt, Users, Settings, Sun, Moon, RefreshCw, Zap, Image, LogOut, Menu, FileText, Wallet, BookOpen, ShieldCheck, Bell, CheckCircle2, X, Megaphone, UserCheck, MessageSquare, Building2 } from 'lucide-react'
+import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom'
+import { LayoutDashboard, Package, Receipt, Users, Settings, Sun, Moon, RefreshCw, Zap, Image, LogOut, Menu, FileText, Wallet, BookOpen, ShieldCheck, Bell, CheckCircle2, X, Megaphone, UserCheck, MessageSquare, Building2, HelpCircle } from 'lucide-react'
 import { useTenant } from '../TenantContext'
+
+// Mapa de ayuda contextual por ruta — se muestra al pulsar el botón "?"
+const PAGE_HELP = {
+  '/': {
+    title: '📊 Métricas / Dashboard',
+    description: 'Panel principal con indicadores clave de tu negocio.',
+    features: [
+      'Ventas totales, ingresos y ticket promedio por período',
+      'Filtros por día, semana, mes, año o rango personalizado',
+      'Gráfico de ventas diarias',
+      'Saldo de Mercado Pago en tiempo real',
+      'Últimas ventas recientes'
+    ]
+  },
+  '/inventory': {
+    title: '📦 Inventario',
+    description: 'Gestión completa del catálogo de productos.',
+    features: [
+      'Ver y editar precios, costos, stock y precios web',
+      'Sincronización bidireccional con Mercado Libre',
+      'Categorías personalizadas para organizar productos',
+      'Escanear o imprimir códigos QR de productos',
+      'Crear productos manuales o importar de ML',
+      'Ocultar/mostrar productos y vista compacta/detallada'
+    ]
+  },
+  '/sales': {
+    title: '🛒 Ventas',
+    description: 'Registro y gestión de todas las ventas.',
+    features: [
+      'Ver ventas de ML, web y ventas manuales locales',
+      'Crear ventas manuales (mostrador) con múltiples productos',
+      'Generar cobros QR / link de Mercado Pago',
+      'Facturar ventas con AFIP directamente',
+      'Vincular ventas con productos del inventario',
+      'Filtrar por plataforma, estado y buscar por nombre'
+    ]
+  },
+  '/billing': {
+    title: '🧾 Facturación',
+    description: 'Facturación electrónica integrada con AFIP/ARCA.',
+    features: [
+      'Listado de facturas emitidas con CAE y estado',
+      'Sincronizar facturas desde AFIP (importar existentes)',
+      'Filtrar por tipo de documento (CUIT/DNI) y origen',
+      'Seleccionar punto de venta y tipo de comprobante',
+      'Buscador por nombre de cliente'
+    ]
+  },
+  '/expenses': {
+    title: '💰 Finanzas',
+    description: 'Control de gastos, ingresos y balance mensual.',
+    features: [
+      'Resumen mensual: ingresos vs gastos y balance neto',
+      'Gastos fijos (sueldos, alquiler, servicios, etc.)',
+      'Gastos variables por día con categorías',
+      'Ingresos manuales adicionales a ventas',
+      'Sincronización de pagos con Mercado Pago',
+      'Filtro por mes y año'
+    ]
+  },
+  '/customers': {
+    title: '👥 CRM & Clientes',
+    description: 'Gestión unificada de clientes, leads y comunicación.',
+    features: [
+      'Base de clientes con datos de contacto y compras',
+      'Preguntas de Mercado Libre con respuesta directa',
+      'Leads y consultas de la web',
+      'Historial de chats de WhatsApp importados',
+      'Crear/editar clientes manualmente',
+      'Exportar y acciones masivas'
+    ]
+  },
+  '/media': {
+    title: '🖼️ Archivos',
+    description: 'Gestor de archivos multimedia.',
+    features: [
+      'Subir imágenes, PDFs y documentos',
+      'Organizar archivos para la tienda web y blog',
+      'Copiar URLs para usar en publicaciones',
+      'Archivos usados como lead magnets para captación'
+    ]
+  },
+  '/cms': {
+    title: '📝 Blog & Web',
+    description: 'Administración del blog y página "Sobre Nosotros".',
+    features: [
+      'Crear, editar y eliminar artículos del blog',
+      'Filtrar por categoría y buscar artículos',
+      'Publicar/despublicar posts con vista previa',
+      'Editar la página "Sobre Nosotros" con imágenes',
+      'Generación de contenido con asistencia IA'
+    ]
+  },
+  '/inpi': {
+    title: '🛡️ Propiedad Industrial',
+    description: 'Monitoreo de marcas registradas en el INPI.',
+    features: [
+      'Buscar marcas por denominación, titular o CUIT',
+      'Monitorear marcas propias con alertas automáticas',
+      'Sincronizar estado actualizado desde INPI',
+      'Ver detalle completo de cada marca: clase, estado, vigencia',
+      'Gestión de trámites y expedientes'
+    ]
+  },
+  '/marketing': {
+    title: '📣 Marketing & Redes',
+    description: 'Herramientas de marketing y generación de contenido.',
+    features: [
+      'Crear posts para redes sociales con IA (texto + imagen)',
+      'Generador de imágenes/canvas profesionales',
+      'Calendario de publicaciones programadas',
+      'Responder comentarios de Instagram',
+      'Configurar cuentas de Instagram/Facebook',
+      'Personalizar diseño de canvas (layout, logo, colores)'
+    ]
+  },
+  '/tenants': {
+    title: '🏢 Inquilinos',
+    description: 'Administración de la plataforma multi-tenant.',
+    features: [
+      'Crear y gestionar cuentas de negocio (inquilinos)',
+      'Asignar módulos contratados a cada inquilino',
+      'Ver estado de cada cuenta (activo, prueba, suspendido)',
+      'Gestionar dominios y configuración por inquilino'
+    ]
+  },
+  '/settings': {
+    title: '⚙️ Configuración',
+    description: 'Configuración general del sistema.',
+    features: [
+      'Vincular cuenta de Mercado Libre y Mercado Pago',
+      'Configurar AFIP/ARCA para facturación electrónica',
+      'Mensajes automáticos post-venta en ML',
+      'Tienda web: logo, colores, datos de contacto',
+      'Gestión de usuarios y permisos',
+      'Lead magnets y captación de leads',
+      'Sincronización manual y configuración de intervalos'
+    ]
+  }
+}
 
 export default function Layout() {
   const navigate = useNavigate()
+  const location = useLocation()
   const { tenant, hasModule, isPlatformAdmin } = useTenant()
   const [lightMode, setLightMode] = useState(true)
   const [syncing, setSyncing] = useState(false)
@@ -19,6 +161,7 @@ export default function Layout() {
   // Notification Center State
   const [notifications, setNotifications] = useState([])
   const [showNotifications, setShowNotifications] = useState(false)
+  const [showHelp, setShowHelp] = useState(false)
   const [activeNotifFilter, setActiveNotifFilter] = useState('all')
   const [dismissedIds, setDismissedIds] = useState([])
 
@@ -472,6 +615,132 @@ export default function Layout() {
             )}
             
             <div style={{display: 'flex', gap: '10px', alignItems: 'center'}}>
+
+              {/* Contextual Help Button */}
+              <div style={{ position: 'relative' }}>
+                <button
+                  className="btn-icon"
+                  onClick={() => { setShowHelp(!showHelp); setShowNotifications(false) }}
+                  title="Ayuda: ¿Qué puedo hacer aquí?"
+                  style={{
+                    position: 'relative',
+                    color: showHelp ? 'var(--accent-blue)' : undefined,
+                    transition: 'color 0.2s'
+                  }}
+                >
+                  <HelpCircle size={20} />
+                </button>
+
+                {showHelp && (() => {
+                  const path = location.pathname === '/' ? '/' : '/' + location.pathname.split('/').filter(Boolean)[0]
+                  const help = PAGE_HELP[path] || {
+                    title: '📖 Sección',
+                    description: 'Sección del sistema.',
+                    features: ['Explorá las opciones disponibles en esta pantalla.']
+                  }
+                  return (
+                    <>
+                      <div
+                        onClick={() => setShowHelp(false)}
+                        style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 9998 }}
+                      />
+                      <div style={{
+                        position: 'absolute',
+                        top: '42px',
+                        right: '0',
+                        width: '360px',
+                        maxWidth: '90vw',
+                        backgroundColor: 'var(--bg-card)',
+                        border: '1px solid var(--border-color)',
+                        borderRadius: '14px',
+                        boxShadow: '0 20px 40px -5px rgba(0,0,0,0.45)',
+                        zIndex: 9999,
+                        overflow: 'hidden',
+                        animation: 'helpFadeIn 0.18s ease-out'
+                      }}>
+                        {/* Header */}
+                        <div style={{
+                          padding: '14px 18px',
+                          borderBottom: '1px solid var(--border-color)',
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                          background: 'linear-gradient(135deg, rgba(59,130,246,0.08) 0%, rgba(16,185,129,0.06) 100%)'
+                        }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <HelpCircle size={18} style={{ color: 'var(--accent-blue)' }} />
+                            <h4 style={{ margin: 0, fontSize: '0.95rem', fontWeight: 700 }}>{help.title}</h4>
+                          </div>
+                          <button className="btn-icon" onClick={() => setShowHelp(false)} style={{ padding: '2px' }}>
+                            <X size={16} />
+                          </button>
+                        </div>
+
+                        {/* Description */}
+                        <div style={{ padding: '14px 18px 8px' }}>
+                          <p style={{
+                            margin: '0 0 12px',
+                            fontSize: '0.85rem',
+                            color: 'var(--text-secondary)',
+                            lineHeight: '1.5'
+                          }}>{help.description}</p>
+                        </div>
+
+                        {/* Features */}
+                        <div style={{ padding: '0 18px 16px' }}>
+                          <p style={{
+                            margin: '0 0 8px',
+                            fontSize: '0.73rem',
+                            fontWeight: 700,
+                            textTransform: 'uppercase',
+                            letterSpacing: '0.5px',
+                            color: 'var(--accent-blue)'
+                          }}>Funciones disponibles</p>
+                          <ul style={{
+                            margin: 0,
+                            padding: '0 0 0 4px',
+                            listStyle: 'none',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: '6px'
+                          }}>
+                            {help.features.map((f, i) => (
+                              <li key={i} style={{
+                                display: 'flex',
+                                alignItems: 'flex-start',
+                                gap: '8px',
+                                fontSize: '0.8rem',
+                                color: 'var(--text-primary)',
+                                lineHeight: '1.4'
+                              }}>
+                                <CheckCircle2 size={14} style={{
+                                  color: 'var(--accent-emerald)',
+                                  flexShrink: 0,
+                                  marginTop: '2px'
+                                }} />
+                                <span>{f}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+
+                        {/* Footer */}
+                        <div style={{
+                          padding: '10px 18px',
+                          borderTop: '1px solid var(--border-color)',
+                          backgroundColor: 'var(--bg-dark)',
+                          textAlign: 'center'
+                        }}>
+                          <span style={{
+                            fontSize: '0.72rem',
+                            color: 'var(--text-secondary)',
+                            fontStyle: 'italic'
+                          }}>Hacé clic en "?" en cualquier sección para ver su ayuda.</span>
+                        </div>
+                      </div>
+                    </>
+                  )
+                })()}              </div>
               
               {/* Notification Center Bell */}
               <div style={{ position: 'relative' }}>
