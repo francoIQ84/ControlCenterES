@@ -77,6 +77,14 @@ def _sync_one_tenant(tenant):
     except Exception as inpi_err:
         print(f"[Scheduler][{slug}] Error en sincronización INPI: {inpi_err}")
 
+    # Programación automática de disponibilidad de envíos MeLi
+    try:
+        ok_ds, msg_ds = meli_api.apply_dispatch_schedule_rules()
+        if ok_ds and "ya se encuentra aplicado" not in msg_ds and "desactivada" not in msg_ds:
+            print(f"[Scheduler][{slug}] Reglas de envíos MeLi: {msg_ds}")
+    except Exception as ds_err:
+        print(f"[Scheduler][{slug}] Error en reglas de envíos MeLi: {ds_err}")
+
 
 
 def background_sync_loop():

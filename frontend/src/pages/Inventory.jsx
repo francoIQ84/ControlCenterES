@@ -32,6 +32,21 @@ export default function Inventory() {
   const [bulkPriceType, setBulkPriceType] = useState("percentage") // 'percentage', 'fixed'
   const [bulkPriceValue, setBulkPriceValue] = useState(0)
 
+  // Dispatch Schedule State
+  const [showDispatchScheduleModal, setShowDispatchScheduleModal] = useState(false)
+  const [dispatchConfig, setDispatchConfig] = useState({
+    enabled: false,
+    weekday_days: 0,
+    weekend_days: 2,
+    weekend_start_day: 4,
+    weekend_start_hour: 18,
+    weekend_end_day: 0,
+    weekend_end_hour: 8,
+    current_mode: 'weekday',
+    last_applied_mode: '',
+    last_applied_at: ''
+  })
+
   const initialNewProduct = {
     title: "",
     qty: 0,
@@ -712,6 +727,68 @@ export default function Inventory() {
     }
   }
 
+  const fetchDispatchSchedule = async () => {
+    try {
+      const res = await fetch('/api/inventory/dispatch-schedule')
+      if (res.ok) {
+        const data = await res.json()
+        setDispatchConfig(data)
+      }
+    } catch(e) {
+      console.error("Error al cargar programación de envíos:", e)
+    }
+  }
+
+  const handleSaveDispatchSchedule = async (e) => {
+    e.preventDefault()
+    try {
+      setLoading(true)
+      const res = await fetch('/api/inventory/dispatch-schedule', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(dispatchConfig)
+      })
+      if (res.ok) {
+        const data = await res.json()
+        alert(data.message || "Configuración guardada correctamente")
+        setShowDispatchScheduleModal(false)
+        fetchDispatchSchedule()
+        setLoading(false)
+      } else {
+        alert("Error al guardar la configuración")
+        setLoading(false)
+      }
+    } catch(err) {
+      alert("Error: " + err.message)
+      setLoading(false)
+    }
+  }
+
+  const handleApplyDispatchScheduleNow = async () => {
+    if (!confirm("¿Confirmas aplicar inmediatamente la regla de disponibilidad a TODAS las publicaciones de Mercado Libre?")) return
+    try {
+      setLoading(true)
+      const res = await fetch('/api/inventory/dispatch-schedule/apply-now', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({})
+      })
+      if (res.ok) {
+        const data = await res.json()
+        alert(data.message || "Regla de disponibilidad aplicada correctamente")
+        fetchDispatchSchedule()
+        fetchProducts()
+      } else {
+        const err = await res.json()
+        alert("Error al aplicar regla de envíos: " + (err.detail || "Error desconocido"))
+        setLoading(false)
+      }
+    } catch(err) {
+      alert("Error: " + err.message)
+      setLoading(false)
+    }
+  }
+
   const isAllVisibleSelected = React.useMemo(() => {
     if (!sortedProducts || sortedProducts.length === 0) return false
     return sortedProducts.every(p => selectedIds.includes(p.ml_id))
@@ -847,6 +924,24 @@ export default function Inventory() {
           </button>
           <button className="btn" style={{backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)', border: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', gap: 5}} onClick={() => setShowCategoriesModal(true)}>
             📁 Gestionar Categorías
+          </button>
+          <button 
+            className="btn" 
+            style={{
+              backgroundColor: 'var(--bg-card)', 
+              color: 'var(--text-primary)', 
+              border: '1px solid var(--border-color)', 
+              display: 'flex', 
+              alignItems: 'center', 
+              gap: 5
+            }} 
+            onClick={() => {
+              fetchDispatchSchedule()
+              setShowDispatchScheduleModal(true)
+            }}
+            title="Programar tiempo de elaboración / disponibilidad de stock semanal para Mercado Libre"
+          >
+            📅 Disponibilidad MeLi
           </button>
           <button className="btn" style={{backgroundColor: 'var(--accent-emerald)', color: '#fff', border: 'none', display: 'flex', alignItems: 'center', gap: 6}} onClick={() => setShowQrScanModal(true)}>
             <QrCode size={16} /> Escanear QR
@@ -1419,6 +1514,181 @@ export default function Inventory() {
                 <button type="submit" className="btn" style={{backgroundColor: 'var(--accent-emerald)', color: '#fff'}}>
                   Aplicar Ajuste
                 </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {showDispatchScheduleModal && (
+        <div style={{
+          position: 'fixed',
+          top: 0, left: 0, right: 0, bottom: 0,
+          backgroundColor: 'rgba(0, 0, 0, 0.7)',
+          display: 'flex', justifyContent: 'center', alignItems: 'center',
+          zIndex: 1050
+        }}>
+          <div className="card" style={{
+            width: 520, maxWidth: '92%', maxHeight: '90vh', overflowY: 'auto', padding: 25,
+            border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-card)', borderRadius: 12
+          }}>
+            <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15, borderBottom: '1px solid var(--border-color)', paddingBottom: 12}}>
+              <h3 style={{margin: 0}}>📅 Programación de Disponibilidad MeLi</h3>
+              <button 
+                className="btn" 
+                style={{backgroundColor: 'transparent', border: '1px solid var(--border-color)', color: 'var(--text-primary)', padding: '4px 8px', fontSize: '0.75rem'}}
+                onClick={() => setShowDispatchScheduleModal(false)}
+              >
+                Cerrar
+              </button>
+            </div>
+
+            <div style={{
+              padding: '12px 15px',
+              borderRadius: 8,
+              backgroundColor: dispatchConfig.current_mode === 'weekend' ? 'rgba(245, 158, 11, 0.15)' : 'rgba(16, 185, 129, 0.15)',
+              border: dispatchConfig.current_mode === 'weekend' ? '1px solid rgba(245, 158, 11, 0.3)' : '1px solid rgba(16, 185, 129, 0.3)',
+              marginBottom: 18
+            }}>
+              <div style={{display: 'flex', alignItems: 'center', gap: 8, fontWeight: 'bold', fontSize: '0.85rem', color: dispatchConfig.current_mode === 'weekend' ? '#d97706' : '#10b981'}}>
+                {dispatchConfig.current_mode === 'weekend' ? '🌙 Modo Fin de Semana Activo' : '☀️ Modo Días Hábiles Activo'}
+              </div>
+              <div style={{fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: 4}}>
+                Disponibilidad configurada: <strong>{dispatchConfig.current_mode === 'weekend' ? dispatchConfig.weekend_days : dispatchConfig.weekday_days} días</strong>.
+                {dispatchConfig.last_applied_at && (
+                  <span style={{display: 'block', marginTop: 2, fontSize: '0.72rem'}}>
+                    Último cambio aplicado: {new Date(dispatchConfig.last_applied_at).toLocaleString('es-AR')}
+                  </span>
+                )}
+              </div>
+            </div>
+
+            <form onSubmit={handleSaveDispatchSchedule} style={{display: 'flex', flexDirection: 'column', gap: 16}}>
+              <label style={{display: 'flex', alignItems: 'center', gap: 10, fontSize: '0.9rem', fontWeight: 'bold', cursor: 'pointer'}}>
+                <input 
+                  type="checkbox" 
+                  checked={dispatchConfig.enabled} 
+                  onChange={e => setDispatchConfig({...dispatchConfig, enabled: e.target.checked})}
+                  style={{width: 18, height: 18, cursor: 'pointer'}}
+                />
+                Activar Programación Automática Semanal
+              </label>
+
+              <div style={{border: '1px solid var(--border-color)', borderRadius: 8, padding: 15, display: 'flex', flexDirection: 'column', gap: 12}}>
+                <span style={{fontSize: '0.85rem', fontWeight: 'bold'}}>Configuración de Días de Elaboración / Envío:</span>
+
+                <div style={{display: 'flex', gap: 15}}>
+                  <label style={{flex: 1, fontSize: '0.82rem'}}>
+                    ☀️ En la semana (Lun - Vie):
+                    <select 
+                      value={dispatchConfig.weekday_days}
+                      onChange={e => setDispatchConfig({...dispatchConfig, weekday_days: parseInt(e.target.value) || 0})}
+                      style={{width: '100%', marginTop: 5, padding: 6, borderRadius: 4, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)'}}
+                    >
+                      <option value={0}>0 días (Entrega inmediata)</option>
+                      <option value={1}>1 día de elaboración</option>
+                      <option value={2}>2 días de elaboración</option>
+                      <option value={3}>3 días de elaboración</option>
+                      <option value={4}>4 días de elaboración</option>
+                      <option value={5}>5 días de elaboración</option>
+                    </select>
+                  </label>
+
+                  <label style={{flex: 1, fontSize: '0.82rem'}}>
+                    🌙 Fin de Semana:
+                    <select 
+                      value={dispatchConfig.weekend_days}
+                      onChange={e => setDispatchConfig({...dispatchConfig, weekend_days: parseInt(e.target.value) || 0})}
+                      style={{width: '100%', marginTop: 5, padding: 6, borderRadius: 4, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)'}}
+                    >
+                      <option value={0}>0 días (Entrega inmediata)</option>
+                      <option value={1}>1 día de elaboración</option>
+                      <option value={2}>2 días de elaboración</option>
+                      <option value={3}>3 días de elaboración</option>
+                      <option value={4}>4 días de elaboración</option>
+                      <option value={5}>5 días de elaboración</option>
+                    </select>
+                  </label>
+                </div>
+              </div>
+
+              <div style={{border: '1px solid var(--border-color)', borderRadius: 8, padding: 15, display: 'flex', flexDirection: 'column', gap: 12}}>
+                <span style={{fontSize: '0.85rem', fontWeight: 'bold'}}>Franja Horaria de Fin de Semana:</span>
+
+                <div style={{display: 'flex', gap: 15}}>
+                  <label style={{flex: 1, fontSize: '0.82rem'}}>
+                    Inicio de Fin de Semana:
+                    <select 
+                      value={dispatchConfig.weekend_start_day}
+                      onChange={e => setDispatchConfig({...dispatchConfig, weekend_start_day: parseInt(e.target.value)})}
+                      style={{width: '100%', marginTop: 5, padding: 6, borderRadius: 4, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)'}}
+                    >
+                      <option value={4}>Viernes</option>
+                      <option value={5}>Sábado</option>
+                    </select>
+                  </label>
+
+                  <label style={{flex: 1, fontSize: '0.82rem'}}>
+                    Hora de Inicio:
+                    <select 
+                      value={dispatchConfig.weekend_start_hour}
+                      onChange={e => setDispatchConfig({...dispatchConfig, weekend_start_hour: parseInt(e.target.value)})}
+                      style={{width: '100%', marginTop: 5, padding: 6, borderRadius: 4, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)'}}
+                    >
+                      {Array.from({length: 24}, (_, i) => (
+                        <option key={i} value={i}>{String(i).padStart(2, '0')}:00 hs</option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+
+                <div style={{display: 'flex', gap: 15}}>
+                  <label style={{flex: 1, fontSize: '0.82rem'}}>
+                    Fin de Fin de Semana:
+                    <select 
+                      value={dispatchConfig.weekend_end_day}
+                      onChange={e => setDispatchConfig({...dispatchConfig, weekend_end_day: parseInt(e.target.value)})}
+                      style={{width: '100%', marginTop: 5, padding: 6, borderRadius: 4, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)'}}
+                    >
+                      <option value={0}>Lunes</option>
+                      <option value={6}>Domingo</option>
+                    </select>
+                  </label>
+
+                  <label style={{flex: 1, fontSize: '0.82rem'}}>
+                    Hora de Fin:
+                    <select 
+                      value={dispatchConfig.weekend_end_hour}
+                      onChange={e => setDispatchConfig({...dispatchConfig, weekend_end_hour: parseInt(e.target.value)})}
+                      style={{width: '100%', marginTop: 5, padding: 6, borderRadius: 4, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)'}}
+                    >
+                      {Array.from({length: 24}, (_, i) => (
+                        <option key={i} value={i}>{String(i).padStart(2, '0')}:00 hs</option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+              </div>
+
+              <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 10, gap: 10, flexWrap: 'wrap'}}>
+                <button 
+                  type="button" 
+                  className="btn" 
+                  style={{backgroundColor: 'rgba(245, 158, 11, 0.15)', color: '#d97706', border: '1px solid rgba(245, 158, 11, 0.3)', fontSize: '0.8rem'}}
+                  onClick={handleApplyDispatchScheduleNow}
+                  title="Aplica la disponibilidad según el horario actual a todas las publicaciones en Mercado Libre de inmediato"
+                >
+                  ⚡ Aplicar Cambio Ahora
+                </button>
+
+                <div style={{display: 'flex', gap: 10}}>
+                  <button type="button" className="btn" style={{backgroundColor: 'transparent', border: '1px solid var(--border-color)', color: 'var(--text-primary)'}} onClick={() => setShowDispatchScheduleModal(false)}>
+                    Cancelar
+                  </button>
+                  <button type="submit" className="btn" style={{backgroundColor: 'var(--accent-blue)', color: '#fff'}}>
+                    Guardar Configuración
+                  </button>
+                </div>
               </div>
             </form>
           </div>

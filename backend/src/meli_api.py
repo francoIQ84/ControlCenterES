@@ -815,6 +815,115 @@ def update_stock_and_price(ml_id, quantity, price):
     except Exception as e:
         return False, f"Excepción de red: {str(e)}"
 
+def update_item_handling_time(ml_id: str, days: int):
+    """Actualiza la disponibilidad de stock / tiempo de elaboración (MANUFACTURING_TIME) en Mercado Libre."""
+    is_local = ml_id.startswith('LOCAL-') or ml_id.startswith('WEB-')
+    if is_local:
+        database.update_product_manufacturing_time(ml_id, days)
+        return True, "Producto local actualizado"
+
+    if is_demo_mode():
+        database.update_product_manufacturing_time(ml_id, days)
+        return True, f"Modo Demo: disponibilidad actualizada a {days} días"
+        
+    path = f"/items/{ml_id}"
+    if days > 0:
+        val_str = f"{days} día" if days == 1 else f"{days} días"
+        payload = {
+            "sale_terms": [
+                {
+                    "id": "MANUFACTURING_TIME",
+                    "value_name": val_str
+                }
+            ]
+        }
+    else:
+        payload = {
+            "sale_terms": [
+                {
+                    "id": "MANUFACTURING_TIME",
+                    "value_name": None
+                }
+            ]
+        }
+    
+    try:
+        response = api_request("PUT", path, json_data=payload)
+        if response and response.status_code == 200:
+            database.update_product_manufacturing_time(ml_id, days)
+            return True, f"Sincronizado con Mercado Libre ({days} días)"
+        else:
+            err_text = response.text if response else "Error de conexión"
+            return False, f"Error Mercado Libre: {err_text}"
+    except Exception as e:
+        return False, f"Excepción de red: {str(e)}"
+
+def get_current_dispatch_mode():
+    """Determina si según el día y la hora actual estamos en modo 'weekday' o 'weekend'."""
+    now = datetime.now()
+    w = now.weekday()
+    h = now.hour
+
+    start_day = int(database.get_setting("dispatch_weekend_start_day", "4"))
+    start_hour = int(database.get_setting("dispatch_weekend_start_hour", "18"))
+    end_day = int(database.get_setting("dispatch_weekend_end_day", "0"))
+    end_hour = int(database.get_setting("dispatch_weekend_end_hour", "8"))
+
+    is_weekend = False
+    if w == 4:
+        if h >= start_hour:
+            is_weekend = True
+    elif w in (5, 6):
+        is_weekend = True
+    elif w == 0:
+        if h < end_hour:
+            is_weekend = True
+
+    return "weekend" if is_weekend else "weekday"
+
+def apply_dispatch_schedule_rules(force=False, ml_ids=None):
+    """Evalúa las reglas de disponibilidad de envíos y las aplica masivamente a Mercado Libre."""
+    enabled = database.get_setting("dispatch_schedule_enabled", "0") == "1"
+    if not enabled and not force:
+        return True, "Programación automática de envíos desactivada."
+
+    current_mode = get_current_dispatch_mode()
+    last_mode = database.get_setting("dispatch_last_applied_mode", "")
+
+    if not force and current_mode == last_mode:
+        return True, f"Modo actual '{current_mode}' ya se encuentra aplicado."
+
+    weekday_days = int(database.get_setting("dispatch_weekday_days", "0"))
+    weekend_days = int(database.get_setting("dispatch_weekend_days", "2"))
+
+    target_days = weekend_days if current_mode == "weekend" else weekday_days
+
+    all_products = database.get_all_products(include_hidden=True)
+    if ml_ids:
+        target_products = [p for p in all_products if p['ml_id'] in ml_ids]
+    else:
+        target_products = [p for p in all_products if p.get('status') in ('active', 'paused') and p.get('sync_meli', 1) == 1]
+
+    success_count = 0
+    fail_count = 0
+
+    for p in target_products:
+        ok, msg = update_item_handling_time(p['ml_id'], target_days)
+        if ok:
+            success_count += 1
+        else:
+            fail_count += 1
+
+    database.set_setting("dispatch_last_applied_mode", current_mode)
+    database.set_setting("dispatch_last_applied_at", datetime.now().isoformat())
+
+    mode_label = "Fin de Semana" if current_mode == "weekend" else "Días Hábiles"
+    res_msg = f"Regla de envíos ({mode_label} -> {target_days} días) aplicada a {success_count} productos."
+    if fail_count > 0:
+        res_msg += f" {fail_count} publicaciones no pudieron actualizarse."
+        
+    return True, res_msg
+
 def fetch_order_billing_info(order_id):
     """
     Fetches detailed billing and address info for a Mercado Libre order.

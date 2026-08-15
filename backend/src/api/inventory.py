@@ -265,6 +265,65 @@ def bulk_price_adjust_products(payload: BulkPriceAdjustRequest):
 
     return {"success": True, "count": len(payload.ml_ids), "warnings": warnings, "message": f"Precios ajustados para {len(payload.ml_ids)} productos."}
 
+class SaveDispatchScheduleRequest(BaseModel):
+    enabled: bool
+    weekday_days: int = 0
+    weekend_days: int = 2
+    weekend_start_day: int = 4
+    weekend_start_hour: int = 18
+    weekend_end_day: int = 0
+    weekend_end_hour: int = 8
+
+class ApplyDispatchScheduleNowRequest(BaseModel):
+    ml_ids: Optional[list[str]] = None
+
+@router.get("/dispatch-schedule")
+def get_dispatch_schedule():
+    enabled = database.get_setting("dispatch_schedule_enabled", "0") == "1"
+    weekday_days = int(database.get_setting("dispatch_weekday_days", "0"))
+    weekend_days = int(database.get_setting("dispatch_weekend_days", "2"))
+    weekend_start_day = int(database.get_setting("dispatch_weekend_start_day", "4"))
+    weekend_start_hour = int(database.get_setting("dispatch_weekend_start_hour", "18"))
+    weekend_end_day = int(database.get_setting("dispatch_weekend_end_day", "0"))
+    weekend_end_hour = int(database.get_setting("dispatch_weekend_end_hour", "8"))
+    
+    current_mode = meli_api.get_current_dispatch_mode()
+    last_applied_mode = database.get_setting("dispatch_last_applied_mode", "")
+    last_applied_at = database.get_setting("dispatch_last_applied_at", "")
+
+    return {
+        "enabled": enabled,
+        "weekday_days": weekday_days,
+        "weekend_days": weekend_days,
+        "weekend_start_day": weekend_start_day,
+        "weekend_start_hour": weekend_start_hour,
+        "weekend_end_day": weekend_end_day,
+        "weekend_end_hour": weekend_end_hour,
+        "current_mode": current_mode,
+        "last_applied_mode": last_applied_mode,
+        "last_applied_at": last_applied_at
+    }
+
+@router.post("/dispatch-schedule")
+def save_dispatch_schedule(payload: SaveDispatchScheduleRequest):
+    database.set_setting("dispatch_schedule_enabled", "1" if payload.enabled else "0")
+    database.set_setting("dispatch_weekday_days", str(payload.weekday_days))
+    database.set_setting("dispatch_weekend_days", str(payload.weekend_days))
+    database.set_setting("dispatch_weekend_start_day", str(payload.weekend_start_day))
+    database.set_setting("dispatch_weekend_start_hour", str(payload.weekend_start_hour))
+    database.set_setting("dispatch_weekend_end_day", str(payload.weekend_end_day))
+    database.set_setting("dispatch_weekend_end_hour", str(payload.weekend_end_hour))
+
+    return {"success": True, "message": "Configuración de programación de disponibilidad guardada correctamente."}
+
+@router.post("/dispatch-schedule/apply-now")
+def apply_dispatch_schedule_now(payload: Optional[ApplyDispatchScheduleNowRequest] = None):
+    ml_ids = payload.ml_ids if payload else None
+    ok, message = meli_api.apply_dispatch_schedule_rules(force=True, ml_ids=ml_ids)
+    if not ok:
+        raise HTTPException(status_code=500, detail=message)
+    return {"success": True, "message": message}
+
 @router.put("/{ml_id}")
 def update_product(ml_id: str, payload: UpdateProductRequest):
     # Get current product status from local cache

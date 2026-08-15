@@ -107,6 +107,7 @@ def init_db():
             cursor.execute('ALTER TABLE products_cache ADD COLUMN IF NOT EXISTS prev_cost_meli REAL;')
             cursor.execute('ALTER TABLE products_cache ADD COLUMN IF NOT EXISTS prev_price_web REAL;')
             cursor.execute('ALTER TABLE products_cache ADD COLUMN IF NOT EXISTS is_hidden INTEGER DEFAULT 0;')
+            cursor.execute('ALTER TABLE products_cache ADD COLUMN IF NOT EXISTS manufacturing_time INTEGER DEFAULT 0;')
 
             # Categories table
             cursor.execute('''
@@ -670,6 +671,21 @@ def bulk_update_hidden_status(ml_ids: list, is_hidden: int):
             format_strings = ','.join(['%s'] * len(ml_ids))
             cursor.execute(f"UPDATE products_cache SET is_hidden = %s, last_modified = %s WHERE ml_id IN ({format_strings})", [int(is_hidden), now] + list(ml_ids))
 
+def update_product_manufacturing_time(ml_id: str, days: int):
+    now = datetime.now().isoformat()
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute("UPDATE products_cache SET manufacturing_time = %s, last_modified = %s WHERE ml_id = %s", (int(days), now, ml_id))
+
+def bulk_update_manufacturing_time(ml_ids: list, days: int):
+    if not ml_ids:
+        return
+    now = datetime.now().isoformat()
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            format_strings = ','.join(['%s'] * len(ml_ids))
+            cursor.execute(f"UPDATE products_cache SET manufacturing_time = %s, last_modified = %s WHERE ml_id IN ({format_strings})", [int(days), now] + list(ml_ids))
+
 def bulk_update_web_active_status(ml_ids: list, is_web_active: int):
     if not ml_ids:
         return
@@ -743,6 +759,7 @@ def get_all_products(query=None, status_filter=None, is_web_active=None, categor
                        p.status, p.last_sync, p.price_web, p.images, p.description, p.is_web_active, 
                        p.visits_meli, p.visits_web, p.category_id, p.sync_meli, p.min_stock, p.featured_order, p.last_modified,
                        p.prev_stock, p.prev_price, p.prev_cost_price, p.prev_cost_meli, p.prev_price_web, COALESCE(p.is_hidden, 0) as is_hidden,
+                       COALESCE(p.manufacturing_time, 0) as manufacturing_time,
                        c.name as category_name, c.slug as category_slug
                  FROM products_cache p
                  LEFT JOIN categories c ON p.category_id = c.id
@@ -786,6 +803,7 @@ def get_product_by_ml_id(ml_id: str):
                        p.status, p.last_sync, p.price_web, p.images, p.description, p.is_web_active, 
                        p.visits_meli, p.visits_web, p.category_id, p.sync_meli, p.min_stock, p.featured_order, p.last_modified,
                        p.prev_stock, p.prev_price, p.prev_cost_price, p.prev_cost_meli, p.prev_price_web, COALESCE(p.is_hidden, 0) as is_hidden,
+                       COALESCE(p.manufacturing_time, 0) as manufacturing_time,
                        c.name as category_name, c.slug as category_slug
                  FROM products_cache p
                  LEFT JOIN categories c ON p.category_id = c.id
