@@ -5,7 +5,7 @@ import json
 import urllib.request
 import urllib.parse
 
-from src import database
+from src import database, tenancy
 from src.api.auth import verify_session
 from src.utils import social_publisher
 from src.utils.image_utils import convert_all_images_str, get_high_res_image_url
@@ -40,15 +40,28 @@ class SaveConfigReq(BaseModel):
     meta_instagram_account_id: str
     meta_facebook_page_id: str
     public_base_url: Optional[str] = None
+    meta_app_id: Optional[str] = None
+    meta_app_secret: Optional[str] = None
 
 @router.get("/config")
 def get_marketing_config(_=Depends(verify_session)):
-    return {
+    result = {
         "meta_access_token": database.get_setting("meta_access_token", ""),
         "meta_instagram_account_id": database.get_setting("meta_instagram_account_id", ""),
         "meta_facebook_page_id": database.get_setting("meta_facebook_page_id", ""),
         "public_base_url": database.get_setting("public_base_url", "")
     }
+    # Las credenciales de la App Meta son globales (Master Tenant)
+    try:
+        with tenancy.tenant_context(tenancy.MASTER_TENANT_ID):
+            app_id = database.get_setting("meta_app_id", "")
+            app_secret = database.get_setting("meta_app_secret", "")
+        result["meta_app_id"] = app_id
+        result["has_meta_app_secret"] = bool(app_secret)
+    except Exception:
+        result["meta_app_id"] = ""
+        result["has_meta_app_secret"] = False
+    return result
 
 @router.post("/config")
 def save_marketing_config(req: SaveConfigReq, _=Depends(verify_session)):
@@ -57,7 +70,101 @@ def save_marketing_config(req: SaveConfigReq, _=Depends(verify_session)):
     database.set_setting("meta_facebook_page_id", req.meta_facebook_page_id.strip())
     if req.public_base_url:
         database.set_setting("public_base_url", req.public_base_url.strip())
+    # App ID y App Secret son credenciales globales: se guardan en el Master
+    # Tenant para que todos los inquilinos puedan intercambiar tokens.
+    if req.meta_app_id is not None and req.meta_app_id.strip():
+        with tenancy.tenant_context(tenancy.MASTER_TENANT_ID):
+            database.set_setting("meta_app_id", req.meta_app_id.strip())
+    if req.meta_app_secret is not None and req.meta_app_secret.strip():
+        with tenancy.tenant_context(tenancy.MASTER_TENANT_ID):
+            database.set_setting("meta_app_secret", req.meta_app_secret.strip())
     return {"success": True, "message": "Configuración de redes sociales guardada exitosamente"}
+
+
+class ExchangeTokenReq(BaseModel):
+    short_lived_token: Optional[str] = None
+
+@router.post("/exchange-long-lived-token")
+def exchange_long_lived_token(req: ExchangeTokenReq, _=Depends(verify_session)):
+    """Intercambia un token corto de Meta por un Page Token perpetuo en 2 pasos.
+
+    Paso 1: Short-Lived User Token → Long-Lived User Token (60 días).
+    Paso 2: Long-Lived User Token → Long-Lived Page Token (perpetuo ♾️).
+
+    Guarda automáticamente el Page Token perpetuo, el Page ID y el IG ID en
+    la configuración del tenant activo.
+    """
+    # Determinar el token de entrada: del request o del ya guardado
+    input_token = (req.short_lived_token or "").strip()
+    if not input_token:
+        input_token = database.get_setting("meta_access_token", "").strip()
+    if not input_token:
+        raise HTTPException(status_code=400,
+                            detail="No se proporcionó un token de Meta. "
+                                   "Pegá tu token del Graph API Explorer.")
+
+    # Leer App ID y App Secret del Master Tenant (credenciales globales)
+    with tenancy.tenant_context(tenancy.MASTER_TENANT_ID):
+        app_id = database.get_setting("meta_app_id", "").strip()
+        app_secret = database.get_setting("meta_app_secret", "").strip()
+
+    if not app_id or not app_secret:
+        raise HTTPException(
+            status_code=400,
+            detail="Faltan las credenciales de la App de Meta (App ID / App Secret). "
+                   "El administrador de la plataforma debe configurarlas primero.")
+
+    # Paso 1: Intercambiar por Long-Lived User Token
+    ll_result = social_publisher.exchange_for_long_lived_token(
+        input_token, app_id, app_secret)
+    if not ll_result.get("success"):
+        raise HTTPException(status_code=400,
+                            detail=f"Error al intercambiar token: "
+                                   f"{ll_result.get('error', 'Error desconocido')}")
+
+    long_lived_user_token = ll_result["access_token"]
+    expires_in = ll_result.get("expires_in")
+
+    # Paso 2: Obtener Page Token perpetuo + IDs
+    page_result = social_publisher.get_long_lived_page_token(long_lived_user_token)
+    if not page_result.get("success"):
+        # Si falla el paso 2, al menos guardamos el Long-Lived User Token
+        database.set_setting("meta_access_token", long_lived_user_token)
+        return {
+            "success": True,
+            "partial": True,
+            "token_type": "long_lived_user",
+            "expires_in": expires_in,
+            "message": f"✅ Se obtuvo el token de larga duración (60 días), pero no se pudo "
+                       f"obtener el Page Token perpetuo: {page_result.get('error')}. "
+                       f"El token fue guardado de todas formas."
+        }
+
+    # Éxito total: guardar Page Token perpetuo y todos los IDs
+    page_token = page_result["page_token"]
+    page_id = page_result["page_id"]
+    page_name = page_result.get("page_name", "")
+    ig_account_id = page_result.get("instagram_account_id", "")
+
+    database.set_setting("meta_access_token", page_token)
+    if page_id:
+        database.set_setting("meta_facebook_page_id", page_id)
+    if ig_account_id:
+        database.set_setting("meta_instagram_account_id", ig_account_id)
+
+    return {
+        "success": True,
+        "partial": False,
+        "token_type": "long_lived_page",
+        "expires_in": None,  # Perpetuo
+        "page_name": page_name,
+        "page_id": page_id,
+        "instagram_account_id": ig_account_id,
+        "message": f"🎉 ¡Token Perpetuo obtenido con éxito! "
+                   f"Página: {page_name} (ID: {page_id})"
+                   + (f" | Instagram: {ig_account_id}" if ig_account_id else ""
+                   ) + ". Este token no expira nunca."
+    }
 
 @router.post("/generate")
 def generate_ai_post_copy(req: GeneratePostRequest, _=Depends(verify_session)):

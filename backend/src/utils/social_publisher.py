@@ -9,6 +9,109 @@ from src.utils.image_utils import get_high_res_image_url
 META_GRAPH_API_VERSION = "v19.0"
 META_GRAPH_BASE_URL = f"https://graph.facebook.com/{META_GRAPH_API_VERSION}"
 
+
+def exchange_for_long_lived_token(short_token: str, app_id: str,
+                                  app_secret: str) -> dict:
+    """Intercambia un token de corta duración (2 hs) por uno de larga duración (60 días).
+
+    Llamada server-side al endpoint oficial de Meta:
+    GET /oauth/access_token?grant_type=fb_exchange_token&...
+
+    Retorna {"access_token": "...", "token_type": "bearer", "expires_in": ...}
+    o {"error": "..."} en caso de fallo.
+    """
+    params = urllib.parse.urlencode({
+        "grant_type": "fb_exchange_token",
+        "client_id": app_id,
+        "client_secret": app_secret,
+        "fb_exchange_token": short_token,
+    })
+    url = f"{META_GRAPH_BASE_URL}/oauth/access_token?{params}"
+    try:
+        req = urllib.request.Request(url, method="GET")
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            if "access_token" in data:
+                return {
+                    "success": True,
+                    "access_token": data["access_token"],
+                    "token_type": data.get("token_type", "bearer"),
+                    "expires_in": data.get("expires_in"),
+                }
+            return {"success": False, "error": data.get("error", {}).get(
+                "message", "Respuesta inesperada de Meta")}
+    except urllib.error.HTTPError as e:
+        body = e.read().decode("utf-8", errors="replace")
+        try:
+            err_data = json.loads(body)
+            msg = err_data.get("error", {}).get("message", body)
+        except Exception:
+            msg = body
+        return {"success": False, "error": f"Meta API Error ({e.code}): {msg}"}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+def get_long_lived_page_token(long_lived_user_token: str) -> dict:
+    """Obtiene el Page Access Token de larga duración (perpetuo) desde un User Token LL.
+
+    Según la documentación oficial de Meta, un Page Token obtenido desde un
+    Long-Lived User Token **no expira nunca** mientras la App siga activa y la
+    página no revoque los permisos.
+
+    Retorna {"page_token": "...", "page_id": "...", "page_name": "...",
+             "instagram_account_id": "..."} o {"error": "..."}.
+    """
+    # Paso 1: Obtener las páginas administradas por el usuario
+    accounts_url = (f"{META_GRAPH_BASE_URL}/me/accounts"
+                    f"?access_token={urllib.parse.quote(long_lived_user_token)}")
+    try:
+        req = urllib.request.Request(accounts_url, method="GET")
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            pages = data.get("data", [])
+            if not pages:
+                return {"success": False,
+                        "error": "No se encontraron páginas de Facebook "
+                                 "asociadas a este usuario."}
+
+            page = pages[0]  # Primera página
+            page_token = page.get("access_token", "")
+            page_id = page.get("id", "")
+            page_name = page.get("name", "")
+    except urllib.error.HTTPError as e:
+        body = e.read().decode("utf-8", errors="replace")
+        try:
+            msg = json.loads(body).get("error", {}).get("message", body)
+        except Exception:
+            msg = body
+        return {"success": False, "error": f"Error obteniendo páginas ({e.code}): {msg}"}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+    # Paso 2: Obtener el Instagram Business Account ID de esa página
+    ig_account_id = ""
+    if page_id:
+        try:
+            ig_url = (f"{META_GRAPH_BASE_URL}/{page_id}"
+                      f"?fields=instagram_business_account"
+                      f"&access_token={urllib.parse.quote(page_token or long_lived_user_token)}")
+            req_ig = urllib.request.Request(ig_url, method="GET")
+            with urllib.request.urlopen(req_ig, timeout=12) as resp_ig:
+                ig_data = json.loads(resp_ig.read().decode("utf-8"))
+                ig_account_id = (ig_data.get("instagram_business_account", {})
+                                 .get("id", ""))
+        except Exception as ig_err:
+            print(f"[Meta Token] Warning al obtener IG account ID: {ig_err}")
+
+    return {
+        "success": True,
+        "page_token": page_token,
+        "page_id": page_id,
+        "page_name": page_name,
+        "instagram_account_id": ig_account_id,
+    }
+
 def get_meta_credentials():
     access_token = database.get_setting("meta_access_token", "").strip()
     instagram_id = database.get_setting("meta_instagram_account_id", "").strip()

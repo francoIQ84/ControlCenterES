@@ -18,7 +18,7 @@ const isVideoUrl = (url) => {
 }
 
 export default function Marketing() {
-  const { tenant } = useTenant()
+  const { tenant, isPlatformAdmin } = useTenant()
   const storeName = tenant?.name || 'Tienda Oficial'
 
   const [activeTab, setActiveTab] = useState('creator') // 'creator', 'calendar', 'comments', 'config'
@@ -87,11 +87,15 @@ export default function Marketing() {
   const [metaConfig, setMetaConfig] = useState({
     meta_access_token: '',
     meta_instagram_account_id: '',
-    meta_facebook_page_id: ''
+    meta_facebook_page_id: '',
+    meta_app_id: '',
+    meta_app_secret: ''
   })
   const [savingConfig, setSavingConfig] = useState(false)
   const [autodetectLoading, setAutodetectLoading] = useState(false)
   const [showPermissionsGuide, setShowPermissionsGuide] = useState(false)
+  const [exchangeLoading, setExchangeLoading] = useState(false)
+  const [exchangeResult, setExchangeResult] = useState(null)
 
   const handleAutodetectMeta = async () => {
     if (!metaConfig.meta_access_token?.trim()) {
@@ -567,8 +571,44 @@ export default function Marketing() {
   const fetchMetaConfig = () => {
     fetch('/api/marketing/config')
       .then(r => r.ok ? r.json() : {})
-      .then(data => setMetaConfig(data))
+      .then(data => {
+        setMetaConfig(prev => ({
+          ...prev,
+          meta_access_token: data.meta_access_token || '',
+          meta_instagram_account_id: data.meta_instagram_account_id || '',
+          meta_facebook_page_id: data.meta_facebook_page_id || '',
+          meta_app_id: data.meta_app_id || '',
+          // No sobreescribir el secret si ya fue cargado localmente
+          meta_app_secret: prev.meta_app_secret || (data.has_meta_app_secret ? '••••••••' : '')
+        }))
+      })
       .catch(err => console.error(err))
+  }
+
+  const handleExchangeToken = async () => {
+    setExchangeLoading(true)
+    setExchangeResult(null)
+    try {
+      const res = await fetch('/api/marketing/exchange-long-lived-token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          short_lived_token: metaConfig.meta_access_token?.trim() || null
+        })
+      })
+      const data = await res.json()
+      if (res.ok && data.success) {
+        setExchangeResult({ type: 'success', message: data.message })
+        // Recargar la configuración para reflejar el nuevo token guardado
+        fetchMetaConfig()
+      } else {
+        setExchangeResult({ type: 'error', message: data.detail || data.error || 'Error desconocido' })
+      }
+    } catch (err) {
+      setExchangeResult({ type: 'error', message: 'Error de conexión: ' + err.message })
+    } finally {
+      setExchangeLoading(false)
+    }
   }
 
   const handleGenerateAI = async () => {
@@ -1850,6 +1890,10 @@ export default function Marketing() {
       const payload = {
         ...metaConfig,
         public_base_url: window.location.origin
+      }
+      // No enviar el secret enmascarado (placeholder) al backend
+      if (payload.meta_app_secret === '••••••••') {
+        delete payload.meta_app_secret
       }
       const res = await fetch('/api/marketing/config', {
         method: 'POST',
@@ -3570,6 +3614,50 @@ export default function Marketing() {
               />
             </label>
 
+            {/* Botón de intercambio de token de larga duración */}
+            <div style={{
+              padding: 14,
+              backgroundColor: 'var(--bg-dark)',
+              borderRadius: 8,
+              border: '1px solid var(--accent-emerald)',
+            }}>
+              <div style={{fontSize: '0.82rem', color: 'var(--text-secondary)', marginBottom: 10}}>
+                🔄 <strong>Obtener Token Perpetuo:</strong> Pegá tu token del <a href="https://developers.facebook.com/tools/explorer/" target="_blank" rel="noreferrer" style={{color: 'var(--accent-blue)'}}>Graph API Explorer</a> arriba y presioná el botón para convertirlo automáticamente en un <strong style={{color: 'var(--accent-emerald)'}}>Token de Página que nunca expira</strong>.
+              </div>
+              <button 
+                type="button" 
+                className="btn"
+                onClick={handleExchangeToken}
+                disabled={exchangeLoading || !metaConfig.meta_access_token?.trim()}
+                style={{
+                  padding: '8px 16px',
+                  fontSize: '0.85rem',
+                  backgroundColor: 'var(--accent-emerald)',
+                  color: '#fff',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  fontWeight: 700
+                }}
+              >
+                {exchangeLoading ? <RefreshCw className="animate-spin" size={14} /> : '♾️'}
+                {exchangeLoading ? 'Intercambiando token con Meta...' : '🔄 Obtener Token de Larga Duración (Perpetuo)'}
+              </button>
+              {exchangeResult && (
+                <div style={{
+                  marginTop: 10,
+                  padding: '10px 14px',
+                  borderRadius: 6,
+                  fontSize: '0.82rem',
+                  backgroundColor: exchangeResult.type === 'success' ? 'rgba(45, 212, 100, 0.1)' : 'rgba(255, 80, 80, 0.1)',
+                  border: `1px solid ${exchangeResult.type === 'success' ? 'var(--accent-emerald)' : '#ff5050'}`,
+                  color: exchangeResult.type === 'success' ? 'var(--accent-emerald)' : '#ff5050'
+                }}>
+                  {exchangeResult.type === 'success' ? '✅' : '❌'} {exchangeResult.message}
+                </div>
+              )}
+            </div>
+
             <label style={{fontSize: '0.85rem'}}>Instagram Business Account ID
               <input 
                 type="text" 
@@ -3589,6 +3677,44 @@ export default function Marketing() {
                 style={{width: '100%', marginTop: 5, padding: '8px 10px', borderRadius: 6, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-dark)', color: 'var(--text-primary)'}}
               />
             </label>
+
+            {/* Credenciales de la App Meta — solo visibles para el admin de la plataforma */}
+            {isPlatformAdmin && (
+              <div style={{
+                marginTop: 5,
+                padding: 14,
+                backgroundColor: 'var(--bg-hover)',
+                borderRadius: 8,
+                border: '1px dashed var(--accent-orange)'
+              }}>
+                <div style={{fontSize: '0.82rem', fontWeight: 'bold', color: 'var(--accent-orange)', marginBottom: 10}}>
+                  🔐 Credenciales de la App Meta (Solo Administrador de Plataforma)
+                </div>
+                <div style={{fontSize: '0.78rem', color: 'var(--text-secondary)', marginBottom: 12}}>
+                  Estos datos provienen de tu App en <a href="https://developers.facebook.com/apps/" target="_blank" rel="noreferrer" style={{color: 'var(--accent-blue)'}}>Meta for Developers</a> → Configuración → Básica. Se configuran <strong>una sola vez</strong> y aplican a todos los clientes de la plataforma.
+                </div>
+                <div style={{display: 'flex', flexDirection: 'column', gap: 10}}>
+                  <label style={{fontSize: '0.85rem'}}>Meta App ID (client_id)
+                    <input 
+                      type="text" 
+                      value={metaConfig.meta_app_id} 
+                      onChange={e => setMetaConfig({...metaConfig, meta_app_id: e.target.value})} 
+                      placeholder="1234567890123456" 
+                      style={{width: '100%', marginTop: 5, padding: '8px 10px', borderRadius: 6, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-dark)', color: 'var(--text-primary)'}}
+                    />
+                  </label>
+                  <label style={{fontSize: '0.85rem'}}>Meta App Secret (client_secret)
+                    <input 
+                      type="password" 
+                      value={metaConfig.meta_app_secret} 
+                      onChange={e => setMetaConfig({...metaConfig, meta_app_secret: e.target.value})} 
+                      placeholder="abc123def456..." 
+                      style={{width: '100%', marginTop: 5, padding: '8px 10px', borderRadius: 6, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-dark)', color: 'var(--text-primary)'}}
+                    />
+                  </label>
+                </div>
+              </div>
+            )}
 
             <button type="submit" className="btn" disabled={savingConfig} style={{backgroundColor: 'var(--accent-blue)', color: '#fff', alignSelf: 'flex-start', marginTop: 10, padding: '10px 20px', fontWeight: 'bold'}}>
               {savingConfig ? 'Guardando...' : '💾 Guardar Credenciales de Meta'}
