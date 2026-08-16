@@ -85,6 +85,15 @@ def _sync_one_tenant(tenant):
     except Exception as ds_err:
         print(f"[Scheduler][{slug}] Error en reglas de envíos MeLi: {ds_err}")
 
+    # Sincronización automática de clientes/leads desde Meta (Instagram & Facebook Ads)
+    try:
+        from src.utils import social_publisher
+        leads_res = social_publisher.fetch_and_sync_all_meta_leads()
+        if leads_res.get("synced_count", 0) > 0:
+            print(f"[Scheduler][{slug}] Leads de Meta sincronizados: {leads_res.get('synced_count')} clientes importados.")
+    except Exception as meta_err:
+        print(f"[Scheduler][{slug}] Error en sincronización de leads de Meta: {meta_err}")
+
 
 
 def background_sync_loop():

@@ -550,3 +550,94 @@ def fetch_recent_social_comments(limit: int = 15):
 
     return results
 
+def fetch_meta_leadgen_forms():
+    """Obtiene la lista de formularios de clientes potenciales (Lead Ads) asociados a la página de Facebook."""
+    creds = get_meta_credentials()
+    access_token = creds["access_token"]
+    page_id = creds["facebook_page_id"].strip() if creds["facebook_page_id"] else "me"
+
+    if not access_token:
+        return []
+
+    try:
+        url = f"{META_GRAPH_BASE_URL}/{page_id}/leadgen_forms?fields=id,name,status,created_time,leads_count&access_token={access_token}"
+        req = urllib.request.Request(url, method="GET")
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            data = json.loads(resp.read().decode('utf-8'))
+            return data.get("data", [])
+    except Exception as e:
+        print(f"[Meta Leads] Error al obtener formularios: {e}")
+        return []
+
+def fetch_leads_from_form(form_id: str):
+    """Obtiene los clientes potenciales que completaron un formulario de Lead Ads específico."""
+    creds = get_meta_credentials()
+    access_token = creds["access_token"]
+
+    if not access_token:
+        return []
+
+    try:
+        url = f"{META_GRAPH_BASE_URL}/{form_id}/leads?fields=id,created_time,field_data,form_id&access_token={access_token}"
+        req = urllib.request.Request(url, method="GET")
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            data = json.loads(resp.read().decode('utf-8'))
+            raw_leads = data.get("data", [])
+
+        parsed_leads = []
+        for item in raw_leads:
+            field_data = item.get("field_data", [])
+            lead_info = {
+                "lead_id": item.get("id"),
+                "created_time": item.get("created_time"),
+                "source_platform": "INSTAGRAM_ADS"
+            }
+            notes_parts = []
+            
+            for field in field_data:
+                fname = (field.get("name") or "").lower()
+                fvals = field.get("values", [])
+                val_str = fvals[0] if fvals else ""
+
+                if any(k in fname for k in ["full_name", "nombre", "first_name", "name"]):
+                    lead_info["full_name"] = val_str
+                elif any(k in fname for k in ["phone", "telefono", "celular", "whatsapp", "mobile"]):
+                    lead_info["phone"] = val_str
+                elif any(k in fname for k in ["email", "correo", "mail"]):
+                    lead_info["email"] = val_str
+                elif any(k in fname for k in ["city", "ciudad", "localidad", "provincia"]):
+                    lead_info["city"] = val_str
+                else:
+                    if val_str:
+                        notes_parts.append(f"{field.get('name')}: {val_str}")
+
+            if notes_parts:
+                lead_info["notes"] = " | ".join(notes_parts)
+
+            if lead_info.get("full_name") or lead_info.get("phone") or lead_info.get("email"):
+                parsed_leads.append(lead_info)
+
+        return parsed_leads
+    except Exception as e:
+        print(f"[Meta Leads] Error al obtener leads del formulario {form_id}: {e}")
+        return []
+
+def fetch_and_sync_all_meta_leads():
+    """Descarga e importa todos los leads de formularios de Facebook/Instagram Ads a la base de datos de Clientes."""
+    forms = fetch_meta_leadgen_forms()
+    all_leads = []
+
+    for form in forms:
+        form_id = form.get("id")
+        if form_id:
+            leads = fetch_leads_from_form(form_id)
+            all_leads.extend(leads)
+
+    synced = database.sync_meta_leads_bulk(all_leads)
+    return {
+        "success": True,
+        "forms_processed": len(forms),
+        "total_leads_found": len(all_leads),
+        "synced_count": synced
+    }
+

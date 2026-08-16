@@ -1134,6 +1134,53 @@ def sync_whatsapp_contacts_bulk(contacts_list):
                 synced_count += 1
     return synced_count
 
+def sync_meta_leads_bulk(leads_list):
+    """Inserta o actualiza prospectos/leads provenientes de Meta (Instagram Ads / Facebook Ads / Comentarios)."""
+    import time
+    synced_count = 0
+    if not leads_list:
+        return 0
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            for item in leads_list:
+                email = (item.get('email') or '').strip()
+                phone = (item.get('phone') or '').strip()
+                full_name = (item.get('full_name') or item.get('name') or '').strip() or "Lead Meta"
+                source = (item.get('source_platform') or 'INSTAGRAM_ADS').upper()
+                address = (item.get('address') or item.get('notes') or '').strip()
+                username = item.get('username') or full_name
+                
+                if not email and not phone and not full_name:
+                    continue
+
+                existing = None
+                if phone:
+                    cursor.execute("SELECT buyer_id, full_name, email, phone FROM customers WHERE phone = %s", (phone,))
+                    existing = cursor.fetchone()
+                if not existing and email:
+                    cursor.execute("SELECT buyer_id, full_name, email, phone FROM customers WHERE email = %s", (email,))
+                    existing = cursor.fetchone()
+                
+                if existing:
+                    cursor.execute("""
+                        UPDATE customers 
+                        SET full_name = CASE WHEN full_name IS NULL OR full_name = '' THEN %s ELSE full_name END,
+                            email = CASE WHEN email IS NULL OR email = '' THEN %s ELSE email END,
+                            phone = CASE WHEN phone IS NULL OR phone = '' THEN %s ELSE phone END,
+                            address = CASE WHEN address IS NULL OR address = '' THEN %s ELSE address END,
+                            source_platform = CASE WHEN source_platform IS NULL OR source_platform = '' OR source_platform = 'MANUAL' THEN %s ELSE source_platform END
+                        WHERE buyer_id = %s
+                    """, (full_name, email, phone, address, source, existing['buyer_id']))
+                else:
+                    new_buyer_id = int(time.time() * 1000) + synced_count
+                    cursor.execute("""
+                        INSERT INTO customers (buyer_id, nickname, full_name, email, phone, address, source_platform)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s)
+                        ON CONFLICT (tenant_id, buyer_id) DO NOTHING
+                    """, (new_buyer_id, username, full_name, email, phone, address, source))
+                synced_count += 1
+    return synced_count
+
 def get_product_inquiries_stats(limit=50):
     """Retrieves aggregated statistics for most consulted products in WhatsApp chats and web inquiries."""
     with get_connection() as conn:

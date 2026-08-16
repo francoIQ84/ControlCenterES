@@ -60,6 +60,24 @@ def sync_whatsapp_contacts():
     except Exception as e:
         return {"status": "error", "message": f"Error de conexión con el servicio de WhatsApp: {str(e)}"}
 
+@router.post("/sync-meta-leads")
+def sync_meta_leads():
+    try:
+        from src.utils import social_publisher
+        res = social_publisher.fetch_and_sync_all_meta_leads()
+        return res
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error al sincronizar clientes de Meta: {str(e)}")
+
+@router.get("/meta-leads/forms")
+def get_meta_lead_forms():
+    try:
+        from src.utils import social_publisher
+        forms = social_publisher.fetch_meta_leadgen_forms()
+        return {"status": "success", "forms": forms}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error al obtener formularios de Meta: {str(e)}")
+
 @router.post("/analyze-inquiries")
 def analyze_chat_inquiries():
     try:

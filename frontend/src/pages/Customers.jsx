@@ -18,6 +18,7 @@ export default function Customers() {
   }, [searchParams])
   const [loading, setLoading] = useState(true)
   const [syncingWa, setSyncingWa] = useState(false)
+  const [syncingMetaLeads, setSyncingMetaLeads] = useState(false)
   const [analyzingInquiries, setAnalyzingInquiries] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [platformFilter, setPlatformFilter] = useState('ALL')
@@ -100,6 +101,32 @@ export default function Customers() {
       setSyncNotice({ type: 'error', text: `Error de conexión: ${err.message}` })
     } finally {
       setSyncingWa(false)
+    }
+  }
+
+  // Action: Trigger Meta Lead Ads Sync (Instagram & Facebook Ads)
+  const handleSyncMetaLeads = async () => {
+    setSyncingMetaLeads(true)
+    setSyncNotice(null)
+    try {
+      const res = await fetch('/api/customers/sync-meta-leads', { method: 'POST' })
+      const json = await res.json()
+      if (res.ok && json.success) {
+        setSyncNotice({
+          type: 'success',
+          text: `¡Leads de Meta Sincronizados! Se procesaron ${json.forms_processed || 0} formularios de Instagram/Facebook Ads y se importaron ${json.synced_count || 0} nuevos clientes.`
+        })
+        fetchCrmData()
+      } else {
+        setSyncNotice({
+          type: 'warning',
+          text: json.detail || 'No se pudieron descargar los leads de Meta Ads. Verifica que las credenciales de Instagram/Facebook estén configuradas.'
+        })
+      }
+    } catch (err) {
+      setSyncNotice({ type: 'error', text: `Error de conexión: ${err.message}` })
+    } finally {
+      setSyncingMetaLeads(false)
     }
   }
 
@@ -263,8 +290,10 @@ export default function Customers() {
         if (platformFilter === 'WHATSAPP') return p === 'WHATSAPP' || p === 'WA'
         if (platformFilter === 'MERCADOLIBRE') return p === 'MERCADOLIBRE' || p === 'MELI'
         if (platformFilter === 'MERCADOPAGO') return p === 'MERCADOPAGO' || p === 'MP'
+        if (platformFilter === 'INSTAGRAM') return p.includes('INSTAGRAM')
+        if (platformFilter === 'FACEBOOK') return p.includes('FACEBOOK')
         if (platformFilter === 'MANUAL') {
-          return p === 'MANUAL' || !p || (!['MERCADOLIBRE', 'MELI', 'MERCADOPAGO', 'MP', 'WHATSAPP', 'WA', 'WEB_LEAD', 'LEAD'].includes(p))
+          return p === 'MANUAL' || !p || (!['MERCADOLIBRE', 'MELI', 'MERCADOPAGO', 'MP', 'WHATSAPP', 'WA', 'WEB_LEAD', 'LEAD', 'INSTAGRAM_ADS', 'FACEBOOK_ADS'].includes(p))
         }
         return p === platformFilter
       })
@@ -373,6 +402,12 @@ export default function Customers() {
   // Helper Badge Render
   const renderPlatformBadge = (platform) => {
     const p = (platform || 'MANUAL').toUpperCase()
+    if (p.includes('INSTAGRAM')) {
+      return <span style={{ padding: '3px 8px', borderRadius: '6px', fontSize: '11px', fontWeight: '700', backgroundColor: '#e1306c', color: '#fff' }}>📸 Instagram Ads</span>
+    }
+    if (p.includes('FACEBOOK')) {
+      return <span style={{ padding: '3px 8px', borderRadius: '6px', fontSize: '11px', fontWeight: '700', backgroundColor: '#1877f2', color: '#fff' }}>🟦 Facebook Ads</span>
+    }
     if (p === 'MERCADOLIBRE' || p === 'MELI') {
       return <span style={{ padding: '3px 8px', borderRadius: '6px', fontSize: '11px', fontWeight: '700', backgroundColor: '#fff159', color: '#333' }}>MercadoLibre</span>
     }
@@ -417,6 +452,17 @@ export default function Customers() {
           >
             <RefreshCw size={16} className={syncingWa ? 'spin' : ''} />
             {syncingWa ? 'Sincronizando...' : 'Extraer Contactos WA'}
+          </button>
+
+          <button
+            onClick={handleSyncMetaLeads}
+            disabled={syncingMetaLeads}
+            className="btn btn-secondary"
+            style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '9px 15px', borderRadius: '8px', fontWeight: '600', backgroundColor: '#e1306c', color: '#fff', border: 'none' }}
+            title="Descargar clientes e importar formularios de Instagram Ads / Facebook Ads"
+          >
+            <Download size={16} className={syncingMetaLeads ? 'spin' : ''} />
+            {syncingMetaLeads ? 'Descargando...' : '📥 Sincronizar Leads Meta'}
           </button>
 
           <button
@@ -624,10 +670,12 @@ export default function Customers() {
                 style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--border-color)', height: '40px', background: 'var(--bg-card)', color: 'var(--text-primary)' }}
               >
                 <option value="ALL">Todos los orígenes</option>
-                <option value="WHATSAPP">WhatsApp</option>
-                <option value="MERCADOLIBRE">MercadoLibre</option>
-                <option value="MERCADOPAGO">MercadoPago</option>
-                <option value="MANUAL">Manual</option>
+                <option value="INSTAGRAM">📸 Instagram Ads</option>
+                <option value="FACEBOOK">🟦 Facebook Ads</option>
+                <option value="WHATSAPP">💬 WhatsApp</option>
+                <option value="MERCADOLIBRE">🟡 MercadoLibre</option>
+                <option value="MERCADOPAGO">💳 MercadoPago</option>
+                <option value="MANUAL">✏️ Manual</option>
               </select>
             </div>
           </div>
