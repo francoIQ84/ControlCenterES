@@ -557,17 +557,26 @@ def fetch_meta_leadgen_forms():
     page_id = creds["facebook_page_id"].strip() if creds["facebook_page_id"] else "me"
 
     if not access_token:
-        return []
+        return {"success": False, "error": "No se ha configurado el Meta Access Token en el sistema."}
 
     try:
         url = f"{META_GRAPH_BASE_URL}/{page_id}/leadgen_forms?fields=id,name,status,created_time,leads_count&access_token={access_token}"
         req = urllib.request.Request(url, method="GET")
         with urllib.request.urlopen(req, timeout=15) as resp:
             data = json.loads(resp.read().decode('utf-8'))
-            return data.get("data", [])
+            return {"success": True, "forms": data.get("data", [])}
+    except urllib.error.HTTPError as e:
+        body = e.read().decode("utf-8", errors="replace")
+        try:
+            err_json = json.loads(body)
+            msg = err_json.get("error", {}).get("message", body)
+        except Exception:
+            msg = body
+        print(f"[Meta Leads] HTTPError {e.code}: {msg}")
+        return {"success": False, "error": f"Error de Meta API ({e.code}): {msg}"}
     except Exception as e:
-        print(f"[Meta Leads] Error al obtener formularios: {e}")
-        return []
+        print(f"[Meta Leads] Exception: {e}")
+        return {"success": False, "error": str(e)}
 
 def fetch_leads_from_form(form_id: str):
     """Obtiene los clientes potenciales que completaron un formulario de Lead Ads específico."""
@@ -624,7 +633,14 @@ def fetch_leads_from_form(form_id: str):
 
 def fetch_and_sync_all_meta_leads():
     """Descarga e importa todos los leads de formularios de Facebook/Instagram Ads a la base de datos de Clientes."""
-    forms = fetch_meta_leadgen_forms()
+    result = fetch_meta_leadgen_forms()
+    if not result.get("success"):
+        return {
+            "success": False,
+            "error": result.get("error", "Error al consultar formularios en Meta API")
+        }
+
+    forms = result.get("forms", [])
     all_leads = []
 
     for form in forms:

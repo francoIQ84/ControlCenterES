@@ -65,7 +65,11 @@ def sync_meta_leads():
     try:
         from src.utils import social_publisher
         res = social_publisher.fetch_and_sync_all_meta_leads()
+        if not res.get("success"):
+            raise HTTPException(status_code=400, detail=res.get("error", "Error al sincronizar con Meta API"))
         return res
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error al sincronizar clientes de Meta: {str(e)}")
 
