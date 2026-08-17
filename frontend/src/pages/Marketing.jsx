@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { Megaphone, Sparkles, Calendar, Settings as SettingsIcon, Send, Video, Image as ImageIcon, Trash2, CheckCircle, Clock, AlertCircle, RefreshCw, ExternalLink, MessageSquare, Users, Plus, Mail, Phone, Share2, Play, Check, Layers, UserPlus, X } from 'lucide-react'
 import { useTenant } from '../TenantContext'
+import MediaBrowser from '../components/MediaBrowser'
 
 const toHighResMlImage = (url) => {
   if (!url) return ''
@@ -185,6 +186,8 @@ export default function Marketing() {
   const [campaignMediaUrl, setCampaignMediaUrl] = useState('')
   const [campaignDelay, setCampaignDelay] = useState(5)
   const [sendingCampaign, setSendingCampaign] = useState(false)
+  const [selectedProductForCampaign, setSelectedProductForCampaign] = useState(null)
+  const [showCampaignGalleryModal, setShowCampaignGalleryModal] = useState(false)
 
   // Group Members modal
   const [viewingMembersGroup, setViewingMembersGroup] = useState(null)
@@ -3219,14 +3222,18 @@ export default function Marketing() {
                   <select 
                     onChange={e => {
                       const mlId = e.target.value
-                      if (!mlId) return
+                      if (!mlId) {
+                        setSelectedProductForCampaign(null)
+                        return
+                      }
                       const p = products.find(prod => prod.ml_id === mlId)
                       if (p) {
+                        setSelectedProductForCampaign(p)
                         const price = p.price_web || p.price || 0
                         setCampaignTitle(`🔥 ¡Gran oferta en ${p.title}!`)
                         setCampaignMessage(`¡Hola! Te compartimos una súper oferta exclusiva de Hidroponía Rosario:\n\n🌿 *${p.title}*\n💰 Precio especial: *$${price.toLocaleString('es-AR')} ARS*\n\n🚚 Envíos a todo el país. ¡Comprá el tuyo directo en nuestra Tienda Web!\n📲 Visitanos en nuestra web oficial.`)
-                        const imgs = p.images ? p.images.split(',') : (p.thumbnail ? [p.thumbnail] : [])
-                        if (imgs.length > 0) setCampaignMediaUrl(toHighResMlImage(imgs[0].trim()))
+                        const imgs = p.images ? p.images.split(',').map(s => s.trim()).filter(Boolean) : (p.thumbnail ? [p.thumbnail] : [])
+                        if (imgs.length > 0) setCampaignMediaUrl(toHighResMlImage(imgs[0]))
                       }
                     }}
                     style={{width: '100%', padding: 8, borderRadius: 6, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)', fontSize: '0.82rem'}}
@@ -3249,16 +3256,104 @@ export default function Marketing() {
                   />
                 </label>
 
-                <label style={{fontSize: '0.85rem', fontWeight: 600}}>
-                  5. URL de Imagen / Banner Publicitario (Media)
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
+                    <span style={{ fontSize: '0.85rem', fontWeight: 600 }}>5. URL de Imagen / Banner Publicitario (Media)</span>
+                    <button 
+                      type="button" 
+                      className="btn" 
+                      onClick={() => setShowCampaignGalleryModal(true)}
+                      style={{
+                        padding: '4px 10px',
+                        fontSize: '0.78rem',
+                        backgroundColor: 'var(--bg-dark)',
+                        color: 'var(--accent-blue)',
+                        border: '1px solid var(--border-color)',
+                        borderRadius: 6,
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 5,
+                        fontWeight: '600'
+                      }}
+                    >
+                      🖼️ Subir o Elegir de Mis Archivos
+                    </button>
+                  </div>
+
                   <input 
                     type="text"
                     value={campaignMediaUrl}
                     onChange={e => setCampaignMediaUrl(e.target.value)}
                     placeholder="https://... (Foto HD del producto o gráfica de oferta)"
-                    style={{width: '100%', marginTop: 5, padding: 10, borderRadius: 8, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-dark)', color: 'var(--text-primary)'}}
+                    style={{width: '100%', padding: 10, borderRadius: 8, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-dark)', color: 'var(--text-primary)'}}
                   />
-                </label>
+
+                  {/* Product Photos Thumbnail Picker Grid */}
+                  {selectedProductForCampaign && (() => {
+                    const prodImgs = selectedProductForCampaign.images ? selectedProductForCampaign.images.split(',').map(s => s.trim()).filter(Boolean) : (selectedProductForCampaign.thumbnail ? [selectedProductForCampaign.thumbnail] : [])
+                    if (prodImgs.length === 0) return null
+
+                    return (
+                      <div style={{
+                        backgroundColor: 'var(--bg-dark)',
+                        border: '1px solid var(--border-color)',
+                        borderRadius: 8,
+                        padding: '10px 12px',
+                        marginTop: 4
+                      }}>
+                        <div style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+                          📷 <span>Fotos de {selectedProductForCampaign.title} ({prodImgs.length}): Hacé clic para cambiar la imagen activa</span>
+                        </div>
+                        <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 4 }}>
+                          {prodImgs.map((imgUrl, idx) => {
+                            const highRes = toHighResMlImage(imgUrl)
+                            const isSelected = campaignMediaUrl === highRes || campaignMediaUrl === imgUrl
+                            return (
+                              <div
+                                key={idx}
+                                onClick={() => setCampaignMediaUrl(highRes)}
+                                style={{
+                                  position: 'relative',
+                                  width: 56,
+                                  height: 56,
+                                  borderRadius: 8,
+                                  overflow: 'hidden',
+                                  cursor: 'pointer',
+                                  border: isSelected ? '2px solid var(--accent-blue)' : '1px solid var(--border-color)',
+                                  boxShadow: isSelected ? '0 0 10px rgba(59, 130, 246, 0.5)' : 'none',
+                                  opacity: isSelected ? 1 : 0.65,
+                                  transition: 'all 0.2s ease',
+                                  flexShrink: 0,
+                                  backgroundColor: '#fff'
+                                }}
+                                title={`Seleccionar imagen ${idx + 1}`}
+                              >
+                                <img 
+                                  src={highRes} 
+                                  alt="" 
+                                  style={{ width: '100%', height: '100%', objectFit: 'contain' }} 
+                                />
+                                {isSelected && (
+                                  <div style={{
+                                    position: 'absolute',
+                                    top: 2, right: 2,
+                                    backgroundColor: 'var(--accent-blue)',
+                                    color: '#fff',
+                                    borderRadius: '50%',
+                                    width: 16, height: 16,
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center'
+                                  }}>
+                                    <Check size={10} />
+                                  </div>
+                                )}
+                              </div>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    )
+                  })()}
+                </div>
 
                 <button 
                   type="submit" 
@@ -3816,6 +3911,51 @@ export default function Marketing() {
               {savingConfig ? 'Guardando...' : '💾 Guardar Credenciales de Meta'}
             </button>
           </form>
+        </div>
+      )}
+
+      {/* Campaign Gallery / MediaBrowser Modal */}
+      {showCampaignGalleryModal && (
+        <div style={{
+          position: 'fixed',
+          top: 0, left: 0, right: 0, bottom: 0,
+          backgroundColor: 'rgba(0, 0, 0, 0.8)',
+          zIndex: 99999,
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          padding: '20px'
+        }}>
+          <div className="card" style={{
+            width: 820,
+            maxWidth: '96vw',
+            maxHeight: '90vh',
+            overflowY: 'auto',
+            padding: '22px',
+            backgroundColor: 'var(--bg-card)',
+            border: '1px solid var(--border-color)',
+            borderRadius: '14px',
+            boxShadow: '0 20px 50px rgba(0,0,0,0.5)'
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', borderBottom: '1px solid var(--border-color)', paddingBottom: '12px' }}>
+              <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <ImageIcon size={20} style={{ color: 'var(--accent-blue)' }} />
+                <span>Elegir o Subir Imagen para la Campaña</span>
+              </h3>
+              <button 
+                className="btn-icon" 
+                onClick={() => setShowCampaignGalleryModal(false)}
+                style={{ padding: '4px', borderRadius: '50%' }}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <MediaBrowser onSelectImage={(url) => {
+              setCampaignMediaUrl(url)
+              setShowCampaignGalleryModal(false)
+            }} />
+          </div>
         </div>
       )}
     </div>
