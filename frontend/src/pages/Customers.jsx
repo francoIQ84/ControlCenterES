@@ -112,10 +112,17 @@ export default function Customers() {
       const res = await fetch('/api/customers/sync-meta-leads', { method: 'POST' })
       const json = await res.json()
       if (res.ok && json.success) {
-        setSyncNotice({
-          type: 'success',
-          text: `¡Leads de Meta Sincronizados! Se procesaron ${json.forms_processed || 0} formularios de Instagram/Facebook Ads y se importaron ${json.synced_count || 0} nuevos clientes.`
-        })
+        if (json.forms_processed === 0) {
+          setSyncNotice({
+            type: 'warning',
+            text: 'ℹ️ Se procesaron 0 formularios de Meta. Para importar prospectos automáticamente, vinculá tu Token en Marketing > Configuración Meta y asegurate de tener formularios de Lead Ads activos en Instagram/Facebook.'
+          })
+        } else {
+          setSyncNotice({
+            type: 'success',
+            text: `¡Leads de Meta Sincronizados! Se procesaron ${json.forms_processed || 0} formularios de Instagram/Facebook Ads y se importaron ${json.synced_count || 0} nuevos clientes.`
+          })
+        }
         fetchCrmData()
       } else {
         setSyncNotice({
