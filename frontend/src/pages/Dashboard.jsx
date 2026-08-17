@@ -154,7 +154,41 @@ export default function Dashboard() {
         </div>
       </div>
 
-      <div className="grid-cards">
+      {/* Early Warning Banner */}
+      {stats && (stats.low_stock_count > 0) && (
+        <div style={{
+          backgroundColor: 'rgba(239, 68, 68, 0.12)',
+          border: '1px solid rgba(239, 68, 68, 0.3)',
+          borderRadius: '12px',
+          padding: '12px 18px',
+          marginBottom: '20px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          flexWrap: 'wrap',
+          gap: '10px'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <AlertTriangle size={20} style={{ color: 'var(--accent-red)' }} />
+            <span style={{ fontSize: '0.9rem', fontWeight: '600', color: 'var(--text-primary)' }}>
+              Alerta Operativa: Tenés <strong style={{ color: 'var(--accent-red)' }}>{stats.low_stock_count}</strong> producto(s) en stock crítico.
+            </span>
+          </div>
+          <a href="/inventory" style={{
+            fontSize: '0.8rem',
+            fontWeight: '700',
+            color: '#ffffff',
+            backgroundColor: 'var(--accent-red)',
+            padding: '6px 14px',
+            borderRadius: '8px',
+            textDecoration: 'none'
+          }}>
+            Ver Inventario ➔
+          </a>
+        </div>
+      )}
+
+      <div className="responsive-kpi-grid">
         <div className="card kpi-card" style={{borderLeft: '4px solid var(--accent-blue)'}}>
           <div className="kpi-title">Facturación Total <DollarSign size={18} color="var(--accent-blue)"/></div>
           <div className="kpi-value">${Math.round(stats.total_revenue || 0).toLocaleString()}</div>

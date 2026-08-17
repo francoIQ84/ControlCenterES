@@ -1,4 +1,21 @@
-import React, { useState, useEffect } from 'react'
+// AFIP Error Translator: convierte errores técnicos de WSFE/WSAA en recomendaciones amigables
+const translateAfipError = (rawMsg) => {
+  if (!rawMsg) return 'Error desconocido al procesar con AFIP'
+  const lower = String(rawMsg).toLowerCase()
+  if (lower.includes('cuit') && (lower.includes('no es valido') || lower.includes('invalido'))) {
+    return '⚠️ El CUIT del comprador no está registrado o activo en AFIP. Verifique los 11 dígitos.'
+  }
+  if (lower.includes('certificado') || lower.includes('expirado') || lower.includes('clave')) {
+    return '🔑 El certificado digital (.crt) o la clave privada de AFIP ha vencido o no coincide. Verifique en Configuración > AFIP.'
+  }
+  if (lower.includes('punto de venta') || lower.includes('pto_vta')) {
+    return '🏢 El Punto de Venta AFIP especificado no está autorizado para Factura Electrónica Web Services (WSFE).'
+  }
+  if (lower.includes('token') || lower.includes('wsaa')) {
+    return '🔐 Error de autenticación con los servidores de AFIP (WSAA). Intente nuevamente en unos instantes.'
+  }
+  return rawMsg
+}
 
 export default function Billing() {
   const [sales, setSales] = useState([])

@@ -1783,7 +1783,7 @@ function ProductRow({ p, onSave, onOpenGallery, onDraftChange, categories, categ
     return (
       <React.Fragment>
         <tr className="product-row-card compact-tr" style={{borderBottom: '1px solid var(--border-color)', fontSize: '0.85rem', backgroundColor: isSelected ? 'rgba(59, 130, 246, 0.12)' : undefined}}>
-          <td data-label="Selección" style={{padding: '5px 8px', textAlign: 'center'}}>
+          <td data-label="Selección" className="sticky-col-left-1" style={{padding: '5px 8px', textAlign: 'center'}}>
             <input 
               type="checkbox" 
               checked={isSelected}
@@ -1791,7 +1791,7 @@ function ProductRow({ p, onSave, onOpenGallery, onDraftChange, categories, categ
               style={{cursor: 'pointer'}}
             />
           </td>
-          <td data-label="Imagen" style={{padding: '5px 8px'}}>
+          <td data-label="Imagen" className="sticky-col-left-2" style={{padding: '5px 8px'}}>
             <img 
               src={p.thumbnail || 'https://via.placeholder.com/35'} 
               alt="thumb" 
