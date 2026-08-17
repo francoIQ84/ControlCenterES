@@ -2605,124 +2605,195 @@ export default function Marketing() {
                 No hay publicaciones agendadas o creadas.
               </div>
             ) : (
-              <div style={{overflowX: 'auto'}}>
-                <table className="table" style={{width: '100%', fontSize: '0.85rem'}}>
-                  <thead>
-                    <tr>
-                      <th style={{width: 60}}>Medio</th>
-                      <th>Título / Copy</th>
-                      <th>Tipo</th>
-                      <th>Redes</th>
-                      <th>Programado</th>
-                      <th>Estado</th>
-                      <th>Acciones</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {posts.map(p => (
-                      <tr key={p.id}>
-                        <td>
-                          {p.media_urls ? (
-                            isVideoUrl(p.media_urls.split(',')[0]) ? (
-                              <div style={{position: 'relative', width: 44, height: 44, borderRadius: 6, overflow: 'hidden', backgroundColor: '#000', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid var(--border-color)'}}>
-                                <video 
-                                  src={p.media_urls.split(',')[0]} 
-                                  preload="metadata"
-                                  style={{width: '100%', height: '100%', objectFit: 'cover'}} 
-                                />
-                                <div style={{position: 'absolute', inset: 0, backgroundColor: 'rgba(0,0,0,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center'}}>
-                                  <Video size={16} color="#fff" />
-                                </div>
-                              </div>
-                            ) : (
-                              <img 
-                                src={toHighResMlImage(p.media_urls.split(',')[0])} 
-                                alt="" 
-                                style={{width: 44, height: 44, objectFit: 'cover', borderRadius: 6, backgroundColor: '#fff', border: '1px solid var(--border-color)'}} 
-                                onError={(e) => {
-                                  e.target.style.display = 'none';
-                                }}
-                              />
-                            )
-                          ) : (
-                            <div style={{width: 44, height: 44, backgroundColor: 'var(--bg-dark)', borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid var(--border-color)'}}>
-                              <ImageIcon size={18} />
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', marginTop: '15px' }}>
+                {posts.map(p => (
+                  <div 
+                    key={p.id} 
+                    style={{
+                      backgroundColor: 'var(--bg-dark)',
+                      border: '1px solid var(--border-color)',
+                      borderRadius: '12px',
+                      padding: '16px 20px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '18px',
+                      flexWrap: 'wrap',
+                      transition: 'all 0.2s ease',
+                      boxShadow: '0 2px 8px rgba(0, 0, 0, 0.08)'
+                    }}
+                  >
+                    {/* Media Thumbnail */}
+                    <div style={{ flexShrink: 0 }}>
+                      {p.media_urls ? (
+                        isVideoUrl(p.media_urls.split(',')[0]) ? (
+                          <div style={{ position: 'relative', width: 64, height: 64, borderRadius: 10, overflow: 'hidden', backgroundColor: '#000', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid var(--border-color)' }}>
+                            <video 
+                              src={p.media_urls.split(',')[0]} 
+                              preload="metadata"
+                              style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
+                            />
+                            <div style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(0,0,0,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                              <Video size={20} color="#fff" />
                             </div>
+                          </div>
+                        ) : (
+                          <img 
+                            src={toHighResMlImage(p.media_urls.split(',')[0])} 
+                            alt="" 
+                            style={{ width: 64, height: 64, objectFit: 'cover', borderRadius: 10, backgroundColor: '#fff', border: '1px solid var(--border-color)' }} 
+                            onError={(e) => { e.target.style.display = 'none'; }}
+                          />
+                        )
+                      ) : (
+                        <div style={{ width: 64, height: 64, backgroundColor: 'var(--bg-card)', borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid var(--border-color)' }}>
+                          <ImageIcon size={22} style={{ color: 'var(--text-secondary)' }} />
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Title & Copy */}
+                    <div style={{ flex: '1 1 280px', minWidth: 240 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                        <span style={{
+                          fontSize: '0.72rem',
+                          fontWeight: '700',
+                          padding: '2px 8px',
+                          borderRadius: '6px',
+                          backgroundColor: p.post_type === 'reel' ? 'rgba(139, 92, 246, 0.15)' : 'rgba(59, 130, 246, 0.15)',
+                          color: p.post_type === 'reel' ? 'var(--accent-purple)' : 'var(--accent-blue)'
+                        }}>
+                          {p.post_type === 'reel' ? '🎬 Reel' : '📷 Post'}
+                        </span>
+                        <h4 style={{ margin: 0, fontSize: '0.95rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                          {p.title || 'Publicación sin título'}
+                        </h4>
+                      </div>
+
+                      <p style={{
+                        margin: 0,
+                        fontSize: '0.82rem',
+                        color: 'var(--text-secondary)',
+                        lineHeight: '1.4',
+                        display: '-webkit-box',
+                        WebkitLineClamp: 2,
+                        WebkitBoxOrient: 'vertical',
+                        overflow: 'hidden'
+                      }} title={p.caption}>
+                        {p.caption || 'Sin texto adicional.'}
+                      </p>
+                    </div>
+
+                    {/* Redes & Fecha Programada */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', minWidth: 150 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Redes:</span>
+                        <span style={{
+                          fontSize: '0.72rem',
+                          fontWeight: '700',
+                          padding: '2px 8px',
+                          borderRadius: '6px',
+                          backgroundColor: 'rgba(59, 130, 246, 0.12)',
+                          color: 'var(--accent-blue)'
+                        }}>
+                          {p.platforms}
+                        </span>
+                      </div>
+
+                      <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                        <Clock size={13} />
+                        <span>{p.scheduled_at ? new Date(p.scheduled_at).toLocaleString('es-AR', { dateStyle: 'short', timeStyle: 'short' }) : 'Sin fecha (Borrador)'}</span>
+                      </div>
+                    </div>
+
+                    {/* Estado Badge */}
+                    <div style={{ flexShrink: 0 }}>
+                      <span style={{
+                        fontSize: '0.78rem', 
+                        fontWeight: 700,
+                        padding: '5px 12px',
+                        borderRadius: '20px',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '5px',
+                        backgroundColor: p.status === 'published' ? 'rgba(16, 185, 129, 0.15)' : (p.status === 'scheduled' ? 'rgba(59, 130, 246, 0.15)' : 'rgba(245, 158, 11, 0.15)'),
+                        color: p.status === 'published' ? '#10b981' : (p.status === 'scheduled' ? '#3b82f6' : '#d97706'),
+                        border: `1px solid ${p.status === 'published' ? 'rgba(16, 185, 129, 0.3)' : (p.status === 'scheduled' ? 'rgba(59, 130, 246, 0.3)' : 'rgba(245, 158, 11, 0.3)')}`
+                      }}>
+                        {p.status === 'published' ? '✅ Publicado' : (p.status === 'scheduled' ? '⏰ Programado' : '📝 Borrador')}
+                      </span>
+                    </div>
+
+                    {/* Acciones */}
+                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginLeft: 'auto', flexShrink: 0 }}>
+                      <button 
+                        className="btn" 
+                        style={{
+                          padding: '6px 12px', 
+                          fontSize: '0.78rem', 
+                          backgroundColor: 'var(--bg-card)', 
+                          color: 'var(--text-primary)', 
+                          border: '1px solid var(--border-color)',
+                          borderRadius: '8px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '5px'
+                        }} 
+                        onClick={() => handleEditPost(p)} 
+                        title="Editar Borrador / Publicación"
+                      >
+                        ✏️ Editar
+                      </button>
+
+                      {p.status !== 'published' && (
+                        <button 
+                          className="btn" 
+                          disabled={publishingId === p.id}
+                          style={{
+                            padding: '6px 14px', 
+                            fontSize: '0.78rem', 
+                            backgroundColor: publishingId === p.id ? 'var(--bg-card)' : 'var(--accent-emerald)', 
+                            color: '#fff',
+                            border: 'none',
+                            borderRadius: '8px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '6px',
+                            fontWeight: 'bold',
+                            boxShadow: '0 2px 6px rgba(16, 185, 129, 0.3)'
+                          }} 
+                          onClick={() => handlePublishNow(p.id)} 
+                          title="Publicar inmediatamente en Meta"
+                        >
+                          {publishingId === p.id ? (
+                            <>
+                              <RefreshCw className="animate-spin" size={14} />
+                              <span>Publicando...</span>
+                            </>
+                          ) : (
+                            <>
+                              <Send size={14} />
+                              <span>Publicar</span>
+                            </>
                           )}
-                        </td>
-                        <td>
-                          <div style={{fontWeight: 600, fontSize: '0.85rem'}}>{p.title}</div>
-                          <div style={{fontSize: '0.75rem', color: 'var(--text-secondary)', maxLine: 2, lineClamp: 2, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden'}} title={p.caption}>
-                            {p.caption}
-                          </div>
-                        </td>
-                        <td>
-                          <span style={{fontSize: '0.75rem', padding: '2px 6px', borderRadius: 4, backgroundColor: 'var(--bg-dark)', fontWeight: 600}}>
-                            {p.post_type === 'reel' ? '🎬 Reel' : '📷 Post'}
-                          </span>
-                        </td>
-                        <td>
-                          <span style={{fontSize: '0.75rem', color: 'var(--accent-blue)'}}>{p.platforms}</span>
-                        </td>
-                        <td style={{fontSize: '0.78rem'}}>
-                          {p.scheduled_at ? new Date(p.scheduled_at).toLocaleString('es-AR', { dateStyle: 'short', timeStyle: 'short' }) : 'Sin fecha (Borrador)'}
-                        </td>
-                        <td>
-                          <span style={{
-                            fontSize: '0.75rem', 
-                            fontWeight: 600,
-                            padding: '2px 8px',
-                            borderRadius: 4,
-                            backgroundColor: p.status === 'published' ? 'rgba(16, 185, 129, 0.15)' : (p.status === 'scheduled' ? 'rgba(59, 130, 246, 0.15)' : 'rgba(239, 68, 68, 0.15)'),
-                            color: p.status === 'published' ? '#10b981' : (p.status === 'scheduled' ? '#3b82f6' : '#ef4444')
-                          }}>
-                            {p.status === 'published' ? '✅ Publicado' : (p.status === 'scheduled' ? '⏰ Programado' : p.status)}
-                          </span>
-                        </td>
-                        <td>
-                          <div style={{display: 'flex', gap: 6, alignItems: 'center'}}>
-                            <button className="btn" style={{padding: '3px 8px', fontSize: '0.7rem', backgroundColor: 'var(--bg-dark)', color: 'var(--text-primary)', border: '1px solid var(--border-color)'}} onClick={() => handleEditPost(p)} title="Editar Borrador / Publicación">
-                              ✏️ Editar
-                            </button>
-                            {p.status !== 'published' && (
-                              <button 
-                                className="btn" 
-                                disabled={publishingId === p.id}
-                                style={{
-                                  padding: '4px 10px', 
-                                  fontSize: '0.72rem', 
-                                  backgroundColor: publishingId === p.id ? 'var(--bg-dark)' : 'var(--accent-emerald)', 
-                                  color: '#fff',
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  gap: 4,
-                                  fontWeight: 'bold'
-                                }} 
-                                onClick={() => handlePublishNow(p.id)} 
-                                title="Publicar inmediatamente en Meta"
-                              >
-                                {publishingId === p.id ? (
-                                  <>
-                                    <RefreshCw className="animate-spin" size={12} />
-                                    <span>Publicando... Esperá</span>
-                                  </>
-                                ) : (
-                                  <>
-                                    <Send size={12} />
-                                    <span>Publicar</span>
-                                  </>
-                                )}
-                              </button>
-                            )}
-                            <button className="btn-icon" onClick={() => handleDeletePost(p.id)} style={{color: '#ef4444'}} title="Eliminar">
-                              <Trash2 size={16} />
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                        </button>
+                      )}
+
+                      <button 
+                        className="btn-icon" 
+                        onClick={() => handleDeletePost(p.id)} 
+                        style={{
+                          color: '#ef4444', 
+                          padding: '6px',
+                          borderRadius: '8px',
+                          backgroundColor: 'rgba(239, 68, 68, 0.1)'
+                        }} 
+                        title="Eliminar publicación"
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
+                  </div>
+                ))}
               </div>
             )
           )}
