@@ -358,20 +358,26 @@ export default function Expenses() {
       </div>
 
       {/* Tabs Bar */}
-      <div style={{ display: 'flex', gap: 10, borderBottom: '1px solid var(--border-color)', marginBottom: 25, flexWrap: 'wrap' }}>
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))',
+        gap: 10,
+        marginBottom: 25
+      }}>
         <button 
           onClick={() => setActiveTab('summary')}
           style={{
-            padding: '12px 22px',
+            padding: '12px 16px',
             fontWeight: 600,
-            fontSize: '0.95rem',
-            border: 'none',
-            borderBottom: activeTab === 'summary' ? '3px solid #3b82f6' : '3px solid transparent',
-            backgroundColor: 'transparent',
+            fontSize: '0.9rem',
+            border: activeTab === 'summary' ? '2px solid #3b82f6' : '1px solid var(--border-color)',
+            borderRadius: 8,
+            backgroundColor: activeTab === 'summary' ? 'rgba(59, 130, 246, 0.1)' : 'var(--bg-card)',
             color: activeTab === 'summary' ? '#3b82f6' : 'var(--text-secondary)',
             cursor: 'pointer',
             display: 'flex',
             alignItems: 'center',
+            justifyContent: 'center',
             gap: 8,
             transition: 'all 0.2s'
           }}
@@ -382,16 +388,17 @@ export default function Expenses() {
         <button 
           onClick={() => setActiveTab('expenses')}
           style={{
-            padding: '12px 22px',
+            padding: '12px 16px',
             fontWeight: 600,
-            fontSize: '0.95rem',
-            border: 'none',
-            borderBottom: activeTab === 'expenses' ? '3px solid #ef4444' : '3px solid transparent',
-            backgroundColor: 'transparent',
+            fontSize: '0.9rem',
+            border: activeTab === 'expenses' ? '2px solid #ef4444' : '1px solid var(--border-color)',
+            borderRadius: 8,
+            backgroundColor: activeTab === 'expenses' ? 'rgba(239, 68, 68, 0.1)' : 'var(--bg-card)',
             color: activeTab === 'expenses' ? '#ef4444' : 'var(--text-secondary)',
             cursor: 'pointer',
             display: 'flex',
             alignItems: 'center',
+            justifyContent: 'center',
             gap: 8,
             transition: 'all 0.2s'
           }}
@@ -402,21 +409,22 @@ export default function Expenses() {
         <button 
           onClick={() => setActiveTab('incomes')}
           style={{
-            padding: '12px 22px',
+            padding: '12px 16px',
             fontWeight: 600,
-            fontSize: '0.95rem',
-            border: 'none',
-            borderBottom: activeTab === 'incomes' ? '3px solid #10b981' : '3px solid transparent',
-            backgroundColor: 'transparent',
+            fontSize: '0.9rem',
+            border: activeTab === 'incomes' ? '2px solid #10b981' : '1px solid var(--border-color)',
+            borderRadius: 8,
+            backgroundColor: activeTab === 'incomes' ? 'rgba(16, 185, 129, 0.1)' : 'var(--bg-card)',
             color: activeTab === 'incomes' ? '#10b981' : 'var(--text-secondary)',
             cursor: 'pointer',
             display: 'flex',
             alignItems: 'center',
+            justifyContent: 'center',
             gap: 8,
             transition: 'all 0.2s'
           }}
         >
-          <TrendingUp size={18} /> Ingresos
+          <TrendingUp size={18} /> Ingresos Adicionales
         </button>
       </div>
 

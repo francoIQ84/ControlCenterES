@@ -517,42 +517,42 @@ export default function IndustrialProperty() {
           
           {/* Sub-tabs Selector */}
           <div style={{
-            display: 'flex',
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))',
             gap: '10px',
-            marginBottom: '20px',
-            flexWrap: 'wrap'
+            marginBottom: '20px'
           }}>
             <button
               className={`btn ${consultSubTab === 'monitored' ? 'btn-primary' : 'btn-secondary'}`}
               onClick={() => { setConsultSubTab('monitored'); }}
-              style={{ display: 'flex', alignItems: 'center', gap: '8px' }}
+              style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', fontSize: '0.85rem' }}
             >
               <Star size={16} style={{ color: consultSubTab === 'monitored' ? '#fff' : '#f59e0b', fill: consultSubTab === 'monitored' ? '#fff' : '#f59e0b' }} />
-              <span>⭐ Mis Marcas en Seguimiento ({monitoredList.length})</span>
+              <span>⭐ Marcas en Seguimiento ({monitoredList.length})</span>
             </button>
 
             <button
               className={`btn ${consultSubTab === 'denominacion' ? 'btn-primary' : 'btn-secondary'}`}
               onClick={() => { setConsultSubTab('denominacion'); setData(null); setError(null); }}
-              style={{ display: 'flex', alignItems: 'center', gap: '8px' }}
+              style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', fontSize: '0.85rem' }}
             >
               <Search size={16} />
-              <span>Buscador por Denominación</span>
+              <span>Por Denominación</span>
             </button>
 
             <button
               className={`btn ${consultSubTab === 'titular' ? 'btn-primary' : 'btn-secondary'}`}
               onClick={() => { setConsultSubTab('titular'); setData(null); setError(null); }}
-              style={{ display: 'flex', alignItems: 'center', gap: '8px' }}
+              style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', fontSize: '0.85rem' }}
             >
               <Building2 size={16} />
-              <span>Buscador por CUIT / Titular</span>
+              <span>Por CUIT / Titular</span>
             </button>
 
             <button
               className={`btn ${consultSubTab === 'notificaciones' ? 'btn-primary' : 'btn-secondary'}`}
               onClick={() => { setConsultSubTab('notificaciones'); setData(null); setError(null); }}
-              style={{ display: 'flex', alignItems: 'center', gap: '8px' }}
+              style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', fontSize: '0.85rem' }}
             >
               <FileText size={16} />
               <span>Boletín / Notificaciones</span>

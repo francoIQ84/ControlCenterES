@@ -72,14 +72,18 @@ export default function Dashboard() {
         </div>
         
         {/* Period Selector Group */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', maxWidth: '100%' }}>
           <div style={{
             display: 'flex',
             backgroundColor: 'var(--bg-card)',
             border: '1px solid var(--border-color)',
             borderRadius: '8px',
             padding: '4px',
-            gap: '4px'
+            gap: '4px',
+            overflowX: 'auto',
+            maxWidth: '100%',
+            whiteSpace: 'nowrap',
+            WebkitOverflowScrolling: 'touch'
           }}>
             {['day', 'week', 'month', 'year', 'total', 'custom'].map((p) => (
               <button

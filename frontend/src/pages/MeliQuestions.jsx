@@ -311,7 +311,7 @@ export default function MeliQuestions({ embedded = false }) {
 
       {/* SEARCH AND TAB FILTERS */}
       <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: 16, marginBottom: 20 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, backgroundColor: 'var(--bg-card, #1f2937)', borderRadius: 8, padding: '4px 8px', border: '1px solid var(--border-color, #374151)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, backgroundColor: 'var(--bg-card, #1f2937)', borderRadius: 8, padding: '4px 8px', border: '1px solid var(--border-color, #374151)', overflowX: 'auto', maxWidth: '100%', whiteSpace: 'nowrap', WebkitOverflowScrolling: 'touch' }}>
           {['ALL', 'ANSWERED_AUTO', 'PENDING_APPROVAL', 'NEEDS_REVIEW', 'ERROR'].map(fKey => (
             <button
               key={fKey}

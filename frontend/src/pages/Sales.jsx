@@ -719,12 +719,12 @@ export default function Sales() {
 
   return (
     <div>
-      <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20}}>
+      <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, flexWrap: 'wrap', gap: 12}}>
         <div>
-          <h1 className="page-title">Historial de Ventas</h1>
-          <p className="page-subtitle">Visualiza todas las ventas sincronizadas e ingresa pedidos locales.</p>
+          <h1 className="page-title" style={{margin: 0}}>Historial de Ventas</h1>
+          <p className="page-subtitle" style={{margin: '5px 0 0 0'}}>Visualiza todas las ventas sincronizadas e ingresa pedidos locales.</p>
         </div>
-        <div style={{display: 'flex', gap: 10}}>
+        <div style={{display: 'flex', gap: 10, flexWrap: 'wrap'}}>
           <button 
             className="btn" 
             style={{display: 'flex', alignItems: 'center', gap: 6, padding: '10px 16px', backgroundColor: 'var(--bg-dark)', color: 'var(--text-secondary)'}}
@@ -744,7 +744,8 @@ export default function Sales() {
 
       <div className="card">
         {loading ? <p>Cargando ventas...</p> : (
-          <table className="data-table">
+          <div style={{overflowX: 'auto', width: '100%'}}>
+            <table className="data-table">
             <thead>
               <tr>
                 <th onClick={() => requestSort('date_created')} style={{cursor: 'pointer', userSelect: 'none'}}>Fecha{getSortIcon('date_created')}</th>
@@ -942,6 +943,7 @@ export default function Sales() {
               )})}
             </tbody>
           </table>
+          </div>
         )}
       </div>
 

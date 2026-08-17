@@ -546,96 +546,111 @@ export default function Customers() {
         </div>
       </div>
 
-      {/* Tabs Navigation */}
-      <div style={{ display: 'flex', borderBottom: '1px solid var(--border-color)', marginBottom: '20px', gap: '10px', overflowX: 'auto' }}>
+      {/* Tabs Navigation (Settings.jsx pattern) */}
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))',
+        gap: 10,
+        marginBottom: '25px'
+      }}>
         <button
           onClick={() => setActiveTab('customers')}
           style={{
-            padding: '12px 20px',
-            border: 'none',
-            background: 'none',
-            borderBottom: activeTab === 'customers' ? '3px solid var(--accent-blue)' : '3px solid transparent',
+            padding: '10px 12px',
+            border: activeTab === 'customers' ? '2px solid var(--accent-blue)' : '1px solid var(--border-color)',
+            borderRadius: '8px',
+            backgroundColor: activeTab === 'customers' ? 'rgba(59, 130, 246, 0.1)' : 'var(--bg-card)',
             color: activeTab === 'customers' ? 'var(--accent-blue)' : 'var(--text-secondary)',
             fontWeight: '700',
+            fontSize: '0.85rem',
             cursor: 'pointer',
             display: 'flex',
             alignItems: 'center',
-            gap: '8px'
+            justifyContent: 'center',
+            gap: '6px'
           }}
         >
-          <Users size={18} /> Cartera de Clientes ({crmData.customers.length})
+          <Users size={16} /> Clientes ({crmData.customers.length})
         </button>
 
         <button
           onClick={() => setActiveTab('meli_questions')}
           style={{
-            padding: '12px 20px',
-            border: 'none',
-            background: 'none',
-            borderBottom: activeTab === 'meli_questions' ? '3px solid #f59e0b' : '3px solid transparent',
+            padding: '10px 12px',
+            border: activeTab === 'meli_questions' ? '2px solid #f59e0b' : '1px solid var(--border-color)',
+            borderRadius: '8px',
+            backgroundColor: activeTab === 'meli_questions' ? 'rgba(245, 158, 11, 0.1)' : 'var(--bg-card)',
             color: activeTab === 'meli_questions' ? '#f59e0b' : 'var(--text-secondary)',
             fontWeight: '700',
+            fontSize: '0.85rem',
             cursor: 'pointer',
             display: 'flex',
             alignItems: 'center',
-            gap: '8px'
+            justifyContent: 'center',
+            gap: '6px'
           }}
         >
-          <Sparkles size={18} /> Preguntas Mercado Libre (IA)
+          <Sparkles size={16} /> Preguntas ML (IA)
         </button>
 
         <button
           onClick={() => setActiveTab('inquiries')}
           style={{
-            padding: '12px 20px',
-            border: 'none',
-            background: 'none',
-            borderBottom: activeTab === 'inquiries' ? '3px solid #8b5cf6' : '3px solid transparent',
+            padding: '10px 12px',
+            border: activeTab === 'inquiries' ? '2px solid #8b5cf6' : '1px solid var(--border-color)',
+            borderRadius: '8px',
+            backgroundColor: activeTab === 'inquiries' ? 'rgba(139, 92, 246, 0.1)' : 'var(--bg-card)',
             color: activeTab === 'inquiries' ? '#8b5cf6' : 'var(--text-secondary)',
             fontWeight: '700',
+            fontSize: '0.85rem',
             cursor: 'pointer',
             display: 'flex',
             alignItems: 'center',
-            gap: '8px'
+            justifyContent: 'center',
+            gap: '6px'
           }}
         >
-          <TrendingUp size={18} /> Productos Más Consultados ({crmData.product_inquiries.length})
+          <TrendingUp size={16} /> Consultas ({crmData.product_inquiries.length})
         </button>
 
         <button
           onClick={() => setActiveTab('leads')}
           style={{
-            padding: '12px 20px',
-            border: 'none',
-            background: 'none',
-            borderBottom: activeTab === 'leads' ? '3px solid #10b981' : '3px solid transparent',
+            padding: '10px 12px',
+            border: activeTab === 'leads' ? '2px solid #10b981' : '1px solid var(--border-color)',
+            borderRadius: '8px',
+            backgroundColor: activeTab === 'leads' ? 'rgba(16, 185, 129, 0.1)' : 'var(--bg-card)',
             color: activeTab === 'leads' ? '#10b981' : 'var(--text-secondary)',
             fontWeight: '700',
+            fontSize: '0.85rem',
             cursor: 'pointer',
             display: 'flex',
             alignItems: 'center',
-            gap: '8px'
+            justifyContent: 'center',
+            gap: '6px'
           }}
         >
-          <UserCheck size={18} /> Leads & Suscriptores ({crmData.leads.length})
+          <UserCheck size={16} /> Leads Web ({crmData.leads.length})
         </button>
 
         <button
           onClick={() => setActiveTab('whatsapp')}
           style={{
-            padding: '12px 20px',
-            border: 'none',
-            background: 'none',
-            borderBottom: activeTab === 'whatsapp' ? '3px solid #25D366' : '3px solid transparent',
+            padding: '10px 12px',
+            border: activeTab === 'whatsapp' ? '2px solid #25D366' : '1px solid var(--border-color)',
+            borderRadius: '8px',
+            backgroundColor: activeTab === 'whatsapp' ? 'rgba(37, 211, 102, 0.1)' : 'var(--bg-card)',
             color: activeTab === 'whatsapp' ? '#25D366' : 'var(--text-secondary)',
             fontWeight: '700',
+            fontSize: '0.85rem',
             cursor: 'pointer',
             display: 'flex',
             alignItems: 'center',
-            gap: '8px'
+            justifyContent: 'center',
+            gap: '6px'
           }}
         >
-          <MessageSquare size={18} /> Extractor de WhatsApp ({crmData.whatsapp_chats.length})
+          <MessageSquare size={16} /> Chats WhatsApp ({crmData.whatsapp_chats.length})
         </button>
       </div>
 

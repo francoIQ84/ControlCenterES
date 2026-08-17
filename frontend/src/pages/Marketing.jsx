@@ -1923,18 +1923,27 @@ export default function Marketing() {
         Generá Reels y publicaciones con IA (Gemini), programalos y responde comentarios de Instagram y Facebook.
       </p>
 
-      {/* Tabs Navigation */}
-      <div style={{display: 'flex', gap: 10, marginBottom: 25, borderBottom: '1px solid var(--border-color)', pb: 10}}>
+      {/* Tabs Navigation (Responsive grid matching Settings page pattern) */}
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))',
+        gap: 10,
+        marginBottom: 25
+      }}>
         <button 
           className="btn" 
           onClick={() => setActiveTab('creator')}
           style={{
             backgroundColor: activeTab === 'creator' ? 'var(--accent-blue)' : 'var(--bg-card)',
             color: activeTab === 'creator' ? '#fff' : 'var(--text-primary)',
-            border: '1px solid var(--border-color)',
+            border: activeTab === 'creator' ? '2px solid var(--accent-blue)' : '1px solid var(--border-color)',
             display: 'flex',
             alignItems: 'center',
-            gap: 6
+            justifyContent: 'center',
+            gap: 6,
+            padding: '10px 8px',
+            fontSize: '0.83rem',
+            textAlign: 'center'
           }}
         >
           <Sparkles size={16} /> Creador IA & Reels
@@ -1945,10 +1954,14 @@ export default function Marketing() {
           style={{
             backgroundColor: activeTab === 'calendar' ? 'var(--accent-blue)' : 'var(--bg-card)',
             color: activeTab === 'calendar' ? '#fff' : 'var(--text-primary)',
-            border: '1px solid var(--border-color)',
+            border: activeTab === 'calendar' ? '2px solid var(--accent-blue)' : '1px solid var(--border-color)',
             display: 'flex',
             alignItems: 'center',
-            gap: 6
+            justifyContent: 'center',
+            gap: 6,
+            padding: '10px 8px',
+            fontSize: '0.83rem',
+            textAlign: 'center'
           }}
         >
           <Calendar size={16} /> Cola & Calendario ({posts.filter(p => p.status === 'scheduled').length})
@@ -1959,13 +1972,17 @@ export default function Marketing() {
           style={{
             backgroundColor: activeTab === 'comments' ? 'var(--accent-blue)' : 'var(--bg-card)',
             color: activeTab === 'comments' ? '#fff' : 'var(--text-primary)',
-            border: '1px solid var(--border-color)',
+            border: activeTab === 'comments' ? '2px solid var(--accent-blue)' : '1px solid var(--border-color)',
             display: 'flex',
             alignItems: 'center',
-            gap: 6
+            justifyContent: 'center',
+            gap: 6,
+            padding: '10px 8px',
+            fontSize: '0.83rem',
+            textAlign: 'center'
           }}
         >
-          <MessageSquare size={16} /> 💬 Inbox de Comentarios
+          <MessageSquare size={16} /> Inbox de Comentarios
         </button>
         <button 
           className="btn" 
@@ -1973,13 +1990,17 @@ export default function Marketing() {
           style={{
             backgroundColor: activeTab === 'diffusion' ? 'var(--accent-blue)' : 'var(--bg-card)',
             color: activeTab === 'diffusion' ? '#fff' : 'var(--text-primary)',
-            border: '1px solid var(--border-color)',
+            border: activeTab === 'diffusion' ? '2px solid var(--accent-blue)' : '1px solid var(--border-color)',
             display: 'flex',
             alignItems: 'center',
-            gap: 6
+            justifyContent: 'center',
+            gap: 6,
+            padding: '10px 8px',
+            fontSize: '0.83rem',
+            textAlign: 'center'
           }}
         >
-          <Send size={16} /> 📢 Difusión & Envíos Masivos ({diffusionGroups.length})
+          <Send size={16} /> Difusión ({diffusionGroups.length})
         </button>
         <button 
           className="btn" 
@@ -1987,13 +2008,17 @@ export default function Marketing() {
           style={{
             backgroundColor: activeTab === 'config' ? 'var(--accent-blue)' : 'var(--bg-card)',
             color: activeTab === 'config' ? '#fff' : 'var(--text-primary)',
-            border: '1px solid var(--border-color)',
+            border: activeTab === 'config' ? '2px solid var(--accent-blue)' : '1px solid var(--border-color)',
             display: 'flex',
             alignItems: 'center',
-            gap: 6
+            justifyContent: 'center',
+            gap: 6,
+            padding: '10px 8px',
+            fontSize: '0.83rem',
+            textAlign: 'center'
           }}
         >
-          <SettingsIcon size={16} /> Configuración de Redes
+          <SettingsIcon size={16} /> Configuración Redes
         </button>
       </div>
 
@@ -2001,7 +2026,7 @@ export default function Marketing() {
       {activeTab === 'creator' && (
         <div style={{display: 'flex', gap: 25, flexWrap: 'wrap'}}>
           {/* Columna Izquierda: Generación & Ajustes */}
-          <div className="card" style={{flex: 1, minWidth: 320}}>
+          <div className="card" style={{flex: 1, minWidth: 260, maxWidth: '100%'}}>
             <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15}}>
               <h3 style={{margin: 0, display: 'flex', alignItems: 'center', gap: 8}}>
                 <Sparkles size={18} style={{color: 'var(--accent-orange)'}} />
@@ -2027,7 +2052,7 @@ export default function Marketing() {
                     onChange={e => setProductCategoryFilter(e.target.value)}
                     style={{
                       flex: 1,
-                      minWidth: 150,
+                      minWidth: 130,
                       padding: '7px 10px',
                       borderRadius: 6,
                       border: productCategoryFilter === 'UNCATEGORIZED' ? '1px solid #f59e0b' : '1px solid var(--border-color)',
@@ -2051,7 +2076,7 @@ export default function Marketing() {
                     onChange={e => setProductSearch(e.target.value)}
                     style={{
                       flex: 1.2,
-                      minWidth: 170,
+                      minWidth: 130,
                       padding: '7px 10px',
                       borderRadius: 6,
                       border: '1px solid var(--border-color)',
@@ -2118,8 +2143,8 @@ export default function Marketing() {
                 </div>
               )}
 
-              <div style={{display: 'flex', gap: 15}}>
-                <label style={{flex: 1, fontSize: '0.85rem'}}>Objetivo Campaña
+              <div style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12}}>
+                <label style={{fontSize: '0.85rem'}}>Objetivo Campaña
                   <select value={objective} onChange={e => setObjective(e.target.value)} style={{width: '100%', marginTop: 5, padding: '6px 10px', borderRadius: 6, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-dark)', color: 'var(--text-primary)'}}>
                     <option value="promocional">Promocional / Ventas</option>
                     <option value="oferta">Descuento u Oferta</option>
@@ -2127,7 +2152,7 @@ export default function Marketing() {
                   </select>
                 </label>
 
-                <label style={{flex: 1, fontSize: '0.85rem'}}>Tono de Voz
+                <label style={{fontSize: '0.85rem'}}>Tono de Voz
                   <select value={tone} onChange={e => setTone(e.target.value)} style={{width: '100%', marginTop: 5, padding: '6px 10px', borderRadius: 6, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-dark)', color: 'var(--text-primary)'}}>
                     <option value="entusiasta">Entusiasta & Dinámico</option>
                     <option value="profesional">Profesional & Técnico</option>
@@ -2202,7 +2227,7 @@ export default function Marketing() {
                     </div>
 
                     {/* Row 0: Plantilla / Layout de Diseño */}
-                    <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8}}>
+                    <div style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 8}}>
                       <label style={{fontSize: '0.78rem', fontWeight: 600}}>Plantilla Visual de Diseño:
                         <select 
                           value={canvasLayout} 

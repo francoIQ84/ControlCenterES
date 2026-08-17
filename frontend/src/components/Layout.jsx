@@ -409,6 +409,114 @@ export default function Layout() {
     window.location.href = '/login'
   }
 
+  const renderStatusBadges = (isDrawer = false) => (
+    <>
+      {/* AFIP Status Badge */}
+      {meliStatus && (
+        <div style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: '8px',
+          padding: isDrawer ? '8px 12px' : '6px 12px',
+          borderRadius: '20px',
+          fontSize: '0.8rem',
+          fontWeight: '600',
+          backgroundColor: meliStatus.afip_active ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)',
+          color: meliStatus.afip_active ? 'var(--accent-emerald)' : 'var(--accent-red)',
+          border: `1px solid ${meliStatus.afip_active ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)'}`,
+          whiteSpace: 'nowrap',
+          flexShrink: 0
+        }}>
+          <span style={{
+            width: '8px',
+            height: '8px',
+            borderRadius: '50%',
+            backgroundColor: meliStatus.afip_active ? 'var(--accent-emerald)' : 'var(--accent-red)',
+            boxShadow: meliStatus.afip_active ? '0 0 8px var(--accent-emerald)' : '0 0 8px var(--accent-red)'
+          }}></span>
+          <span>{meliStatus.afip_active ? 'AFIP Vinculada' : 'AFIP Inactiva'}</span>
+        </div>
+      )}
+
+      {/* Vínculo Meli status Badge (Clickable for instant OAuth) */}
+      {meliStatus && (
+        <div 
+          onClick={handleAuthMeliClick}
+          title={meliStatus.is_authenticated ? "Cuenta vinculada con Mercado Libre. Hacé clic para revincular." : "¡Hacé clic para vincular tu cuenta de Mercado Libre!"}
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '8px',
+            padding: isDrawer ? '8px 12px' : '6px 14px',
+            borderRadius: '20px',
+            fontSize: '0.8rem',
+            fontWeight: '600',
+            backgroundColor: meliStatus.is_authenticated ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.15)',
+            color: meliStatus.is_authenticated ? 'var(--accent-emerald)' : 'var(--accent-red)',
+            border: `1px solid ${meliStatus.is_authenticated ? 'rgba(16, 185, 129, 0.3)' : 'rgba(239, 68, 68, 0.3)'}`,
+            cursor: 'pointer',
+            transition: 'all 0.2s',
+            userSelect: 'none',
+            whiteSpace: 'nowrap',
+            flexShrink: 0
+          }}
+        >
+          <span style={{
+            width: '8px',
+            height: '8px',
+            borderRadius: '50%',
+            backgroundColor: meliStatus.is_authenticated ? 'var(--accent-emerald)' : 'var(--accent-red)',
+            boxShadow: meliStatus.is_authenticated ? '0 0 8px var(--accent-emerald)' : '0 0 8px var(--accent-red)'
+          }}></span>
+          {meliStatus.is_authenticated ? (
+            <span>Meli Vinculado {meliStatus.demo_mode && '(Demo)'}</span>
+          ) : (
+            <span>🔗 Sin Vincular Meli</span>
+          )}
+        </div>
+      )}
+
+      {/* Quick 24h Sync Button for Mercado Libre & Mercado Pago */}
+      {meliStatus && meliStatus.is_authenticated && (
+        <button 
+          onClick={handleSync24h}
+          disabled={syncing || autoSyncing}
+          title="Sincronizar ventas, cobros y publicaciones de Mercado Libre y Mercado Pago de las últimas 24 horas"
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '6px',
+            padding: isDrawer ? '8px 14px' : '6px 14px',
+            borderRadius: '20px',
+            fontSize: '0.8rem',
+            fontWeight: '600',
+            backgroundColor: 'var(--accent-emerald)',
+            color: '#ffffff',
+            border: 'none',
+            cursor: syncing || autoSyncing ? 'not-allowed' : 'pointer',
+            opacity: syncing || autoSyncing ? 0.7 : 1,
+            transition: 'all 0.2s',
+            boxShadow: '0 2px 6px rgba(16, 185, 129, 0.3)',
+            whiteSpace: 'nowrap',
+            flexShrink: 0
+          }}
+        >
+          <RefreshCw size={14} className={syncing ? 'animate-spin' : ''} />
+          <span>{syncing ? 'Sincronizando...' : '⚡ Sincronizar 24hs ML/MP'}</span>
+        </button>
+      )}
+
+      {/* Autosync indicator */}
+      {autoSyncing && (
+        <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', display: 'inline-flex', alignItems: 'center', gap: '5px', whiteSpace: 'nowrap', flexShrink: 0 }}>
+          <RefreshCw size={14} className="animate-spin" />
+          <span>Auto-sincronizando 7d...</span>
+        </span>
+      )}
+    </>
+  );
+
   return (
     <div className="layout">
       {!collapsed && (
@@ -509,115 +617,31 @@ export default function Layout() {
             </NavLink>
           )}
         </nav>
+
+        {/* Sidebar Mobile Status Section (Inside Drawer) */}
+        <div className="sidebar-mobile-status-section">
+          <div className="sidebar-mobile-status-title">Conexión & Sincronización</div>
+          {renderStatusBadges(true)}
+        </div>
       </aside>
       <main className="main-content">
-        <header className="header" style={{ justifyContent: 'space-between', paddingLeft: '20px' }}>
-          <button className="btn-icon" onClick={() => setCollapsed(!collapsed)} title={collapsed ? "Mostrar menú" : "Ocultar menú"}>
-            <Menu size={20} />
-          </button>
+        <header className="header">
+          <div className="header-left">
+            <button className="btn-icon" onClick={() => setCollapsed(!collapsed)} title={collapsed ? "Mostrar menú" : "Ocultar menú"}>
+              <Menu size={20} />
+            </button>
+            <span className="header-mobile-brand">
+              {tenant?.name || 'ControlCenterES'}
+            </span>
+          </div>
+
+          <div className="header-status-desktop">
+            {renderStatusBadges(false)}
+          </div>
           
-          <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
-            {/* AFIP Status Badge */}
-            {meliStatus && (
-              <div style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '8px',
-                padding: '6px 12px',
-                borderRadius: '20px',
-                fontSize: '0.8rem',
-                fontWeight: '600',
-                backgroundColor: meliStatus.afip_active ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)',
-                color: meliStatus.afip_active ? 'var(--accent-emerald)' : 'var(--accent-red)',
-                border: `1px solid ${meliStatus.afip_active ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)'}`
-              }}>
-                <span style={{
-                  width: '8px',
-                  height: '8px',
-                  borderRadius: '50%',
-                  backgroundColor: meliStatus.afip_active ? 'var(--accent-emerald)' : 'var(--accent-red)',
-                  boxShadow: meliStatus.afip_active ? '0 0 8px var(--accent-emerald)' : '0 0 8px var(--accent-red)'
-                }}></span>
-                <span>{meliStatus.afip_active ? 'AFIP Vinculada' : 'AFIP Inactiva'}</span>
-              </div>
-            )}
-
-            {/* Vínculo Meli status Badge (Clickable for instant OAuth) */}
-            {meliStatus && (
-              <div 
-                onClick={handleAuthMeliClick}
-                title={meliStatus.is_authenticated ? "Cuenta vinculada con Mercado Libre. Hacé clic para revincular." : "¡Hacé clic para vincular tu cuenta de Mercado Libre!"}
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '8px',
-                  padding: '6px 14px',
-                  borderRadius: '20px',
-                  fontSize: '0.8rem',
-                  fontWeight: '600',
-                  backgroundColor: meliStatus.is_authenticated ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.15)',
-                  color: meliStatus.is_authenticated ? 'var(--accent-emerald)' : 'var(--accent-red)',
-                  border: `1px solid ${meliStatus.is_authenticated ? 'rgba(16, 185, 129, 0.3)' : 'rgba(239, 68, 68, 0.3)'}`,
-                  cursor: 'pointer',
-                  transition: 'all 0.2s',
-                  userSelect: 'none'
-                }}
-              >
-                <span style={{
-                  width: '8px',
-                  height: '8px',
-                  borderRadius: '50%',
-                  backgroundColor: meliStatus.is_authenticated ? 'var(--accent-emerald)' : 'var(--accent-red)',
-                  boxShadow: meliStatus.is_authenticated ? '0 0 8px var(--accent-emerald)' : '0 0 8px var(--accent-red)'
-                }}></span>
-                {meliStatus.is_authenticated ? (
-                  <span>Meli Vinculado {meliStatus.demo_mode && '(Demo)'}</span>
-                ) : (
-                  <span>🔗 Sin Vincular Meli (Hacé clic aquí)</span>
-                )}
-              </div>
-            )}
-
-            {/* Quick 24h Sync Button for Mercado Libre & Mercado Pago */}
-            {meliStatus && meliStatus.is_authenticated && (
-              <button 
-                onClick={handleSync24h}
-                disabled={syncing || autoSyncing}
-                title="Sincronizar ventas, cobros y publicaciones de Mercado Libre y Mercado Pago de las últimas 24 horas"
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  padding: '6px 14px',
-                  borderRadius: '20px',
-                  fontSize: '0.8rem',
-                  fontWeight: '600',
-                  backgroundColor: 'var(--accent-emerald)',
-                  color: '#ffffff',
-                  border: 'none',
-                  cursor: syncing || autoSyncing ? 'not-allowed' : 'pointer',
-                  opacity: syncing || autoSyncing ? 0.7 : 1,
-                  transition: 'all 0.2s',
-                  boxShadow: '0 2px 6px rgba(16, 185, 129, 0.3)'
-                }}
-              >
-                <RefreshCw size={14} className={syncing ? 'animate-spin' : ''} />
-                <span>{syncing ? 'Sincronizando 24h...' : '⚡ Sincronizar 24hs ML/MP'}</span>
-              </button>
-            )}
-
-            {/* Autosync indicator */}
-            {autoSyncing && (
-              <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '5px' }}>
-                <RefreshCw size={14} className="animate-spin" />
-                <span>Auto-sincronizando 7d...</span>
-              </span>
-            )}
-            
-            <div style={{display: 'flex', gap: '10px', alignItems: 'center'}}>
-
-              {/* Contextual Help Button */}
-              <div style={{ position: 'relative' }}>
+          <div className="header-actions-right">
+            {/* Contextual Help Button */}
+            <div style={{ position: 'relative' }}>
                 <button
                   className="btn-icon"
                   onClick={() => { setShowHelp(!showHelp); setShowNotifications(false) }}
@@ -641,21 +665,10 @@ export default function Layout() {
                   return (
                     <>
                       <div
+                        className="header-popover-backdrop"
                         onClick={() => setShowHelp(false)}
-                        style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 9998 }}
                       />
-                      <div style={{
-                        position: 'absolute',
-                        top: '42px',
-                        right: '0',
-                        width: '360px',
-                        maxWidth: '90vw',
-                        backgroundColor: 'var(--bg-card)',
-                        border: '1px solid var(--border-color)',
-                        borderRadius: '14px',
-                        boxShadow: '0 20px 40px -5px rgba(0,0,0,0.45)',
-                        zIndex: 9999,
-                        overflow: 'hidden',
+                      <div className="header-popover-dropdown" style={{
                         animation: 'helpFadeIn 0.18s ease-out'
                       }}>
                         {/* Header */}
@@ -773,19 +786,9 @@ export default function Layout() {
 
                 {/* Popover Dropdown */}
                 {showNotifications && (
-                  <div style={{
-                    position: 'absolute',
-                    top: '42px',
-                    right: '0',
-                    width: '380px',
-                    maxWidth: '90vw',
-                    backgroundColor: 'var(--bg-card)',
-                    border: '1px solid var(--border-color)',
-                    borderRadius: '12px',
-                    boxShadow: '0 20px 25px -5px rgba(0,0,0,0.4)',
-                    zIndex: 9999,
-                    overflow: 'hidden'
-                  }}>
+                  <>
+                    <div className="header-popover-backdrop" onClick={() => setShowNotifications(false)} />
+                    <div className="header-popover-dropdown">
                     {/* Popover Header */}
                     <div style={{
                       padding: '12px 16px',
@@ -897,6 +900,7 @@ export default function Layout() {
                       </div>
                     )}
                   </div>
+                </>
                 )}
               </div>
 
@@ -907,8 +911,10 @@ export default function Layout() {
                 <LogOut size={20} />
               </button>
             </div>
-          </div>
-        </header>
+          </header>
+        <div className="mobile-header-subbar">
+          {renderStatusBadges(false)}
+        </div>
         <div className="content-area">
           <Outlet />
         </div>

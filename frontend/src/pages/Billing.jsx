@@ -373,7 +373,8 @@ export default function Billing() {
         ) : sortedSales.length === 0 ? (
           <p style={{ padding: '25px', textAlign: 'center', color: '#777' }}>No se encontraron comprobantes facturados.</p>
         ) : (
-          <table className="data-table">
+          <div style={{overflowX: 'auto', width: '100%'}}>
+            <table className="data-table">
             <thead>
               <tr>
                 <th onClick={() => requestSort('invoice_number')} style={{ cursor: 'pointer', userSelect: 'none' }}>
@@ -442,6 +443,7 @@ export default function Billing() {
               ))}
             </tbody>
           </table>
+          </div>
         )}
       </div>
     </div>
