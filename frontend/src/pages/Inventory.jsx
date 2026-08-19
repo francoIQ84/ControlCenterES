@@ -372,7 +372,7 @@ export default function Inventory() {
     fetchCategories()
   }, [query, showHidden])
 
-  const handleUpdate = async (ml_id, qty, price, cost, cost_meli, price_web, images, description, is_web_active, category_id, sync_meli, min_stock) => {
+  const handleUpdate = async (ml_id, qty, price, cost, cost_meli, price_web, images, description, is_web_active, category_id, sync_meli, min_stock, featured_order = 0, use_meli_description = 1, description_meli = "") => {
     try {
       const res = await fetch(`/api/inventory/${ml_id}`, {
         method: 'PUT',
@@ -385,10 +385,13 @@ export default function Inventory() {
           price_web: parseFloat(price_web) || 0,
           images: images || "",
           description: description || "",
+          use_meli_description: use_meli_description ? 1 : 0,
+          description_meli: description_meli || "",
           is_web_active: is_web_active ? 1 : 0,
           category_id: category_id ? parseInt(category_id) : null,
           sync_meli: sync_meli ? 1 : 0,
-          min_stock: parseInt(min_stock) || 0
+          min_stock: parseInt(min_stock) || 0,
+          featured_order: parseInt(featured_order) || 0
         })
       })
       if(res.ok) {
@@ -400,10 +403,11 @@ export default function Inventory() {
         }
         fetchProducts()
       } else {
-        alert("Error al guardar")
+        const errData = await res.json()
+        alert("Error al actualizar: " + (errData.detail || "Error del servidor"))
       }
     } catch(e) {
-      alert("Error: " + e.message)
+      alert("Error al guardar cambios")
     }
   }
 
@@ -1710,8 +1714,29 @@ function ProductRow({ p, onSave, onOpenGallery, onDraftChange, categories, categ
   const [categoryId, setCategoryId] = useState(p.category_id || "")
   const [syncMeli, setSyncMeli] = useState(p.sync_meli !== 0)
   const [description, setDescription] = useState(p.description || "")
+  const [useMeliDescription, setUseMeliDescription] = useState(p.use_meli_description !== 0)
+  const [descMeli, setDescMeli] = useState(p.description_meli || "")
+  const [isSyncingDesc, setIsSyncingDesc] = useState(false)
   const [featuredOrder, setFeaturedOrder] = useState(p.featured_order || 0)
   const [showWebDetails, setShowWebDetails] = useState(false)
+
+  const handleSyncDesc = async () => {
+    setIsSyncingDesc(true)
+    try {
+      const res = await fetch(`/api/inventory/${p.ml_id}/sync-description`, { method: 'POST' })
+      const data = await res.json()
+      if (data.success && data.description_meli) {
+        setDescMeli(data.description_meli)
+        alert('Descripción sincronizada exitosamente desde Mercado Libre.')
+      } else {
+        alert(data.message || 'No se pudo traer la descripción de Mercado Libre.')
+      }
+    } catch (e) {
+      alert('Error al conectar con la API de descripciones.')
+    } finally {
+      setIsSyncingDesc(false)
+    }
+  }
 
   const isMeliMain = !p.images || p.images.split(',')[0].trim() === p.thumbnail
   const [useMeliImage, setUseMeliImage] = useState(isMeliMain)
@@ -1771,13 +1796,15 @@ function ProductRow({ p, onSave, onOpenGallery, onDraftChange, categories, categ
       price_web: parseNum(priceWeb),
       images: getCombinedImages(),
       description: description || "",
+      use_meli_description: useMeliDescription ? 1 : 0,
+      description_meli: descMeli || "",
       is_web_active: isWebActive ? 1 : 0,
       category_id: categoryId ? parseInt(categoryId) : null,
       sync_meli: syncMeli ? 1 : 0,
       min_stock: parseNum(minStock, true),
       featured_order: parseNum(featuredOrder, true)
     })
-  }, [qty, price, cost, costMeli, priceWeb, isWebActive, description, useMeliImage, customMainUrl, additionalUrls, categoryId, syncMeli, minStock, featuredOrder])
+  }, [qty, price, cost, costMeli, priceWeb, isWebActive, description, useMeliDescription, descMeli, useMeliImage, customMainUrl, additionalUrls, categoryId, syncMeli, minStock, featuredOrder])
 
   if (viewMode === 'compact') {
     return (
@@ -1984,7 +2011,7 @@ function ProductRow({ p, onSave, onOpenGallery, onDraftChange, categories, categ
           </td>
           <td data-label="Acciones" style={{padding: '5px 8px'}}>
             <div style={{display: 'flex', gap: 6, alignItems: 'center'}}>
-              <button className="btn-icon" onClick={() => onSave(p.ml_id, qty, price, cost, costMeli, priceWeb, getCombinedImages(), description, isWebActive, categoryId, syncMeli, minStock, featuredOrder)} title="Guardar Todo" style={{padding: 4}}>
+              <button className="btn-icon" onClick={() => onSave(p.ml_id, qty, price, cost, costMeli, priceWeb, getCombinedImages(), description, isWebActive, categoryId, syncMeli, minStock, featuredOrder, useMeliDescription ? 1 : 0, descMeli)} title="Guardar Todo" style={{padding: 4}}>
                 <Save size={14} className="text-blue-500" />
               </button>
               <button type="button" className="btn-icon" onClick={() => onOpenQrModal(p)} title="Ver / Imprimir QR" style={{padding: 4, color: 'var(--accent-blue)'}}>
@@ -2056,8 +2083,32 @@ function ProductRow({ p, onSave, onOpenGallery, onDraftChange, categories, categ
                 </div>
                 {/* Columna 3: Descrip */}
                 <div style={{flex: 2, minWidth: 250}}>
-                  <label style={{fontSize: '0.8rem', fontWeight: 'bold', display: 'block', marginBottom: 4}}>Descripción Web</label>
-                  <textarea value={description} onChange={e => setDescription(e.target.value)} style={{width: '100%', height: 60, padding: 5, fontSize: '0.75rem', backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)', border: '1px solid var(--border-color)', borderRadius: 4}}/>
+                  <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4}}>
+                    <label style={{fontSize: '0.8rem', fontWeight: 'bold'}}>Descripción Personalizada (Manual)</label>
+                    {p.status !== 'local' && (
+                      <button 
+                        type="button" 
+                        onClick={handleSyncDesc} 
+                        disabled={isSyncingDesc}
+                        style={{fontSize: '0.7rem', padding: '2px 6px', background: 'var(--bg-hover)', color: 'var(--accent-blue)', border: '1px solid var(--border-color)', borderRadius: 4, cursor: 'pointer'}}
+                      >
+                        {isSyncingDesc ? 'Cargando...' : '🔄 Traer ML'}
+                      </button>
+                    )}
+                  </div>
+                  <textarea value={description} onChange={e => setDescription(e.target.value)} placeholder="Descripción escrita en el sistema (sobrescribe la de ML)..." style={{width: '100%', height: 60, padding: 5, fontSize: '0.75rem', backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)', border: '1px solid var(--border-color)', borderRadius: 4}}/>
+                  {p.status !== 'local' && (
+                    <div style={{marginTop: 6}}>
+                      <label style={{display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.75rem', color: 'var(--text-primary)', cursor: 'pointer'}}>
+                        <input 
+                          type="checkbox" 
+                          checked={useMeliDescription} 
+                          onChange={e => setUseMeliDescription(e.target.checked)} 
+                        />
+                        <span>Usar descripción de Mercado Libre por defecto</span>
+                      </label>
+                    </div>
+                  )}
                 </div>
               </div>
               <div style={{display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', color: 'var(--text-secondary)', borderTop: '1px solid var(--border-color)', paddingTop: 8, marginTop: 8}}>
@@ -2264,7 +2315,7 @@ function ProductRow({ p, onSave, onOpenGallery, onDraftChange, categories, categ
         </td>
         <td data-label="Acción">
           <div style={{display: 'flex', gap: 6, alignItems: 'center'}}>
-            <button className="btn-icon" onClick={() => onSave(p.ml_id, qty, price, cost, costMeli, priceWeb, getCombinedImages(), description, isWebActive, categoryId, syncMeli, minStock, featuredOrder)} title="Guardar Todo">
+            <button className="btn-icon" onClick={() => onSave(p.ml_id, qty, price, cost, costMeli, priceWeb, getCombinedImages(), description, isWebActive, categoryId, syncMeli, minStock, featuredOrder, useMeliDescription ? 1 : 0, descMeli)} title="Guardar Todo">
               <Save size={18} className="text-blue-500" />
             </button>
             <button type="button" className="btn-icon" onClick={() => onOpenQrModal(p)} title="Ver / Imprimir QR" style={{color: 'var(--accent-blue)'}}>
@@ -2382,13 +2433,37 @@ function ProductRow({ p, onSave, onOpenGallery, onDraftChange, categories, categ
 
               {/* Columna 3: Descripción */}
               <div style={{flex: 2, minWidth: 250}}>
-                <label style={{fontSize: '0.85rem', fontWeight: 'bold', display: 'block', marginBottom: 5}}>Descripción Web (Formato Texto)</label>
+                <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 5}}>
+                  <label style={{fontSize: '0.85rem', fontWeight: 'bold'}}>Descripción Personalizada (Manual)</label>
+                  {p.status !== 'local' && (
+                    <button 
+                      type="button" 
+                      onClick={handleSyncDesc} 
+                      disabled={isSyncingDesc}
+                      style={{fontSize: '0.75rem', padding: '3px 8px', background: 'var(--bg-hover)', color: 'var(--accent-blue)', border: '1px solid var(--border-color)', borderRadius: 4, cursor: 'pointer'}}
+                    >
+                      {isSyncingDesc ? 'Cargando...' : '🔄 Traer ML'}
+                    </button>
+                  )}
+                </div>
                 <textarea 
                   value={description} 
                   onChange={e => setDescription(e.target.value)} 
-                  style={{width: '100%', height: 80, backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)', border: '1px solid var(--border-color)', borderRadius: 4, padding: 8, fontSize: '0.8rem'}}
-                  placeholder="Descripción detallada para la tienda..."
+                  style={{width: '100%', height: 75, backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)', border: '1px solid var(--border-color)', borderRadius: 4, padding: 8, fontSize: '0.8rem'}}
+                  placeholder="Escribí una descripción personalizada escrita en el sistema (sobrescribe la de ML)..."
                 />
+                {p.status !== 'local' && (
+                  <div style={{marginTop: 8}}>
+                    <label style={{display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.8rem', color: 'var(--text-primary)', cursor: 'pointer'}}>
+                      <input 
+                        type="checkbox" 
+                        checked={useMeliDescription} 
+                        onChange={e => setUseMeliDescription(e.target.checked)} 
+                      />
+                      <span>Usar descripción de Mercado Libre por defecto (si no hay manual)</span>
+                    </label>
+                  </div>
+                )}
               </div>
             </div>
           </td>

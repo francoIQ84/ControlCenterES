@@ -15,6 +15,8 @@ class UpdateProductRequest(BaseModel):
     price_web: float = 0.0
     images: str = ""
     description: str = ""
+    use_meli_description: int = 1
+    description_meli: Optional[str] = None
     is_web_active: int = 0
     category_id: Optional[int] = None
     sync_meli: int = 1
@@ -31,6 +33,8 @@ class CreateProductRequest(BaseModel):
     price_web: float = 0.0
     images: str = ""
     description: str = ""
+    use_meli_description: int = 1
+    description_meli: str = ""
     is_web_active: int = 1
     publish_to_meli: bool = False
     category_id: Optional[int] = None
@@ -116,6 +120,8 @@ class BulkUpdateItem(BaseModel):
     price_web: float = 0.0
     images: str = ""
     description: str = ""
+    use_meli_description: int = 1
+    description_meli: Optional[str] = None
     is_web_active: int = 0
     category_id: Optional[int] = None
     sync_meli: int = 1
@@ -180,7 +186,9 @@ def bulk_update_products(payload: BulkUpdateRequest):
             item.category_id,
             item.sync_meli,
             item.min_stock,
-            item.featured_order
+            item.featured_order,
+            item.use_meli_description,
+            item.description_meli
         )
 
         is_local = item.ml_id.startswith('LOCAL-') or item.ml_id.startswith('WEB-')
@@ -550,4 +558,34 @@ def export_inventory_excel():
         media_type="text/csv; charset=utf-8",
         headers={"Content-Disposition": f"attachment; filename={filename}"}
     )
+
+@router.post("/{ml_id}/sync-description")
+def sync_single_product_description(ml_id: str):
+    desc = meli_api.fetch_single_item_description(ml_id)
+    if desc:
+        database.update_product_description_meli(ml_id, desc)
+        return {"success": True, "ml_id": ml_id, "description_meli": desc}
+    else:
+        return {"success": False, "ml_id": ml_id, "message": "No se pudo obtener la descripción de Mercado Libre"}
+
+@router.post("/sync-descriptions")
+def sync_all_product_descriptions():
+    products = database.get_all_products()
+    ml_products = [p for p in products if p.get('ml_id') and not p['ml_id'].startswith(('LOCAL-', 'WEB-'))]
+    synced_count = 0
+    from concurrent.futures import ThreadPoolExecutor
+    def _fetch_and_save(p):
+        ml_id = p['ml_id']
+        desc = meli_api.fetch_single_item_description(ml_id)
+        if desc:
+            database.update_product_description_meli(ml_id, desc)
+            return True
+        return False
+
+    with ThreadPoolExecutor(max_workers=5) as executor:
+        results = executor.map(_fetch_and_save, ml_products)
+        synced_count = sum(1 for r in results if r)
+
+    return {"success": True, "count": synced_count, "message": f"Descripciones de Mercado Libre actualizadas para {synced_count} publicaciones."}
+
 

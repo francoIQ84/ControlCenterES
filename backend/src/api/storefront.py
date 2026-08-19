@@ -18,13 +18,26 @@ def get_storefront_products(category: str = None):
         elif p['thumbnail']:
             imgs = [p['thumbnail'].replace('-I.jpg', '-O.jpg')]
             
+        manual_desc = (p.get('description') or '').strip()
+        desc_meli = (p.get('description_meli') or '').strip()
+        use_meli_desc = p.get('use_meli_description', 1)
+        
+        effective_desc = ""
+        if manual_desc:
+            effective_desc = manual_desc
+        elif use_meli_desc == 1 and desc_meli:
+            effective_desc = desc_meli
+
         mapped.append({
             "id": p['ml_id'],
             "title": p['title'],
             "price": p['price_web'] if p['price_web'] > 0 else p['price'],
             "original_price": p['price'],
             "images": imgs,
-            "description": p['description'],
+            "description": effective_desc,
+            "manual_description": manual_desc,
+            "description_meli": desc_meli,
+            "use_meli_description": use_meli_desc,
             "available_quantity": p['available_quantity'],
             "category_id": p.get('category_id'),
             "category_name": p.get('category_name'),

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useState, useMemo } from 'react'
 import { DollarSign, TrendingUp, ShoppingBag, AlertTriangle, Eye, Globe, TrendingDown } from 'lucide-react'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
 
@@ -267,54 +267,7 @@ export default function Dashboard() {
           )}
         </div>
  
-        <div className="card">
-          <h3 style={{marginTop: 0, marginBottom: 15}}>Productos más Vistos</h3>
-          {stats.top_products && stats.top_products.length > 0 ? (
-            <div style={{overflowX: 'auto', maxHeight: '350px', overflowY: 'auto'}}>
-              <table className="data-table" style={{width: '100%', borderCollapse: 'collapse'}}>
-                <thead>
-                  <tr style={{borderBottom: '1px solid var(--border-color)'}}>
-                    <th style={{textAlign: 'left', padding: '10px 5px'}}>Producto</th>
-                    <th style={{textAlign: 'center', padding: '10px 5px'}}>ML</th>
-                    <th style={{textAlign: 'center', padding: '10px 5px'}}>Web</th>
-                    <th style={{textAlign: 'center', padding: '10px 5px'}}>Total</th>
-                    <th style={{textAlign: 'left', padding: '10px 5px', width: '35%'}}>Porcentaje</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {stats.top_products.map((p) => {
-                    const total = p.visits_meli + p.visits_web;
-                    const meliPct = total > 0 ? (p.visits_meli / total) * 100 : 0;
-                    const webPct = total > 0 ? (p.visits_web / total) * 100 : 0;
-                    return (
-                      <tr key={p.ml_id} style={{borderBottom: '1px solid var(--border-color)'}}>
-                        <td style={{padding: '10px 5px'}}>
-                          <div style={{fontWeight: 600, fontSize: '0.85rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '180px'}} title={p.title}>{p.title}</div>
-                          <div style={{fontSize: '0.7rem', color: 'var(--text-secondary)', fontFamily: 'monospace'}}>{p.ml_id}</div>
-                        </td>
-                        <td style={{textAlign: 'center', padding: '10px 5px', color: 'var(--accent-amber)', fontWeight: '600', fontSize: '0.85rem'}}>{p.visits_meli.toLocaleString()}</td>
-                        <td style={{textAlign: 'center', padding: '10px 5px', color: 'var(--accent-cyan)', fontWeight: '600', fontSize: '0.85rem'}}>{p.visits_web.toLocaleString()}</td>
-                        <td style={{textAlign: 'center', padding: '10px 5px', fontWeight: '600', fontSize: '0.85rem'}}>{total.toLocaleString()}</td>
-                        <td style={{padding: '10px 5px'}}>
-                          <div style={{display: 'flex', height: '6px', borderRadius: '3px', overflow: 'hidden', backgroundColor: 'var(--bg-dark)'}}>
-                            <div style={{width: `${meliPct}%`, backgroundColor: 'var(--accent-amber)'}} title={`Mercado Libre: ${meliPct.toFixed(0)}%`}></div>
-                            <div style={{width: `${webPct}%`, backgroundColor: 'var(--accent-cyan)'}} title={`Web: ${webPct.toFixed(0)}%`}></div>
-                          </div>
-                          <div style={{display: 'flex', justifyContent: 'space-between', fontSize: '0.65rem', color: 'var(--text-secondary)', marginTop: '4px'}}>
-                            <span>ML: {meliPct.toFixed(0)}%</span>
-                            <span>Web: {webPct.toFixed(0)}%</span>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          ) : (
-            <p className="kpi-subtitle" style={{margin: '40px 0', textAlign: 'center'}}>No hay datos de visitas disponibles</p>
-          )}
-        </div>
+        <TopProductsWidget products={stats.top_products || []} />
       </div>
  
       {/* Alert Products List */}
@@ -415,6 +368,266 @@ export default function Dashboard() {
           )}
         </div>
       </div>
+    </div>
+  )
+}
+
+function TopProductsWidget({ products = [] }) {
+  const [search, setSearch] = useState('')
+  const [sortBy, setSortBy] = useState('total') // 'total', 'meli', 'web', 'ratio_web', 'ratio_meli'
+  const [sourceFilter, setSourceFilter] = useState('all') // 'all', 'meli_only', 'web_only', 'both'
+  const [displayLimit, setDisplayLimit] = useState(15)
+
+  const filteredAndSorted = useMemo(() => {
+    let list = [...products]
+
+    // 1. Text Search Filter
+    if (search.trim()) {
+      const q = search.toLowerCase().trim()
+      list = list.filter(p => (p.title || '').toLowerCase().includes(q) || (p.ml_id || '').toLowerCase().includes(q))
+    }
+
+    // 2. Traffic Source Filter
+    if (sourceFilter === 'meli_only') {
+      list = list.filter(p => (p.visits_meli || 0) > 0)
+    } else if (sourceFilter === 'web_only') {
+      list = list.filter(p => (p.visits_web || 0) > 0)
+    } else if (sourceFilter === 'both') {
+      list = list.filter(p => (p.visits_meli || 0) > 0 && (p.visits_web || 0) > 0)
+    }
+
+    // 3. Sort Order
+    list.sort((a, b) => {
+      const aMeli = a.visits_meli || 0
+      const aWeb = a.visits_web || 0
+      const aTotal = aMeli + aWeb
+
+      const bMeli = b.visits_meli || 0
+      const bWeb = b.visits_web || 0
+      const bTotal = bMeli + bWeb
+
+      if (sortBy === 'meli') {
+        return bMeli - aMeli || bTotal - aTotal
+      } else if (sortBy === 'web') {
+        return bWeb - aWeb || bTotal - aTotal
+      } else if (sortBy === 'ratio_web') {
+        const aRatio = aTotal > 0 ? (aWeb / aTotal) : 0
+        const bRatio = bTotal > 0 ? (bWeb / bTotal) : 0
+        return bRatio - aRatio || bTotal - aTotal
+      } else if (sortBy === 'ratio_meli') {
+        const aRatio = aTotal > 0 ? (aMeli / aTotal) : 0
+        const bRatio = bTotal > 0 ? (bMeli / bTotal) : 0
+        return bRatio - aRatio || bTotal - aTotal
+      } else {
+        return bTotal - aTotal
+      }
+    })
+
+    return list
+  }, [products, search, sortBy, sourceFilter])
+
+  const visibleList = filteredAndSorted.slice(0, displayLimit)
+
+  const totalMeliVisits = filteredAndSorted.reduce((sum, p) => sum + (p.visits_meli || 0), 0)
+  const totalWebVisits = filteredAndSorted.reduce((sum, p) => sum + (p.visits_web || 0), 0)
+
+  return (
+    <div className="card">
+      <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10, marginBottom: 12}}>
+        <div style={{display: 'flex', alignItems: 'center', gap: 8}}>
+          <h3 style={{margin: 0}}>Productos más Vistos</h3>
+          <span style={{fontSize: '0.75rem', padding: '2px 8px', borderRadius: 12, backgroundColor: 'var(--bg-dark)', color: 'var(--text-secondary)', fontWeight: 600}}>
+            {filteredAndSorted.length} items
+          </span>
+        </div>
+
+        {/* Search Input */}
+        <div style={{position: 'relative', width: 190}}>
+          <input 
+            type="text" 
+            placeholder="Buscar producto..." 
+            value={search} 
+            onChange={e => setSearch(e.target.value)} 
+            style={{
+              width: '100%', 
+              padding: '5px 8px', 
+              fontSize: '0.8rem', 
+              backgroundColor: 'var(--bg-card)', 
+              color: 'var(--text-primary)', 
+              border: '1px solid var(--border-color)', 
+              borderRadius: 6
+            }}
+          />
+          {search && (
+            <button 
+              type="button" 
+              onClick={() => setSearch('')} 
+              style={{position: 'absolute', right: 6, top: 4, background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: '0.8rem'}}
+            >
+              ✕
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Filter and Sort Pills Bar */}
+      <div style={{display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 12, padding: 10, backgroundColor: 'var(--bg-dark)', borderRadius: 8}}>
+        {/* Row 1: Sort Options */}
+        <div style={{display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', fontSize: '0.75rem'}}>
+          <span style={{fontWeight: 'bold', color: 'var(--text-secondary)', marginRight: 2}}>Ordenar:</span>
+          <button 
+            type="button" 
+            onClick={() => setSortBy('total')}
+            style={{
+              padding: '3px 8px', borderRadius: 4, border: 'none', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 600,
+              backgroundColor: sortBy === 'total' ? 'var(--accent-blue)' : 'var(--bg-card)',
+              color: sortBy === 'total' ? '#fff' : 'var(--text-primary)'
+            }}
+          >
+            📊 Total
+          </button>
+          <button 
+            type="button" 
+            onClick={() => setSortBy('meli')}
+            style={{
+              padding: '3px 8px', borderRadius: 4, border: 'none', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 600,
+              backgroundColor: sortBy === 'meli' ? 'var(--accent-amber)' : 'var(--bg-card)',
+              color: sortBy === 'meli' ? '#000' : 'var(--text-primary)'
+            }}
+          >
+            💛 Más Vistos ML
+          </button>
+          <button 
+            type="button" 
+            onClick={() => setSortBy('web')}
+            style={{
+              padding: '3px 8px', borderRadius: 4, border: 'none', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 600,
+              backgroundColor: sortBy === 'web' ? 'var(--accent-cyan)' : 'var(--bg-card)',
+              color: sortBy === 'web' ? '#000' : 'var(--text-primary)'
+            }}
+          >
+            🌐 Más Vistos Web
+          </button>
+          <button 
+            type="button" 
+            onClick={() => setSortBy('ratio_web')}
+            style={{
+              padding: '3px 8px', borderRadius: 4, border: 'none', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 600,
+              backgroundColor: sortBy === 'ratio_web' ? 'var(--accent-emerald)' : 'var(--bg-card)',
+              color: sortBy === 'ratio_web' ? '#fff' : 'var(--text-primary)'
+            }}
+          >
+            ⚖️ % Web
+          </button>
+        </div>
+
+        {/* Row 2: Source Filter & Totals */}
+        <div style={{display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6, flexWrap: 'wrap', fontSize: '0.75rem'}}>
+          <div style={{display: 'flex', alignItems: 'center', gap: 6}}>
+            <span style={{fontWeight: 'bold', color: 'var(--text-secondary)'}}>Canal:</span>
+            <select 
+              value={sourceFilter} 
+              onChange={e => setSourceFilter(e.target.value)}
+              style={{
+                padding: '2px 6px', fontSize: '0.75rem', borderRadius: 4, border: '1px solid var(--border-color)',
+                backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)', cursor: 'pointer'
+              }}
+            >
+              <option value="all">Todos los canales</option>
+              <option value="meli_only">Solo con visitas ML</option>
+              <option value="web_only">Solo con visitas Web</option>
+              <option value="both">Tráfico Mixto (ML + Web)</option>
+            </select>
+          </div>
+
+          <div style={{display: 'flex', gap: 8, color: 'var(--text-secondary)', fontSize: '0.72rem'}}>
+            <span>ML: <b style={{color: 'var(--accent-amber)'}}>{totalMeliVisits.toLocaleString()}</b></span>
+            <span>Web: <b style={{color: 'var(--accent-cyan)'}}>{totalWebVisits.toLocaleString()}</b></span>
+          </div>
+        </div>
+      </div>
+
+      {visibleList.length > 0 ? (
+        <div style={{overflowX: 'auto', maxHeight: '340px', overflowY: 'auto'}}>
+          <table className="data-table" style={{width: '100%', borderCollapse: 'collapse'}}>
+            <thead>
+              <tr style={{borderBottom: '1px solid var(--border-color)', position: 'sticky', top: 0, backgroundColor: 'var(--bg-card)', zIndex: 2}}>
+                <th style={{textAlign: 'left', padding: '8px 5px', cursor: 'pointer'}} onClick={() => setSortBy('total')}>
+                  Producto
+                </th>
+                <th style={{textAlign: 'center', padding: '8px 5px', cursor: 'pointer', color: 'var(--accent-amber)'}} onClick={() => setSortBy('meli')} title="Ordenar por Mercado Libre">
+                  ML {sortBy === 'meli' ? '▼' : ''}
+                </th>
+                <th style={{textAlign: 'center', padding: '8px 5px', cursor: 'pointer', color: 'var(--accent-cyan)'}} onClick={() => setSortBy('web')} title="Ordenar por Tienda Web">
+                  Web {sortBy === 'web' ? '▼' : ''}
+                </th>
+                <th style={{textAlign: 'center', padding: '8px 5px', cursor: 'pointer'}} onClick={() => setSortBy('total')} title="Ordenar por Visitas Totales">
+                  Total {sortBy === 'total' ? '▼' : ''}
+                </th>
+                <th style={{textAlign: 'left', padding: '8px 5px', width: '32%'}}>Porcentaje</th>
+              </tr>
+            </thead>
+            <tbody>
+              {visibleList.map((p) => {
+                const meliVisits = p.visits_meli || 0
+                const webVisits = p.visits_web || 0
+                const total = meliVisits + webVisits
+                const meliPct = total > 0 ? (meliVisits / total) * 100 : 0
+                const webPct = total > 0 ? (webVisits / total) * 100 : 0
+                
+                return (
+                  <tr key={p.ml_id} style={{borderBottom: '1px solid var(--border-color)'}}>
+                    <td style={{padding: '8px 5px'}}>
+                      <div style={{fontWeight: 600, fontSize: '0.85rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '180px'}} title={p.title}>
+                        {p.title}
+                      </div>
+                      <div style={{fontSize: '0.7rem', color: 'var(--text-secondary)', fontFamily: 'monospace'}}>
+                        {p.ml_id}
+                      </div>
+                    </td>
+                    <td style={{textAlign: 'center', padding: '8px 5px', color: 'var(--accent-amber)', fontWeight: '600', fontSize: '0.85rem'}}>
+                      {meliVisits.toLocaleString()}
+                    </td>
+                    <td style={{textAlign: 'center', padding: '8px 5px', color: 'var(--accent-cyan)', fontWeight: '600', fontSize: '0.85rem'}}>
+                      {webVisits.toLocaleString()}
+                    </td>
+                    <td style={{textAlign: 'center', padding: '8px 5px', fontWeight: '600', fontSize: '0.85rem'}}>
+                      {total.toLocaleString()}
+                    </td>
+                    <td style={{padding: '8px 5px'}}>
+                      <div style={{display: 'flex', height: '6px', borderRadius: '3px', overflow: 'hidden', backgroundColor: 'var(--bg-dark)'}}>
+                        <div style={{width: `${meliPct}%`, backgroundColor: 'var(--accent-amber)'}} title={`Mercado Libre: ${meliPct.toFixed(1)}% (${meliVisits} v.)`}></div>
+                        <div style={{width: `${webPct}%`, backgroundColor: 'var(--accent-cyan)'}} title={`Tienda Web: ${webPct.toFixed(1)}% (${webVisits} v.)`}></div>
+                      </div>
+                      <div style={{display: 'flex', justifyContent: 'space-between', fontSize: '0.65rem', color: 'var(--text-secondary)', marginTop: '3px'}}>
+                        <span style={{fontWeight: meliPct > webPct ? 600 : 400}}>ML: {meliPct.toFixed(0)}%</span>
+                        <span style={{fontWeight: webPct > meliPct ? 600 : 400}}>Web: {webPct.toFixed(0)}%</span>
+                      </div>
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <p className="kpi-subtitle" style={{margin: '25px 0', textAlign: 'center', color: 'var(--text-secondary)'}}>
+          No hay productos que coincidan con la búsqueda o filtro.
+        </p>
+      )}
+
+      {filteredAndSorted.length > displayLimit && (
+        <div style={{display: 'flex', justifyContent: 'center', marginTop: 10}}>
+          <button 
+            type="button" 
+            className="btn" 
+            onClick={() => setDisplayLimit(prev => prev + 20)}
+            style={{fontSize: '0.75rem', padding: '4px 12px', background: 'var(--bg-dark)', border: '1px solid var(--border-color)', color: 'var(--accent-blue)', cursor: 'pointer'}}
+          >
+            Ver más productos ({filteredAndSorted.length - displayLimit} restantes)
+          </button>
+        </div>
+      )}
     </div>
   )
 }

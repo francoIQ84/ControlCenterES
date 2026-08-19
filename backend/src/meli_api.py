@@ -286,6 +286,30 @@ def fetch_single_item_cost(item):
 
     return round(sale_fee + shipping_cost, 2)
 
+def fetch_single_item_description(item_id):
+    """
+    Obtiene la descripción oficial del producto desde Mercado Libre.
+    En modo demo genera una descripción realista de prueba.
+    """
+    if is_demo_mode():
+        return (
+            f"Descripción oficial de Mercado Libre para la publicación {item_id}.\n\n"
+            "• Producto 100% original con garantía directa de fábrica.\n"
+            "• Envíos inmediatos a todo el país a través de Mercado Envíos.\n"
+            "• Realizamos factura A y B según la necesidad del cliente.\n"
+            "• Insumos y equipos probados con los más altos estándares de calidad.\n\n"
+            "Ante cualquier inquietud sobre la utilización o especificaciones técnicas del producto, "
+            "no dudes en realizar tu consulta en la sección de preguntas. Responderemos a la brevedad."
+        )
+    try:
+        res = api_request("GET", f"/items/{item_id}/description")
+        if res is not None and res.status_code == 200:
+            data = res.json()
+            return data.get('plain_text') or data.get('text') or ''
+    except Exception as e:
+        print(f"[Sync ML] Error al obtener descripción de {item_id}: {e}")
+    return ""
+
 # --- Sync Data Functions ---
 
 def sync_products():
@@ -373,9 +397,10 @@ def sync_products():
             )
             details_response = api_request("GET", "/items", params={'ids': ",".join(chunk)})
             
-            # Fetch visits and real MeLi costs for the same item IDs in parallel
+            # Fetch visits, real MeLi costs, and descriptions for the same item IDs in parallel
             visits_dict = {}
             costs_dict = {}
+            desc_dict = {}
             from concurrent.futures import ThreadPoolExecutor
             
             def fetch_single_visit(item_id):
@@ -387,11 +412,18 @@ def sync_products():
                 except Exception:
                     pass
                 return item_id, 0
+
+            def fetch_desc(item_id):
+                return item_id, fetch_single_item_description(item_id)
                 
             with ThreadPoolExecutor(max_workers=5) as executor:
                 res_visits = executor.map(fetch_single_visit, chunk)
                 for item_id, val in res_visits:
                     visits_dict[item_id] = val
+
+                res_descs = executor.map(fetch_desc, chunk)
+                for item_id, d_val in res_descs:
+                    desc_dict[item_id] = d_val
             
             if details_response.status_code == 200:
                 results = details_response.json()
@@ -424,7 +456,8 @@ def sync_products():
                         'thumbnail': high_res_thumb,
                         'status': item.get('status'),
                         'visits_meli': visits_dict.get(item['id'], 0),
-                        'images': images_str
+                        'images': images_str,
+                        'description_meli': desc_dict.get(item['id'], '')
                     })
                         
         database.save_products(products)

@@ -29,13 +29,18 @@ En el comercio moderno, gestionar Mercado Libre, una tienda online propia, factu
 ## 💎 Catálogo de Funcionalidades (Features)
 
 ### 1. 📦 Gestión Avanzada de Inventario & Márgenes
-- **Sincronización Bidireccional con Mercado Libre**: Sincronización en segundo plano de stock, precios y estado de publicaciones.
+- **Sincronización Bidireccional con Mercado Libre**: Sincronización en segundo plano de stock, precios, imágenes y estado de publicaciones.
+- **Gestión Flexible de Descripciones de Productos**:
+  - **Descripción de Mercado Libre por Defecto**: Si el producto no cuenta con una descripción manual escrita en el sistema, se obtiene y muestra automáticamente la descripción oficial traída de la publicación de Mercado Libre (`description_meli`).
+  - **Preferencia de Uso de ML (`use_meli_description`)**: Conmutador por producto que permite desactivar la descripción de Mercado Libre si se prefiere no mostrarla.
+  - **Sobrescritura Manual Personalizada**: Al redactar una descripción manual en el sistema (`description`), ésta prevalece y reemplaza a la de Mercado Libre.
+  - **Sincronización a Demanda**: Botón *"🔄 Traer ML"* en el panel para consultar o actualizar la descripción de ML en tiempo real.
 - **Creación de Productos Exclusivos Web (Locales)**: Alta de artículos con prefijo `LOCAL-` para vender únicamente en la tienda propia sin comisiones.
 - **Cálculo de Márgenes Reales**: Carga de costo base, comisión de Mercado Libre y envío gratis para visualizar el margen neto (%) y ganancia exacta por unidad.
 - **Destacados en Portada Web (`featured_order`)**: Selección interactiva y reordenamiento de productos prioritarios en la página principal.
 - **Vistas Adaptativas de Inventario**: 
   - **Vista Comprimida (Por Defecto)**: Ultra legible, aprovecha el 100% del ancho de pantalla para nombres largos de productos, con insignias de categoría y marcas de modificación.
-  - **Vista Detallada**: Despliegue de fotos secundarias, descripción web y vinculaciones.
+  - **Vista Detallada**: Despliegue de fotos secundarias, edición de descripción web, alternador de fallback ML y vinculaciones.
 - **Historial de Modificaciones**: Registro de la última fecha/hora de actualización y visor de valores anteriores (`ant: $...`).
 
 ---
@@ -44,7 +49,7 @@ En el comercio moderno, gestionar Mercado Libre, una tienda online propia, factu
 - **Diseño Ultra Moderno & Responsivo**: Optimizado para dispositivos móviles y escritorio.
 - **Ficha de Producto de Alta Conversión**:
   - Zona Superior (*Hero*): Galería de imágenes, precio, insignia de stock en vivo, selector de cantidad y botón prominente **`Agregar al Carrito`**.
-  - Zona Inferior: Bloque de **Descripción del Producto** a pantalla completa con botón expandible interactivo **`Ver descripción completa ▼`** / **`Ver menos ▲`**.
+  - Zona Inferior: Bloque de **Descripción del Producto** a pantalla completa con botón expandible interactivo **`Ver descripción completa ▼`** / **`Ver menos ▲`**, con fallback automático a la descripción de Mercado Libre si no existe una personalizada.
 - **Carrito & Pedidos por WhatsApp**: Envío directo de carritos de compra armados a la línea de WhatsApp del negocio.
 - **Optimizada para SEO**: Títulos semánticos, meta-etiquetas y tiempos de carga instantáneos (Turbopack).
 

@@ -133,6 +133,8 @@ def init_db():
             cursor.execute('ALTER TABLE products_cache ADD COLUMN IF NOT EXISTS category_id INTEGER REFERENCES categories(id) ON DELETE SET NULL;')
             cursor.execute('ALTER TABLE products_cache ADD COLUMN IF NOT EXISTS sync_meli INTEGER DEFAULT 1;')
             cursor.execute('ALTER TABLE products_cache ADD COLUMN IF NOT EXISTS featured_order INTEGER DEFAULT 0;')
+            cursor.execute('ALTER TABLE products_cache ADD COLUMN IF NOT EXISTS description_meli TEXT;')
+            cursor.execute('ALTER TABLE products_cache ADD COLUMN IF NOT EXISTS use_meli_description INTEGER DEFAULT 1;')
 
             # Orders cache table
             cursor.execute('''
@@ -529,13 +531,15 @@ def save_products(products_list):
     with get_connection() as conn:
         with conn.cursor() as cursor:
             for p in products_list:
-                cursor.execute("SELECT cost_price, cost_meli, price_web, images, description, is_web_active, visits_web FROM products_cache WHERE ml_id = %s", (p['ml_id'],))
+                cursor.execute("SELECT cost_price, cost_meli, price_web, images, description, description_meli, use_meli_description, is_web_active, visits_web FROM products_cache WHERE ml_id = %s", (p['ml_id'],))
                 row = cursor.fetchone()
                 cost_price = row['cost_price'] if row else 0.0
                 cost_meli = p.get('cost_meli') if (p.get('cost_meli') is not None and p.get('cost_meli') > 0) else (row['cost_meli'] if row else 0.0)
                 price_web = row['price_web'] if row else 0.0
                 images = row['images'] if (row and row['images']) else p.get('images', '')
                 description = row['description'] if row else ''
+                description_meli = p.get('description_meli') if p.get('description_meli') is not None else (row['description_meli'] if (row and row.get('description_meli')) else '')
+                use_meli_description = p.get('use_meli_description') if p.get('use_meli_description') is not None else (row['use_meli_description'] if (row and row.get('use_meli_description') is not None) else 1)
                 is_web_active = row['is_web_active'] if row else 0
                 visits_web = row['visits_web'] if row else p.get('visits_web', 0)
                 
@@ -543,8 +547,8 @@ def save_products(products_list):
 
                 cursor.execute('''
                     INSERT INTO products_cache 
-                    (ml_id, title, price, available_quantity, cost_price, cost_meli, permalink, thumbnail, status, last_sync, price_web, images, description, is_web_active, visits_meli, visits_web)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    (ml_id, title, price, available_quantity, cost_price, cost_meli, permalink, thumbnail, status, last_sync, price_web, images, description, description_meli, use_meli_description, is_web_active, visits_meli, visits_web)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     ON CONFLICT (tenant_id, ml_id) DO UPDATE SET
                         title = EXCLUDED.title,
                         price = CASE WHEN COALESCE(products_cache.sync_meli, 1) = 1 THEN EXCLUDED.price ELSE products_cache.price END,
@@ -558,9 +562,10 @@ def save_products(products_list):
                         status = CASE WHEN COALESCE(products_cache.sync_meli, 1) = 1 THEN EXCLUDED.status ELSE products_cache.status END,
                         last_sync = EXCLUDED.last_sync,
                         visits_meli = EXCLUDED.visits_meli,
-                        images = CASE WHEN products_cache.images IS NULL OR products_cache.images = '' THEN EXCLUDED.images ELSE products_cache.images END
+                        images = CASE WHEN products_cache.images IS NULL OR products_cache.images = '' THEN EXCLUDED.images ELSE products_cache.images END,
+                        description_meli = CASE WHEN EXCLUDED.description_meli IS NOT NULL AND EXCLUDED.description_meli != '' THEN EXCLUDED.description_meli ELSE products_cache.description_meli END
                 ''', (p['ml_id'], p['title'], p['price'], p['available_quantity'], cost_price, cost_meli, 
-                      p.get('permalink'), p.get('thumbnail'), p.get('status'), now, price_web, images, description, is_web_active, visits_meli, visits_web))
+                      p.get('permalink'), p.get('thumbnail'), p.get('status'), now, price_web, images, description, description_meli, use_meli_description, is_web_active, visits_meli, visits_web))
 
 def get_product_by_id(ml_id):
     with get_connection() as conn:
@@ -574,8 +579,8 @@ def create_product(product_data):
         with conn.cursor() as cursor:
             cursor.execute('''
                 INSERT INTO products_cache 
-                (ml_id, title, price, available_quantity, cost_price, cost_meli, permalink, thumbnail, status, last_sync, price_web, images, description, is_web_active, visits_meli, visits_web, category_id, sync_meli, min_stock, featured_order, last_modified)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                (ml_id, title, price, available_quantity, cost_price, cost_meli, permalink, thumbnail, status, last_sync, price_web, images, description, description_meli, use_meli_description, is_web_active, visits_meli, visits_web, category_id, sync_meli, min_stock, featured_order, last_modified)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             ''', (
                 product_data['ml_id'],
                 product_data['title'],
@@ -590,6 +595,8 @@ def create_product(product_data):
                 product_data.get('price_web', 0.0),
                 product_data.get('images', ''),
                 product_data.get('description', ''),
+                product_data.get('description_meli', ''),
+                product_data.get('use_meli_description', 1),
                 product_data.get('is_web_active', 1),
                 product_data.get('visits_meli', 0),
                 product_data.get('visits_web', 0),
@@ -630,7 +637,7 @@ def update_product_stock_price(ml_id, quantity, price):
                     p_price = row['price']
             cursor.execute("UPDATE products_cache SET available_quantity = %s, price = %s, prev_stock = %s, prev_price = %s, last_modified = %s WHERE ml_id = %s", (quantity, price, p_stock, p_price, now, ml_id))
 
-def update_product_web_details(ml_id, price_web, images, description, is_web_active, category_id=None, sync_meli=1, min_stock=0, featured_order=0):
+def update_product_web_details(ml_id, price_web, images, description, is_web_active, category_id=None, sync_meli=1, min_stock=0, featured_order=0, use_meli_description=1, description_meli=None):
     now = datetime.now().isoformat()
     with get_connection() as conn:
         with conn.cursor() as cursor:
@@ -640,11 +647,24 @@ def update_product_web_details(ml_id, price_web, images, description, is_web_act
             if row:
                 if float(price_web) != float(row['price_web'] or 0.0):
                     p_web = row['price_web']
-            cursor.execute('''
-                UPDATE products_cache 
-                SET price_web = %s, images = %s, description = %s, is_web_active = %s, category_id = %s, sync_meli = %s, min_stock = %s, featured_order = %s, prev_price_web = %s, last_modified = %s
-                WHERE ml_id = %s
-            ''', (price_web, images, description, is_web_active, category_id, sync_meli, min_stock, featured_order, p_web, now, ml_id))
+            if description_meli is not None:
+                cursor.execute('''
+                    UPDATE products_cache 
+                    SET price_web = %s, images = %s, description = %s, is_web_active = %s, category_id = %s, sync_meli = %s, min_stock = %s, featured_order = %s, use_meli_description = %s, description_meli = %s, prev_price_web = %s, last_modified = %s
+                    WHERE ml_id = %s
+                ''', (price_web, images, description, is_web_active, category_id, sync_meli, min_stock, featured_order, use_meli_description, description_meli, p_web, now, ml_id))
+            else:
+                cursor.execute('''
+                    UPDATE products_cache 
+                    SET price_web = %s, images = %s, description = %s, is_web_active = %s, category_id = %s, sync_meli = %s, min_stock = %s, featured_order = %s, use_meli_description = %s, prev_price_web = %s, last_modified = %s
+                    WHERE ml_id = %s
+                ''', (price_web, images, description, is_web_active, category_id, sync_meli, min_stock, featured_order, use_meli_description, p_web, now, ml_id))
+
+def update_product_description_meli(ml_id: str, description_meli: str):
+    now = datetime.now().isoformat()
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute("UPDATE products_cache SET description_meli = %s, last_modified = %s WHERE ml_id = %s", (description_meli, now, ml_id))
 
 def update_featured_products_order(featured_ids: list):
     now = datetime.now().isoformat()
@@ -759,7 +779,7 @@ def get_all_products(query=None, status_filter=None, is_web_active=None, categor
                        p.status, p.last_sync, p.price_web, p.images, p.description, p.is_web_active, 
                        p.visits_meli, p.visits_web, p.category_id, p.sync_meli, p.min_stock, p.featured_order, p.last_modified,
                        p.prev_stock, p.prev_price, p.prev_cost_price, p.prev_cost_meli, p.prev_price_web, COALESCE(p.is_hidden, 0) as is_hidden,
-                       COALESCE(p.manufacturing_time, 0) as manufacturing_time,
+                       COALESCE(p.manufacturing_time, 0) as manufacturing_time, p.description_meli, COALESCE(p.use_meli_description, 1) as use_meli_description,
                        c.name as category_name, c.slug as category_slug
                  FROM products_cache p
                  LEFT JOIN categories c ON p.category_id = c.id
@@ -803,7 +823,7 @@ def get_product_by_ml_id(ml_id: str):
                        p.status, p.last_sync, p.price_web, p.images, p.description, p.is_web_active, 
                        p.visits_meli, p.visits_web, p.category_id, p.sync_meli, p.min_stock, p.featured_order, p.last_modified,
                        p.prev_stock, p.prev_price, p.prev_cost_price, p.prev_cost_meli, p.prev_price_web, COALESCE(p.is_hidden, 0) as is_hidden,
-                       COALESCE(p.manufacturing_time, 0) as manufacturing_time,
+                       COALESCE(p.manufacturing_time, 0) as manufacturing_time, p.description_meli, COALESCE(p.use_meli_description, 1) as use_meli_description,
                        c.name as category_name, c.slug as category_slug
                  FROM products_cache p
                  LEFT JOIN categories c ON p.category_id = c.id
@@ -1768,7 +1788,9 @@ def get_dashboard_metrics(period="total", start_date_str=None, end_date_str=None
                     p['visits_web'] = web_log_counts.get(p['ml_id'], 0)
 
             all_prods.sort(key=lambda x: (x['visits_meli'] + x['visits_web']), reverse=True)
-            top_products = all_prods[:20]
+            top_products = [p for p in all_prods if p.get('visits_meli', 0) > 0 or p.get('visits_web', 0) > 0][:100]
+            if not top_products:
+                top_products = all_prods[:20]
 
             cursor.execute(f"SELECT domain, COUNT(*) as count FROM web_visits_log{visit_where} GROUP BY domain ORDER BY count DESC", tuple(visit_params))
             visits_by_domain = [dict(r) for r in cursor.fetchall()]
