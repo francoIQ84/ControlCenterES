@@ -209,9 +209,12 @@ export default function Sales() {
       if (res.ok) {
         const data = await res.json()
         setMlBillingInfo(data)
-        if (data.shipping_cost > 0) {
+        if (data.is_free_shipping || data.shipping_cost === 0) {
+          setCustomShippingCost(data.seller_shipping_cost || 0)
+          setIncludeShippingInInvoice(false) // Default UNCHECKED for Free Shipping!
+        } else if (data.shipping_cost > 0) {
           setCustomShippingCost(data.shipping_cost)
-          setIncludeShippingInInvoice(true)
+          setIncludeShippingInInvoice(true) // Default CHECKED if buyer paid for shipping
         }
         if (data.document_number && (data.document_number.length === 11 || data.document_type === 'CUIT' || data.document_type === 'CUIL')) {
           setCustomInvoiceDocType('CUIT')
@@ -1761,8 +1764,24 @@ export default function Sales() {
                 </div>
 
                 {customShippingCost > 0 && (
-                  <div style={{fontSize: '0.76rem', color: includeShippingInInvoice ? 'var(--accent-emerald)' : 'var(--accent-orange)'}}>
-                    💡 {includeShippingInInvoice ? ' Se agregará "Servicio de Envío Mercado Libre" como ítem a la factura.' : ' Cuidado: El costo de envío se ha excluido de la factura.'}
+                  <div style={{
+                    marginTop: 8, padding: '8px 12px', borderRadius: 6,
+                    backgroundColor: mlBillingInfo?.is_free_shipping ? (includeShippingInInvoice ? 'rgba(239, 68, 68, 0.1)' : 'rgba(16, 185, 129, 0.1)') : (includeShippingInInvoice ? 'rgba(16, 185, 129, 0.1)' : 'rgba(245, 158, 11, 0.1)'),
+                    border: mlBillingInfo?.is_free_shipping ? (includeShippingInInvoice ? '1px solid #ef4444' : '1px solid #10b981') : (includeShippingInInvoice ? '1px solid #10b981' : '1px solid #f59e0b')
+                  }}>
+                    {mlBillingInfo?.is_free_shipping ? (
+                      <div style={{fontSize: '0.78rem', color: includeShippingInInvoice ? '#ef4444' : '#10b981', fontWeight: 600}}>
+                        {includeShippingInInvoice ? (
+                          <span>⚠️ <strong>Cuidado:</strong> El comprador tuvo <strong>Envío Gratis</strong> en Mercado Libre. Al tildar esta opción, la factura superará el importe abonado por el cliente (${invoiceModalOrder.total_amount?.toLocaleString('es-AR')}).</span>
+                        ) : (
+                          <span>🎁 <strong>Envío Gratis para el comprador:</strong> Excluido de la factura por defecto. El total a facturar (${invoiceModalOrder.total_amount?.toLocaleString('es-AR')}) coincide exactamente con el monto cobrado al comprador.</span>
+                        )}
+                      </div>
+                    ) : (
+                      <div style={{fontSize: '0.76rem', color: includeShippingInInvoice ? 'var(--accent-emerald)' : 'var(--accent-orange)'}}>
+                        💡 {includeShippingInInvoice ? 'Se agregará "Servicio de Envío Mercado Libre" como ítem a la factura.' : 'Cuidado: El costo de envío se ha excluido de la factura.'}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>

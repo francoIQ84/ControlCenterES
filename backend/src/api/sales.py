@@ -296,8 +296,14 @@ def get_order_billing_info_endpoint(order_id: int):
                     result["taxpayer_type"] = ml_info["taxpayer_type"]
 
             # Fetch shipping cost paid by buyer on ML
-            ship_cost = meli_api.fetch_order_shipping_cost(order_id)
-            result["shipping_cost"] = ship_cost
+            ship_info = meli_api.fetch_order_shipping_cost(order_id)
+            if isinstance(ship_info, dict):
+                result["shipping_cost"] = ship_info.get("buyer_shipping_cost", 0.0)
+                result["is_free_shipping"] = ship_info.get("is_free_shipping", True)
+                result["seller_shipping_cost"] = ship_info.get("seller_shipping_cost", 0.0)
+            else:
+                result["shipping_cost"] = float(ship_info or 0.0)
+                result["is_free_shipping"] = (result["shipping_cost"] == 0)
         except Exception as e:
             print(f"Error fetching ML billing/shipping info for order {order_id}: {e}")
 
@@ -347,7 +353,11 @@ def create_invoice_endpoint(order_id: int, req: Optional[InvoiceOptionsRequest] 
         if shipping_val is None and order.get('source_platform') == 'MERCADOLIBRE':
             try:
                 from src import meli_api
-                shipping_val = meli_api.fetch_order_shipping_cost(order_id)
+                ship_info = meli_api.fetch_order_shipping_cost(order_id)
+                if isinstance(ship_info, dict):
+                    shipping_val = ship_info.get("buyer_shipping_cost", 0.0)
+                else:
+                    shipping_val = float(ship_info or 0.0)
             except Exception:
                 shipping_val = 0.0
 

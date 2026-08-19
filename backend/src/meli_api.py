@@ -1042,37 +1042,51 @@ def fetch_order_billing_info(order_id):
 
 def fetch_order_shipping_cost(order_id):
     """
-    Fetches shipping cost for a Mercado Libre order if paid by the buyer.
+    Fetches shipping cost breakdown for a Mercado Libre order.
+    Returns a dict with buyer_shipping_cost, is_free_shipping, seller_shipping_cost.
     """
     if is_demo_mode():
-        return 0.0
+        return {"buyer_shipping_cost": 0.0, "is_free_shipping": True, "seller_shipping_cost": 0.0}
 
     try:
         res = api_request("GET", f"/orders/{order_id}")
         if not res or res.status_code != 200:
-            return 0.0
+            return {"buyer_shipping_cost": 0.0, "is_free_shipping": True, "seller_shipping_cost": 0.0}
         data = res.json()
         
         shipping_id = data.get("shipping", {}).get("id")
-        shipping_cost = 0.0
+        buyer_cost = 0.0
+        seller_cost = 0.0
+        is_free = False
 
         if shipping_id:
             ship_res = api_request("GET", f"/shipments/{shipping_id}")
             if ship_res and ship_res.status_code == 200:
                 ship_data = ship_res.json()
-                shipping_cost = float(ship_data.get("shipping_option", {}).get("cost", 0) or 0)
-                if shipping_cost == 0:
-                    shipping_cost = float(ship_data.get("base_cost", 0) or 0)
-        
-        if shipping_cost == 0 and data.get("total_amount") and data.get("order_items"):
-            items_sum = sum(float(item.get("unit_price", 0)) * int(item.get("quantity", 1)) for item in data.get("order_items", []))
-            if data["total_amount"] > items_sum:
-                shipping_cost = float(data["total_amount"] - items_sum)
+                shipping_option = ship_data.get("shipping_option") or {}
+                buyer_cost = float(shipping_option.get("cost", 0) or 0)
+                seller_cost = float(ship_data.get("base_cost", 0) or 0)
+                
+                is_free = ship_data.get("free_shipping") or (buyer_cost == 0)
+                if is_free:
+                    buyer_cost = 0.0
 
-        return shipping_cost
+        if buyer_cost == 0 and data.get("total_amount") and data.get("order_items"):
+            items_sum = sum(float(item.get("unit_price", 0)) * int(item.get("quantity", 1)) for item in data.get("order_items", []))
+            if data["total_amount"] > items_sum + 1.0:
+                buyer_cost = float(data["total_amount"] - items_sum)
+                is_free = False
+            else:
+                is_free = True
+
+        return {
+            "buyer_shipping_cost": buyer_cost,
+            "is_free_shipping": is_free,
+            "seller_shipping_cost": seller_cost
+        }
     except Exception as e:
         print(f"Error fetching shipping cost for order {order_id}: {e}")
-        return 0.0
+        return {"buyer_shipping_cost": 0.0, "is_free_shipping": True, "seller_shipping_cost": 0.0}
 
 def check_meli_invoice_exists(order_id):
     """
@@ -1477,9 +1491,44 @@ def fetch_order_messages(order_id):
         }
 
     seller_id = config.get_user_id()
-    res = api_request("GET", f"/messages/orders/{order_id}")
+    
+    # Step 1: Resolve pack_id and buyer_id from the order
+    pack_id = None
+    buyer_id = None
+    try:
+        order_res = api_request("GET", f"/orders/{order_id}")
+        if order_res and order_res.status_code == 200:
+            order_data = order_res.json()
+            pack_id = order_data.get('pack_id')
+            buyer_id = order_data.get('buyer', {}).get('id')
+            print(f"[Chat] Order {order_id}: pack_id={pack_id}, buyer_id={buyer_id}")
+    except Exception as e:
+        print(f"[Chat] Error fetching order {order_id} details: {e}")
+
+    # Step 2: Try multiple API paths to find messages
+    res = None
+    
+    # Try 1: /messages/packs/{pack_id}/sellers/{seller_id} (most common for ML orders)
+    if pack_id and seller_id:
+        query_params = f"?tag=post_sale"
+        if buyer_id:
+            query_params += f"&buyer_id={buyer_id}"
+        res = api_request("GET", f"/messages/packs/{pack_id}/sellers/{seller_id}{query_params}")
+        if res and res.status_code == 200:
+            print(f"[Chat] Found messages via /messages/packs/{pack_id}/sellers/{seller_id}")
+    
+    # Try 2: /messages/orders/{order_id} (direct order messaging)
     if res is None or res.status_code != 200:
-        res = api_request("GET", f"/messages/packs/{order_id}/sellers/{seller_id}")
+        res = api_request("GET", f"/messages/orders/{order_id}")
+        if res and res.status_code == 200:
+            print(f"[Chat] Found messages via /messages/orders/{order_id}")
+    
+    # Try 3: /messages/packs/{order_id}/sellers/{seller_id} (order_id as pack_id fallback)
+    if res is None or res.status_code != 200:
+        if seller_id:
+            res = api_request("GET", f"/messages/packs/{order_id}/sellers/{seller_id}?tag=post_sale")
+            if res and res.status_code == 200:
+                print(f"[Chat] Found messages via /messages/packs/{order_id}/sellers/{seller_id}")
 
     messages_list = []
     unread_count = 0
@@ -1487,6 +1536,9 @@ def fetch_order_messages(order_id):
     if res is not None and res.status_code == 200:
         data = res.json()
         results = data.get('results') or data.get('messages') or []
+        # Some endpoints wrap results inside 'paging'
+        if not results and isinstance(data, list):
+            results = data
         for msg in results:
             msg_id = msg.get('id')
             from_info = msg.get('from') or {}
@@ -1497,7 +1549,7 @@ def fetch_order_messages(order_id):
             plain_text = text_obj.get('plain') if isinstance(text_obj, dict) else str(text_obj or '')
             
             created_at = msg.get('message_date', {}).get('created') or msg.get('date_created') or ''
-            read_date = msg.get('read_date')
+            read_date = msg.get('message_date', {}).get('read') or msg.get('read_date')
             
             if is_buyer and not read_date:
                 unread_count += 1
@@ -1520,6 +1572,9 @@ def fetch_order_messages(order_id):
                 "detected_name": detected_name,
                 "detected_iva": "Responsable Inscripto" if "factura a" in plain_text.lower() else None
             })
+    else:
+        status = res.status_code if res else "No response"
+        print(f"[Chat] No messages found for order {order_id}. Last API status: {status}")
 
     return {
         "order_id": order_id,
