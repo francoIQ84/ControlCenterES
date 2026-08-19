@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { ShoppingBag, Globe, Store, Check, Clock, Plus, Trash2, ShoppingCart, DollarSign, Link } from 'lucide-react'
+import { ShoppingBag, Globe, Store, Check, Clock, Plus, Trash2, ShoppingCart, DollarSign, Link, MessageSquare, Send, ExternalLink, FileText, UserCheck } from 'lucide-react'
 
 export default function Sales() {
   const [orders, setOrders] = useState([])
@@ -65,18 +65,95 @@ export default function Sales() {
 
   const [invoicingStates, setInvoicingStates] = useState({})
 
+  // Mercado Libre Chat Modal State
+  const [chatModalOrder, setChatModalOrder] = useState(null)
+  const [chatMessages, setChatMessages] = useState([])
+  const [chatMeliUrl, setChatMeliUrl] = useState('')
+  const [chatLoading, setChatLoading] = useState(false)
+  const [newMessageText, setNewMessageText] = useState('')
+  const [sendingMessage, setSendingMessage] = useState(false)
+  const [unreadMap, setUnreadMap] = useState({})
+
   const fetchOrders = () => {
     setLoading(true)
     fetch('/api/sales/')
       .then(res => res.json())
       .then(data => {
-        setOrders(data.orders || [])
+        const fetchedOrders = data.orders || []
+        setOrders(fetchedOrders)
         setLoading(false)
+        
+        // Auto-mark first 2 Mercado Libre sales with an unread badge notification
+        const initialUnread = {}
+        let count = 0
+        fetchedOrders.forEach(o => {
+          if (o.source_platform === 'MERCADOLIBRE' && count < 2) {
+            initialUnread[o.order_id] = 1
+            count++
+          }
+        })
+        setUnreadMap(prev => (Object.keys(prev).length > 0 ? prev : initialUnread))
       })
       .catch(err => {
         console.error(err)
         setLoading(false)
       })
+  }
+
+  const handleOpenChatModal = async (order) => {
+    setChatModalOrder(order)
+    setChatMessages([])
+    setChatLoading(true)
+    setChatMeliUrl(`https://www.mercadolibre.com.ar/ventas/${order.order_id}/detalle`)
+
+    // Clear unread notification badge for this order
+    setUnreadMap(prev => ({ ...prev, [order.order_id]: 0 }))
+
+    try {
+      const res = await fetch(`/api/sales/${order.order_id}/messages`)
+      const data = await res.json()
+      if (res.ok) {
+        setChatMessages(data.messages || [])
+        if (data.meli_chat_url) setChatMeliUrl(data.meli_chat_url)
+      }
+    } catch (err) {
+      console.error("Error al obtener mensajes de la orden:", err)
+    } finally {
+      setChatLoading(false)
+    }
+  }
+
+  const handleSendChatMessage = async (e) => {
+    if (e) e.preventDefault()
+    if (!newMessageText.trim() || !chatModalOrder) return
+    setSendingMessage(true)
+
+    try {
+      const res = await fetch(`/api/sales/${chatModalOrder.order_id}/messages`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: newMessageText })
+      })
+      const data = await res.json()
+      if (res.ok && data.success) {
+        const sentMsg = {
+          id: data.data?.id || `sent_${Date.now()}`,
+          from_buyer: false,
+          sender_name: "Vendedor",
+          text: newMessageText,
+          created_at: new Date().toISOString(),
+          read: true
+        }
+        setChatMessages(prev => [...prev, sentMsg])
+        setNewMessageText('')
+      } else {
+        alert("Error al enviar mensaje: " + (data.detail || "Error en el servidor"))
+      }
+    } catch (err) {
+      alert("Error de conexión: " + err.message)
+    } finally {
+      setSendingMessage(false)
+    }
   }
 
   // AFIP Invoicing Modal State
@@ -789,13 +866,57 @@ export default function Sales() {
                   <td style={{fontFamily: 'monospace', fontSize: '0.8rem'}}>{o.order_id}</td>
                   <td>{renderPlatformBadge(o.source_platform)}</td>
                   <td>
-                    <strong>{o.buyer.nickname || 'Cliente Web/Mostrador'}</strong><br/>
-                    <small style={{color: 'var(--text-secondary)'}}>{o.buyer.name}</small>
+                    <div style={{display: 'flex', flexDirection: 'column', gap: 4}}>
+                      <div>
+                        <strong>{o.buyer?.nickname || 'Cliente Web/Mostrador'}</strong><br/>
+                        <small style={{color: 'var(--text-secondary)'}}>{o.buyer?.name || ''}</small>
+                      </div>
+                      {o.source_platform === 'MERCADOLIBRE' && (
+                        <div>
+                          <button
+                            type="button"
+                            onClick={() => handleOpenChatModal(o)}
+                            className="btn"
+                            title="Abrir Chat Post-Venta Mercado Libre"
+                            style={{
+                              padding: '3px 8px',
+                              fontSize: '0.72rem',
+                              backgroundColor: (unreadMap && unreadMap[o.order_id] > 0) ? '#ef4444' : 'rgba(255, 230, 0, 0.15)',
+                              color: (unreadMap && unreadMap[o.order_id] > 0) ? '#ffffff' : '#b39200',
+                              border: (unreadMap && unreadMap[o.order_id] > 0) ? '1px solid #ef4444' : '1px solid #b39200',
+                              borderRadius: 4,
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 4,
+                              fontWeight: 600,
+                              cursor: 'pointer',
+                              boxShadow: (unreadMap && unreadMap[o.order_id] > 0) ? '0 0 8px rgba(239, 68, 68, 0.5)' : 'none'
+                            }}
+                          >
+                            <MessageSquare size={12} />
+                            Chat ML
+                            {unreadMap && unreadMap[o.order_id] > 0 && (
+                              <span style={{
+                                backgroundColor: '#ffffff',
+                                color: '#ef4444',
+                                borderRadius: '50%',
+                                padding: '1px 5px',
+                                fontSize: '0.62rem',
+                                fontWeight: 800,
+                                marginLeft: 2
+                              }}>
+                                {unreadMap[o.order_id]}
+                              </span>
+                            )}
+                          </button>
+                        </div>
+                      )}
+                    </div>
                   </td>
                   <td>
                     <ul style={{margin: 0, paddingLeft: 15, fontSize: '0.8rem', color: 'var(--text-secondary)'}}>
-                      {o.items.map(i => (
-                        <li key={i.id}>{i.quantity}x {i.title.substring(0,30)}{i.title.length > 30 ? '...' : ''}</li>
+                      {(o.items || []).map(i => (
+                        <li key={i.id || i.ml_id || Math.random()}>{i.quantity}x {(i.title || '').substring(0,30)}{(i.title || '').length > 30 ? '...' : ''}</li>
                       ))}
                     </ul>
                     {o.inventory_linked === 0 && (
@@ -1660,6 +1781,171 @@ export default function Sales() {
                 {invoicingStates[invoiceModalOrder.order_id] ? "Facturando..." : "⚡ Confirmar y Emitir Factura"}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Mercado Libre Post-Sale Chat Modal */}
+      {chatModalOrder && (
+        <div style={{
+          position: 'fixed',
+          top: 0, left: 0, right: 0, bottom: 0,
+          backgroundColor: 'rgba(0, 0, 0, 0.75)',
+          display: 'flex', justifyContent: 'center', alignItems: 'center',
+          zIndex: 1000, padding: 15
+        }}>
+          <div className="card shadow-2xl" style={{
+            width: 720, maxWidth: '100%', height: 620, maxHeight: '90vh',
+            display: 'flex', flexDirection: 'column', padding: 0, overflow: 'hidden',
+            backgroundColor: 'var(--bg-card)', borderRadius: 12, border: '1px solid var(--border-color)'
+          }}>
+            {/* Modal Header */}
+            <div style={{
+              padding: '16px 20px', borderBottom: '1px solid var(--border-color)',
+              display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+              backgroundColor: 'var(--bg-dark)', gap: 10, flexWrap: 'wrap'
+            }}>
+              <div>
+                <h3 style={{margin: 0, display: 'flex', alignItems: 'center', gap: 8, fontSize: '1.05rem'}}>
+                  <MessageSquare size={18} style={{color: '#b39200'}} />
+                  Chat Post-Venta: {chatModalOrder.buyer?.nickname || chatModalOrder.buyer?.name || 'Comprador'}
+                </h3>
+                <div style={{fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: 2, fontFamily: 'monospace'}}>
+                  Orden #{chatModalOrder.order_id} • Total: ${chatModalOrder.total_amount?.toLocaleString()}
+                </div>
+              </div>
+
+              <div style={{display: 'flex', alignItems: 'center', gap: 10}}>
+                <a 
+                  href={chatMeliUrl} 
+                  target="_blank" 
+                  rel="noopener noreferrer" 
+                  className="btn"
+                  style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 5, padding: '6px 12px',
+                    fontSize: '0.78rem', backgroundColor: 'rgba(255, 230, 0, 0.15)', color: '#b39200',
+                    border: '1px solid #b39200', borderRadius: 6, textDecoration: 'none', fontWeight: 600
+                  }}
+                >
+                  <ExternalLink size={13} /> Abrir en Mercado Libre ↗
+                </a>
+                <button 
+                  type="button" 
+                  onClick={() => setChatModalOrder(null)} 
+                  style={{background: 'none', border: 'none', color: 'var(--text-secondary)', fontSize: '1.2rem', cursor: 'pointer', padding: 4}}
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+
+            {/* Detected Billing Info Banner */}
+            {(() => {
+              const detected = chatMessages.find(m => m.detected_cuit || m.detected_name)
+              if (!detected) return null
+              return (
+                <div style={{
+                  backgroundColor: 'rgba(59, 130, 246, 0.12)', borderBottom: '1px solid var(--accent-blue)',
+                  padding: '10px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                  gap: 10, flexWrap: 'wrap'
+                }}>
+                  <div>
+                    <div style={{fontWeight: 700, fontSize: '0.8rem', color: 'var(--accent-blue)', display: 'flex', alignItems: 'center', gap: 6}}>
+                      <FileText size={14} /> Datos de Facturación Detectados en Mensajes:
+                    </div>
+                    <div style={{fontSize: '0.75rem', color: 'var(--text-primary)', marginTop: 2}}>
+                      {detected.detected_cuit && <span><strong>CUIT:</strong> {detected.detected_cuit} </span>}
+                      {detected.detected_name && <span>| <strong>Razón Social:</strong> {detected.detected_name} </span>}
+                      {detected.detected_iva && <span>| <strong>Condición:</strong> {detected.detected_iva}</span>}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    className="btn"
+                    onClick={() => {
+                      const targetOrder = chatModalOrder
+                      setChatModalOrder(null)
+                      handleOpenInvoiceModal(targetOrder)
+                      setCustomInvoiceDocType('CUIT')
+                      if (detected.detected_cuit) setCustomCuit(detected.detected_cuit)
+                      if (detected.detected_name) setCustomName(detected.detected_name)
+                      if (detected.detected_iva) setCustomIvaCondition(detected.detected_iva)
+                    }}
+                    style={{
+                      padding: '4px 10px', fontSize: '0.72rem', backgroundColor: 'var(--accent-blue)',
+                      color: '#fff', border: 'none', borderRadius: 4, cursor: 'pointer', fontWeight: 600,
+                      display: 'flex', alignItems: 'center', gap: 4
+                    }}
+                  >
+                    <UserCheck size={13} /> Pre-llenar Factura AFIP
+                  </button>
+                </div>
+              )
+            })()}
+
+            {/* Chat Messages Container */}
+            <div style={{flex: 1, padding: 16, overflowY: 'auto', backgroundColor: 'var(--bg-dark)', display: 'flex', flexDirection: 'column', gap: 12}}>
+              {chatLoading ? (
+                <div style={{textAlign: 'center', color: 'var(--text-secondary)', margin: 'auto'}}>Cargando mensajes del comprador...</div>
+              ) : chatMessages.length === 0 ? (
+                <div style={{textAlign: 'center', color: 'var(--text-secondary)', margin: 'auto'}}>
+                  No hay mensajes registrados en esta conversación de Mercado Libre.
+                </div>
+              ) : (
+                chatMessages.map((msg, idx) => (
+                  <div 
+                    key={msg.id || idx} 
+                    style={{
+                      alignSelf: msg.from_buyer ? 'flex-start' : 'flex-end',
+                      maxWidth: '75%',
+                      backgroundColor: msg.from_buyer ? 'var(--bg-card)' : 'rgba(59, 130, 246, 0.2)',
+                      border: msg.from_buyer ? '1px solid var(--border-color)' : '1px solid var(--accent-blue)',
+                      borderRadius: 10,
+                      padding: '10px 14px',
+                      boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
+                    }}
+                  >
+                    <div style={{fontSize: '0.7rem', fontWeight: 700, color: msg.from_buyer ? 'var(--accent-amber)' : 'var(--accent-blue)', marginBottom: 4}}>
+                      {msg.sender_name || (msg.from_buyer ? 'Comprador' : 'Vendedor')}
+                    </div>
+                    <div style={{fontSize: '0.85rem', color: 'var(--text-primary)', whiteSpace: 'pre-wrap', wordBreak: 'break-word', lineHeight: 1.4}}>
+                      {msg.text}
+                    </div>
+                    <div style={{fontSize: '0.65rem', color: 'var(--text-secondary)', textAlign: 'right', marginTop: 4}}>
+                      {msg.created_at ? new Date(msg.created_at).toLocaleString() : ''}
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+
+            {/* Chat Input Bar */}
+            <form onSubmit={handleSendChatMessage} style={{padding: 12, borderTop: '1px solid var(--border-color)', backgroundColor: 'var(--bg-card)', display: 'flex', gap: 8}}>
+              <input 
+                type="text" 
+                placeholder="Escribe un mensaje para el comprador en Mercado Libre..." 
+                value={newMessageText} 
+                onChange={e => setNewMessageText(e.target.value)} 
+                disabled={sendingMessage}
+                style={{
+                  flex: 1, padding: '8px 12px', fontSize: '0.85rem',
+                  backgroundColor: 'var(--bg-dark)', color: 'var(--text-primary)',
+                  border: '1px solid var(--border-color)', borderRadius: 6
+                }}
+              />
+              <button 
+                type="submit" 
+                disabled={sendingMessage || !newMessageText.trim()}
+                className="btn" 
+                style={{
+                  padding: '8px 16px', fontSize: '0.85rem', backgroundColor: 'var(--accent-blue)',
+                  color: '#fff', border: 'none', borderRadius: 6, fontWeight: 600,
+                  display: 'flex', alignItems: 'center', gap: 6, cursor: (sendingMessage || !newMessageText.trim()) ? 'not-allowed' : 'pointer'
+                }}
+              >
+                <Send size={15} /> {sendingMessage ? 'Enviando...' : 'Enviar'}
+              </button>
+            </form>
           </div>
         </div>
       )}

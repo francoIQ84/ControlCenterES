@@ -487,3 +487,19 @@ def delete_order_endpoint(order_id: int):
         raise HTTPException(status_code=404, detail="Pedido no encontrado")
     database.delete_order_by_id(order_id)
     return {"success": True, "message": f"Venta #{order_id} eliminada correctamente"}
+
+class SendMessageRequest(BaseModel):
+    message: str
+
+@router.get("/{order_id}/messages")
+def get_order_messages_endpoint(order_id: int):
+    data = meli_api.fetch_order_messages(order_id)
+    return data
+
+@router.post("/{order_id}/messages")
+def send_order_message_endpoint(order_id: int, req: SendMessageRequest):
+    success, result = meli_api.send_order_message(order_id, req.message)
+    if not success:
+        raise HTTPException(status_code=400, detail=str(result))
+    return {"success": True, "data": result}
+

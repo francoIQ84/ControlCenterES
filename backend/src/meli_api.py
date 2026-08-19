@@ -1438,3 +1438,127 @@ def fetch_unanswered_questions(limit=20):
         print(f"[Meli API] Error al buscar preguntas sin responder: {e}")
         return []
 
+# --- Post-Sale Messaging API (Mercado Libre) ---
+
+def fetch_order_messages(order_id):
+    """
+    Obtiene el historial de mensajes post-venta de Mercado Libre para la orden especificada.
+    En modo DEMO o si la orden es de prueba, genera mensajes realistas incluyendo datos de facturación.
+    """
+    if is_demo_mode() or str(order_id).startswith("LOCAL-") or str(order_id).startswith("MOCK-"):
+        return {
+            "order_id": order_id,
+            "meli_chat_url": f"https://www.mercadolibre.com.ar/ventas/{order_id}/detalle",
+            "messages": [
+                {
+                    "id": f"msg_1_{order_id}",
+                    "from_buyer": True,
+                    "sender_name": "Comprador Mercado Libre",
+                    "text": "Hola! Quería solicitar la factura A para la compra. Te paso los datos de facturación:\n\nCUIT: 30-71123456-8\nRazón Social: EMPRESA DEMO S.A.\nCondición IVA: Responsable Inscripto\nDirección: Av. Corrientes 1234, CABA",
+                    "created_at": "2026-08-13T14:35:00Z",
+                    "read": True,
+                    "detected_cuit": "30711234568",
+                    "detected_name": "EMPRESA DEMO S.A.",
+                    "detected_iva": "Responsable Inscripto"
+                },
+                {
+                    "id": f"msg_2_{order_id}",
+                    "from_buyer": False,
+                    "sender_name": "Vendedor",
+                    "text": "Hola! Muchas gracias por tu compra. Ya tomamos los datos de facturación y generamos el comprobante fiscal.",
+                    "created_at": "2026-08-13T14:40:00Z",
+                    "read": True,
+                    "detected_cuit": None,
+                    "detected_name": None,
+                    "detected_iva": None
+                }
+            ],
+            "unread_count": 0
+        }
+
+    seller_id = config.get_user_id()
+    res = api_request("GET", f"/messages/orders/{order_id}")
+    if res is None or res.status_code != 200:
+        res = api_request("GET", f"/messages/packs/{order_id}/sellers/{seller_id}")
+
+    messages_list = []
+    unread_count = 0
+
+    if res is not None and res.status_code == 200:
+        data = res.json()
+        results = data.get('results') or data.get('messages') or []
+        for msg in results:
+            msg_id = msg.get('id')
+            from_info = msg.get('from') or {}
+            msg_user_id = str(from_info.get('user_id') or '')
+            is_buyer = msg_user_id != str(seller_id)
+            
+            text_obj = msg.get('text')
+            plain_text = text_obj.get('plain') if isinstance(text_obj, dict) else str(text_obj or '')
+            
+            created_at = msg.get('message_date', {}).get('created') or msg.get('date_created') or ''
+            read_date = msg.get('read_date')
+            
+            if is_buyer and not read_date:
+                unread_count += 1
+                
+            import re
+            cuit_match = re.search(r'(?:cuit|cuil|factura\s*a|cuit:?\s*)[:\s]*(\d{2}[-\s]?\d{8}[-\s]?\d{1})', plain_text, re.IGNORECASE)
+            detected_cuit = cuit_match.group(1).replace('-', '').strip() if cuit_match else None
+            
+            name_match = re.search(r'(?:razon\s*social|nombre|empresa)[:\s]*([^\n,]+)', plain_text, re.IGNORECASE)
+            detected_name = name_match.group(1).strip() if name_match else None
+
+            messages_list.append({
+                "id": msg_id,
+                "from_buyer": is_buyer,
+                "sender_name": from_info.get('name') or ("Comprador" if is_buyer else "Vendedor"),
+                "text": plain_text,
+                "created_at": created_at,
+                "read": bool(read_date),
+                "detected_cuit": detected_cuit,
+                "detected_name": detected_name,
+                "detected_iva": "Responsable Inscripto" if "factura a" in plain_text.lower() else None
+            })
+
+    return {
+        "order_id": order_id,
+        "meli_chat_url": f"https://www.mercadolibre.com.ar/ventas/{order_id}/detalle",
+        "messages": messages_list,
+        "unread_count": unread_count
+    }
+
+def send_order_message(order_id, text_message):
+    """
+    Envía un mensaje post-venta al comprador de Mercado Libre.
+    """
+    if not text_message or not text_message.strip():
+        return False, "El mensaje no puede estar vacío"
+
+    if is_demo_mode() or str(order_id).startswith("LOCAL-") or str(order_id).startswith("MOCK-"):
+        return True, {
+            "id": f"msg_sent_{int(time.time())}",
+            "from_buyer": False,
+            "sender_name": "Vendedor",
+            "text": text_message,
+            "created_at": datetime.utcnow().isoformat() + "Z",
+            "read": True
+        }
+
+    seller_id = config.get_user_id()
+    payload = {
+        "from": {"user_id": int(seller_id) if seller_id and str(seller_id).isdigit() else seller_id},
+        "text": {"plain": text_message}
+    }
+
+    res = api_request("POST", f"/messages/orders/{order_id}", json_data=payload)
+    if res is None or res.status_code not in (200, 201):
+        res = api_request("POST", f"/messages/packs/{order_id}/sellers/{seller_id}", json_data=payload)
+
+    if res is not None and res.status_code in (200, 201):
+        return True, res.json()
+    else:
+        err_msg = res.text if res is not None else "Error al conectar con Mercado Libre"
+        return False, f"Error al enviar mensaje: {err_msg}"
+
+

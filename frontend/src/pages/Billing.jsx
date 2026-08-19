@@ -1,3 +1,5 @@
+import React, { useState, useEffect, useMemo } from 'react'
+
 // AFIP Error Translator: convierte errores técnicos de WSFE/WSAA en recomendaciones amigables
 const translateAfipError = (rawMsg) => {
   if (!rawMsg) return 'Error desconocido al procesar con AFIP'
