@@ -1,6 +1,7 @@
 import os
 import json
 from datetime import datetime
+from zoneinfo import ZoneInfo
 import hashlib
 import secrets
 import psycopg2
@@ -2307,6 +2308,72 @@ def get_whatsapp_paused_chats():
     except Exception as e:
         print(f"[get_whatsapp_paused_chats error] {e}")
         return []
+
+# --- WhatsApp Schedule ---
+
+def is_whatsapp_in_schedule() -> bool:
+    """Checks if the WhatsApp AI assistant is currently within its active schedule.
+    Returns True if the bot should respond, False if outside scheduled hours.
+    If no schedule is configured or schedule is disabled, returns True (always active)."""
+    try:
+        schedule_json = get_setting('whatsapp_schedule', '')
+        if not schedule_json:
+            return True
+        schedule = json.loads(schedule_json)
+        if not schedule.get('enabled', False):
+            return True
+
+        tz_name = schedule.get('timezone', 'America/Argentina/Buenos_Aires')
+        try:
+            tz = ZoneInfo(tz_name)
+        except Exception:
+            tz = ZoneInfo('America/Argentina/Buenos_Aires')
+
+        now = datetime.now(tz)
+        day_names = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']
+        current_day = day_names[now.weekday()]
+        current_time = now.strftime('%H:%M')
+
+        days_config = schedule.get('days', {})
+        day_config = days_config.get(current_day, {'mode': 'allday'})
+        mode = day_config.get('mode', 'allday')
+
+        if mode == 'allday':
+            return True
+        elif mode == 'off':
+            return False
+        elif mode == 'range':
+            ranges = day_config.get('ranges', [])
+            if not ranges:
+                return False
+            for r in ranges:
+                from_time = r.get('from', '00:00')
+                to_time = r.get('to', '23:59')
+                if from_time <= to_time:
+                    if from_time <= current_time <= to_time:
+                        return True
+                else:
+                    # Wraps midnight (e.g. 20:00 -> 06:00)
+                    if current_time >= from_time or current_time <= to_time:
+                        return True
+            return False
+        else:
+            return True
+    except Exception as e:
+        print(f"[is_whatsapp_in_schedule error] {e}")
+        return True  # On error, default to active
+
+def get_whatsapp_off_schedule_message() -> str:
+    """Returns the configured message for when the bot is outside its schedule.
+    Returns empty string if no message is configured (silent mode)."""
+    try:
+        schedule_json = get_setting('whatsapp_schedule', '')
+        if not schedule_json:
+            return ''
+        schedule = json.loads(schedule_json)
+        return schedule.get('off_schedule_message', '')
+    except Exception:
+        return ''
 
 # --- Leads Operations ---
 

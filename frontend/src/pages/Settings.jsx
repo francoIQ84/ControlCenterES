@@ -288,6 +288,74 @@ export default function Settings() {
     }
   }
 
+  // WhatsApp Schedule State
+  const DEFAULT_SCHEDULE = {
+    enabled: false,
+    timezone: 'America/Argentina/Buenos_Aires',
+    days: {
+      monday: { mode: 'allday' },
+      tuesday: { mode: 'allday' },
+      wednesday: { mode: 'allday' },
+      thursday: { mode: 'allday' },
+      friday: { mode: 'allday' },
+      saturday: { mode: 'allday' },
+      sunday: { mode: 'allday' }
+    },
+    off_schedule_message: ''
+  }
+  const [waSchedule, setWaSchedule] = useState(DEFAULT_SCHEDULE)
+  const [savingSchedule, setSavingSchedule] = useState(false)
+
+  const DAY_LABELS = {
+    monday: 'Lunes', tuesday: 'Martes', wednesday: 'Miércoles',
+    thursday: 'Jueves', friday: 'Viernes', saturday: 'Sábado', sunday: 'Domingo'
+  }
+  const DAY_ORDER = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']
+
+  const HOUR_OPTIONS = []
+  for (let h = 0; h < 24; h++) {
+    for (let m = 0; m < 60; m += 30) {
+      HOUR_OPTIONS.push(`${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`)
+    }
+  }
+
+  const fetchWaSchedule = () => {
+    fetch('/api/whatsapp/schedule')
+      .then(r => r.ok ? r.json() : DEFAULT_SCHEDULE)
+      .then(data => setWaSchedule(prev => ({ ...DEFAULT_SCHEDULE, ...data })))
+      .catch(err => console.error(err))
+  }
+
+  const handleSaveWaSchedule = async () => {
+    setSavingSchedule(true)
+    try {
+      const res = await fetch('/api/whatsapp/schedule', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(waSchedule)
+      })
+      if (res.ok) {
+        alert("Horario del asistente guardado con éxito.")
+      } else {
+        alert("Error al guardar el horario.")
+      }
+    } catch(err) {
+      alert("Error de conexión: " + err.message)
+    } finally {
+      setSavingSchedule(false)
+    }
+  }
+
+  const updateDayConfig = (day, updates) => {
+    setWaSchedule(prev => ({
+      ...prev,
+      days: {
+        ...prev.days,
+        [day]: { ...prev.days[day], ...updates }
+      }
+    }))
+  }
+
   const fetchWaConfig = () => {
     fetch('/api/whatsapp/config')
       .then(r => {
@@ -300,6 +368,7 @@ export default function Settings() {
     fetchTokenUsage()
     fetchPausedChats()
     fetchModelCapabilities()
+    fetchWaSchedule()
   }
 
   const handleSaveWaConfig = async (e) => {
@@ -2647,6 +2716,295 @@ export default function Settings() {
                   </small>
                 </div>
               </div>
+            </div>
+
+            {/* Schedule Configuration Card */}
+            <div className="card" style={{width: '100%', marginTop: 10}}>
+              <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15, flexWrap: 'wrap', gap: 10}}>
+                <div>
+                  <h3 style={{margin: 0}}>🕐 Horario de Actividad del Asistente</h3>
+                  <p style={{fontSize: '0.85rem', color: 'var(--text-secondary)', margin: '4px 0 0 0'}}>
+                    Configura en qué días y horarios el asistente de IA responde automáticamente. Fuera de esos horarios, el bot puede quedarse en silencio o enviar un mensaje personalizado.
+                  </p>
+                </div>
+              </div>
+
+              {/* Enable Schedule Toggle */}
+              <label style={{display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.95rem', cursor: 'pointer', marginBottom: 18, padding: '10px 14px', borderRadius: 8, backgroundColor: waSchedule.enabled ? 'rgba(59, 130, 246, 0.08)' : 'var(--bg-dark)', border: `1px solid ${waSchedule.enabled ? 'var(--accent-blue)' : 'var(--border-color)'}`, transition: 'all 0.2s ease'}}>
+                <input 
+                  type="checkbox" 
+                  checked={waSchedule.enabled} 
+                  onChange={e => setWaSchedule({...waSchedule, enabled: e.target.checked})} 
+                  style={{width: 'auto'}}
+                />
+                <div>
+                  <strong>Activar Restricción de Horario</strong>
+                  <div style={{fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: 2}}>
+                    {waSchedule.enabled 
+                      ? '✅ El asistente solo responderá dentro de los horarios configurados abajo.' 
+                      : '⚡ Desactivado: El asistente responde las 24 horas, todos los días.'}
+                  </div>
+                </div>
+              </label>
+
+              {waSchedule.enabled && (
+                <>
+                  {/* Weekly Overview Bar */}
+                  <div style={{marginBottom: 20, padding: '12px 14px', borderRadius: 8, backgroundColor: 'var(--bg-dark)', border: '1px solid var(--border-color)'}}>
+                    <div style={{fontSize: '0.78rem', color: 'var(--text-secondary)', marginBottom: 8, fontWeight: 600}}>📅 Resumen Semanal</div>
+                    <div style={{display: 'flex', gap: 6}}>
+                      {DAY_ORDER.map(day => {
+                        const dc = waSchedule.days?.[day] || { mode: 'allday' }
+                        const isAllDay = dc.mode === 'allday'
+                        const isOff = dc.mode === 'off'
+                        const isRange = dc.mode === 'range'
+                        return (
+                          <div key={day} style={{
+                            flex: 1, 
+                            textAlign: 'center', 
+                            padding: '8px 4px', 
+                            borderRadius: 6,
+                            backgroundColor: isAllDay ? 'rgba(16, 185, 129, 0.15)' : isOff ? 'rgba(239, 68, 68, 0.1)' : 'rgba(59, 130, 246, 0.12)',
+                            border: `1px solid ${isAllDay ? 'rgba(16, 185, 129, 0.3)' : isOff ? 'rgba(239, 68, 68, 0.25)' : 'rgba(59, 130, 246, 0.3)'}`,
+                            transition: 'all 0.2s ease'
+                          }}>
+                            <div style={{fontSize: '0.72rem', fontWeight: 700, color: isAllDay ? 'var(--accent-emerald)' : isOff ? 'var(--accent-red)' : 'var(--accent-blue)'}}>
+                              {DAY_LABELS[day]?.substring(0, 3).toUpperCase()}
+                            </div>
+                            <div style={{fontSize: '0.68rem', marginTop: 3, color: 'var(--text-secondary)'}}>
+                              {isAllDay ? '24hs' : isOff ? 'OFF' : (dc.ranges && dc.ranges.length > 0 ? dc.ranges.map(r => `${r.from}-${r.to}`).join(', ') : '—')}
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Per-Day Configuration */}
+                  <div style={{display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 20}}>
+                    {DAY_ORDER.map(day => {
+                      const dc = waSchedule.days?.[day] || { mode: 'allday' }
+                      const isWeekend = day === 'saturday' || day === 'sunday'
+                      return (
+                        <div key={day} style={{
+                          display: 'flex', 
+                          alignItems: 'center', 
+                          gap: 12, 
+                          padding: '10px 14px', 
+                          borderRadius: 8, 
+                          backgroundColor: 'var(--bg-dark)', 
+                          border: '1px solid var(--border-color)',
+                          flexWrap: 'wrap'
+                        }}>
+                          {/* Day Name */}
+                          <div style={{width: 90, fontWeight: 600, fontSize: '0.88rem', display: 'flex', alignItems: 'center', gap: 6}}>
+                            <span style={{
+                              width: 8, height: 8, borderRadius: '50%', display: 'inline-block',
+                              backgroundColor: dc.mode === 'allday' ? 'var(--accent-emerald)' : dc.mode === 'off' ? 'var(--accent-red)' : 'var(--accent-blue)'
+                            }} />
+                            {DAY_LABELS[day]}
+                          </div>
+
+                          {/* Mode Selector */}
+                          <div style={{display: 'flex', gap: 4}}>
+                            {[
+                              { value: 'allday', label: '🟢 Todo el Día', color: 'var(--accent-emerald)' },
+                              { value: 'range', label: '🕐 Horario', color: 'var(--accent-blue)' },
+                              { value: 'off', label: '🔴 Inactivo', color: 'var(--accent-red)' }
+                            ].map(opt => (
+                              <button
+                                key={opt.value}
+                                type="button"
+                                onClick={() => {
+                                  const updates = { mode: opt.value }
+                                  if (opt.value === 'range' && (!dc.ranges || dc.ranges.length === 0)) {
+                                    updates.ranges = [{ from: '08:00', to: '20:00' }]
+                                  }
+                                  updateDayConfig(day, updates)
+                                }}
+                                style={{
+                                  padding: '4px 10px',
+                                  fontSize: '0.75rem',
+                                  fontWeight: dc.mode === opt.value ? 700 : 500,
+                                  borderRadius: 6,
+                                  border: `1px solid ${dc.mode === opt.value ? opt.color : 'var(--border-color)'}`,
+                                  backgroundColor: dc.mode === opt.value ? `${opt.color}15` : 'transparent',
+                                  color: dc.mode === opt.value ? opt.color : 'var(--text-secondary)',
+                                  cursor: 'pointer',
+                                  transition: 'all 0.15s ease'
+                                }}
+                              >
+                                {opt.label}
+                              </button>
+                            ))}
+                          </div>
+
+                          {/* Time Range Selectors (only for 'range' mode) */}
+                          {dc.mode === 'range' && (
+                            <div style={{display: 'flex', alignItems: 'center', gap: 6, flex: 1, flexWrap: 'wrap'}}>
+                              {(dc.ranges || []).map((range, ri) => (
+                                <div key={ri} style={{display: 'flex', alignItems: 'center', gap: 4}}>
+                                  <select 
+                                    value={range.from} 
+                                    onChange={e => {
+                                      const newRanges = [...(dc.ranges || [])]
+                                      newRanges[ri] = { ...newRanges[ri], from: e.target.value }
+                                      updateDayConfig(day, { ranges: newRanges })
+                                    }}
+                                    style={{padding: '4px 6px', fontSize: '0.8rem', borderRadius: 4, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)', cursor: 'pointer'}}
+                                  >
+                                    {HOUR_OPTIONS.map(h => <option key={h} value={h}>{h}</option>)}
+                                  </select>
+                                  <span style={{fontSize: '0.8rem', color: 'var(--text-secondary)'}}>a</span>
+                                  <select 
+                                    value={range.to} 
+                                    onChange={e => {
+                                      const newRanges = [...(dc.ranges || [])]
+                                      newRanges[ri] = { ...newRanges[ri], to: e.target.value }
+                                      updateDayConfig(day, { ranges: newRanges })
+                                    }}
+                                    style={{padding: '4px 6px', fontSize: '0.8rem', borderRadius: 4, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)', cursor: 'pointer'}}
+                                  >
+                                    {HOUR_OPTIONS.map(h => <option key={h} value={h}>{h}</option>)}
+                                  </select>
+                                  {(dc.ranges || []).length > 1 && (
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        const newRanges = (dc.ranges || []).filter((_, i) => i !== ri)
+                                        updateDayConfig(day, { ranges: newRanges })
+                                      }}
+                                      style={{padding: '2px 6px', fontSize: '0.72rem', borderRadius: 4, border: '1px solid var(--accent-red)', backgroundColor: 'rgba(239,68,68,0.1)', color: 'var(--accent-red)', cursor: 'pointer'}}
+                                    >✕</button>
+                                  )}
+                                </div>
+                              ))}
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const newRanges = [...(dc.ranges || []), { from: '08:00', to: '20:00' }]
+                                  updateDayConfig(day, { ranges: newRanges })
+                                }}
+                                style={{padding: '3px 8px', fontSize: '0.72rem', borderRadius: 4, border: '1px solid var(--border-color)', backgroundColor: 'transparent', color: 'var(--accent-blue)', cursor: 'pointer'}}
+                                title="Agregar otro rango horario"
+                              >+ Rango</button>
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+
+                  {/* Quick Presets */}
+                  <div style={{marginBottom: 18, padding: '10px 14px', borderRadius: 8, backgroundColor: 'var(--bg-dark)', border: '1px solid var(--border-color)'}}>
+                    <div style={{fontSize: '0.78rem', color: 'var(--text-secondary)', fontWeight: 600, marginBottom: 8}}>⚡ Presets Rápidos</div>
+                    <div style={{display: 'flex', gap: 8, flexWrap: 'wrap'}}>
+                      <button
+                        type="button"
+                        className="btn btn-secondary"
+                        style={{padding: '5px 12px', fontSize: '0.78rem'}}
+                        onClick={() => {
+                          const newDays = {}
+                          DAY_ORDER.forEach(d => {
+                            if (d === 'saturday' || d === 'sunday') {
+                              newDays[d] = { mode: 'allday' }
+                            } else {
+                              newDays[d] = { mode: 'range', ranges: [{ from: '20:00', to: '23:30' }, { from: '00:00', to: '10:00' }] }
+                            }
+                          })
+                          setWaSchedule(prev => ({ ...prev, days: newDays }))
+                        }}
+                      >
+                        🌙 Nocturno L-V (20:00–10:00) + Fines 24hs
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-secondary"
+                        style={{padding: '5px 12px', fontSize: '0.78rem'}}
+                        onClick={() => {
+                          const newDays = {}
+                          DAY_ORDER.forEach(d => {
+                            newDays[d] = { mode: 'range', ranges: [{ from: '09:00', to: '18:00' }] }
+                          })
+                          setWaSchedule(prev => ({ ...prev, days: newDays }))
+                        }}
+                      >
+                        🏢 Horario Comercial (9:00–18:00)
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-secondary"
+                        style={{padding: '5px 12px', fontSize: '0.78rem'}}
+                        onClick={() => {
+                          const newDays = {}
+                          DAY_ORDER.forEach(d => {
+                            newDays[d] = { mode: 'allday' }
+                          })
+                          setWaSchedule(prev => ({ ...prev, days: newDays }))
+                        }}
+                      >
+                        🟢 Todos los Días 24hs
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-secondary"
+                        style={{padding: '5px 12px', fontSize: '0.78rem'}}
+                        onClick={() => {
+                          const newDays = {}
+                          DAY_ORDER.forEach(d => {
+                            if (d === 'saturday' || d === 'sunday') {
+                              newDays[d] = { mode: 'off' }
+                            } else {
+                              newDays[d] = { mode: 'range', ranges: [{ from: '08:00', to: '17:00' }] }
+                            }
+                          })
+                          setWaSchedule(prev => ({ ...prev, days: newDays }))
+                        }}
+                      >
+                        📅 Solo L-V (8:00–17:00)
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Off-Schedule Message */}
+                  <div style={{marginBottom: 18}}>
+                    <label style={{fontWeight: 600, fontSize: '0.88rem', marginBottom: 6, display: 'block'}}>
+                      💬 Mensaje Fuera de Horario <span style={{fontWeight: 400, fontSize: '0.78rem', color: 'var(--text-secondary)'}}>(opcional — dejar vacío para silencio total)</span>
+                    </label>
+                    <textarea
+                      value={waSchedule.off_schedule_message || ''}
+                      onChange={e => setWaSchedule({...waSchedule, off_schedule_message: e.target.value})}
+                      placeholder="Ej: En este momento estamos fuera de horario de atención. Te responderemos a la brevedad. ¡Gracias por tu paciencia!"
+                      style={{
+                        width: '100%',
+                        minHeight: 70,
+                        padding: 10,
+                        backgroundColor: 'var(--bg-dark)',
+                        color: 'var(--text-primary)',
+                        border: '1px solid var(--border-color)',
+                        borderRadius: 6,
+                        fontSize: '0.85rem',
+                        lineHeight: '1.5',
+                        resize: 'vertical'
+                      }}
+                    />
+                    <small style={{fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: 4, display: 'block'}}>
+                      Si dejas este campo vacío, el bot simplemente no responderá cuando esté fuera de horario (silencio total).
+                    </small>
+                  </div>
+                </>
+              )}
+
+              {/* Save Button */}
+              <button
+                type="button"
+                onClick={handleSaveWaSchedule}
+                disabled={savingSchedule}
+                className="btn"
+                style={{alignSelf: 'flex-start', backgroundColor: 'var(--accent-blue)', color: '#fff', border: 'none', padding: '8px 20px', fontSize: '0.88rem', fontWeight: 600, cursor: 'pointer'}}
+              >
+                {savingSchedule ? 'Guardando...' : '💾 Guardar Horario'}
+              </button>
             </div>
 
             {/* Demand & Inquiries Analytics Panel */}

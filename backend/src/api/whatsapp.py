@@ -5,6 +5,7 @@ from src import database
 from src.api.auth import verify_session, require_permission
 import requests
 import re
+import json
 
 router = APIRouter()
 
@@ -31,6 +32,12 @@ class HumanActivityReq(BaseModel):
 
 class UnpauseChatReq(BaseModel):
     sender: str
+
+class WhatsAppScheduleReq(BaseModel):
+    enabled: bool = False
+    timezone: str = "America/Argentina/Buenos_Aires"
+    days: dict = {}
+    off_schedule_message: str = ""
 
 def verify_internal_only(request: Request):
     # Allow local connections only
@@ -150,6 +157,40 @@ def unpause_chat(req: UnpauseChatReq, _=Depends(verify_session), _2=Depends(requ
     database.unpause_whatsapp_ai(req.sender)
     return {"success": True}
 
+@router.get("/schedule")
+def get_whatsapp_schedule(_=Depends(verify_session)):
+    raw = database.get_setting("whatsapp_schedule", "")
+    if raw:
+        try:
+            return json.loads(raw)
+        except Exception:
+            pass
+    return {
+        "enabled": False,
+        "timezone": "America/Argentina/Buenos_Aires",
+        "days": {
+            "monday": {"mode": "allday"},
+            "tuesday": {"mode": "allday"},
+            "wednesday": {"mode": "allday"},
+            "thursday": {"mode": "allday"},
+            "friday": {"mode": "allday"},
+            "saturday": {"mode": "allday"},
+            "sunday": {"mode": "allday"}
+        },
+        "off_schedule_message": ""
+    }
+
+@router.post("/schedule")
+def save_whatsapp_schedule(req: WhatsAppScheduleReq, _=Depends(verify_session), _2=Depends(require_permission("settings"))):
+    schedule_data = {
+        "enabled": req.enabled,
+        "timezone": req.timezone,
+        "days": req.days,
+        "off_schedule_message": req.off_schedule_message
+    }
+    database.set_setting("whatsapp_schedule", json.dumps(schedule_data))
+    return {"success": True}
+
 # Internal service endpoints (Only from localhost)
 @router.post("/status-update")
 def status_update(req: StatusUpdateReq, _=Depends(verify_internal_only)):
@@ -193,6 +234,12 @@ def whatsapp_webhook(req: WebhookReq, _=Depends(verify_internal_only)):
     if database.is_whatsapp_ai_paused(req.sender):
         print(f"[WhatsApp AI Paused] Skipping AI response for sender {req.sender} (Human operator active)")
         return {"reply": None}
+
+    # Check if bot is within its active schedule
+    if not database.is_whatsapp_in_schedule():
+        off_msg = database.get_whatsapp_off_schedule_message()
+        print(f"[WhatsApp Schedule] Outside active hours for sender {req.sender}")
+        return {"reply": off_msg if off_msg else None}
 
     gemini_key = database.get_setting("gemini_api_key", "").strip()
     if not gemini_key:
