@@ -582,10 +582,116 @@ def sync_all_product_descriptions():
             return True
         return False
 
-    with ThreadPoolExecutor(max_workers=5) as executor:
-        results = executor.map(_fetch_and_save, ml_products)
-        synced_count = sum(1 for r in results if r)
-
     return {"success": True, "count": synced_count, "message": f"Descripciones de Mercado Libre actualizadas para {synced_count} publicaciones."}
+
+class ProfitabilityParamsRequest(BaseModel):
+    cost_price: float
+    cost_meli: float
+    shipping_cost_est: float = 0.0
+    tax_rate_pct: float = 3.5
+    other_cost: float = 0.0
+
+@router.get("/profitability")
+def get_products_profitability():
+    with database.get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute("""
+                SELECT ml_id, title, price, price_web, cost_price, cost_meli, 
+                       shipping_cost_est, tax_rate_pct, other_cost, available_quantity, thumbnail
+                FROM products_cache 
+                WHERE is_hidden = 0 OR is_hidden IS NULL
+                ORDER BY price DESC
+            """)
+            products = cursor.fetchall()
+            
+            result = []
+            total_net_meli = 0.0
+            total_net_web = 0.0
+            critical_margin_count = 0
+            
+            for p in products:
+                price = float(p.get('price') or 0.0)
+                price_web = float(p.get('price_web') or 0.0)
+                cost_price = float(p.get('cost_price') or 0.0)
+                cost_meli_val = float(p.get('cost_meli') or 0.0)
+                shipping_cost = float(p.get('shipping_cost_est') or 0.0)
+                tax_pct = float(p.get('tax_rate_pct') or 3.5)
+                other_cost = float(p.get('other_cost') or 0.0)
+
+                # MeLi calculations
+                # If cost_meli > 100, treat as flat fee, else percentage
+                meli_commission = price * (cost_meli_val / 100.0) if cost_meli_val <= 100.0 else cost_meli_val
+                tax_amount_meli = price * (tax_pct / 100.0)
+                net_profit_meli = price - cost_price - meli_commission - shipping_cost - tax_amount_meli - other_cost
+                margin_pct_meli = (net_profit_meli / price * 100.0) if price > 0 else 0.0
+
+                # Web calculations (default 4.5% Mercado Pago payment gateway fee)
+                web_commission = price_web * 0.045
+                tax_amount_web = price_web * (tax_pct / 100.0)
+                net_profit_web = price_web - cost_price - web_commission - tax_amount_web - other_cost
+                margin_pct_web = (net_profit_web / price_web * 100.0) if price_web > 0 else 0.0
+
+                diff_web_extra = net_profit_web - net_profit_meli
+
+                if margin_pct_meli < 10.0:
+                    critical_margin_count += 1
+
+                total_net_meli += net_profit_meli
+                total_net_web += net_profit_web
+
+                result.append({
+                    "ml_id": p['ml_id'],
+                    "title": p['title'],
+                    "thumbnail": p.get('thumbnail'),
+                    "available_quantity": p['available_quantity'],
+                    "price": price,
+                    "price_web": price_web,
+                    "cost_price": cost_price,
+                    "cost_meli": cost_meli_val,
+                    "shipping_cost_est": shipping_cost,
+                    "tax_rate_pct": tax_pct,
+                    "other_cost": other_cost,
+                    "meli_commission": round(meli_commission, 2),
+                    "tax_amount_meli": round(tax_amount_meli, 2),
+                    "net_profit_meli": round(net_profit_meli, 2),
+                    "margin_pct_meli": round(margin_pct_meli, 2),
+                    "web_commission": round(web_commission, 2),
+                    "tax_amount_web": round(tax_amount_web, 2),
+                    "net_profit_web": round(net_profit_web, 2),
+                    "margin_pct_web": round(margin_pct_web, 2),
+                    "diff_web_extra": round(diff_web_extra, 2)
+                })
+
+            avg_margin_meli = sum(p['margin_pct_meli'] for p in result) / len(result) if result else 0.0
+            avg_margin_web = sum(p['margin_pct_web'] for p in result) / len(result) if result else 0.0
+
+            return {
+                "products": result,
+                "summary": {
+                    "total_products": len(result),
+                    "critical_margin_count": critical_margin_count,
+                    "avg_margin_meli": round(avg_margin_meli, 2),
+                    "avg_margin_web": round(avg_margin_web, 2),
+                    "total_net_meli_est": round(total_net_meli, 2),
+                    "total_net_web_est": round(total_net_web, 2)
+                }
+            }
+
+@router.put("/profitability/{ml_id}")
+def update_product_profitability_params(ml_id: str, req: ProfitabilityParamsRequest):
+    with database.get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute(
+                """
+                UPDATE products_cache 
+                SET cost_price = %s, cost_meli = %s, shipping_cost_est = %s, tax_rate_pct = %s, other_cost = %s
+                WHERE ml_id = %s RETURNING ml_id
+                """,
+                (req.cost_price, req.cost_meli, req.shipping_cost_est, req.tax_rate_pct, req.other_cost, ml_id)
+            )
+            if not cursor.fetchone():
+                raise HTTPException(status_code=404, detail="Producto no encontrado")
+            return {"success": True, "ml_id": ml_id}
+
 
 

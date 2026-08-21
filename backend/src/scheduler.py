@@ -79,11 +79,13 @@ def _sync_one_tenant(tenant):
 
     # Programación automática de disponibilidad de envíos MeLi
     try:
-        ok_ds, msg_ds = meli_api.apply_dispatch_schedule_rules()
-        if ok_ds and "ya se encuentra aplicado" not in msg_ds and "desactivada" not in msg_ds:
-            print(f"[Scheduler][{slug}] Reglas de envíos MeLi: {msg_ds}")
-    except Exception as ds_err:
-        print(f"[Scheduler][{slug}] Error en reglas de envíos MeLi: {ds_err}")
+        from src.api.inventory import process_auto_shipping_schedules
+        process_auto_shipping_schedules()
+    except Exception as ship_err:
+        print(f"[Scheduler][{slug}] Error en auto-envíos MeLi: {ship_err}")
+
+    # Alertas automáticas por WhatsApp de vencimientos de servicios e impuestos
+    _check_vencimientos_alerts_for_tenant(tenant)
 
     # Sincronización automática de clientes/leads desde Meta (Instagram & Facebook Ads)
     try:
@@ -188,3 +190,72 @@ def start_scheduler():
 
     thread_mkt = threading.Thread(target=marketing_publisher_loop, daemon=True)
     thread_mkt.start()
+
+def _check_vencimientos_alerts_for_tenant(tenant):
+    from src import database
+    import requests
+
+    slug = tenant.get("slug")
+    alert_phone = database.get_setting("vencimientos_alert_phone", "").strip()
+    if not alert_phone:
+        alert_phone = database.get_setting("whatsapp_bot_phone", database.get_setting("admin_phone", "")).strip()
+
+    if not alert_phone:
+        return
+
+    alert_days = 3
+    try:
+        alert_days = int(database.get_setting("vencimientos_alert_days", "3"))
+    except Exception:
+        pass
+
+    try:
+        with database.get_connection() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT id, description, category, amount, due_date, status, payment_link, payment_code, last_alert_sent_at
+                    FROM service_payments
+                    WHERE status IN ('pending', 'overdue')
+                      AND (last_alert_sent_at IS NULL OR last_alert_sent_at::date < CURRENT_DATE)
+                      AND (due_date - CURRENT_DATE <= %s)
+                    ORDER BY due_date ASC
+                    """,
+                    (alert_days,)
+                )
+                vencimientos = cursor.fetchall()
+
+                for v in vencimientos:
+                    d_str = str(v['due_date'])
+                    amt = float(v['amount'])
+                    amt_formatted = f"${amt:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.')
+                    
+                    status_emoji = "🔴" if v.get('status') == 'overdue' else "🟡"
+                    msg = f"{status_emoji} *ALERTA DE VENCIMIENTO - ControlCenterES*\n\n" \
+                          f"📌 *Servicio:* {v['description']}\n" \
+                          f"🏷️ *Categoría:* {v.get('category') or 'Servicios'}\n" \
+                          f"💰 *Monto:* {amt_formatted}\n" \
+                          f"📅 *Fecha Vencimiento:* {d_str}\n"
+                    
+                    if v.get('payment_link'):
+                        msg += f"\n👉 *Pagar ahora:* {v['payment_link']}\n"
+                    if v.get('payment_code'):
+                        msg += f"\n📋 *Código de pago:* `{v['payment_code']}`\n"
+
+                    msg += "\n_Mensaje automático de ControlCenterES Finanzas._"
+
+                    try:
+                        res = requests.post("http://127.0.0.1:8091/send-broadcast", json={
+                            "recipients": [{"phone": alert_phone, "name": "Administrador"}],
+                            "message": msg,
+                            "delaySeconds": 1
+                        }, timeout=10)
+
+                        if res.status_code == 200:
+                            cursor.execute("UPDATE service_payments SET last_alert_sent_at = NOW() WHERE id = %s", (v['id'],))
+                            print(f"[Scheduler-Vencimientos][{slug}] Alerta enviada por WhatsApp para '{v['description']}' a {alert_phone}")
+                    except Exception as send_err:
+                        print(f"[Scheduler-Vencimientos][{slug}] Error al enviar WhatsApp: {send_err}")
+    except Exception as e:
+        print(f"[Scheduler-Vencimientos][{slug}] Error procesando alertas de vencimientos: {e}")
+

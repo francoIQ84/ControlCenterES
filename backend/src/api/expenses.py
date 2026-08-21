@@ -561,3 +561,141 @@ def unpay_service_payment(sp_id: int, current_user: dict = Depends(get_current_u
                 raise HTTPException(status_code=404, detail="Vencimiento no encontrado")
             return row
 
+class TestAlertReq(BaseModel):
+    phone: str
+
+@router.post("/vencimientos/test-alert")
+def test_vencimiento_alert(req: TestAlertReq, current_user: dict = Depends(get_current_user)):
+    import requests
+    phone = req.phone.strip()
+    if not phone:
+        raise HTTPException(status_code=400, detail="Número de teléfono es requerido")
+        
+    msg = "🔴 *ALERTA DE PRUEBA - ControlCenterES*\n\n" \
+          "📌 *Servicio:* Luz Edenor (Ejemplo)\n" \
+          "🏷️ *Categoría:* Servicios\n" \
+          "💰 *Monto:* $45.000,00\n" \
+          "📅 *Fecha Vencimiento:* 2026-08-25\n\n" \
+          "👉 *Pagar ahora:* https://mpago.la/demo\n" \
+          "📋 *Código de pago:* `0382918392183`\n\n" \
+          "_Este es un mensaje de prueba del sistema de Alertas de Vencimientos._"
+
+    try:
+        res = requests.post("http://127.0.0.1:8091/send-broadcast", json={
+            "recipients": [{"phone": phone, "name": "Administrador"}],
+            "message": msg,
+            "delaySeconds": 1
+        }, timeout=10)
+        if res.status_code == 200:
+            return {"success": True, "message": f"Alerta enviada correctamente a {phone}"}
+        else:
+            raise HTTPException(status_code=400, detail=f"Error al enviar mensaje WhatsApp: {res.text}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error de conexión con servicio WhatsApp: {str(e)}")
+
+@router.get("/forecast")
+def get_cashflow_forecast(current_user: dict = Depends(get_current_user)):
+    from datetime import datetime, date, timedelta
+    import calendar
+
+    now = datetime.now()
+    cur_m = now.month
+    cur_y = now.year
+
+    with database.get_connection() as conn:
+        ensure_fixed_expenses_for_month(conn, cur_m, cur_y)
+        with conn.cursor() as cursor:
+            # 1. Total sales in last 30 days
+            cursor.execute("""
+                SELECT COALESCE(SUM(total_amount), 0) as total 
+                FROM orders_cache 
+                WHERE date_created::timestamp >= NOW() - INTERVAL '30 days'
+                  AND LOWER(status) NOT IN ('cancelled', 'cancelado')
+            """)
+            sales_30d = float(cursor.fetchone()['total'])
+            avg_daily_sales = sales_30d / 30.0
+            projected_monthly_sales = avg_daily_sales * 30.0
+
+            # 2. Manual incomes monthly average
+            cursor.execute("SELECT COALESCE(SUM(amount), 0) as total FROM incomes WHERE EXTRACT(MONTH FROM date) = %s AND EXTRACT(YEAR FROM date) = %s", (cur_m, cur_y))
+            manual_incomes = float(cursor.fetchone()['total'])
+            projected_incomes = projected_monthly_sales + manual_incomes
+
+            # 3. Fixed expenses
+            cursor.execute("SELECT COALESCE(SUM(amount), 0) as total FROM fixed_expenses WHERE month = %s AND year = %s", (cur_m, cur_y))
+            total_fixed = float(cursor.fetchone()['total'])
+
+            # 4. Pending service payments
+            cursor.execute("SELECT COALESCE(SUM(amount), 0) as total FROM service_payments WHERE period_month = %s AND period_year = %s AND status IN ('pending', 'overdue')", (cur_m, cur_y))
+            pending_vencimientos = float(cursor.fetchone()['total'])
+
+            # 5. Variable expenses 3-month average
+            cursor.execute("""
+                SELECT COALESCE(SUM(amount), 0) / 3.0 as total 
+                FROM variable_expenses 
+                WHERE date >= NOW() - INTERVAL '90 days'
+                  AND category NOT IN ('Transferencias Salientes MP', 'Pago de Tarjeta MP')
+            """)
+            avg_variable = float(cursor.fetchone()['total'])
+
+            projected_expenses = total_fixed + pending_vencimientos + avg_variable
+            projected_net = projected_incomes - projected_expenses
+
+            # Current net balance
+            cursor.execute("SELECT COALESCE(SUM(amount), 0) as total FROM fixed_expenses WHERE month = %s AND year = %s", (cur_m, cur_y))
+            # Current summary net balance
+            cur_summary = get_financial_summary(cur_m, cur_y, current_user=current_user)
+            current_balance = cur_summary.get('net_balance', 0.0)
+
+            # Month + 1 calculation
+            m1_num = cur_m + 1 if cur_m < 12 else 1
+            y1_num = cur_y if cur_m < 12 else cur_y + 1
+            m1_name = calendar.month_name[m1_num]
+            try:
+                m1_name = date(y1_num, m1_num, 1).strftime('%B').capitalize()
+            except Exception:
+                pass
+
+            m1_balance = current_balance + projected_net
+
+            # Month + 2 calculation
+            m2_num = m1_num + 1 if m1_num < 12 else 1
+            y2_num = y1_num if m1_num < 12 else y1_num + 1
+            m2_name = calendar.month_name[m2_num]
+            try:
+                m2_name = date(y2_num, m2_num, 1).strftime('%B').capitalize()
+            except Exception:
+                pass
+
+            m2_balance = m1_balance + projected_net
+
+            return {
+                "current_balance": current_balance,
+                "avg_daily_sales": round(avg_daily_sales, 2),
+                "projected_monthly_sales": round(projected_monthly_sales, 2),
+                "projected_incomes": round(projected_incomes, 2),
+                "projected_expenses": round(projected_expenses, 2),
+                "projected_net_monthly": round(projected_net, 2),
+                "month_1": {
+                    "month_number": m1_num,
+                    "year": y1_num,
+                    "month_name": m1_name,
+                    "projected_incomes": round(projected_incomes, 2),
+                    "projected_expenses": round(projected_expenses, 2),
+                    "projected_net": round(projected_net, 2),
+                    "estimated_ending_balance": round(m1_balance, 2),
+                    "status": "healthy" if m1_balance >= 0 else "risk"
+                },
+                "month_2": {
+                    "month_number": m2_num,
+                    "year": y2_num,
+                    "month_name": m2_name,
+                    "projected_incomes": round(projected_incomes, 2),
+                    "projected_expenses": round(projected_expenses, 2),
+                    "projected_net": round(projected_net, 2),
+                    "estimated_ending_balance": round(m2_balance, 2),
+                    "status": "healthy" if m2_balance >= 0 else "risk"
+                }
+            }
+
+

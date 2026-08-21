@@ -47,6 +47,53 @@ export default function Inventory() {
     last_applied_at: ''
   })
 
+  // Profitability Modal State
+  const [showProfitabilityModal, setShowProfitabilityModal] = useState(false)
+  const [profitabilityData, setProfitabilityData] = useState({ products: [], summary: {} })
+  const [profitabilityLoading, setProfitabilityLoading] = useState(false)
+  const [editingProfitItem, setEditingProfitItem] = useState(null)
+
+  const fetchProfitability = async () => {
+    setProfitabilityLoading(true)
+    try {
+      const res = await fetch('/api/inventory/profitability')
+      if (res.ok) {
+        setProfitabilityData(await res.json())
+      }
+    } catch (e) {
+      console.error(e)
+    } finally {
+      setProfitabilityLoading(false)
+    }
+  }
+
+  const handleSaveProfitabilityParams = async (e) => {
+    e.preventDefault()
+    if (!editingProfitItem) return
+    try {
+      const res = await fetch(`/api/inventory/profitability/${editingProfitItem.ml_id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          cost_price: parseFloat(editingProfitItem.cost_price || 0),
+          cost_meli: parseFloat(editingProfitItem.cost_meli || 0),
+          shipping_cost_est: parseFloat(editingProfitItem.shipping_cost_est || 0),
+          tax_rate_pct: parseFloat(editingProfitItem.tax_rate_pct || 3.5),
+          other_cost: parseFloat(editingProfitItem.other_cost || 0)
+        })
+      })
+      if (res.ok) {
+        setEditingProfitItem(null)
+        fetchProfitability()
+        fetchProducts()
+      } else {
+        alert("Error al actualizar costos del producto")
+      }
+    } catch (e) {
+      alert("Error: " + e.message)
+    }
+  }
+
   const initialNewProduct = {
     title: "",
     qty: 0,
@@ -925,6 +972,24 @@ export default function Inventory() {
             onClick={exportToExcel}
           >
             📊 Exportar a Excel
+          </button>
+          <button 
+            className="btn" 
+            style={{
+              backgroundColor: 'rgba(16, 185, 129, 0.15)', 
+              color: '#10b981', 
+              border: '1px solid #10b981', 
+              display: 'flex', 
+              alignItems: 'center', 
+              gap: 6,
+              fontWeight: '600'
+            }} 
+            onClick={() => {
+              fetchProfitability()
+              setShowProfitabilityModal(true)
+            }}
+          >
+            📊 Calculadora de Rentabilidad
           </button>
           <button className="btn" style={{backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)', border: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', gap: 5}} onClick={() => setShowCategoriesModal(true)}>
             📁 Gestionar Categorías
@@ -2838,6 +2903,147 @@ function QRScannerModal({ onClose, onStockUpdated }) {
           </div>
         )}
       </div>
+
+      {/* PROFITABILITY & NET MARGIN CALCULATOR MODAL */}
+      {showProfitabilityModal && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+          backgroundColor: 'rgba(0,0,0,0.75)', display: 'flex',
+          justifyContent: 'center', alignItems: 'center', zIndex: 1100, padding: 20
+        }}>
+          <div className="card" style={{ width: 1050, maxWidth: '95%', maxHeight: '90vh', overflowY: 'auto', padding: 25, backgroundColor: 'var(--bg-card)', border: '1px solid var(--border-color)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+              <div>
+                <h2 style={{ margin: 0, color: '#10b981', display: 'flex', alignItems: 'center', gap: 8 }}>
+                  📊 Calculadora de Rentabilidad Neto por Producto
+                </h2>
+                <p style={{ margin: '4px 0 0 0', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+                  Análisis de ganancia neta descontando costo de mercadería, comisiones MeLi/MP, envíos e impuestos (IIBB).
+                </p>
+              </div>
+              <button className="btn" onClick={() => setShowProfitabilityModal(false)} style={{ backgroundColor: 'var(--bg-hover)', color: 'var(--text-primary)' }}>
+                ✕ Cerrar
+              </button>
+            </div>
+
+            {profitabilityLoading ? (
+              <div style={{ textAlign: 'center', padding: 40, color: 'var(--text-secondary)' }}>Cargando análisis de rentabilidad...</div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+                {/* KPI Cards */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 15 }}>
+                  <div className="card" style={{ padding: 15, borderLeft: '4px solid #3b82f6' }}>
+                    <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Margen Neto Promedio MeLi</div>
+                    <div style={{ fontSize: '1.5rem', fontWeight: 'bold', color: '#3b82f6' }}>
+                      {profitabilityData.summary?.avg_margin_meli || 0}%
+                    </div>
+                  </div>
+                  <div className="card" style={{ padding: 15, borderLeft: '4px solid #10b981' }}>
+                    <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Margen Neto Promedio Web</div>
+                    <div style={{ fontSize: '1.5rem', fontWeight: 'bold', color: '#10b981' }}>
+                      {profitabilityData.summary?.avg_margin_web || 0}%
+                    </div>
+                  </div>
+                  <div className="card" style={{ padding: 15, borderLeft: '4px solid #ef4444' }}>
+                    <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Productos Críticos (&lt;10% margen)</div>
+                    <div style={{ fontSize: '1.5rem', fontWeight: 'bold', color: '#ef4444' }}>
+                      {profitabilityData.summary?.critical_margin_count || 0}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Table */}
+                <div style={{ overflowX: 'auto' }}>
+                  <table className="data-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.83rem' }}>
+                    <thead>
+                      <tr>
+                        <th style={{ textAlign: 'left' }}>Producto</th>
+                        <th style={{ textAlign: 'right' }}>Costo $</th>
+                        <th style={{ textAlign: 'right' }}>Envío Est. $</th>
+                        <th style={{ textAlign: 'right' }}>Imp. IIBB %</th>
+                        <th style={{ textAlign: 'right' }}>Precio MeLi</th>
+                        <th style={{ textAlign: 'right' }}>Ganancia MeLi</th>
+                        <th style={{ textAlign: 'right' }}>Precio Web</th>
+                        <th style={{ textAlign: 'right' }}>Ganancia Web</th>
+                        <th style={{ textAlign: 'right' }}>Favor Web</th>
+                        <th style={{ textAlign: 'center' }}>Acción</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(profitabilityData.products || []).map(item => {
+                        const isMeliCritical = item.margin_pct_meli < 10
+                        return (
+                          <tr key={item.ml_id}>
+                            <td style={{ fontWeight: 600, maxWidth: 220, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                              {item.title}
+                            </td>
+                            <td style={{ textAlign: 'right' }}>${item.cost_price}</td>
+                            <td style={{ textAlign: 'right' }}>${item.shipping_cost_est}</td>
+                            <td style={{ textAlign: 'right' }}>{item.tax_rate_pct}%</td>
+                            <td style={{ textAlign: 'right', fontWeight: 'bold' }}>${item.price}</td>
+                            <td style={{ textAlign: 'right' }}>
+                              <span className="badge" style={{ backgroundColor: isMeliCritical ? 'rgba(239,68,68,0.15)' : 'rgba(16,185,129,0.15)', color: isMeliCritical ? '#ef4444' : '#10b981', fontWeight: 'bold' }}>
+                                ${item.net_profit_meli} ({item.margin_pct_meli}%)
+                              </span>
+                            </td>
+                            <td style={{ textAlign: 'right', fontWeight: 'bold' }}>${item.price_web}</td>
+                            <td style={{ textAlign: 'right' }}>
+                              <span className="badge" style={{ backgroundColor: 'rgba(16,185,129,0.15)', color: '#10b981', fontWeight: 'bold' }}>
+                                ${item.net_profit_web} ({item.margin_pct_web}%)
+                              </span>
+                            </td>
+                            <td style={{ textAlign: 'right', fontWeight: 'bold', color: item.diff_web_extra > 0 ? '#10b981' : 'var(--text-secondary)' }}>
+                              {item.diff_web_extra > 0 ? `+$${item.diff_web_extra}` : `$${item.diff_web_extra}`}
+                            </td>
+                            <td style={{ textAlign: 'center' }}>
+                              <button className="btn" onClick={() => setEditingProfitItem({ ...item })} style={{ padding: '3px 8px', fontSize: '0.75rem', backgroundColor: 'var(--bg-hover)', color: 'var(--accent-blue)', border: '1px solid var(--border-color)' }}>
+                                ✏️ Editar
+                              </button>
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* EDIT COST PARAMS MODAL */}
+      {editingProfitItem && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.8)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1200 }}>
+          <div className="card" style={{ width: 440, padding: 22, backgroundColor: 'var(--bg-card)', border: '1px solid var(--border-color)' }}>
+            <h3 style={{ marginTop: 0, marginBottom: 15 }}>✏️ Ajustar Parámetros de Costo</h3>
+            <p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginBottom: 15 }}>
+              {editingProfitItem.title}
+            </p>
+            <form onSubmit={handleSaveProfitabilityParams} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <label style={{ fontSize: '0.82rem', fontWeight: 600 }}>Costo de Mercadería $
+                <input type="number" step="0.01" value={editingProfitItem.cost_price} onChange={e => setEditingProfitItem(p => ({ ...p, cost_price: e.target.value }))} style={{ width: '100%', marginTop: 4 }} />
+              </label>
+              <label style={{ fontSize: '0.82rem', fontWeight: 600 }}>Comisión MeLi (% o $ Fijo)
+                <input type="number" step="0.01" value={editingProfitItem.cost_meli} onChange={e => setEditingProfitItem(p => ({ ...p, cost_meli: e.target.value }))} style={{ width: '100%', marginTop: 4 }} />
+              </label>
+              <label style={{ fontSize: '0.82rem', fontWeight: 600 }}>Costo de Envío Estimado $
+                <input type="number" step="0.01" value={editingProfitItem.shipping_cost_est} onChange={e => setEditingProfitItem(p => ({ ...p, shipping_cost_est: e.target.value }))} style={{ width: '100%', marginTop: 4 }} />
+              </label>
+              <label style={{ fontSize: '0.82rem', fontWeight: 600 }}>Impuestos / IIBB %
+                <input type="number" step="0.01" value={editingProfitItem.tax_rate_pct} onChange={e => setEditingProfitItem(p => ({ ...p, tax_rate_pct: e.target.value }))} style={{ width: '100%', marginTop: 4 }} />
+              </label>
+              <label style={{ fontSize: '0.82rem', fontWeight: 600 }}>Otros Costos / Embalaje $
+                <input type="number" step="0.01" value={editingProfitItem.other_cost} onChange={e => setEditingProfitItem(p => ({ ...p, other_cost: e.target.value }))} style={{ width: '100%', marginTop: 4 }} />
+              </label>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 10 }}>
+                <button type="button" className="btn" onClick={() => setEditingProfitItem(null)}>Cancelar</button>
+                <button type="submit" className="btn-primary" style={{ padding: '6px 16px' }}>Guardar y Recalcular</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

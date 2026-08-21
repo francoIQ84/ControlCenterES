@@ -14,6 +14,9 @@ export default function Expenses() {
   const [vencimientos, setVencimientos] = useState([])
   const [vencimientosFilter, setVencimientosFilter] = useState('all') // 'all' | 'pending' | 'overdue' | 'paid'
   const [copiedCodeId, setCopiedCodeId] = useState(null)
+  const [forecast, setForecast] = useState(null)
+  const [testPhone, setTestPhone] = useState('')
+  const [sendingTestAlert, setSendingTestAlert] = useState(false)
   const [showSalesDetails, setShowSalesDetails] = useState(true)
   const [salesSearch, setSalesSearch] = useState('')
   const [summary, setSummary] = useState({
@@ -128,9 +131,40 @@ export default function Expenses() {
     }
   }
 
+  const fetchForecast = async () => {
+    try {
+      const res = await fetch('/api/expenses/forecast')
+      if (res.ok) setForecast(await res.json())
+    } catch (e) {
+      console.error(e)
+    }
+  }
+
+  const handleSendTestAlert = async () => {
+    if (!testPhone) return alert("Ingresa un número de teléfono (ej: 5491123456789)")
+    setSendingTestAlert(true)
+    try {
+      const res = await fetch('/api/expenses/vencimientos/test-alert', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone: testPhone })
+      })
+      const data = await res.json()
+      if (res.ok && data.success) {
+        alert("¡Alerta de prueba enviada por WhatsApp con éxito!")
+      } else {
+        alert("Error: " + (data.detail || "No se pudo enviar la alerta"))
+      }
+    } catch (e) {
+      alert("Error de conexión: " + e.message)
+    } finally {
+      setSendingTestAlert(false)
+    }
+  }
+
   const loadData = async () => {
     setLoading(true)
-    await Promise.all([fetchSummary(), fetchFixed(), fetchVariable(), fetchIncomes(), fetchSalesList(), fetchVencimientos()])
+    await Promise.all([fetchSummary(), fetchFixed(), fetchVariable(), fetchIncomes(), fetchSalesList(), fetchVencimientos(), fetchForecast()])
     setLoading(false)
   }
 
@@ -582,6 +616,37 @@ export default function Expenses() {
 
         return (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+            {/* WHATSAPP ALERTS TOOLBAR CARD */}
+            <div className="card" style={{ backgroundColor: 'rgba(16, 185, 129, 0.08)', border: '1px solid rgba(16, 185, 129, 0.3)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 15, padding: '14px 20px' }}>
+              <div>
+                <strong style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#10b981', fontSize: '0.95rem' }}>
+                  🔔 Alertas Automáticas por WhatsApp Activas
+                </strong>
+                <p style={{ margin: '4px 0 0 0', fontSize: '0.82rem', color: 'var(--text-secondary)' }}>
+                  El sistema envía un recordatorio por WhatsApp 3 días antes de cada vencimiento con el link directo para pagar.
+                </p>
+              </div>
+
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <input 
+                  type="text" 
+                  placeholder="WhatsApp ej: 5491123456789" 
+                  value={testPhone} 
+                  onChange={e => setTestPhone(e.target.value)} 
+                  style={{ padding: '6px 12px', fontSize: '0.82rem', width: 210, borderRadius: 6, border: '1px solid var(--border-color)' }}
+                />
+                <button 
+                  type="button" 
+                  className="btn" 
+                  onClick={handleSendTestAlert}
+                  disabled={sendingTestAlert}
+                  style={{ padding: '6px 14px', fontSize: '0.82rem', fontWeight: 600, backgroundColor: '#10b981', color: 'white', border: 'none', borderRadius: 6, cursor: 'pointer' }}
+                >
+                  {sendingTestAlert ? 'Enviando...' : '📱 Probar Alerta WhatsApp'}
+                </button>
+              </div>
+            </div>
+
             {/* Top KPI Cards for Vencimientos */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 20 }}>
               <div className="card" style={{ borderLeft: '4px solid #ef4444', display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -1028,6 +1093,82 @@ export default function Expenses() {
               </div>
             </div>
           </div>
+
+          {/* CASHFLOW FORECAST CARD */}
+          {forecast && (
+            <div className="card" style={{ marginTop: 20, borderLeft: '4px solid #3b82f6' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15, flexWrap: 'wrap', gap: 10 }}>
+                <div>
+                  <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: 8, color: '#3b82f6' }}>
+                    <TrendingUp size={20} /> Proyección de Flujo de Caja (Cashflow Forecast 30 y 60 Días)
+                  </h3>
+                  <p style={{ margin: '4px 0 0 0', fontSize: '0.83rem', color: 'var(--text-secondary)' }}>
+                    Estimación predictiva basada en ventas diarias promedio (${Math.round(forecast.avg_daily_sales).toLocaleString()}/día) y gastos agendados.
+                  </p>
+                </div>
+
+                <span className="badge" style={{ backgroundColor: 'rgba(59, 130, 246, 0.15)', color: '#3b82f6', fontWeight: 'bold' }}>
+                  Saldo Actual: ${Math.round(forecast.current_balance).toLocaleString()}
+                </span>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 20 }}>
+                {/* Month 1 Forecast Card */}
+                <div style={{ backgroundColor: 'var(--bg-hover)', padding: 18, borderRadius: 10, border: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <strong style={{ fontSize: '1rem' }}>🔮 Mes +1 ({forecast.month_1.month_name})</strong>
+                    <span className="badge" style={{ backgroundColor: forecast.month_1.status === 'healthy' ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)', color: forecast.month_1.status === 'healthy' ? '#10b981' : '#ef4444', fontWeight: 'bold' }}>
+                      {forecast.month_1.status === 'healthy' ? '🟢 Liquidez Saludable' : '🔴 Riesgo de Liquidez'}
+                    </span>
+                  </div>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: '0.88rem' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span style={{ color: 'var(--text-secondary)' }}>Ingresos Est. (+Ventas):</span>
+                      <span style={{ color: '#10b981', fontWeight: 600 }}>+${Math.round(forecast.month_1.projected_incomes).toLocaleString()}</span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span style={{ color: 'var(--text-secondary)' }}>Egresos Est. (-Gastos/Servicios):</span>
+                      <span style={{ color: '#ef4444', fontWeight: 600 }}>-${Math.round(forecast.month_1.projected_expenses).toLocaleString()}</span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px dashed var(--border-color)', paddingTop: 6, fontWeight: 'bold' }}>
+                      <span>Caja Estimada a Fin de Mes:</span>
+                      <span style={{ color: forecast.month_1.estimated_ending_balance >= 0 ? '#10b981' : '#ef4444', fontSize: '1.1rem' }}>
+                        ${Math.round(forecast.month_1.estimated_ending_balance).toLocaleString()}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Month 2 Forecast Card */}
+                <div style={{ backgroundColor: 'var(--bg-hover)', padding: 18, borderRadius: 10, border: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <strong style={{ fontSize: '1rem' }}>🔮 Mes +2 ({forecast.month_2.month_name})</strong>
+                    <span className="badge" style={{ backgroundColor: forecast.month_2.status === 'healthy' ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)', color: forecast.month_2.status === 'healthy' ? '#10b981' : '#ef4444', fontWeight: 'bold' }}>
+                      {forecast.month_2.status === 'healthy' ? '🟢 Liquidez Saludable' : '🔴 Riesgo de Liquidez'}
+                    </span>
+                  </div>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: '0.88rem' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span style={{ color: 'var(--text-secondary)' }}>Ingresos Est. (+Ventas):</span>
+                      <span style={{ color: '#10b981', fontWeight: 600 }}>+${Math.round(forecast.month_2.projected_incomes).toLocaleString()}</span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span style={{ color: 'var(--text-secondary)' }}>Egresos Est. (-Gastos/Servicios):</span>
+                      <span style={{ color: '#ef4444', fontWeight: 600 }}>-${Math.round(forecast.month_2.projected_expenses).toLocaleString()}</span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px dashed var(--border-color)', paddingTop: 6, fontWeight: 'bold' }}>
+                      <span>Caja Estimada a Fin de Mes:</span>
+                      <span style={{ color: forecast.month_2.estimated_ending_balance >= 0 ? '#10b981' : '#ef4444', fontSize: '1.1rem' }}>
+                        ${Math.round(forecast.month_2.estimated_ending_balance).toLocaleString()}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       )}
 

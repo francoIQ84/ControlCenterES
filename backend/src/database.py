@@ -109,6 +109,9 @@ def init_db():
             cursor.execute('ALTER TABLE products_cache ADD COLUMN IF NOT EXISTS prev_price_web REAL;')
             cursor.execute('ALTER TABLE products_cache ADD COLUMN IF NOT EXISTS is_hidden INTEGER DEFAULT 0;')
             cursor.execute('ALTER TABLE products_cache ADD COLUMN IF NOT EXISTS manufacturing_time INTEGER DEFAULT 0;')
+            cursor.execute('ALTER TABLE products_cache ADD COLUMN IF NOT EXISTS shipping_cost_est REAL DEFAULT 0.0;')
+            cursor.execute('ALTER TABLE products_cache ADD COLUMN IF NOT EXISTS tax_rate_pct REAL DEFAULT 3.5;')
+            cursor.execute('ALTER TABLE products_cache ADD COLUMN IF NOT EXISTS other_cost REAL DEFAULT 0.0;')
 
             # Categories table
             cursor.execute('''
@@ -289,6 +292,7 @@ def init_db():
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             ''')
+            cursor.execute('ALTER TABLE service_payments ADD COLUMN IF NOT EXISTS last_alert_sent_at TIMESTAMP;')
             
             # WhatsApp chat history table
             cursor.execute('''
