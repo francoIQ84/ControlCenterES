@@ -1,11 +1,26 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from typing import List, Optional
-from datetime import datetime
+from datetime import datetime, date, timedelta
 from pydantic import BaseModel
 from src import database
 from src.api.auth import get_current_user
 
 router = APIRouter()
+
+class ServicePaymentCreate(BaseModel):
+    description: str
+    category: str
+    amount: float
+    due_date: str
+    period_month: int
+    period_year: int
+    payment_link: Optional[str] = ""
+    payment_code: Optional[str] = ""
+    auto_recurring: Optional[bool] = True
+
+class ServicePaymentPayRequest(BaseModel):
+    add_to_variable_expenses: Optional[bool] = True
+    paid_date: Optional[str] = None
 
 class FixedExpenseCreate(BaseModel):
     description: str
@@ -368,3 +383,181 @@ def get_expenses_sales(month: int, year: int, current_user: dict = Depends(get_c
                 if r.get('date_created'):
                     r['date_created'] = str(r['date_created'])[:19].replace('T', ' ')
             return rows
+
+def ensure_service_payments_for_month(conn, month: int, year: int):
+    with conn.cursor() as cursor:
+        cursor.execute("SELECT COUNT(*) as count FROM service_payments WHERE period_month = %s AND period_year = %s", (month, year))
+        row = cursor.fetchone()
+        count = row['count'] if row else 0
+        
+        if count > 0:
+            return
+            
+        cursor.execute(
+            """
+            SELECT period_month, period_year 
+            FROM service_payments 
+            WHERE (period_year < %s OR (period_year = %s AND period_month < %s))
+              AND auto_recurring = TRUE
+            ORDER BY period_year DESC, period_month DESC 
+            LIMIT 1
+            """,
+            (year, year, month)
+        )
+        prev = cursor.fetchone()
+        if prev:
+            cursor.execute(
+                """
+                SELECT description, category, amount, due_date, payment_link, payment_code, auto_recurring 
+                FROM service_payments 
+                WHERE period_month = %s AND period_year = %s AND auto_recurring = TRUE
+                """,
+                (prev['period_month'], prev['period_year'])
+            )
+            prev_services = cursor.fetchall()
+            import calendar
+            for s in prev_services:
+                prev_due = s['due_date']
+                day = prev_due.day if prev_due and hasattr(prev_due, 'day') else 10
+                last_day = calendar.monthrange(year, month)[1]
+                new_due_date = date(year, month, min(day, last_day))
+                
+                cursor.execute(
+                    """
+                    INSERT INTO service_payments 
+                    (description, category, amount, due_date, period_month, period_year, status, payment_link, payment_code, auto_recurring)
+                    VALUES (%s, %s, %s, %s, %s, %s, 'pending', %s, %s, %s)
+                    """,
+                    (s['description'], s['category'], s['amount'], new_due_date.strftime('%Y-%m-%d'), month, year, s['payment_link'], s['payment_code'], s['auto_recurring'])
+                )
+
+@router.get("/vencimientos")
+def get_service_payments(month: Optional[int] = None, year: Optional[int] = None, current_user: dict = Depends(get_current_user)):
+    with database.get_connection() as conn:
+        if month and year:
+            ensure_service_payments_for_month(conn, month, year)
+            
+        query = "SELECT * FROM service_payments"
+        params = []
+        if month and year:
+            query += " WHERE period_month = %s AND period_year = %s"
+            params.extend([month, year])
+        query += " ORDER BY due_date ASC, id ASC"
+        
+        with conn.cursor() as cursor:
+            cursor.execute(query, tuple(params))
+            rows = cursor.fetchall()
+            today_str = date.today().strftime('%Y-%m-%d')
+            for r in rows:
+                if r.get('due_date'):
+                    d_str = r['due_date'].strftime('%Y-%m-%d') if hasattr(r['due_date'], 'strftime') else str(r['due_date'])
+                    r['due_date'] = d_str
+                    if r.get('status') == 'pending' and d_str < today_str:
+                        r['status'] = 'overdue'
+                if r.get('paid_date'):
+                    r['paid_date'] = r['paid_date'].strftime('%Y-%m-%d %H:%M:%S') if hasattr(r['paid_date'], 'strftime') else str(r['paid_date'])
+            return rows
+
+@router.post("/vencimientos")
+def create_service_payment(sp: ServicePaymentCreate, current_user: dict = Depends(get_current_user)):
+    today_str = date.today().strftime('%Y-%m-%d')
+    initial_status = 'pending'
+    if sp.due_date < today_str:
+        initial_status = 'overdue'
+        
+    with database.get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute(
+                """
+                INSERT INTO service_payments 
+                (description, category, amount, due_date, period_month, period_year, status, payment_link, payment_code, auto_recurring)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                RETURNING *
+                """,
+                (sp.description, sp.category, sp.amount, sp.due_date, sp.period_month, sp.period_year, initial_status, sp.payment_link or '', sp.payment_code or '', sp.auto_recurring if sp.auto_recurring is not None else True)
+            )
+            row = cursor.fetchone()
+            if row and row.get('due_date'):
+                row['due_date'] = row['due_date'].strftime('%Y-%m-%d') if hasattr(row['due_date'], 'strftime') else str(row['due_date'])
+            return row
+
+@router.put("/vencimientos/{sp_id}")
+def update_service_payment(sp_id: int, sp: ServicePaymentCreate, current_user: dict = Depends(get_current_user)):
+    with database.get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute(
+                """
+                UPDATE service_payments 
+                SET description = %s, category = %s, amount = %s, due_date = %s, 
+                    period_month = %s, period_year = %s, payment_link = %s, payment_code = %s, auto_recurring = %s
+                WHERE id = %s RETURNING *
+                """,
+                (sp.description, sp.category, sp.amount, sp.due_date, sp.period_month, sp.period_year, sp.payment_link or '', sp.payment_code or '', sp.auto_recurring if sp.auto_recurring is not None else True, sp_id)
+            )
+            row = cursor.fetchone()
+            if not row:
+                raise HTTPException(status_code=404, detail="Vencimiento no encontrado")
+            if row.get('due_date'):
+                row['due_date'] = row['due_date'].strftime('%Y-%m-%d') if hasattr(row['due_date'], 'strftime') else str(row['due_date'])
+            return row
+
+@router.delete("/vencimientos/{sp_id}")
+def delete_service_payment(sp_id: int, current_user: dict = Depends(get_current_user)):
+    with database.get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute("DELETE FROM service_payments WHERE id = %s RETURNING id", (sp_id,))
+            if not cursor.fetchone():
+                raise HTTPException(status_code=404, detail="Vencimiento no encontrado")
+            return {"success": True}
+
+@router.post("/vencimientos/{sp_id}/pay")
+def pay_service_payment(sp_id: int, req: ServicePaymentPayRequest, current_user: dict = Depends(get_current_user)):
+    paid_timestamp = req.paid_date or datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    paid_date_only = paid_timestamp.split(' ')[0]
+    
+    with database.get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute(
+                """
+                UPDATE service_payments 
+                SET status = 'paid', paid_date = %s 
+                WHERE id = %s RETURNING *
+                """,
+                (paid_timestamp, sp_id)
+            )
+            row = cursor.fetchone()
+            if not row:
+                raise HTTPException(status_code=404, detail="Vencimiento no encontrado")
+            
+            if req.add_to_variable_expenses:
+                cursor.execute(
+                    """
+                    INSERT INTO variable_expenses (date, description, amount, category)
+                    VALUES (%s, %s, %s, %s)
+                    """,
+                    (paid_date_only, f"Pago Servicio: {row['description']}", row['amount'], row['category'] or 'Servicios')
+                )
+            
+            if row.get('due_date'):
+                row['due_date'] = row['due_date'].strftime('%Y-%m-%d') if hasattr(row['due_date'], 'strftime') else str(row['due_date'])
+            if row.get('paid_date'):
+                row['paid_date'] = str(row['paid_date'])
+            return row
+
+@router.post("/vencimientos/{sp_id}/unpay")
+def unpay_service_payment(sp_id: int, current_user: dict = Depends(get_current_user)):
+    with database.get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute(
+                """
+                UPDATE service_payments 
+                SET status = 'pending', paid_date = NULL 
+                WHERE id = %s RETURNING *
+                """,
+                (sp_id,)
+            )
+            row = cursor.fetchone()
+            if not row:
+                raise HTTPException(status_code=404, detail="Vencimiento no encontrado")
+            return row
+

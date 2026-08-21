@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { Plus, Trash2, Wallet, Calendar, DollarSign, Tag, TrendingDown, TrendingUp, PieChart, ArrowUpRight, ArrowDownRight, Layers, FileText, CheckCircle2, AlertTriangle, Search, ChevronDown, ChevronUp, Pencil, RefreshCw } from 'lucide-react'
+import { Plus, Trash2, Wallet, Calendar, DollarSign, Tag, TrendingDown, TrendingUp, PieChart, ArrowUpRight, ArrowDownRight, Layers, FileText, CheckCircle2, AlertTriangle, Search, ChevronDown, ChevronUp, Pencil, RefreshCw, Clock, ExternalLink, Copy, Check, Link2, CreditCard } from 'lucide-react'
 
 export default function Expenses() {
   const [activeTab, setActiveTab] = useState('summary') // 'summary' | 'expenses' | 'incomes'
@@ -11,6 +11,9 @@ export default function Expenses() {
   const [variableExpenses, setVariableExpenses] = useState([])
   const [manualIncomes, setManualIncomes] = useState([])
   const [salesList, setSalesList] = useState([])
+  const [vencimientos, setVencimientos] = useState([])
+  const [vencimientosFilter, setVencimientosFilter] = useState('all') // 'all' | 'pending' | 'overdue' | 'paid'
+  const [copiedCodeId, setCopiedCodeId] = useState(null)
   const [showSalesDetails, setShowSalesDetails] = useState(true)
   const [salesSearch, setSalesSearch] = useState('')
   const [summary, setSummary] = useState({
@@ -30,6 +33,15 @@ export default function Expenses() {
   const [newFixed, setNewFixed] = useState({ description: '', amount: '', category: 'Sueldos' })
   const [newVariable, setNewVariable] = useState({ date: new Date().toISOString().split('T')[0], description: '', amount: '', category: 'Insumos' })
   const [newIncome, setNewIncome] = useState({ date: new Date().toISOString().split('T')[0], description: '', amount: '', category: 'Venta Directa / Extra' })
+  const [newService, setNewService] = useState({
+    description: '',
+    category: 'Servicios',
+    amount: '',
+    due_date: new Date().toISOString().split('T')[0],
+    payment_link: '',
+    payment_code: '',
+    auto_recurring: true
+  })
   const [editModal, setEditModal] = useState({ open: false, type: '', item: null })
   const [syncMpLoading, setSyncMpLoading] = useState(false)
 
@@ -60,6 +72,7 @@ export default function Expenses() {
   const fixedCategories = ['Sueldos', 'Alquiler', 'Impuestos', 'Servicios', 'Software/Suscripciones', 'Otros Fijos']
   const variableCategories = ['Insumos', 'Logística', 'Mantenimiento', 'Marketing', 'Otros Variables']
   const incomeCategories = ['Venta Directa / Extra', 'Aporte de Capital', 'Reembolso', 'Inversión', 'Otros Ingresos']
+  const serviceCategories = ['Servicios', 'Impuestos', 'Alquiler', 'Software/Suscripciones', 'Otros']
 
   const fetchSummary = async () => {
     try {
@@ -106,9 +119,18 @@ export default function Expenses() {
     }
   }
 
+  const fetchVencimientos = async () => {
+    try {
+      const res = await fetch(`/api/expenses/vencimientos?month=${selectedMonth}&year=${selectedYear}`)
+      if (res.ok) setVencimientos(await res.json())
+    } catch (e) {
+      console.error(e)
+    }
+  }
+
   const loadData = async () => {
     setLoading(true)
-    await Promise.all([fetchSummary(), fetchFixed(), fetchVariable(), fetchIncomes(), fetchSalesList()])
+    await Promise.all([fetchSummary(), fetchFixed(), fetchVariable(), fetchIncomes(), fetchSalesList(), fetchVencimientos()])
     setLoading(false)
   }
 
@@ -238,6 +260,85 @@ export default function Expenses() {
     } catch (e) {}
   }
 
+  const handleAddService = async (e) => {
+    e.preventDefault()
+    if (!newService.description || !newService.amount || !newService.due_date) return
+    try {
+      const res = await fetch('/api/expenses/vencimientos', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          description: newService.description,
+          category: newService.category,
+          amount: parseFloat(newService.amount),
+          due_date: newService.due_date,
+          period_month: selectedMonth,
+          period_year: selectedYear,
+          payment_link: newService.payment_link,
+          payment_code: newService.payment_code,
+          auto_recurring: newService.auto_recurring
+        })
+      })
+      if (res.ok) {
+        setNewService({
+          description: '',
+          category: 'Servicios',
+          amount: '',
+          due_date: new Date().toISOString().split('T')[0],
+          payment_link: '',
+          payment_code: '',
+          auto_recurring: true
+        })
+        fetchVencimientos()
+      }
+    } catch (e) {
+      alert("Error al guardar vencimiento")
+    }
+  }
+
+  const handleDeleteService = async (id) => {
+    if (!confirm("¿Eliminar este servicio/vencimiento?")) return
+    try {
+      const res = await fetch(`/api/expenses/vencimientos/${id}`, { method: 'DELETE' })
+      if (res.ok) fetchVencimientos()
+    } catch (e) {
+      alert("Error al eliminar registro")
+    }
+  }
+
+  const handlePayService = async (service, addToVariable = true) => {
+    try {
+      const res = await fetch(`/api/expenses/vencimientos/${service.id}/pay`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ add_to_variable_expenses: addToVariable })
+      })
+      if (res.ok) {
+        fetchVencimientos()
+        fetchVariable()
+        fetchSummary()
+      }
+    } catch (e) {
+      alert("Error al marcar como pagado")
+    }
+  }
+
+  const handleUnpayService = async (id) => {
+    try {
+      const res = await fetch(`/api/expenses/vencimientos/${id}/unpay`, { method: 'POST' })
+      if (res.ok) fetchVencimientos()
+    } catch (e) {
+      alert("Error al desmarcar pago")
+    }
+  }
+
+  const handleCopyCode = (code, id) => {
+    if (!code) return
+    navigator.clipboard.writeText(code)
+    setCopiedCodeId(id)
+    setTimeout(() => setCopiedCodeId(null), 2000)
+  }
+
   const handleSaveEdit = async (e) => {
     e.preventDefault()
     if (!editModal.item || !editModal.item.description || !editModal.item.amount) return
@@ -262,6 +363,18 @@ export default function Expenses() {
           amount: parseFloat(item.amount),
           category: item.category
         }
+      } else if (type === 'vencimientos') {
+        bodyData = {
+          description: item.description,
+          category: item.category,
+          amount: parseFloat(item.amount),
+          due_date: item.due_date,
+          period_month: item.period_month || selectedMonth,
+          period_year: item.period_year || selectedYear,
+          payment_link: item.payment_link || '',
+          payment_code: item.payment_code || '',
+          auto_recurring: item.auto_recurring !== undefined ? item.auto_recurring : true
+        }
       }
 
       const res = await fetch(url, {
@@ -275,6 +388,7 @@ export default function Expenses() {
         if (type === 'fixed') fetchFixed()
         else if (type === 'variable') fetchVariable()
         else if (type === 'incomes') fetchIncomes()
+        else if (type === 'vencimientos') fetchVencimientos()
         fetchSummary()
       } else {
         alert("Error al actualizar el registro")
@@ -407,6 +521,27 @@ export default function Expenses() {
         </button>
         
         <button 
+          onClick={() => setActiveTab('vencimientos')}
+          style={{
+            padding: '12px 16px',
+            fontWeight: 600,
+            fontSize: '0.9rem',
+            border: activeTab === 'vencimientos' ? '2px solid #f59e0b' : '1px solid var(--border-color)',
+            borderRadius: 8,
+            backgroundColor: activeTab === 'vencimientos' ? 'rgba(245, 158, 11, 0.1)' : 'var(--bg-card)',
+            color: activeTab === 'vencimientos' ? '#f59e0b' : 'var(--text-secondary)',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 8,
+            transition: 'all 0.2s'
+          }}
+        >
+          <Clock size={18} /> Vencimientos y Servicios
+        </button>
+
+        <button 
           onClick={() => setActiveTab('incomes')}
           style={{
             padding: '12px 16px',
@@ -424,9 +559,374 @@ export default function Expenses() {
             transition: 'all 0.2s'
           }}
         >
-          <TrendingUp size={18} /> Ingresos Adicionales
+          <TrendingUp size={18} /> Ingresos
         </button>
       </div>
+
+      {/* --- TAB: VENCIMIENTOS Y SERVICIOS --- */}
+      {activeTab === 'vencimientos' && (() => {
+        const overdue = vencimientos.filter(v => v.status === 'overdue')
+        const pending = vencimientos.filter(v => v.status === 'pending')
+        const paid = vencimientos.filter(v => v.status === 'paid')
+        
+        const sumOverdue = overdue.reduce((acc, c) => acc + c.amount, 0)
+        const sumPending = pending.reduce((acc, c) => acc + c.amount, 0)
+        const sumPaid = paid.reduce((acc, c) => acc + c.amount, 0)
+
+        const filtered = vencimientos.filter(v => {
+          if (vencimientosFilter === 'overdue') return v.status === 'overdue'
+          if (vencimientosFilter === 'pending') return v.status === 'pending'
+          if (vencimientosFilter === 'paid') return v.status === 'paid'
+          return true
+        })
+
+        return (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+            {/* Top KPI Cards for Vencimientos */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 20 }}>
+              <div className="card" style={{ borderLeft: '4px solid #ef4444', display: 'flex', flexDirection: 'column', gap: 6 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', fontWeight: 600 }}>🔴 Vencidos Impagos</span>
+                  <AlertTriangle size={18} color="#ef4444" />
+                </div>
+                <div style={{ fontSize: '1.6rem', fontWeight: 'bold', color: '#ef4444' }}>
+                  ${Math.round(sumOverdue).toLocaleString()}
+                </div>
+                <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                  {overdue.length} servicio(s) pasados de fecha
+                </div>
+              </div>
+
+              <div className="card" style={{ borderLeft: '4px solid #f59e0b', display: 'flex', flexDirection: 'column', gap: 6 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', fontWeight: 600 }}>🟡 Pendientes este Mes</span>
+                  <Clock size={18} color="#f59e0b" />
+                </div>
+                <div style={{ fontSize: '1.6rem', fontWeight: 'bold', color: '#f59e0b' }}>
+                  ${Math.round(sumPending).toLocaleString()}
+                </div>
+                <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                  {pending.length} servicio(s) por vencer
+                </div>
+              </div>
+
+              <div className="card" style={{ borderLeft: '4px solid #10b981', display: 'flex', flexDirection: 'column', gap: 6 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', fontWeight: 600 }}>🟢 Pagados este Mes</span>
+                  <CheckCircle2 size={18} color="#10b981" />
+                </div>
+                <div style={{ fontSize: '1.6rem', fontWeight: 'bold', color: '#10b981' }}>
+                  ${Math.round(sumPaid).toLocaleString()}
+                </div>
+                <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                  {paid.length} servicio(s) abonados
+                </div>
+              </div>
+            </div>
+
+            {/* FORM CARD TO ADD NEW SERVICE / BILL */}
+            <div className="card">
+              <h3 style={{ marginTop: 0, marginBottom: 15, display: 'flex', alignItems: 'center', gap: 8 }}>
+                <Plus size={20} color="#f59e0b" /> Agregar Nuevo Vencimiento de Impuesto / Servicio
+              </h3>
+              <form onSubmit={handleAddService} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12, alignItems: 'end' }}>
+                <label style={{ fontSize: '0.82rem', fontWeight: 600 }}>Servicio / Impuesto *
+                  <input 
+                    type="text" 
+                    required 
+                    placeholder="Ej: Luz Edenor, ARBA, Monotributo" 
+                    value={newService.description} 
+                    onChange={e => setNewService(prev => ({ ...prev, description: e.target.value }))}
+                    style={{ width: '100%', marginTop: 4 }}
+                  />
+                </label>
+
+                <label style={{ fontSize: '0.82rem', fontWeight: 600 }}>Categoría
+                  <select 
+                    value={newService.category} 
+                    onChange={e => setNewService(prev => ({ ...prev, category: e.target.value }))}
+                    style={{ width: '100%', marginTop: 4 }}
+                  >
+                    {serviceCategories.map(c => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                </label>
+
+                <label style={{ fontSize: '0.82rem', fontWeight: 600 }}>Monto $ *
+                  <input 
+                    type="number" 
+                    step="0.01" 
+                    required 
+                    placeholder="0.00" 
+                    value={newService.amount} 
+                    onChange={e => setNewService(prev => ({ ...prev, amount: e.target.value }))}
+                    style={{ width: '100%', marginTop: 4 }}
+                  />
+                </label>
+
+                <label style={{ fontSize: '0.82rem', fontWeight: 600 }}>Fecha de Vencimiento *
+                  <input 
+                    type="date" 
+                    required 
+                    value={newService.due_date} 
+                    onChange={e => setNewService(prev => ({ ...prev, due_date: e.target.value }))}
+                    style={{ width: '100%', marginTop: 4 }}
+                  />
+                </label>
+
+                <label style={{ fontSize: '0.82rem', fontWeight: 600 }}>Link de Pago (Mercado Pago, PMC, VEP)
+                  <input 
+                    type="url" 
+                    placeholder="https://mpago.la/... o https://..." 
+                    value={newService.payment_link} 
+                    onChange={e => setNewService(prev => ({ ...prev, payment_link: e.target.value }))}
+                    style={{ width: '100%', marginTop: 4 }}
+                  />
+                </label>
+
+                <label style={{ fontSize: '0.82rem', fontWeight: 600 }}>Código de Pago (CPE / VEP / Barcode)
+                  <input 
+                    type="text" 
+                    placeholder="Ej: 0382918392183" 
+                    value={newService.payment_code} 
+                    onChange={e => setNewService(prev => ({ ...prev, payment_code: e.target.value }))}
+                    style={{ width: '100%', marginTop: 4 }}
+                  />
+                </label>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, paddingBottom: 6 }}>
+                  <input 
+                    type="checkbox" 
+                    id="auto_recurring_check"
+                    checked={newService.auto_recurring} 
+                    onChange={e => setNewService(prev => ({ ...prev, auto_recurring: e.target.checked }))}
+                  />
+                  <label htmlFor="auto_recurring_check" style={{ fontSize: '0.82rem', cursor: 'pointer', userSelect: 'none' }}>
+                    Repetir todos los meses
+                  </label>
+                </div>
+
+                <button type="submit" className="btn-primary" style={{ padding: '9px 16px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, width: '100%' }}>
+                  <Plus size={16} /> Guardar Vencimiento
+                </button>
+              </form>
+            </div>
+
+            {/* SERVICES TABLE & FILTERS */}
+            <div className="card">
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15, flexWrap: 'wrap', gap: 10 }}>
+                <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <Clock size={20} color="#f59e0b" /> Listado de Vencimientos del Período
+                </h3>
+
+                {/* Filter Pills */}
+                <div style={{ display: 'flex', gap: 6 }}>
+                  <button 
+                    onClick={() => setVencimientosFilter('all')}
+                    style={{
+                      padding: '5px 12px', fontSize: '0.8rem', borderRadius: 20, cursor: 'pointer', border: 'none',
+                      backgroundColor: vencimientosFilter === 'all' ? 'var(--accent-blue)' : 'var(--bg-hover)',
+                      color: vencimientosFilter === 'all' ? '#fff' : 'var(--text-secondary)'
+                    }}
+                  >
+                    Todos ({vencimientos.length})
+                  </button>
+                  <button 
+                    onClick={() => setVencimientosFilter('overdue')}
+                    style={{
+                      padding: '5px 12px', fontSize: '0.8rem', borderRadius: 20, cursor: 'pointer', border: 'none',
+                      backgroundColor: vencimientosFilter === 'overdue' ? '#ef4444' : 'var(--bg-hover)',
+                      color: vencimientosFilter === 'overdue' ? '#fff' : 'var(--text-secondary)'
+                    }}
+                  >
+                    🔴 Vencidos ({overdue.length})
+                  </button>
+                  <button 
+                    onClick={() => setVencimientosFilter('pending')}
+                    style={{
+                      padding: '5px 12px', fontSize: '0.8rem', borderRadius: 20, cursor: 'pointer', border: 'none',
+                      backgroundColor: vencimientosFilter === 'pending' ? '#f59e0b' : 'var(--bg-hover)',
+                      color: vencimientosFilter === 'pending' ? '#fff' : 'var(--text-secondary)'
+                    }}
+                  >
+                    🟡 Pendientes ({pending.length})
+                  </button>
+                  <button 
+                    onClick={() => setVencimientosFilter('paid')}
+                    style={{
+                      padding: '5px 12px', fontSize: '0.8rem', borderRadius: 20, cursor: 'pointer', border: 'none',
+                      backgroundColor: vencimientosFilter === 'paid' ? '#10b981' : 'var(--bg-hover)',
+                      color: vencimientosFilter === 'paid' ? '#fff' : 'var(--text-secondary)'
+                    }}
+                  >
+                    🟢 Pagados ({paid.length})
+                  </button>
+                </div>
+              </div>
+
+              <div style={{ overflowX: 'auto' }}>
+                <table className="data-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
+                  <thead>
+                    <tr>
+                      <th style={{ textAlign: 'left' }}>Estado</th>
+                      <th style={{ textAlign: 'left' }}>Servicio / Impuesto</th>
+                      <th style={{ textAlign: 'left' }}>Categoría</th>
+                      <th style={{ textAlign: 'left' }}>Vencimiento</th>
+                      <th style={{ textAlign: 'right' }}>Monto</th>
+                      <th style={{ textAlign: 'center' }}>Link / Código de Pago</th>
+                      <th style={{ textAlign: 'center' }}>Acciones</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filtered.length === 0 && (
+                      <tr>
+                        <td colSpan="7" style={{ textAlign: 'center', color: 'var(--text-secondary)', padding: '30px 0' }}>
+                          No hay vencimientos registrados para este filtro.
+                        </td>
+                      </tr>
+                    )}
+                    {filtered.map(item => {
+                      const isPaid = item.status === 'paid'
+                      const isOverdue = item.status === 'overdue'
+
+                      return (
+                        <tr key={item.id} style={{ opacity: isPaid ? 0.75 : 1 }}>
+                          <td>
+                            {isPaid ? (
+                              <span className="badge" style={{ backgroundColor: 'rgba(16, 185, 129, 0.15)', color: '#10b981', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                                <CheckCircle2 size={13} /> Pagado
+                              </span>
+                            ) : isOverdue ? (
+                              <span className="badge" style={{ backgroundColor: 'rgba(239, 68, 68, 0.15)', color: '#ef4444', display: 'inline-flex', alignItems: 'center', gap: 4, fontWeight: 'bold' }}>
+                                <AlertTriangle size={13} /> Vencido
+                              </span>
+                            ) : (
+                              <span className="badge" style={{ backgroundColor: 'rgba(245, 158, 11, 0.15)', color: '#f59e0b', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                                <Clock size={13} /> Pendiente
+                              </span>
+                            )}
+                          </td>
+                          <td style={{ fontWeight: 600 }}>
+                            {item.description}
+                            {item.auto_recurring && (
+                              <span title="Repetitivo mensual" style={{ marginLeft: 6, fontSize: '0.75rem', opacity: 0.6 }}>🔄</span>
+                            )}
+                          </td>
+                          <td>
+                            <span className="badge" style={{ backgroundColor: 'var(--bg-hover)', color: 'var(--text-primary)' }}>
+                              {item.category || 'Servicios'}
+                            </span>
+                          </td>
+                          <td style={{ whiteSpace: 'nowrap', fontWeight: isOverdue ? 'bold' : 'normal', color: isOverdue ? '#ef4444' : 'inherit' }}>
+                            {item.due_date}
+                          </td>
+                          <td style={{ textAlign: 'right', fontWeight: 'bold', fontSize: '1.05rem', color: isPaid ? '#10b981' : isOverdue ? '#ef4444' : 'var(--text-primary)' }}>
+                            ${Math.round(item.amount).toLocaleString()}
+                          </td>
+                          <td style={{ textAlign: 'center', whiteSpace: 'nowrap' }}>
+                            <div style={{ display: 'flex', gap: 6, justifyContent: 'center', alignItems: 'center' }}>
+                              {item.payment_link ? (
+                                <a 
+                                  href={item.payment_link} 
+                                  target="_blank" 
+                                  rel="noopener noreferrer"
+                                  className="btn"
+                                  style={{
+                                    padding: '4px 10px', fontSize: '0.78rem', fontWeight: 600,
+                                    backgroundColor: 'rgba(59, 130, 246, 0.15)', color: '#3b82f6',
+                                    border: '1px solid #3b82f6', display: 'inline-flex', alignItems: 'center', gap: 4,
+                                    borderRadius: 6, textDecoration: 'none'
+                                  }}
+                                  title="Abrir enlace de pago"
+                                >
+                                  <ExternalLink size={13} /> Ir a Pagar
+                                </a>
+                              ) : null}
+
+                              {item.payment_code ? (
+                                <button 
+                                  type="button"
+                                  onClick={() => handleCopyCode(item.payment_code, item.id)}
+                                  className="btn"
+                                  style={{
+                                    padding: '4px 10px', fontSize: '0.78rem', fontWeight: 600,
+                                    backgroundColor: copiedCodeId === item.id ? 'rgba(16, 185, 129, 0.2)' : 'var(--bg-hover)',
+                                    color: copiedCodeId === item.id ? '#10b981' : 'var(--text-primary)',
+                                    border: '1px solid var(--border-color)', display: 'inline-flex', alignItems: 'center', gap: 4,
+                                    borderRadius: 6
+                                  }}
+                                  title={`Copiar código: ${item.payment_code}`}
+                                >
+                                  {copiedCodeId === item.id ? <Check size={13} /> : <Copy size={13} />}
+                                  {copiedCodeId === item.id ? 'Copiado!' : 'Código'}
+                                </button>
+                              ) : null}
+
+                              {!item.payment_link && !item.payment_code && (
+                                <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', italic: 'true' }}>-</span>
+                              )}
+                            </div>
+                          </td>
+                          <td style={{ textAlign: 'center', whiteSpace: 'nowrap' }}>
+                            <div style={{ display: 'flex', gap: 6, justifyContent: 'center' }}>
+                              {!isPaid ? (
+                                <button 
+                                  type="button"
+                                  onClick={() => handlePayService(item, true)}
+                                  className="btn"
+                                  style={{
+                                    padding: '4px 10px', fontSize: '0.78rem', fontWeight: 600,
+                                    backgroundColor: 'rgba(16, 185, 129, 0.15)', color: '#10b981',
+                                    border: '1px solid #10b981', borderRadius: 6, cursor: 'pointer'
+                                  }}
+                                  title="Marcar como pagado y registrar en gastos variables"
+                                >
+                                  ✅ Marcar Pagado
+                                </button>
+                              ) : (
+                                <button 
+                                  type="button"
+                                  onClick={() => handleUnpayService(item.id)}
+                                  className="btn"
+                                  style={{
+                                    padding: '4px 10px', fontSize: '0.78rem',
+                                    backgroundColor: 'var(--bg-hover)', color: 'var(--text-secondary)',
+                                    border: '1px solid var(--border-color)', borderRadius: 6, cursor: 'pointer'
+                                  }}
+                                  title="Desmarcar pago"
+                                >
+                                  ↩️ Desmarcar
+                                </button>
+                              )}
+
+                              <button 
+                                className="btn-icon" 
+                                onClick={() => setEditModal({ open: true, type: 'vencimientos', item: { ...item } })} 
+                                style={{ color: 'var(--accent-blue)' }} 
+                                title="Editar"
+                              >
+                                <Pencil size={16} />
+                              </button>
+
+                              <button 
+                                className="btn-icon" 
+                                onClick={() => handleDeleteService(item.id)} 
+                                style={{ color: '#ef4444' }} 
+                                title="Eliminar"
+                              >
+                                <Trash2 size={16} />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
 
       {/* --- TAB 1: RESUMEN GENERAL --- */}
       {activeTab === 'summary' && (
@@ -1018,13 +1518,44 @@ export default function Expenses() {
                   style={{ width: '100%', marginTop: 4 }}
                 />
               </label>
+              {editModal.type === 'vencimientos' && (
+                <>
+                  <label style={{ fontSize: '0.85rem' }}>Fecha de Vencimiento *
+                    <input 
+                      type="date" 
+                      required 
+                      value={editModal.item.due_date || ''} 
+                      onChange={e => setEditModal(prev => ({ ...prev, item: { ...prev.item, due_date: e.target.value } }))} 
+                      style={{ width: '100%', marginTop: 4 }}
+                    />
+                  </label>
+                  <label style={{ fontSize: '0.85rem' }}>Link de Pago (Mercado Pago, PMC, VEP)
+                    <input 
+                      type="url" 
+                      placeholder="https://..." 
+                      value={editModal.item.payment_link || ''} 
+                      onChange={e => setEditModal(prev => ({ ...prev, item: { ...prev.item, payment_link: e.target.value } }))} 
+                      style={{ width: '100%', marginTop: 4 }}
+                    />
+                  </label>
+                  <label style={{ fontSize: '0.85rem' }}>Código de Pago (CPE / VEP / Barcode)
+                    <input 
+                      type="text" 
+                      placeholder="12345678..." 
+                      value={editModal.item.payment_code || ''} 
+                      onChange={e => setEditModal(prev => ({ ...prev, item: { ...prev.item, payment_code: e.target.value } }))} 
+                      style={{ width: '100%', marginTop: 4 }}
+                    />
+                  </label>
+                </>
+              )}
               <label style={{ fontSize: '0.85rem' }}>Categoría
                 <select 
                   value={editModal.item.category || ''} 
                   onChange={e => setEditModal(prev => ({ ...prev, item: { ...prev.item, category: e.target.value } }))} 
                   style={{ width: '100%', marginTop: 4 }}
                 >
-                  {(editModal.type === 'fixed' ? fixedCategories : editModal.type === 'variable' ? variableCategories : incomeCategories).map(c => (
+                  {(editModal.type === 'fixed' ? fixedCategories : editModal.type === 'variable' ? variableCategories : editModal.type === 'vencimientos' ? serviceCategories : incomeCategories).map(c => (
                     <option key={c} value={c}>{c}</option>
                   ))}
                 </select>

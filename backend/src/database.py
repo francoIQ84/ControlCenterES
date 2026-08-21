@@ -270,6 +270,25 @@ def init_db():
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             ''')
+
+            # Service Payments / Vencimientos table
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS service_payments (
+                    id SERIAL PRIMARY KEY,
+                    description VARCHAR(255) NOT NULL,
+                    category VARCHAR(100),
+                    amount REAL NOT NULL,
+                    due_date DATE NOT NULL,
+                    period_month INT NOT NULL,
+                    period_year INT NOT NULL,
+                    status VARCHAR(20) DEFAULT 'pending',
+                    payment_link TEXT,
+                    payment_code VARCHAR(100),
+                    paid_date TIMESTAMP,
+                    auto_recurring BOOLEAN DEFAULT TRUE,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
             
             # WhatsApp chat history table
             cursor.execute('''
