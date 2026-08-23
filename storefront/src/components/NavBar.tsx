@@ -6,6 +6,8 @@ import { useCart } from './CartProvider';
 import { useState, useEffect } from 'react';
 import CartSidebar from './CartSidebar';
 
+import SearchBar from './SearchBar';
+
 export default function NavBar() {
   const { items } = useCart();
   const [isCartOpen, setIsCartOpen] = useState(false);
@@ -35,7 +37,7 @@ export default function NavBar() {
     <>
       <nav className="fixed top-0 w-full bg-white/80 backdrop-blur-md border-b border-gray-200 z-40">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between h-16 items-center">
+          <div className="flex justify-between h-16 items-center gap-4">
             <Link href="/" className="flex-shrink-0 flex items-center gap-3">
               {logoUrl ? (
                 <img src={logoUrl} alt={storeName} className="h-8 max-w-[180px] object-contain" />
@@ -43,6 +45,11 @@ export default function NavBar() {
                 <span className="text-xl font-bold text-gray-900 tracking-tight">{storeName}</span>
               )}
             </Link>
+
+            {/* Top Search Bar */}
+            <div className="flex-1 max-w-md mx-2 sm:mx-4">
+              <SearchBar placeholder="Buscar productos..." />
+            </div>
 
             {/* Navigation links */}
             <div className="hidden md:flex items-center gap-6 text-sm font-medium text-gray-600">
@@ -56,7 +63,7 @@ export default function NavBar() {
               )}
               {blogEnabled && (
                 <Link href="/blog" className="hover:text-blue-600 transition-colors">
-                  Blog Informativo
+                  Blog
                 </Link>
               )}
             </div>

@@ -6,9 +6,9 @@ from src import database
 router = APIRouter()
 
 @router.get("/products")
-def get_storefront_products(category: str = None):
-    # Only return products that are active for the web, potentially filtered by category slug
-    products = database.get_all_products(is_web_active=1, category_slug=category)
+def get_storefront_products(category: str = None, q: str = None):
+    # Only return products that are active for the web, potentially filtered by category slug or search query
+    products = database.get_all_products(query=q, is_web_active=1, category_slug=category)
     
     mapped = []
     for p in products:
