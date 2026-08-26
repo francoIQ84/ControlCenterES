@@ -34,8 +34,8 @@ class ManualOrderRequest(BaseModel):
     payment_method: Optional[str] = None
 
 @router.get("/")
-def get_sales():
-    orders = database.get_all_orders()
+def get_sales(search: Optional[str] = None, source_platform: Optional[str] = None):
+    orders = database.get_all_orders(source_platform=source_platform, search=search)
     return {"orders": orders}
 
 @router.get("/sync-afip")

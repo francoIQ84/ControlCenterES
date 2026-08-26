@@ -1,10 +1,15 @@
 import React, { useState, useEffect } from 'react'
-import { ShoppingBag, Globe, Store, Check, Clock, Plus, Trash2, ShoppingCart, DollarSign, Link, MessageSquare, Send, ExternalLink, FileText, UserCheck } from 'lucide-react'
+import { ShoppingBag, Globe, Store, Check, Clock, Plus, Trash2, ShoppingCart, DollarSign, Link, MessageSquare, Send, ExternalLink, FileText, UserCheck, Search, X, Filter } from 'lucide-react'
 
 export default function Sales() {
   const [orders, setOrders] = useState([])
   const [loading, setLoading] = useState(true)
   const [sortConfig, setSortConfig] = useState({ key: 'date_created', direction: 'desc' })
+
+  // Search & Filter State
+  const [searchQuery, setSearchQuery] = useState('')
+  const [platformFilter, setPlatformFilter] = useState('ALL')
+  const [shippingFilter, setShippingFilter] = useState('ALL')
 
   // Modal State
   const [showModal, setShowModal] = useState(false)
@@ -584,8 +589,70 @@ export default function Sales() {
     return sortConfig.direction === 'asc' ? ' ▲' : ' ▼'
   }
 
+  const filteredOrders = React.useMemo(() => {
+    return orders.filter(o => {
+      // 1. Platform filter
+      if (platformFilter !== 'ALL') {
+        const platform = (o.source_platform || '').toUpperCase()
+        if (platformFilter === 'MERCADOPAGO') {
+          if (!platform.startsWith('MERCADOPAGO')) return false
+        } else if (platform !== platformFilter) {
+          return false
+        }
+      }
+
+      // 2. Shipping status filter
+      if (shippingFilter !== 'ALL') {
+        const sStatus = o.shipping_status || 'pending'
+        if (shippingFilter === 'delivered' && sStatus !== 'delivered') return false
+        if (shippingFilter === 'pending' && sStatus === 'delivered') return false
+        if (shippingFilter === 'in_transit' && !['shipped', 'in_transit', 'active', 'out_for_delivery'].includes(sStatus)) return false
+        if (shippingFilter === 'ready_to_ship' && !['ready_to_ship', 'handling'].includes(sStatus)) return false
+      }
+
+      // 3. Search Query filter
+      if (!searchQuery || !searchQuery.trim()) return true
+
+      const q = searchQuery.toLowerCase().trim()
+
+      // Buyer details
+      const nickname = (o.buyer?.nickname || '').toLowerCase()
+      const name = (o.buyer?.name || '').toLowerCase()
+      const docNum = (o.buyer?.document_number || '').toLowerCase()
+      const buyerId = String(o.buyer?.id || '').toLowerCase()
+
+      // Order details
+      const orderId = String(o.order_id || '').toLowerCase()
+      const invoiceNum = (o.invoice_number || '').toLowerCase()
+      const cae = (o.afip_cae || '').toLowerCase()
+      const payMethod = (o.payment_method || '').toLowerCase()
+      const status = (o.status || '').toLowerCase()
+      const platform = (o.source_platform || '').toLowerCase()
+      const total = String(o.total_amount || '')
+
+      // Items details
+      const itemsMatch = (o.items || []).some(item =>
+        (item.title || '').toLowerCase().includes(q) ||
+        String(item.id || '').toLowerCase().includes(q)
+      )
+
+      return nickname.includes(q) ||
+        name.includes(q) ||
+        docNum.includes(q) ||
+        buyerId.includes(q) ||
+        orderId.includes(q) ||
+        invoiceNum.includes(q) ||
+        cae.includes(q) ||
+        payMethod.includes(q) ||
+        status.includes(q) ||
+        platform.includes(q) ||
+        total.includes(q) ||
+        itemsMatch
+    })
+  }, [orders, platformFilter, shippingFilter, searchQuery])
+
   const sortedOrders = React.useMemo(() => {
-    let sortableItems = [...orders]
+    let sortableItems = [...filteredOrders]
     if (sortConfig.key !== null) {
       sortableItems.sort((a, b) => {
         let aVal = a[sortConfig.key]
@@ -617,7 +684,7 @@ export default function Sales() {
       })
     }
     return sortableItems
-  }, [orders, sortConfig])
+  }, [filteredOrders, sortConfig])
 
   // Helper renderers
   const renderPlatformBadge = (platform) => {
@@ -822,8 +889,160 @@ export default function Sales() {
         </div>
       </div>
 
+      {/* Search & Filters Controls */}
+      <div className="card" style={{ marginBottom: 20, padding: '16px 20px' }}>
+        <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'space-between' }}>
+          
+          {/* Main Search Input */}
+          <div style={{ position: 'relative', flex: '1 1 320px', minWidth: 260 }}>
+            <Search size={18} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-secondary)' }} />
+            <input
+              type="text"
+              placeholder="Buscar por usuario, CUIT/DNI, ID de orden, producto, factura..."
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              className="search-input"
+              style={{
+                width: '100%',
+                paddingLeft: 38,
+                paddingRight: searchQuery ? 36 : 12,
+                marginBottom: 0,
+                fontSize: '0.9rem',
+                borderRadius: 8,
+                height: 40
+              }}
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery('')}
+                title="Limpiar búsqueda"
+                style={{
+                  position: 'absolute',
+                  right: 10,
+                  top: '50%',
+                  transform: 'translateY(-50%)',
+                  background: 'none',
+                  border: 'none',
+                  color: 'var(--text-secondary)',
+                  cursor: 'pointer',
+                  padding: 4,
+                  display: 'flex',
+                  alignItems: 'center'
+                }}
+              >
+                <X size={16} />
+              </button>
+            )}
+          </div>
+
+          {/* Filter Dropdowns & Reset */}
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <Filter size={15} style={{ color: 'var(--text-secondary)' }} />
+              <select
+                value={platformFilter}
+                onChange={e => setPlatformFilter(e.target.value)}
+                className="search-input"
+                style={{
+                  marginBottom: 0,
+                  padding: '6px 12px',
+                  fontSize: '0.83rem',
+                  borderRadius: 8,
+                  height: 40,
+                  cursor: 'pointer'
+                }}
+              >
+                <option value="ALL">🌐 Todos los canales</option>
+                <option value="LOCAL">🏪 Local Comercial</option>
+                <option value="MERCADOLIBRE">🛍️ Mercado Libre</option>
+                <option value="WEB">🌍 Tienda Web</option>
+                <option value="MERCADOPAGO">💳 Mercado Pago</option>
+              </select>
+            </div>
+
+            <select
+              value={shippingFilter}
+              onChange={e => setShippingFilter(e.target.value)}
+              className="search-input"
+              style={{
+                marginBottom: 0,
+                padding: '6px 12px',
+                fontSize: '0.83rem',
+                borderRadius: 8,
+                height: 40,
+                cursor: 'pointer'
+              }}
+            >
+              <option value="ALL">📦 Todas las entregas</option>
+              <option value="pending">⏳ Pendiente</option>
+              <option value="delivered">✅ Entregado</option>
+              <option value="in_transit">🚚 En camino</option>
+              <option value="ready_to_ship">📦 Listo p/ enviar</option>
+            </select>
+
+            {(searchQuery || platformFilter !== 'ALL' || shippingFilter !== 'ALL') && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSearchQuery('')
+                  setPlatformFilter('ALL')
+                  setShippingFilter('ALL')
+                }}
+                className="btn"
+                style={{
+                  height: 40,
+                  fontSize: '0.8rem',
+                  padding: '0 12px',
+                  backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                  color: '#ef4444',
+                  border: '1px solid rgba(239, 68, 68, 0.3)',
+                  borderRadius: 8
+                }}
+              >
+                Limpiar filtros
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Results counter badge */}
+        <div style={{ marginTop: 10, fontSize: '0.82rem', color: 'var(--text-secondary)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <span>
+            Mostrando <strong>{sortedOrders.length}</strong> de <strong>{orders.length}</strong> ventas
+            {(searchQuery || platformFilter !== 'ALL' || shippingFilter !== 'ALL') && (
+              <span style={{ marginLeft: 6, fontStyle: 'italic' }}>
+                (filtrado {searchQuery ? `por "${searchQuery}"` : ''})
+              </span>
+            )}
+          </span>
+        </div>
+      </div>
+
       <div className="card">
-        {loading ? <p>Cargando ventas...</p> : (
+        {loading ? <p>Cargando ventas...</p> : sortedOrders.length === 0 ? (
+          <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--text-secondary)' }}>
+            <Search size={40} style={{ opacity: 0.3, marginBottom: 12 }} />
+            <h3 style={{ margin: '0 0 8px 0', color: 'var(--text-primary)' }}>No se encontraron ventas</h3>
+            <p style={{ margin: 0, fontSize: '0.9rem' }}>
+              No hay resultados que coincidan con los criterios de búsqueda o filtros seleccionados.
+            </p>
+            {(searchQuery || platformFilter !== 'ALL' || shippingFilter !== 'ALL') && (
+              <button
+                type="button"
+                className="btn"
+                style={{ marginTop: 16, fontSize: '0.85rem' }}
+                onClick={() => {
+                  setSearchQuery('')
+                  setPlatformFilter('ALL')
+                  setShippingFilter('ALL')
+                }}
+              >
+                Restablecer filtros
+              </button>
+            )}
+          </div>
+        ) : (
           <div style={{overflowX: 'auto', width: '100%'}}>
             <table className="data-table">
             <thead>

@@ -981,28 +981,46 @@ def save_order_afip_details(order_id, invoice_number, cae, cae_exp):
                 WHERE order_id = %s
             ''', (invoice_number, cae, cae_exp, order_id))
 
-def get_all_orders(source_platform=None):
+def get_all_orders(source_platform=None, search=None):
     with get_connection() as conn:
         with conn.cursor() as cursor:
+            query = """
+                SELECT o.order_id, o.date_created, o.buyer_id, o.buyer_nickname, o.buyer_name, o.total_amount, o.currency_id, o.status, 
+                       o.payment_status, o.shipping_status, o.items_json, o.invoice_generated, o.source_platform, o.payment_method,
+                       o.invoice_number, o.afip_cae, o.afip_cae_exp, o.meli_invoice_attached, c.document_type, c.document_number, c.address
+                FROM orders_cache o
+                LEFT JOIN customers c ON o.buyer_id = c.buyer_id
+            """
+            conditions = []
+            params = []
+            
             if source_platform:
-                cursor.execute("""
-                    SELECT o.order_id, o.date_created, o.buyer_id, o.buyer_nickname, o.buyer_name, o.total_amount, o.currency_id, o.status, 
-                           o.payment_status, o.shipping_status, o.items_json, o.invoice_generated, o.source_platform, o.payment_method,
-                           o.invoice_number, o.afip_cae, o.afip_cae_exp, o.meli_invoice_attached, c.document_type, c.document_number, c.address
-                    FROM orders_cache o
-                    LEFT JOIN customers c ON o.buyer_id = c.buyer_id
-                    WHERE o.source_platform = %s 
-                    ORDER BY o.date_created DESC
-                """, (source_platform,))
-            else:
-                cursor.execute("""
-                    SELECT o.order_id, o.date_created, o.buyer_id, o.buyer_nickname, o.buyer_name, o.total_amount, o.currency_id, o.status, 
-                           o.payment_status, o.shipping_status, o.items_json, o.invoice_generated, o.source_platform, o.payment_method,
-                           o.invoice_number, o.afip_cae, o.afip_cae_exp, o.meli_invoice_attached, c.document_type, c.document_number, c.address
-                    FROM orders_cache o
-                    LEFT JOIN customers c ON o.buyer_id = c.buyer_id
-                    ORDER BY o.date_created DESC
-                """)
+                conditions.append("o.source_platform = %s")
+                params.append(source_platform)
+                
+            if search and search.strip():
+                pattern = f"%{search.strip()}%"
+                conditions.append("""(
+                    o.order_id ILIKE %s OR 
+                    o.buyer_nickname ILIKE %s OR 
+                    o.buyer_name ILIKE %s OR 
+                    c.document_number ILIKE %s OR 
+                    c.full_name ILIKE %s OR 
+                    c.nickname ILIKE %s OR 
+                    o.invoice_number ILIKE %s OR 
+                    o.afip_cae ILIKE %s OR 
+                    o.items_json ILIKE %s OR 
+                    o.payment_method ILIKE %s OR
+                    o.status ILIKE %s OR
+                    o.shipping_status ILIKE %s
+                )""")
+                params.extend([pattern] * 12)
+                
+            if conditions:
+                query += " WHERE " + " AND ".join(conditions)
+                
+            query += " ORDER BY o.date_created DESC"
+            cursor.execute(query, tuple(params))
             rows = cursor.fetchall()
             
             orders = []
