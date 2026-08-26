@@ -107,7 +107,7 @@ class AFIPHeaderFlowable(Flowable):
         self.tipo_cmp = tipo_cmp
         self.width = width
         self.copy_type = copy_type
-        self.height = 100 * mm
+        self.height = 115 * mm
 
     def draw(self):
         c = self.canv
@@ -137,18 +137,30 @@ class AFIPHeaderFlowable(Flowable):
         c.setLineWidth(0.6)
         c.line(center_x, 0, center_x, content_top)
 
+        # ─── Pre-calculate letter box position ───
+        box_size = 16 * mm
+        box_x = center_x - (box_size / 2)
+        box_y = content_top - box_size  # bottom edge of letter box
+
         # ─── LEFT COLUMN: Seller info ───
         left_margin = 5 * mm
+        # Max text width for lines next to the letter box (must not overlap)
+        max_w_near_box = box_x - left_margin - 2 * mm
+        # Full left column width (for lines below the letter box)
+        max_w_full = center_x - left_margin - 4 * mm
+
         y = content_top - 8 * mm
 
-        # Razón Social (large, bold)
+        # Razón Social (large, bold) — next to letter box, limit width
         c.setFont("Helvetica-Bold", 12)
         c.setFillColor(colors.HexColor('#1a1a1a'))
         name = self.seller.get('name', '')
-        # Truncate if too long for column
-        if len(name) > 32:
-            name = name[:30] + "…"
-        c.drawString(left_margin, y, name)
+        display_name = name
+        while c.stringWidth(display_name, "Helvetica-Bold", 12) > max_w_near_box and len(display_name) > 5:
+            display_name = display_name[:-1]
+        if len(display_name) < len(name):
+            display_name = display_name.rstrip() + "…"
+        c.drawString(left_margin, y, display_name)
 
         # Razón Social subtitle
         razon = self.seller.get('razon_social', self.seller.get('name', ''))
@@ -156,16 +168,27 @@ class AFIPHeaderFlowable(Flowable):
             y -= 5 * mm
             c.setFont("Helvetica", 7)
             c.setFillColor(colors.HexColor('#666666'))
-            c.drawString(left_margin, y, f"Razón Social: {razon}")
+            razon_text = f"Razón Social: {razon}"
+            display_razon = razon_text
+            while c.stringWidth(display_razon, "Helvetica", 7) > max_w_near_box and len(display_razon) > 15:
+                display_razon = display_razon[:-1]
+            if len(display_razon) < len(razon_text):
+                display_razon = display_razon.rstrip() + "…"
+            c.drawString(left_margin, y, display_razon)
+
+        # ── Lines below the letter box (full left-column width) ──
+        y = box_y - 3 * mm
 
         # Address
-        y -= 5 * mm
         c.setFont("Helvetica", 7.5)
         c.setFillColor(colors.HexColor('#444444'))
         address = self.seller.get('address', '')
-        if len(address) > 48:
-            address = address[:46] + "…"
-        c.drawString(left_margin, y, f"Domicilio Comercial: {address}")
+        addr_prefix = "Domicilio Comercial: "
+        addr_full = addr_prefix + address
+        while c.stringWidth(addr_full, "Helvetica", 7.5) > max_w_full and len(address) > 5:
+            address = address[:-1]
+            addr_full = addr_prefix + address.rstrip() + "…"
+        c.drawString(left_margin, y, addr_full)
 
         # IVA condition
         y -= 5 * mm
@@ -209,10 +232,6 @@ class AFIPHeaderFlowable(Flowable):
         c.drawString(left_margin + start_w, y, self.start_date)
 
         # ─── CENTER LETTER BOX ───
-        box_size = 16 * mm
-        box_x = center_x - (box_size / 2)
-        box_y = content_top - box_size
-
         # Box shadow effect
         c.setFillColor(colors.HexColor('#e0e0e0'))
         c.rect(box_x + 0.5 * mm, box_y - 0.5 * mm, box_size, box_size, fill=1, stroke=0)
