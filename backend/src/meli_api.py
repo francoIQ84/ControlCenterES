@@ -767,25 +767,26 @@ def sync_orders(limit=50, date_from=None, date_to=None, quick=False):
             with ThreadPoolExecutor(max_workers=5) as executor:
                 orders = list(executor.map(enrich_order, zip(orders, all_results)))
             
-        # Check which orders are new, and which orders transitioned to shipped
+        # Save orders to DB FIRST (before sending messages to avoid race conditions)
+        database.save_orders_and_customers(orders)
+
+        # Check which orders are new (no purchase message sent), and which transitioned to shipped
         new_order_ids = []
         shipped_order_ids = []
         with database.get_connection() as conn:
             with conn.cursor() as cursor:
                 for o in orders:
-                    cursor.execute("SELECT shipping_status, shipping_msg_sent FROM orders_cache WHERE order_id = %s", (o['order_id'],))
+                    cursor.execute("SELECT shipping_status, shipping_msg_sent, purchase_msg_sent FROM orders_cache WHERE order_id = %s", (o['order_id'],))
                     row = cursor.fetchone()
-                    if not row:
-                        new_order_ids.append(o['order_id'])
-                        if o['shipping_status'] == 'shipped':
-                            shipped_order_ids.append(o['order_id'])
-                    else:
+                    if row:
+                        # New order detection: exists in DB but purchase message never sent
+                        if not row.get('purchase_msg_sent'):
+                            new_order_ids.append(o['order_id'])
+                        # Shipping transition detection
                         old_status = row['shipping_status']
                         msg_sent = row['shipping_msg_sent']
                         if o['shipping_status'] == 'shipped' and old_status != 'shipped' and not msg_sent:
                             shipped_order_ids.append(o['order_id'])
-
-        database.save_orders_and_customers(orders)
 
         # Send automatic post-sale purchase message for new orders
         send_purchase_enabled = database.get_setting('meli_send_purchase_msg', '1') == '1'
@@ -796,8 +797,16 @@ def sync_orders(limit=50, date_from=None, date_to=None, quick=False):
                 order_info = next((ord for ord in orders if ord['order_id'] == order_id), None)
                 if order_info and not is_recent_order(order_info['date_created'], max_hours=24):
                     print(f"[Sync] Evitando enviar mensaje automático de compra para orden antigua {order_id} ({order_info['date_created']})")
+                    # Mark as sent anyway to avoid retrying on every sync
+                    with database.get_connection() as conn:
+                        with conn.cursor() as cursor:
+                            cursor.execute("UPDATE orders_cache SET purchase_msg_sent = 1 WHERE order_id = %s", (order_id,))
                     continue
                 ok_msg, info_msg = send_post_sale_message(order_id, purchase_msg)
+                # Mark as sent regardless of success to prevent duplicates
+                with database.get_connection() as conn:
+                    with conn.cursor() as cursor:
+                        cursor.execute("UPDATE orders_cache SET purchase_msg_sent = 1 WHERE order_id = %s", (order_id,))
                 if not ok_msg:
                     print(f"[Sync] Error al enviar mensaje de compra para {order_id}: {info_msg}")
 
@@ -812,11 +821,11 @@ def sync_orders(limit=50, date_from=None, date_to=None, quick=False):
                     print(f"[Sync] Evitando enviar mensaje automático de envío para orden antigua {order_id} ({order_info['date_created']})")
                     continue
                 ok_msg, info_msg = send_post_sale_message(order_id, shipping_msg)
-                if ok_msg:
-                    with database.get_connection() as conn:
-                        with conn.cursor() as cursor:
-                            cursor.execute("UPDATE orders_cache SET shipping_msg_sent = 1 WHERE order_id = %s", (order_id,))
-                else:
+                # Always mark as sent to prevent duplicates
+                with database.get_connection() as conn:
+                    with conn.cursor() as cursor:
+                        cursor.execute("UPDATE orders_cache SET shipping_msg_sent = 1 WHERE order_id = %s", (order_id,))
+                if not ok_msg:
                     print(f"[Sync] Error al enviar mensaje de envío para {order_id}: {info_msg}")
 
         update_progress(status="completed", progress=100, message="Sincronización finalizada con éxito.")
