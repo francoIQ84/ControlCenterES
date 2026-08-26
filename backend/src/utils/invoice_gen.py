@@ -179,16 +179,39 @@ class AFIPHeaderFlowable(Flowable):
         # ── Lines below the letter box (full left-column width) ──
         y = box_y - 3 * mm
 
-        # Address
+        # Address (word-wrap onto two lines if needed)
         c.setFont("Helvetica", 7.5)
         c.setFillColor(colors.HexColor('#444444'))
         address = self.seller.get('address', '')
         addr_prefix = "Domicilio Comercial: "
         addr_full = addr_prefix + address
-        while c.stringWidth(addr_full, "Helvetica", 7.5) > max_w_full and len(address) > 5:
-            address = address[:-1]
-            addr_full = addr_prefix + address.rstrip() + "…"
-        c.drawString(left_margin, y, addr_full)
+        if c.stringWidth(addr_full, "Helvetica", 7.5) <= max_w_full:
+            # Fits in one line
+            c.drawString(left_margin, y, addr_full)
+        else:
+            # Split into two lines: find the break point
+            line1 = addr_prefix
+            remaining = address
+            for i, ch in enumerate(address):
+                test = addr_prefix + address[:i+1]
+                if c.stringWidth(test, "Helvetica", 7.5) > max_w_full:
+                    # Break at last space for clean word wrap
+                    break_at = address[:i].rfind(' ')
+                    if break_at > 0:
+                        line1 = addr_prefix + address[:break_at]
+                        remaining = address[break_at+1:]
+                    else:
+                        line1 = addr_prefix + address[:i]
+                        remaining = address[i:]
+                    break
+            c.drawString(left_margin, y, line1)
+            # Second line indented to align with address text
+            y -= 3.5 * mm
+            indent = c.stringWidth(addr_prefix, "Helvetica", 7.5)
+            # Truncate second line if still too long
+            while c.stringWidth(remaining, "Helvetica", 7.5) > (max_w_full - indent) and len(remaining) > 5:
+                remaining = remaining[:-1]
+            c.drawString(left_margin + indent, y, remaining)
 
         # IVA condition
         y -= 5 * mm
