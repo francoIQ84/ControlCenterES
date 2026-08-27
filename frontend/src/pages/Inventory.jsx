@@ -14,6 +14,7 @@ export default function Inventory() {
   const [viewMode, setViewMode] = useState('compact') // 'compact' o 'detailed'
   const [hiddenFilter, setHiddenFilter] = useState('visible') // 'visible' | 'all' | 'hidden'
   const [outOfStockDays, setOutOfStockDays] = useState(null) // null | 7 | 14 | 30
+  const [stockFilter, setStockFilter] = useState('ALL') // 'ALL' | 'IN_STOCK' | 'OUT_OF_STOCK' | 'CRITICAL'
   
   // QR Modals state
   const [showQrScanModal, setShowQrScanModal] = useState(false)
@@ -543,6 +544,16 @@ export default function Inventory() {
       } else if (categoryFilter !== 'ALL') {
         if (String(catId) !== String(categoryFilter)) return false
       }
+
+      // Stock Level Filter
+      const draftQty = drafts[p.ml_id]?.qty
+      const qty = draftQty !== undefined ? draftQty : (p.available_quantity || 0)
+      const minStock = p.min_stock || 0
+
+      if (stockFilter === 'IN_STOCK' && qty <= 0) return false
+      if (stockFilter === 'OUT_OF_STOCK' && qty > 0) return false
+      if (stockFilter === 'CRITICAL' && qty > minStock) return false
+
       return true
     })
 
@@ -559,11 +570,15 @@ export default function Inventory() {
           aVal = (a.status || "").toLowerCase()
           bVal = (b.status || "").toLowerCase()
         } else if (sortConfig.key === 'stock') {
-          aVal = a.available_quantity || 0
-          bVal = b.available_quantity || 0
+          const draftQtyA = drafts[a.ml_id]?.qty
+          const draftQtyB = drafts[b.ml_id]?.qty
+          aVal = draftQtyA !== undefined ? draftQtyA : (a.available_quantity || 0)
+          bVal = draftQtyB !== undefined ? draftQtyB : (b.available_quantity || 0)
         } else if (sortConfig.key === 'is_web_active') {
-          aVal = a.is_web_active || 0
-          bVal = b.is_web_active || 0
+          const draftWebA = drafts[a.ml_id]?.is_web_active
+          const draftWebB = drafts[b.ml_id]?.is_web_active
+          aVal = draftWebA !== undefined ? draftWebA : (a.is_web_active || 0)
+          bVal = draftWebB !== undefined ? draftWebB : (b.is_web_active || 0)
         }
 
         if (aVal < bVal) return sortConfig.direction === 'asc' ? -1 : 1
@@ -572,7 +587,7 @@ export default function Inventory() {
       })
     }
     return sortableItems
-  }, [products, drafts, categoryFilter, sortConfig])
+  }, [products, drafts, categoryFilter, stockFilter, sortConfig])
 
   const handleToggleSelectProduct = (ml_id) => {
     setSelectedIds(prev => 
@@ -863,6 +878,31 @@ export default function Inventory() {
                 📁 {c.name} ({categoryCounts[String(c.id)] || 0})
               </option>
             ))}
+          </select>
+          )}
+          {!isSimpleView && (
+          <select
+            value={stockFilter}
+            onChange={e => setStockFilter(e.target.value)}
+            className="search-input"
+            style={{
+              width: 170,
+              marginBottom: 0,
+              padding: '6px 10px',
+              fontSize: '0.82rem',
+              borderRadius: 6,
+              border: stockFilter !== 'ALL' ? '1px solid var(--accent-blue)' : '1px solid var(--border-color)',
+              backgroundColor: stockFilter !== 'ALL' ? 'rgba(59, 130, 246, 0.15)' : 'var(--bg-card)',
+              color: stockFilter !== 'ALL' ? 'var(--accent-blue)' : 'var(--text-primary)',
+              fontWeight: stockFilter !== 'ALL' ? '700' : 'normal',
+              cursor: 'pointer'
+            }}
+            title="Filtrar por Disponibilidad de Stock"
+          >
+            <option value="ALL">📦 Stock: Todos</option>
+            <option value="IN_STOCK">✅ Con Stock (&gt;0)</option>
+            <option value="OUT_OF_STOCK">❌ Sin Stock (=0)</option>
+            <option value="CRITICAL">⚠️ Stock Crítico (≤ Mínimo)</option>
           </select>
           )}
           {!isSimpleView && (
@@ -1302,13 +1342,13 @@ export default function Inventory() {
                     </th>
                     <th style={{width: 45}}>IMG</th>
                     <th onClick={() => requestSort('title')} style={{cursor: 'pointer', userSelect: 'none', minWidth: 220}}>Detalle{getSortIcon('title')}</th>
-                    <th onClick={() => requestSort('status')} style={{cursor: 'pointer', userSelect: 'none', width: 90}}>Estado{getSortIcon('status')}</th>
-                    <th style={{width: 60}}>Stock</th>
+                    <th onClick={() => requestSort('status')} style={{cursor: 'pointer', userSelect: 'none', width: 95}} title="Ordenar por Estado de Mercado Libre">Estado ML{getSortIcon('status')}</th>
+                    <th onClick={() => requestSort('stock')} style={{cursor: 'pointer', userSelect: 'none', width: 60}} title="Ordenar por Stock">Stock{getSortIcon('stock')}</th>
                     <th style={{width: 75}}>P. ML</th>
                     <th style={{width: 75}}>C. Base</th>
                     <th style={{width: 75}} title="Costo total de Mercado Libre obtenido desde la API (Comisión de venta + Envío gratis si aplica)">C. ML ⓘ</th>
                     <th style={{width: 75}}>P. Web</th>
-                    <th style={{width: 45, textAlign: 'center'}}>Web</th>
+                    <th onClick={() => requestSort('is_web_active')} style={{cursor: 'pointer', userSelect: 'none', width: 85, textAlign: 'center'}} title="Ordenar por Estado de Tienda Web (Activo/Desactivo)">Estado Web{getSortIcon('is_web_active')}</th>
                     <th style={{width: 100}}>Acciones</th>
                   </tr>
                 ) : (
@@ -1325,9 +1365,9 @@ export default function Inventory() {
                     </th>
                     <th>IMG</th>
                     <th onClick={() => requestSort('title')} style={{cursor: 'pointer', userSelect: 'none'}}>Detalle{getSortIcon('title')}</th>
-                    <th onClick={() => requestSort('status')} style={{cursor: 'pointer', userSelect: 'none'}}>Status (ML){getSortIcon('status')}</th>
+                    <th onClick={() => requestSort('status')} style={{cursor: 'pointer', userSelect: 'none'}}>Estado ML{getSortIcon('status')}</th>
                     <th onClick={() => requestSort('stock')} style={{cursor: 'pointer', userSelect: 'none'}}>Stock & Precios{getSortIcon('stock')}</th>
-                    <th onClick={() => requestSort('is_web_active')} style={{cursor: 'pointer', userSelect: 'none'}}>Datos Tienda Web{getSortIcon('is_web_active')}</th>
+                    <th onClick={() => requestSort('is_web_active')} style={{cursor: 'pointer', userSelect: 'none'}}>Estado Web / Tienda{getSortIcon('is_web_active')}</th>
                     <th>Acción</th>
                   </tr>
                 )}
@@ -2058,13 +2098,16 @@ function ProductRow({ p, onSave, onOpenGallery, onDraftChange, categories, categ
               🕒 Modif: {p.last_modified ? new Date(p.last_modified).toLocaleString('es-AR', { dateStyle: 'short', timeStyle: 'short' }) : 'Sin cambios'}
             </div>
           </td>
-          <td data-label="Estado" style={{padding: '5px 8px'}}>
+          <td data-label="Estado ML" style={{padding: '5px 8px'}}>
             <span style={{
-              fontSize: '0.8rem', 
+              fontSize: '0.78rem', 
               fontWeight: 600,
-              color: p.status === 'active' ? 'var(--accent-emerald)' : 'var(--text-secondary)'
+              padding: '2px 6px',
+              borderRadius: 4,
+              backgroundColor: p.status === 'active' ? 'rgba(16, 185, 129, 0.15)' : p.status === 'paused' ? 'rgba(245, 158, 11, 0.15)' : 'var(--bg-hover)',
+              color: p.status === 'active' ? '#10b981' : p.status === 'paused' ? '#d97706' : 'var(--text-secondary)'
             }}>
-              {p.status === 'active' ? 'Activa' : p.status}
+              {p.status === 'active' ? 'Activa' : p.status === 'paused' ? 'Pausada' : p.status === 'under_review' ? 'En Revisión' : p.status === 'local' ? 'Local' : p.status}
             </span>
           </td>
           <td data-label="Stock" style={{padding: '5px 8px'}}>
@@ -2097,8 +2140,23 @@ function ProductRow({ p, onSave, onOpenGallery, onDraftChange, categories, categ
               <div style={{fontSize: '0.65rem', color: 'var(--text-secondary)', marginTop: 1}}>ant: ${p.prev_price_web.toLocaleString('es-AR')}</div>
             )}
           </td>
-          <td data-label="Web" style={{padding: '5px 8px', textAlign: 'center'}}>
-            <input type="checkbox" checked={isWebActive} onChange={e => setIsWebActive(e.target.checked)} style={{width: 'auto', cursor: 'pointer'}}/>
+          <td data-label="Estado Web" style={{padding: '5px 8px', textAlign: 'center'}}>
+            <div style={{display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2}}>
+              <span style={{
+                fontSize: '0.72rem', 
+                fontWeight: 600,
+                color: isWebActive ? '#10b981' : '#ef4444'
+              }}>
+                {isWebActive ? 'Activo' : 'Desactivo'}
+              </span>
+              <input 
+                type="checkbox" 
+                checked={isWebActive} 
+                onChange={e => setIsWebActive(e.target.checked)} 
+                style={{width: 'auto', cursor: 'pointer'}}
+                title={isWebActive ? "Activo en Tienda Web. Clic para desactivar" : "Desactivo en Tienda Web. Clic para activar"}
+              />
+            </div>
           </td>
           <td data-label="Acciones" style={{padding: '5px 8px'}}>
             <div style={{display: 'flex', gap: 6, alignItems: 'center'}}>
