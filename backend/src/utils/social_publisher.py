@@ -65,6 +65,9 @@ def get_long_lived_page_token(long_lived_user_token: str) -> dict:
     # Paso 1: Obtener las páginas administradas por el usuario
     accounts_url = (f"{META_GRAPH_BASE_URL}/me/accounts"
                     f"?access_token={urllib.parse.quote(long_lived_user_token)}")
+    page_token = ""
+    page_id = ""
+    page_name = ""
     try:
         req = urllib.request.Request(accounts_url, method="GET")
         with urllib.request.urlopen(req, timeout=15) as resp:
@@ -80,11 +83,32 @@ def get_long_lived_page_token(long_lived_user_token: str) -> dict:
             page_id = page.get("id", "")
             page_name = page.get("name", "")
     except urllib.error.HTTPError as e:
+        # Fallback: Si /me/accounts falla, verificar si el token ingresado ya es un Page Token directo
+        try:
+            me_url = (f"{META_GRAPH_BASE_URL}/me"
+                      f"?fields=id,name,instagram_business_account"
+                      f"&access_token={urllib.parse.quote(long_lived_user_token)}")
+            req_me = urllib.request.Request(me_url, method="GET")
+            with urllib.request.urlopen(req_me, timeout=12) as resp_me:
+                me_data = json.loads(resp_me.read().decode("utf-8"))
+                if me_data.get("id"):
+                    return {
+                        "success": True,
+                        "page_token": long_lived_user_token,
+                        "page_id": me_data["id"],
+                        "page_name": me_data.get("name", ""),
+                        "instagram_account_id": me_data.get("instagram_business_account", {}).get("id", ""),
+                    }
+        except Exception:
+            pass
+
         body = e.read().decode("utf-8", errors="replace")
         try:
             msg = json.loads(body).get("error", {}).get("message", body)
         except Exception:
             msg = body
+        if "accounts" in msg or "nonexisting field" in msg:
+            msg += ". (En Graph API Explorer, seleccioná 'Token de acceso de usuario' en 'Usuario o página', no la página directamente)."
         return {"success": False, "error": f"Error obteniendo páginas ({e.code}): {msg}"}
     except Exception as e:
         return {"success": False, "error": str(e)}
