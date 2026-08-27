@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react'
+import { useTenant } from '../TenantContext'
 
 // AFIP Error Translator: convierte errores técnicos de WSFE/WSAA en recomendaciones amigables
 const translateAfipError = (rawMsg) => {
@@ -21,6 +22,7 @@ const translateAfipError = (rawMsg) => {
 
 export default function Billing() {
   const [sales, setSales] = useState([])
+  const { isSimpleView } = useTenant()
   const [loading, setLoading] = useState(true)
   const [sortConfig, setSortConfig] = useState({ key: 'invoice_number', direction: 'desc' })
   const [docFilter, setDocFilter] = useState('all') // 'all', 'cuit', 'dni'
@@ -221,50 +223,33 @@ export default function Billing() {
         </div>
       </div>
 
-      {/* AFIP Sync Control Panel */}
-      <div className="card" style={{
-        marginBottom: '20px',
-        padding: '20px',
-        background: 'linear-gradient(135deg, #f5f7fa 0%, #e4e8f0 100%)',
-        borderLeft: '5px solid #003A70',
-        borderRadius: '8px',
-        boxShadow: '0 4px 15px rgba(0,0,0,0.05)'
-      }}>
-        <style>{`
-          @keyframes spin {
-            to { transform: rotate(360deg); }
-          }
-        `}</style>
-        <h3 style={{ margin: '0 0 10px 0', color: '#003A70', display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#003a70" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ verticalAlign: 'middle' }}>
-            <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/>
-          </svg>
-          Sincronización Oficial AFIP / ARCA
-        </h3>
-        <p style={{ margin: '0 0 15px 0', fontSize: '0.85rem', color: '#555' }}>
-          Importa comprobantes autorizados históricamente desde los servidores de la Administración Federal directamente a tu base de datos local.
+      {/* AFIP Sync Box */}
+      {!isSimpleView && (
+      <div className="card" style={{ marginBottom: '20px', padding: '20px' }}>
+        <h3 style={{ marginTop: 0, marginBottom: '10px', fontSize: '1.1rem' }}>⚡ Sincronización Directa desde AFIP / ARCA</h3>
+        <p style={{ margin: '0 0 15px 0', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+          Importá facturas electrónicas generadas externamente o recuperá comprobantes desde los servidores de AFIP.
         </p>
-        
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '15px', alignItems: 'flex-end' }}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', minWidth: '150px' }}>
-            <label style={{ fontSize: '0.75rem', fontWeight: 'bold', color: '#444' }}>Punto de Venta</label>
+
+        <div style={{ display: 'flex', gap: '15px', alignItems: 'center', flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <label style={{ fontSize: '0.85rem', fontWeight: '600' }}>Punto de Venta:</label>
             <input
               type="number"
-              min="1"
               value={ptoVta}
               onChange={(e) => setPtoVta(parseInt(e.target.value) || 1)}
               style={{
-                padding: '8px 12px',
+                width: '70px',
+                padding: '8px 10px',
                 borderRadius: '6px',
                 border: '1px solid #ccc',
-                fontSize: '0.9rem',
-                backgroundColor: '#fff'
+                fontSize: '0.9rem'
               }}
             />
           </div>
-          
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', minWidth: '200px' }}>
-            <label style={{ fontSize: '0.75rem', fontWeight: 'bold', color: '#444' }}>Tipo de Comprobante</label>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <label style={{ fontSize: '0.85rem', fontWeight: '600' }}>Tipo de Comprobante:</label>
             <select
               value={cbteTipo}
               onChange={(e) => setCbteTipo(parseInt(e.target.value))}
@@ -335,6 +320,7 @@ export default function Billing() {
           </div>
         )}
       </div>
+      )}
 
       {/* Filter and Search */}
       <div className="card" style={{ marginBottom: '20px', padding: '15px 20px' }}>
@@ -347,6 +333,7 @@ export default function Billing() {
             style={{ flex: 1, minWidth: '250px', padding: '10px', borderRadius: '6px', border: '1px solid #ddd', fontSize: '0.9rem' }}
           />
           
+          {!isSimpleView && (
           <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
             <select
               value={docFilter}
@@ -368,6 +355,7 @@ export default function Billing() {
               <option value="local">Locales/Web</option>
             </select>
           </div>
+          )}
 
           {(searchTerm || docFilter !== 'all' || typeFilter !== 'all') && (
             <button 

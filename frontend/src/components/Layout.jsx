@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom'
-import { LayoutDashboard, Package, Receipt, Users, Settings, Sun, Moon, RefreshCw, Zap, Image, LogOut, Menu, FileText, Wallet, BookOpen, ShieldCheck, Bell, CheckCircle2, X, Megaphone, UserCheck, MessageSquare, Building2, HelpCircle } from 'lucide-react'
+import { LayoutDashboard, Package, Receipt, Users, Settings, Sun, Moon, RefreshCw, Zap, Image, LogOut, Menu, FileText, Wallet, BookOpen, ShieldCheck, Bell, CheckCircle2, X, Megaphone, UserCheck, MessageSquare, Building2, HelpCircle, Eye, Layers } from 'lucide-react'
 import { useTenant } from '../TenantContext'
 
 // Mapa de ayuda contextual por ruta — se muestra al pulsar el botón "?"
@@ -147,7 +147,7 @@ const PAGE_HELP = {
 export default function Layout() {
   const navigate = useNavigate()
   const location = useLocation()
-  const { tenant, hasModule, isPlatformAdmin } = useTenant()
+  const { tenant, hasModule, isPlatformAdmin, isSimpleView, toggleViewMode } = useTenant()
   const [lightMode, setLightMode] = useState(true)
   const [syncing, setSyncing] = useState(false)
   const [collapsed, setCollapsed] = useState(typeof window !== 'undefined' ? window.innerWidth < 768 : false)
@@ -562,7 +562,7 @@ export default function Layout() {
               <span className="nav-text">Ventas</span>
             </NavLink>
           )}
-          {canShow('billing') && (
+          {!isSimpleView && canShow('billing') && (
             <NavLink to="/billing" className={({isActive}) => `nav-link ${isActive ? 'active' : ''}`}>
               <FileText size={20} style={{ minWidth: 20 }} />
               <span className="nav-text">Facturación</span>
@@ -580,19 +580,19 @@ export default function Layout() {
               <span className="nav-text">CRM & Clientes</span>
             </NavLink>
           )}
-          {canShow('media') && (
+          {!isSimpleView && canShow('media') && (
             <NavLink to="/media" className={({isActive}) => `nav-link ${isActive ? 'active' : ''}`}>
               <Image size={20} style={{ minWidth: 20 }} />
               <span className="nav-text">Archivos</span>
             </NavLink>
           )}
-          {canShow('blog', 'blog') && (
+          {!isSimpleView && canShow('blog', 'blog') && (
             <NavLink to="/cms" className={({isActive}) => `nav-link ${isActive ? 'active' : ''}`}>
               <BookOpen size={20} style={{ minWidth: 20 }} />
               <span className="nav-text">Blog & Web</span>
             </NavLink>
           )}
-          {canShow('inpi') && (
+          {!isSimpleView && canShow('inpi') && (
             <NavLink to="/inpi" className={({isActive}) => `nav-link ${isActive ? 'active' : ''}`}>
               <ShieldCheck size={20} style={{ minWidth: 20 }} />
               <span className="nav-text">Propiedad Industrial</span>
@@ -604,7 +604,7 @@ export default function Layout() {
               <span className="nav-text">Marketing & Redes</span>
             </NavLink>
           )}
-          {isPlatformAdmin && hasPermission('settings') && (
+          {!isSimpleView && isPlatformAdmin && hasPermission('settings') && (
             <NavLink to="/tenants" className={({isActive}) => `nav-link ${isActive ? 'active' : ''}`}>
               <Building2 size={20} style={{ minWidth: 20 }} />
               <span className="nav-text">Inquilinos</span>
@@ -617,6 +617,17 @@ export default function Layout() {
             </NavLink>
           )}
         </nav>
+
+        {/* View Mode Toggle */}
+        <div className="view-mode-toggle" onClick={toggleViewMode} title={isSimpleView ? 'Cambiar a Visión Completa' : 'Cambiar a Visión Simple'}>
+          <div className={`view-mode-toggle-icon ${isSimpleView ? 'simple' : 'full'}`}>
+            {isSimpleView ? <Eye size={16} /> : <Layers size={16} />}
+          </div>
+          <div className="view-mode-toggle-label">
+            <span className="view-mode-toggle-title nav-text">{isSimpleView ? '👁️ Visión Simple' : '📋 Visión Completa'}</span>
+            <span className="view-mode-toggle-subtitle nav-text">{isSimpleView ? 'Toque para ver todo' : 'Toque para simplificar'}</span>
+          </div>
+        </div>
 
         {/* Sidebar Mobile Status Section (Inside Drawer) */}
         <div className="sidebar-mobile-status-section">

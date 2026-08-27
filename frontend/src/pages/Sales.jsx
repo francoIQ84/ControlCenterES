@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react'
 import { ShoppingBag, Globe, Store, Check, Clock, Plus, Trash2, ShoppingCart, DollarSign, Link, MessageSquare, Send, ExternalLink, FileText, UserCheck, Search, X, Filter } from 'lucide-react'
+import { useTenant } from '../TenantContext'
 
 export default function Sales() {
   const [orders, setOrders] = useState([])
+  const { isSimpleView } = useTenant()
   const [loading, setLoading] = useState(true)
   const [sortConfig, setSortConfig] = useState({ key: 'date_created', direction: 'desc' })
 
@@ -937,12 +939,34 @@ export default function Sales() {
           </div>
 
           {/* Filter Dropdowns & Reset */}
-          <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <Filter size={15} style={{ color: 'var(--text-secondary)' }} />
+          {!isSimpleView && (
+            <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <Filter size={15} style={{ color: 'var(--text-secondary)' }} />
+                <select
+                  value={platformFilter}
+                  onChange={e => setPlatformFilter(e.target.value)}
+                  className="search-input"
+                  style={{
+                    marginBottom: 0,
+                    padding: '6px 12px',
+                    fontSize: '0.83rem',
+                    borderRadius: 8,
+                    height: 40,
+                    cursor: 'pointer'
+                  }}
+                >
+                  <option value="ALL">🌐 Todos los canales</option>
+                  <option value="LOCAL">🏪 Local Comercial</option>
+                  <option value="MERCADOLIBRE">🛍️ Mercado Libre</option>
+                  <option value="WEB">🌍 Tienda Web</option>
+                  <option value="MERCADOPAGO">💳 Mercado Pago</option>
+                </select>
+              </div>
+
               <select
-                value={platformFilter}
-                onChange={e => setPlatformFilter(e.target.value)}
+                value={shippingFilter}
+                onChange={e => setShippingFilter(e.target.value)}
                 className="search-input"
                 style={{
                   marginBottom: 0,
@@ -953,58 +977,38 @@ export default function Sales() {
                   cursor: 'pointer'
                 }}
               >
-                <option value="ALL">🌐 Todos los canales</option>
-                <option value="LOCAL">🏪 Local Comercial</option>
-                <option value="MERCADOLIBRE">🛍️ Mercado Libre</option>
-                <option value="WEB">🌍 Tienda Web</option>
-                <option value="MERCADOPAGO">💳 Mercado Pago</option>
+                <option value="ALL">📦 Todas las entregas</option>
+                <option value="pending">⏳ Pendiente</option>
+                <option value="delivered">✅ Entregado</option>
+                <option value="in_transit">🚚 En camino</option>
+                <option value="ready_to_ship">📦 Listo p/ enviar</option>
               </select>
+
+              {(searchQuery || platformFilter !== 'ALL' || shippingFilter !== 'ALL') && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSearchQuery('')
+                    setPlatformFilter('ALL')
+                    setShippingFilter('ALL')
+                  }}
+                  className="btn"
+                  style={{
+                    height: 40,
+                    fontSize: '0.8rem',
+                    padding: '0 12px',
+                    backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                    color: '#ef4444',
+                    border: '1px solid rgba(239, 68, 68, 0.3)',
+                    borderRadius: 8
+                  }}
+                >
+                  Limpiar filtros
+                </button>
+              )}
             </div>
-
-            <select
-              value={shippingFilter}
-              onChange={e => setShippingFilter(e.target.value)}
-              className="search-input"
-              style={{
-                marginBottom: 0,
-                padding: '6px 12px',
-                fontSize: '0.83rem',
-                borderRadius: 8,
-                height: 40,
-                cursor: 'pointer'
-              }}
-            >
-              <option value="ALL">📦 Todas las entregas</option>
-              <option value="pending">⏳ Pendiente</option>
-              <option value="delivered">✅ Entregado</option>
-              <option value="in_transit">🚚 En camino</option>
-              <option value="ready_to_ship">📦 Listo p/ enviar</option>
-            </select>
-
-            {(searchQuery || platformFilter !== 'ALL' || shippingFilter !== 'ALL') && (
-              <button
-                type="button"
-                onClick={() => {
-                  setSearchQuery('')
-                  setPlatformFilter('ALL')
-                  setShippingFilter('ALL')
-                }}
-                className="btn"
-                style={{
-                  height: 40,
-                  fontSize: '0.8rem',
-                  padding: '0 12px',
-                  backgroundColor: 'rgba(239, 68, 68, 0.1)',
-                  color: '#ef4444',
-                  border: '1px solid rgba(239, 68, 68, 0.3)',
-                  borderRadius: 8
-                }}
-              >
-                Limpiar filtros
-              </button>
-            )}
+          )}
           </div>
-        </div>
 
         {/* Results counter badge */}
         <div style={{ marginTop: 10, fontSize: '0.82rem', color: 'var(--text-secondary)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>

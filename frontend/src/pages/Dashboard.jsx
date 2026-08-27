@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useMemo } from 'react'
 import { DollarSign, TrendingUp, ShoppingBag, AlertTriangle, Eye, Globe, TrendingDown } from 'lucide-react'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
+import { useTenant } from '../TenantContext'
 
 export default function Dashboard() {
   const [stats, setStats] = useState(null)
@@ -9,6 +10,7 @@ export default function Dashboard() {
   const [startDate, setStartDate] = useState('')
   const [endDate, setEndDate] = useState('')
   const [mpBalance, setMpBalance] = useState(null)
+  const { isSimpleView } = useTenant()
 
   useEffect(() => {
     let url = `/api/dashboard/metrics?period=${period}`
@@ -85,7 +87,7 @@ export default function Dashboard() {
             whiteSpace: 'nowrap',
             WebkitOverflowScrolling: 'touch'
           }}>
-            {['day', 'week', 'month', 'year', 'total', 'custom'].map((p) => (
+            {(isSimpleView ? ['day', 'week', 'month'] : ['day', 'week', 'month', 'year', 'total', 'custom']).map((p) => (
               <button
                 key={p}
                 onClick={() => setPeriod(p)}
@@ -248,6 +250,7 @@ export default function Dashboard() {
         </div>
       </div>
  
+      {!isSimpleView && (
       <div style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))', gap: '20px', alignItems: 'start'}}>
         <div className="card">
           <h3 style={{marginTop: 0, marginBottom: 15}}>Tendencia de Facturación</h3>
@@ -269,7 +272,10 @@ export default function Dashboard() {
  
         <TopProductsWidget products={stats.top_products || []} />
       </div>
+      )}
  
+      {!isSimpleView && (
+      <>
       {/* Alert Products List */}
       {stats.low_stock_products && stats.low_stock_products.length > 0 && (
         <div className="card" style={{marginTop: '20px', borderLeft: '4px solid var(--accent-orange)'}}>
@@ -368,6 +374,8 @@ export default function Dashboard() {
           )}
         </div>
       </div>
+      </>
+      )}
     </div>
   )
 }

@@ -2,8 +2,10 @@ import React, { useState, useEffect } from 'react'
 import { RefreshCw } from 'lucide-react'
 import MediaBrowser from '../components/MediaBrowser'
 import LeadMagnetSettings from '../components/LeadMagnetSettings'
+import { useTenant } from '../TenantContext'
 
 export default function Settings() {
+  const { isSimpleView } = useTenant()
   const [config, setConfig] = useState({ 
     client_id: '', 
     client_secret: '', 
@@ -992,7 +994,7 @@ export default function Settings() {
           { id: 'arca', label: 'Facturación ARCA (ex AFIP)', icon: '🧾' },
           { id: 'backups', label: 'Respaldos', icon: '💾' },
           { id: 'whatsapp', label: 'Asistente WhatsApp (IA)', icon: '🤖' }
-        ].map(t => {
+        ].filter(t => !isSimpleView || ['connection', 'web_config', 'whatsapp'].includes(t.id)).map(t => {
           const isActive = activeTab === t.id
           return (
             <button

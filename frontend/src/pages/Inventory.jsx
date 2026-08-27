@@ -2,9 +2,11 @@ import React, { useState, useEffect, useRef } from 'react'
 import { Package, CloudOff, Cloud, RefreshCw, Save, QrCode, Camera, ExternalLink, Eye, EyeOff } from 'lucide-react'
 import { Html5QrcodeScanner } from 'html5-qrcode'
 import MediaBrowser from '../components/MediaBrowser'
+import { useTenant } from '../TenantContext'
 
 export default function Inventory() {
   const [products, setProducts] = useState([])
+  const { isSimpleView } = useTenant()
   const [loading, setLoading] = useState(true)
   const [query, setQuery] = useState("")
   const [sortConfig, setSortConfig] = useState({ key: null, direction: 'asc' })
@@ -867,6 +869,7 @@ export default function Inventory() {
             className="search-input"
             style={{width: 220, marginBottom: 0}}
           />
+          {!isSimpleView && (
           <select
             value={categoryFilter}
             onChange={e => setCategoryFilter(e.target.value)}
@@ -894,6 +897,8 @@ export default function Inventory() {
               </option>
             ))}
           </select>
+          )}
+          {!isSimpleView && (
           <div style={{display: 'inline-flex', border: '1px solid var(--border-color)', borderRadius: 6, overflow: 'hidden'}}>
             <button 
               type="button"
@@ -930,6 +935,8 @@ export default function Inventory() {
               Comprimida
             </button>
           </div>
+          )}
+          {!isSimpleView && (
           <button 
             type="button"
             className="btn" 
@@ -951,6 +958,7 @@ export default function Inventory() {
             {showHidden ? <EyeOff size={14} /> : <Eye size={14} />}
             {showHidden ? 'Ocultos Visibles' : 'Ver Ocultos'}
           </button>
+          )}
         </div>
         <div className="control-buttons" style={{display: 'flex', gap: 10, flexWrap: 'wrap'}}>
           {modifiedCount > 0 && (
@@ -958,6 +966,7 @@ export default function Inventory() {
               Guardar {modifiedCount} cambios
             </button>
           )}
+          {!isSimpleView && (
           <button 
             className="btn" 
             style={{
@@ -973,6 +982,8 @@ export default function Inventory() {
           >
             📊 Exportar a Excel
           </button>
+          )}
+          {!isSimpleView && (
           <button 
             className="btn" 
             style={{
@@ -991,9 +1002,13 @@ export default function Inventory() {
           >
             📊 Calculadora de Rentabilidad
           </button>
+          )}
+          {!isSimpleView && (
           <button className="btn" style={{backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)', border: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', gap: 5}} onClick={() => setShowCategoriesModal(true)}>
             📁 Gestionar Categorías
           </button>
+          )}
+          {!isSimpleView && (
           <button 
             className="btn" 
             style={{
@@ -1012,9 +1027,12 @@ export default function Inventory() {
           >
             📅 Disponibilidad MeLi
           </button>
+          )}
+          {!isSimpleView && (
           <button className="btn" style={{backgroundColor: 'var(--accent-emerald)', color: '#fff', border: 'none', display: 'flex', alignItems: 'center', gap: 6}} onClick={() => setShowQrScanModal(true)}>
             <QrCode size={16} /> Escanear QR
           </button>
+          )}
           <button className="btn" onClick={() => setShowAddModal(true)}>
             + Agregar Producto
           </button>

@@ -7,6 +7,8 @@ import React, { createContext, useContext, useEffect, useState } from 'react'
  *   - tenant: datos del inquilino (nombre, plan, estado, si es el maestro)
  *   - hasModule(nombre): si el módulo está contratado en el plan
  *   - isPlatformAdmin: si la sesión pertenece al Tenant Maestro
+ *   - isSimpleView: si la vista simplificada está activa (default: true)
+ *   - toggleViewMode(): alterna entre vista simple y completa
  *
  * Los permisos de usuario (RBAC) y los módulos contratados son dos filtros
  * distintos y se aplican los dos: el permiso dice qué puede hacer *esta
@@ -23,6 +25,8 @@ const FALLBACK = {
   error: null,
   hasModule: () => true,
   isPlatformAdmin: false,
+  isSimpleView: true,
+  toggleViewMode: () => {},
   refresh: () => {},
 }
 
@@ -30,6 +34,21 @@ export function TenantProvider({ children }) {
   const [tenant, setTenant] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  const [viewMode, setViewMode] = useState(() => {
+    try {
+      return localStorage.getItem('viewMode') || 'simple'
+    } catch { return 'simple' }
+  })
+
+  const isSimpleView = viewMode === 'simple'
+
+  const toggleViewMode = () => {
+    setViewMode(prev => {
+      const next = prev === 'simple' ? 'full' : 'simple'
+      try { localStorage.setItem('viewMode', next) } catch {}
+      return next
+    })
+  }
 
   const load = async () => {
     const token = localStorage.getItem('adminToken')
@@ -85,6 +104,8 @@ export function TenantProvider({ children }) {
       error,
       hasModule,
       isPlatformAdmin: Boolean(tenant?.is_master),
+      isSimpleView,
+      toggleViewMode,
       refresh: load,
     }}>
       {children}
@@ -97,3 +118,4 @@ export function useTenant() {
 }
 
 export default TenantContext
+

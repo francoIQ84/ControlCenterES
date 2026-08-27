@@ -6,11 +6,13 @@ import {
   CheckCircle2, AlertTriangle, Layers, HelpCircle, Upload, FileText
 } from 'lucide-react'
 import MeliQuestions from './MeliQuestions'
+import { useTenant } from '../TenantContext'
 
 export default function Customers() {
   const [searchParams] = useSearchParams()
   const initialTab = searchParams.get('tab') || 'customers'
   const [activeTab, setActiveTab] = useState(initialTab) // 'customers' | 'meli_questions' | 'inquiries' | 'leads' | 'whatsapp'
+  const { isSimpleView } = useTenant()
 
   useEffect(() => {
     const t = searchParams.get('tab')
@@ -580,6 +582,7 @@ export default function Customers() {
           <Users size={16} /> Clientes ({crmData.customers.length})
         </button>
 
+        {!isSimpleView && (
         <button
           onClick={() => setActiveTab('meli_questions')}
           style={{
@@ -599,7 +602,9 @@ export default function Customers() {
         >
           <Sparkles size={16} /> Preguntas ML (IA)
         </button>
+        )}
 
+        {!isSimpleView && (
         <button
           onClick={() => setActiveTab('inquiries')}
           style={{
@@ -619,7 +624,9 @@ export default function Customers() {
         >
           <TrendingUp size={16} /> Consultas ({crmData.product_inquiries.length})
         </button>
+        )}
 
+        {!isSimpleView && (
         <button
           onClick={() => setActiveTab('leads')}
           style={{
@@ -639,7 +646,9 @@ export default function Customers() {
         >
           <UserCheck size={16} /> Leads Web ({crmData.leads.length})
         </button>
+        )}
 
+        {!isSimpleView && (
         <button
           onClick={() => setActiveTab('whatsapp')}
           style={{
@@ -659,6 +668,7 @@ export default function Customers() {
         >
           <MessageSquare size={16} /> Chats WhatsApp ({crmData.whatsapp_chats.length})
         </button>
+        )}
       </div>
 
       {/* TAB 2: Preguntas Mercado Libre (IA) */}

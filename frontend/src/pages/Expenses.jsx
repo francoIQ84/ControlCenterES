@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react'
 import { Plus, Trash2, Wallet, Calendar, DollarSign, Tag, TrendingDown, TrendingUp, PieChart, ArrowUpRight, ArrowDownRight, Layers, FileText, CheckCircle2, AlertTriangle, Search, ChevronDown, ChevronUp, Pencil, RefreshCw, Clock, ExternalLink, Copy, Check, Link2, CreditCard } from 'lucide-react'
+import { useTenant } from '../TenantContext'
 
 export default function Expenses() {
   const [activeTab, setActiveTab] = useState('summary') // 'summary' | 'expenses' | 'incomes'
+  const { isSimpleView } = useTenant()
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1)
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear())
 
@@ -533,6 +535,7 @@ export default function Expenses() {
           <PieChart size={18} /> Resumen General
         </button>
         
+        {!isSimpleView && (
         <button 
           onClick={() => setActiveTab('expenses')}
           style={{
@@ -553,7 +556,9 @@ export default function Expenses() {
         >
           <TrendingDown size={18} /> Gastos (Egresos)
         </button>
+        )}
         
+        {!isSimpleView && (
         <button 
           onClick={() => setActiveTab('vencimientos')}
           style={{
@@ -574,7 +579,9 @@ export default function Expenses() {
         >
           <Clock size={18} /> Vencimientos y Servicios
         </button>
+        )}
 
+        {!isSimpleView && (
         <button 
           onClick={() => setActiveTab('incomes')}
           style={{
@@ -595,6 +602,7 @@ export default function Expenses() {
         >
           <TrendingUp size={18} /> Ingresos
         </button>
+        )}
       </div>
 
       {/* --- TAB: VENCIMIENTOS Y SERVICIOS --- */}

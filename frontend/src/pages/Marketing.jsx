@@ -19,7 +19,7 @@ const isVideoUrl = (url) => {
 }
 
 export default function Marketing() {
-  const { tenant, isPlatformAdmin } = useTenant()
+  const { tenant, isPlatformAdmin, isSimpleView } = useTenant()
   const storeName = tenant?.name || 'Tienda Oficial'
 
   const [activeTab, setActiveTab] = useState('creator') // 'creator', 'calendar', 'comments', 'config'
@@ -1985,6 +1985,7 @@ export default function Marketing() {
         >
           <Calendar size={16} /> Cola & Calendario ({posts.filter(p => p.status === 'scheduled').length})
         </button>
+        {!isSimpleView && (
         <button 
           className="btn" 
           onClick={() => { setActiveTab('comments'); fetchComments(); }}
@@ -2003,6 +2004,8 @@ export default function Marketing() {
         >
           <MessageSquare size={16} /> Inbox de Comentarios
         </button>
+        )}
+        {!isSimpleView && (
         <button 
           className="btn" 
           onClick={() => { setActiveTab('diffusion'); fetchDiffusionData(); }}
@@ -2021,6 +2024,8 @@ export default function Marketing() {
         >
           <Send size={16} /> Difusión ({diffusionGroups.length})
         </button>
+        )}
+        {!isSimpleView && (
         <button 
           className="btn" 
           onClick={() => setActiveTab('config')}
@@ -2039,6 +2044,7 @@ export default function Marketing() {
         >
           <SettingsIcon size={16} /> Configuración Redes
         </button>
+        )}
       </div>
 
       {/* TAB 1: Creador IA */}
