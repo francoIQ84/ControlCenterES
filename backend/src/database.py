@@ -1,6 +1,6 @@
 import os
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 import hashlib
 import secrets
@@ -796,7 +796,10 @@ def bulk_adjust_prices(ml_ids: list, target: str, adjustment_type: str, value: f
                 ''', (new_price, new_price_web, curr_price, curr_price_web, now, ml_id))
 
 
-def get_all_products(query=None, status_filter=None, is_web_active=None, category_slug=None, include_hidden=False, is_hidden=None):
+def get_all_products(query=None, status_filter=None, is_web_active=None, category_slug=None, include_hidden=False, is_hidden=None, out_of_stock_30d=False, out_of_stock_days=None):
+    if out_of_stock_days is None and out_of_stock_30d:
+        out_of_stock_days = 30
+
     with get_connection() as conn:
         with conn.cursor() as cursor:
             sql = """
@@ -817,6 +820,20 @@ def get_all_products(query=None, status_filter=None, is_web_active=None, categor
                 params.append(int(is_hidden))
             elif not include_hidden:
                 sql += " AND COALESCE(p.is_hidden, 0) = 0"
+
+            if out_of_stock_days and int(out_of_stock_days) > 0:
+                cutoff_date = (datetime.now() - timedelta(days=int(out_of_stock_days))).strftime('%Y-%m-%d')
+                sql += """ AND COALESCE(p.available_quantity, 0) <= 0 
+                           AND (
+                               COALESCE(p.prev_stock, 0) > 0 
+                               OR (p.last_modified IS NOT NULL AND p.last_modified >= %s)
+                               OR EXISTS (
+                                   SELECT 1 FROM orders_cache o 
+                                   WHERE o.items_json ILIKE ('%' || p.ml_id || '%') 
+                                     AND o.date_created >= %s
+                               )
+                           )"""
+                params.extend([cutoff_date, cutoff_date])
 
             if query:
                 sql += " AND (p.title ILIKE %s OR p.ml_id ILIKE %s)"

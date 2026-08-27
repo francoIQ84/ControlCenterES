@@ -13,6 +13,7 @@ export default function Inventory() {
   const [drafts, setDrafts] = useState({})
   const [viewMode, setViewMode] = useState('compact') // 'compact' o 'detailed'
   const [hiddenFilter, setHiddenFilter] = useState('visible') // 'visible' | 'all' | 'hidden'
+  const [outOfStockDays, setOutOfStockDays] = useState(null) // null | 7 | 14 | 30
   
   // QR Modals state
   const [showQrScanModal, setShowQrScanModal] = useState(false)
@@ -319,6 +320,9 @@ export default function Inventory() {
     } else {
       url += `&is_hidden=0`
     }
+    if (outOfStockDays) {
+      url += `&out_of_stock_days=${outOfStockDays}`
+    }
     fetch(url)
       .then(res => res.json())
       .then(data => {
@@ -382,7 +386,7 @@ export default function Inventory() {
   useEffect(() => {
     fetchProducts()
     fetchCategories()
-  }, [query, hiddenFilter])
+  }, [query, hiddenFilter, outOfStockDays])
 
   const handleUpdate = async (ml_id, qty, price, cost, cost_meli, price_web, images, description, is_web_active, category_id, sync_meli, min_stock, featured_order = 0, use_meli_description = 1, description_meli = "") => {
     try {
@@ -958,6 +962,29 @@ export default function Inventory() {
               Solo Ocultos
             </button>
           </div>
+          )}
+          {!isSimpleView && (
+          <select
+            className="btn"
+            value={outOfStockDays || ''}
+            onChange={e => setOutOfStockDays(e.target.value ? Number(e.target.value) : null)}
+            style={{
+              padding: '6px 10px',
+              fontSize: '0.8rem',
+              backgroundColor: outOfStockDays ? 'rgba(239, 68, 68, 0.15)' : 'var(--bg-card)',
+              color: outOfStockDays ? 'var(--accent-red)' : 'var(--text-secondary)',
+              border: outOfStockDays ? '1px solid var(--accent-red)' : '1px solid var(--border-color)',
+              borderRadius: 6,
+              cursor: 'pointer',
+              fontWeight: outOfStockDays ? '700' : 'normal'
+            }}
+            title="Filtrar productos sin stock según movimiento reciente"
+          >
+            <option value="">📦 Sin Stock: Desactivado</option>
+            <option value="7">⚠️ Sin Stock (Últ. 7 días)</option>
+            <option value="14">⚠️ Sin Stock (Últ. 14 días)</option>
+            <option value="30">⚠️ Sin Stock (Últ. 30 días)</option>
+          </select>
           )}
         </div>
         <div className="control-buttons" style={{display: 'flex', gap: 10, flexWrap: 'wrap'}}>

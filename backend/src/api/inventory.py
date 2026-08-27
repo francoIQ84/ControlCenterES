@@ -43,8 +43,8 @@ class CreateProductRequest(BaseModel):
     featured_order: int = 0
 
 @router.get("/")
-def get_products(query: str = None, status: str = None, show_hidden: bool = False, is_hidden: Optional[int] = None):
-    products = database.get_all_products(query=query, status_filter=status, include_hidden=show_hidden, is_hidden=is_hidden)
+def get_products(query: str = None, status: str = None, show_hidden: bool = False, is_hidden: Optional[int] = None, out_of_stock_30d: bool = False, out_of_stock_days: Optional[int] = None):
+    products = database.get_all_products(query=query, status_filter=status, include_hidden=show_hidden, is_hidden=is_hidden, out_of_stock_30d=out_of_stock_30d, out_of_stock_days=out_of_stock_days)
     return {"products": products}
 
 @router.post("/sync")
