@@ -16,12 +16,14 @@ class GeneratePostRequest(BaseModel):
     product_ml_id: str
     objective: Optional[str] = "promocional"  # promocional, educativo, oferta
     tone: Optional[str] = "entusiasta"        # profesional, entusiasta, divertido
+    selected_image: Optional[str] = None
 
 class GenerateVideoRequest(BaseModel):
     product_ml_id: str
     prompt: Optional[str] = ""
     generator_type: Optional[str] = "gemini_canvas" # gemini_canvas, google_veo, flux, imagen3, pollinations
     post_type: Optional[str] = "reel"                # post, reel
+    selected_image: Optional[str] = None
 
 
 class CreatePostRequest(BaseModel):
@@ -172,6 +174,15 @@ def generate_ai_post_copy(req: GeneratePostRequest, _=Depends(verify_session)):
     if not product:
         raise HTTPException(status_code=404, detail="Producto no encontrado")
 
+    if req.selected_image:
+        product = dict(product)
+        raw_imgs = [i.strip() for i in (product.get("images") or product.get("thumbnail") or "").split(",") if i.strip()]
+        sel = req.selected_image.strip()
+        if sel:
+            clean_sel = get_high_res_image_url(sel)
+            reordered = [sel] + [i for i in raw_imgs if i != sel and get_high_res_image_url(i) != clean_sel]
+            product["images"] = ",".join(reordered)
+
     gemini_key = database.get_setting("gemini_api_key", "").strip()
     if not gemini_key:
         raise HTTPException(
@@ -246,6 +257,15 @@ def generate_ai_video(req: GenerateVideoRequest, _=Depends(verify_session)):
     product = database.get_product_by_ml_id(req.product_ml_id)
     if not product:
         raise HTTPException(status_code=404, detail="Producto no encontrado")
+
+    if req.selected_image:
+        product = dict(product)
+        raw_imgs = [i.strip() for i in (product.get("images") or product.get("thumbnail") or "").split(",") if i.strip()]
+        sel = req.selected_image.strip()
+        if sel:
+            clean_sel = get_high_res_image_url(sel)
+            reordered = [sel] + [i for i in raw_imgs if i != sel and get_high_res_image_url(i) != clean_sel]
+            product["images"] = ",".join(reordered)
 
     from src.utils.video_generator import (
         generate_video_script_with_gemini, 

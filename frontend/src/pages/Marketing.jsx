@@ -37,6 +37,7 @@ export default function Marketing() {
   // Creator state
   const [selectedProduct, setSelectedProduct] = useState('')
   const [productImages, setProductImages] = useState([])
+  const [selectedProductImage, setSelectedProductImage] = useState('')
   const [uploadingFile, setUploadingFile] = useState(false)
   const [objective, setObjective] = useState('promocional')
   const [tone, setTone] = useState('entusiasta')
@@ -381,6 +382,7 @@ export default function Marketing() {
   useEffect(() => {
     if (!selectedProduct) {
       setProductImages([])
+      setSelectedProductImage('')
       return
     }
     const curr = products.find(p => p.ml_id === selectedProduct)
@@ -388,11 +390,13 @@ export default function Marketing() {
       const rawList = curr.images ? curr.images.split(',') : (curr.thumbnail ? [curr.thumbnail] : [])
       const cleanList = rawList.map(u => toHighResMlImage(u.trim())).filter(Boolean)
       setProductImages(cleanList)
-      if (cleanList.length > 0 && !mediaUrl) {
-        setMediaUrl(cleanList[0])
+      if (cleanList.length > 0) {
+        setSelectedProductImage(cleanList[0])
+        if (!mediaUrl) setMediaUrl(cleanList[0])
       }
     } else {
       setProductImages([])
+      setSelectedProductImage('')
     }
   }, [selectedProduct, products])
 
@@ -629,7 +633,8 @@ export default function Marketing() {
         body: JSON.stringify({
           product_ml_id: selectedProduct,
           objective,
-          tone
+          tone,
+          selected_image: selectedProductImage || mediaUrl
         })
       })
       const data = await res.json()
@@ -637,7 +642,7 @@ export default function Marketing() {
         setGeneratedData(data)
         setPostTitle(data.title || '')
         setCaption(data.caption || '')
-        const mainImg = data.images ? toHighResMlImage(data.images.split(',')[0].trim()) : ''
+        const mainImg = selectedProductImage || (data.images ? toHighResMlImage(data.images.split(',')[0].trim()) : '')
         setMediaUrl(mainImg)
       } else {
         alert("Error al generar contenido: " + (data.detail || "Error desconocido"))
@@ -679,7 +684,12 @@ export default function Marketing() {
       const fontFamily = getFontFamily(canvasFont)
       const logoImg = await loadCanvasLogo(canvasLogoUrl)
 
-      const imagesList = script.images || []
+      let rawImagesList = script.images || []
+      const selImg = selectedProductImage || mediaUrl
+      if (selImg && rawImagesList.length > 0) {
+        rawImagesList = [selImg, ...rawImagesList.filter(u => u !== selImg)]
+      }
+      const imagesList = rawImagesList
       const loadedImgs = await Promise.all(
         imagesList.map(src => new Promise(res => {
           const img = new Image()
@@ -1253,7 +1263,12 @@ export default function Marketing() {
     const subTextColor = (canvasTextColor && canvasTextColor !== 'auto') ? canvasTextColor : theme.defaultSubtext
     const drawBorder = canvasShowBorder && !isCleanWhite && theme.border !== 'transparent'
 
-    const imagesList = script.images || []
+    let rawImagesList = script.images || []
+    const selImg = selectedProductImage || mediaUrl
+    if (selImg && rawImagesList.length > 0) {
+      rawImagesList = [selImg, ...rawImagesList.filter(u => u !== selImg)]
+    }
+    const imagesList = rawImagesList
     const loadedImgs = await Promise.all(
       imagesList.map(src => new Promise(res => {
         const img = new Image()
@@ -1770,7 +1785,8 @@ export default function Marketing() {
           product_ml_id: selectedProduct,
           prompt: videoPrompt,
           generator_type: videoEngine,
-          post_type: postType
+          post_type: postType,
+          selected_image: selectedProductImage || mediaUrl
         })
       })
       const data = await res.json()
@@ -2121,27 +2137,54 @@ export default function Marketing() {
               {productImages.length > 0 && (
                 <div style={{marginTop: -5, marginBottom: 5}}>
                   <div style={{fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 6}}>
-                    🖼️ Fotos HD del producto ({productImages.length}) - Clic para elegir:
+                    🖼️ Fotos HD del producto ({productImages.length}) - Clic para elegir la foto activa:
                   </div>
                   <div style={{display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 6}}>
-                    {productImages.map((imgUrl, idx) => (
-                      <div 
-                        key={idx} 
-                        onClick={() => setMediaUrl(imgUrl)}
-                        style={{
-                          border: mediaUrl === imgUrl ? '2px solid var(--accent-blue)' : '1px solid var(--border-color)',
-                          borderRadius: 6,
-                          cursor: 'pointer',
-                          overflow: 'hidden',
-                          backgroundColor: '#111',
-                          padding: 2,
-                          flexShrink: 0
-                        }}
-                        title="Usar esta foto HD para la publicación"
-                      >
-                        <img src={imgUrl} alt="" style={{width: 48, height: 48, objectFit: 'cover', borderRadius: 4}} />
-                      </div>
-                    ))}
+                    {productImages.map((imgUrl, idx) => {
+                      const isSelected = selectedProductImage === imgUrl || mediaUrl === imgUrl
+                      return (
+                        <div 
+                          key={idx} 
+                          onClick={() => {
+                            setSelectedProductImage(imgUrl)
+                            setMediaUrl(imgUrl)
+                          }}
+                          style={{
+                            position: 'relative',
+                            border: isSelected ? '2px solid var(--accent-blue)' : '1px solid var(--border-color)',
+                            boxShadow: isSelected ? '0 0 8px rgba(59, 130, 246, 0.5)' : 'none',
+                            borderRadius: 6,
+                            cursor: 'pointer',
+                            overflow: 'hidden',
+                            backgroundColor: '#111',
+                            padding: 2,
+                            flexShrink: 0
+                          }}
+                          title="Usar esta foto HD para la publicación y la IA"
+                        >
+                          <img src={imgUrl} alt="" style={{width: 52, height: 52, objectFit: 'cover', borderRadius: 4}} />
+                          {isSelected && (
+                            <div style={{
+                              position: 'absolute',
+                              top: 3,
+                              right: 3,
+                              backgroundColor: 'var(--accent-blue)',
+                              color: '#fff',
+                              borderRadius: '50%',
+                              width: 16,
+                              height: 16,
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              fontSize: '10px',
+                              fontWeight: 700
+                            }}>
+                              ✓
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })}
                   </div>
                 </div>
               )}
