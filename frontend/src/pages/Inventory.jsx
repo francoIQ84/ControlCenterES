@@ -12,7 +12,7 @@ export default function Inventory() {
   const [sortConfig, setSortConfig] = useState({ key: null, direction: 'asc' })
   const [drafts, setDrafts] = useState({})
   const [viewMode, setViewMode] = useState('compact') // 'compact' o 'detailed'
-  const [showHidden, setShowHidden] = useState(false)
+  const [hiddenFilter, setHiddenFilter] = useState('visible') // 'visible' | 'all' | 'hidden'
   
   // QR Modals state
   const [showQrScanModal, setShowQrScanModal] = useState(false)
@@ -311,7 +311,15 @@ export default function Inventory() {
 
   const fetchProducts = () => {
     setLoading(true)
-    fetch(`/api/inventory/?query=${encodeURIComponent(query)}&show_hidden=${showHidden}`)
+    let url = `/api/inventory/?query=${encodeURIComponent(query)}`
+    if (hiddenFilter === 'all') {
+      url += `&show_hidden=true`
+    } else if (hiddenFilter === 'hidden') {
+      url += `&is_hidden=1`
+    } else {
+      url += `&is_hidden=0`
+    }
+    fetch(url)
       .then(res => res.json())
       .then(data => {
         setProducts(data.products || [])
@@ -374,7 +382,7 @@ export default function Inventory() {
   useEffect(() => {
     fetchProducts()
     fetchCategories()
-  }, [query, showHidden])
+  }, [query, hiddenFilter])
 
   const handleUpdate = async (ml_id, qty, price, cost, cost_meli, price_web, images, description, is_web_active, category_id, sync_meli, min_stock, featured_order = 0, use_meli_description = 1, description_meli = "") => {
     try {
@@ -892,27 +900,64 @@ export default function Inventory() {
           </div>
           )}
           {!isSimpleView && (
-          <button 
-            type="button"
-            className="btn" 
-            style={{
-              padding: '6px 12px', 
-              fontSize: '0.8rem',
-              backgroundColor: showHidden ? 'rgba(239, 68, 68, 0.15)' : 'var(--bg-card)',
-              color: showHidden ? 'var(--accent-red)' : 'var(--text-secondary)',
-              border: '1px solid var(--border-color)',
-              borderRadius: 6,
-              cursor: 'pointer',
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 6
-            }}
-            onClick={() => setShowHidden(!showHidden)}
-            title={showHidden ? "Ocultar productos archivados" : "Mostrar productos archivados / ocultos"}
-          >
-            {showHidden ? <EyeOff size={14} /> : <Eye size={14} />}
-            {showHidden ? 'Ocultos Visibles' : 'Ver Ocultos'}
-          </button>
+          <div style={{ display: 'inline-flex', border: '1px solid var(--border-color)', borderRadius: 6, overflow: 'hidden', backgroundColor: 'var(--bg-card)' }}>
+            <button 
+              type="button"
+              className="btn" 
+              style={{
+                padding: '6px 10px', 
+                fontSize: '0.8rem',
+                backgroundColor: hiddenFilter === 'visible' ? 'var(--accent-blue)' : 'transparent',
+                color: hiddenFilter === 'visible' ? '#fff' : 'var(--text-secondary)',
+                border: 'none',
+                borderRadius: 0,
+                cursor: 'pointer',
+                boxShadow: 'none'
+              }}
+              onClick={() => setHiddenFilter('visible')}
+              title="Mostrar solo productos visibles"
+            >
+              Visibles
+            </button>
+            <button 
+              type="button"
+              className="btn" 
+              style={{
+                padding: '6px 10px', 
+                fontSize: '0.8rem',
+                backgroundColor: hiddenFilter === 'all' ? 'var(--accent-blue)' : 'transparent',
+                color: hiddenFilter === 'all' ? '#fff' : 'var(--text-secondary)',
+                border: 'none',
+                borderRadius: 0,
+                borderLeft: '1px solid var(--border-color)',
+                borderRight: '1px solid var(--border-color)',
+                cursor: 'pointer',
+                boxShadow: 'none'
+              }}
+              onClick={() => setHiddenFilter('all')}
+              title="Mostrar todos los productos (visibles u ocultos)"
+            >
+              Todos
+            </button>
+            <button 
+              type="button"
+              className="btn" 
+              style={{
+                padding: '6px 10px', 
+                fontSize: '0.8rem',
+                backgroundColor: hiddenFilter === 'hidden' ? 'var(--accent-red)' : 'transparent',
+                color: hiddenFilter === 'hidden' ? '#fff' : 'var(--text-secondary)',
+                border: 'none',
+                borderRadius: 0,
+                cursor: 'pointer',
+                boxShadow: 'none'
+              }}
+              onClick={() => setHiddenFilter('hidden')}
+              title="Mostrar solo productos ocultos"
+            >
+              Solo Ocultos
+            </button>
+          </div>
           )}
         </div>
         <div className="control-buttons" style={{display: 'flex', gap: 10, flexWrap: 'wrap'}}>
