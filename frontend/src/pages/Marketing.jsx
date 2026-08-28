@@ -63,6 +63,9 @@ export default function Marketing() {
   const [canvasFooterText, setCanvasFooterText] = useState('')
   const [canvasTextColor, setCanvasTextColor] = useState('auto')
   const [canvasShowBorder, setCanvasShowBorder] = useState(true)
+  const [canvasImgFit, setCanvasImgFit] = useState('contain') // 'contain' (default: sin cortar) or 'cover'
+  const [canvasImgScale, setCanvasImgScale] = useState(100) // 50 to 150 %
+  const [canvasImgOffsetY, setCanvasImgOffsetY] = useState(0) // -40 to 40 %
 
   useEffect(() => {
     fetch('/api/settings/web-config')
@@ -74,6 +77,22 @@ export default function Marketing() {
       })
       .catch(() => {})
   }, [])
+
+  // Auto update post image preview live when canvas controls change
+  useEffect(() => {
+    if (videoScriptData && postType === 'post') {
+      const timer = setTimeout(async () => {
+        const imageBlobUrl = await renderPostCanvasImage(videoScriptData)
+        setGeneratedVideoUrl(imageBlobUrl)
+      }, 150)
+      return () => clearTimeout(timer)
+    }
+  }, [
+    canvasLayout, canvasFont, canvasLogoUrl, canvasTheme,
+    canvasBadgeText, canvasBadgeColor, canvasShowPrice,
+    canvasCustomTitle, canvasFooterText, canvasTextColor, canvasShowBorder,
+    canvasImgFit, canvasImgScale, canvasImgOffsetY
+  ])
   
   const [postTitle, setPostTitle] = useState('')
   const [postType, setPostType] = useState('post') // 'post', 'reel', 'story'
@@ -672,6 +691,33 @@ export default function Marketing() {
     })
   }
 
+  const computeProductImageBounds = (img, boxW, boxH, boxX, boxY, fitMode = 'contain', scalePercent = 100, offsetYPercent = 0) => {
+    if (!img || !img.width || !img.height) return { drawX: boxX, drawY: boxY, drawW: boxW, drawH: boxH }
+
+    let baseScale = 1.0
+    if (fitMode === 'contain') {
+      baseScale = Math.min(boxW / img.width, boxH / img.height)
+    } else if (fitMode === 'cover') {
+      baseScale = Math.max(boxW / img.width, boxH / img.height)
+    } else {
+      baseScale = Math.min(boxW / img.width, boxH / img.height)
+    }
+
+    const zoomFactor = Math.max(0.2, (scalePercent || 100) / 100)
+    const finalScale = baseScale * zoomFactor
+
+    const drawW = img.width * finalScale
+    const drawH = img.height * finalScale
+
+    const centerX = boxX + (boxW - drawW) / 2
+    const centerY = boxY + (boxH - drawH) / 2
+
+    const drawX = centerX
+    const drawY = centerY + ((offsetYPercent || 0) / 100) * boxH
+
+    return { drawX, drawY, drawW, drawH }
+  }
+
   const renderReelCanvasVideo = async (script) => {
     return new Promise(async (resolve) => {
       const width = 1080
@@ -806,9 +852,8 @@ export default function Marketing() {
 
           // Top 60% Hero Image with Zoom
           if (activeImg) {
-            const scale = 1.02 + (elapsedScene / sceneDuration) * 0.08
-            const drawW = 1000 * scale
-            const drawH = (activeImg.height / activeImg.width) * drawW
+            const animScale = 1.02 + (elapsedScene / sceneDuration) * 0.08
+            const { drawX, drawY, drawW, drawH } = computeProductImageBounds(activeImg, 1000, 1100, 40, 40, canvasImgFit, canvasImgScale * animScale, canvasImgOffsetY)
 
             ctx.save()
             ctx.beginPath()
@@ -818,7 +863,7 @@ export default function Marketing() {
 
             ctx.fillStyle = '#ffffff'
             ctx.fillRect(40, 40, 1000, 1100)
-            ctx.drawImage(activeImg, 40 + (1000 - drawW) / 2, 40 + (1100 - drawH) / 2, drawW, drawH)
+            ctx.drawImage(activeImg, drawX, drawY, drawW, drawH)
 
             // Dark gradient overlay
             const imgGrad = ctx.createLinearGradient(0, 800, 0, 1140)
@@ -946,9 +991,8 @@ export default function Marketing() {
             ctx.fillStyle = '#ffffff'
             ctx.fillRect(imgX, imgY, imgSize, imgSize)
 
-            const targetW = imgSize * scale
-            const targetH = (activeImg.height / activeImg.width) * targetW
-            ctx.drawImage(activeImg, imgX + (imgSize - targetW) / 2, imgY + (imgSize - targetH) / 2, targetW, targetH)
+            const { drawX, drawY, drawW, drawH } = computeProductImageBounds(activeImg, imgSize, imgSize, imgX, imgY, canvasImgFit, canvasImgScale * scale, canvasImgOffsetY)
+            ctx.drawImage(activeImg, drawX, drawY, drawW, drawH)
             ctx.restore()
 
             // Corner Price Explosive Badge
@@ -1071,10 +1115,9 @@ export default function Marketing() {
             ctx.fillStyle = '#ffffff'
             ctx.fillRect(imgBoxX, imgBoxY, imgBoxSize, imgBoxSize)
 
-            const scale = 1.0 + (elapsedScene / sceneDuration) * 0.06
-            const targetW = imgBoxSize * scale
-            const targetH = (activeImg.height / activeImg.width) * targetW
-            ctx.drawImage(activeImg, imgBoxX + (imgBoxSize - targetW) / 2, imgBoxY + (imgBoxSize - targetH) / 2, targetW, targetH)
+            const animScale = 1.0 + (elapsedScene / sceneDuration) * 0.06
+            const { drawX, drawY, drawW, drawH } = computeProductImageBounds(activeImg, imgBoxSize, imgBoxSize, imgBoxX, imgBoxY, canvasImgFit, canvasImgScale * animScale, canvasImgOffsetY)
+            ctx.drawImage(activeImg, drawX, drawY, drawW, drawH)
             ctx.restore()
 
             ctx.lineWidth = 4
@@ -1140,11 +1183,8 @@ export default function Marketing() {
           ctx.fillRect(0, 0, width, height)
 
           if (activeImg) {
-            const scale = 1.02 + (elapsedScene / sceneDuration) * 0.08
-            const imgW = activeImg.width
-            const imgH = activeImg.height
-            const targetW = 900 * scale
-            const targetH = (imgH / imgW) * targetW
+            const animScale = 1.02 + (elapsedScene / sceneDuration) * 0.08
+            const { drawX, drawY, drawW, drawH } = computeProductImageBounds(activeImg, 900, 900, 90, 260, canvasImgFit, canvasImgScale * animScale, canvasImgOffsetY)
 
             ctx.save()
             ctx.beginPath()
@@ -1154,7 +1194,7 @@ export default function Marketing() {
 
             ctx.fillStyle = '#ffffff'
             ctx.fillRect(90, 260, 900, 900)
-            ctx.drawImage(activeImg, 90 + (900 - targetW) / 2, 260 + (900 - targetH) / 2, targetW, targetH)
+            ctx.drawImage(activeImg, drawX, drawY, drawW, drawH)
             ctx.restore()
 
             if (drawBorder) {
@@ -1303,10 +1343,8 @@ export default function Marketing() {
         ctx.fillStyle = '#ffffff'
         ctx.fillRect(40, 40, 1000, 580)
 
-        const scale = Math.max(1000 / activeImg.width, 580 / activeImg.height)
-        const drawW = activeImg.width * scale
-        const drawH = activeImg.height * scale
-        ctx.drawImage(activeImg, 40 + (1000 - drawW) / 2, 40 + (580 - drawH) / 2, drawW, drawH)
+        const { drawX, drawY, drawW, drawH } = computeProductImageBounds(activeImg, 1000, 580, 40, 40, canvasImgFit, canvasImgScale, canvasImgOffsetY)
+        ctx.drawImage(activeImg, drawX, drawY, drawW, drawH)
 
         const imgGrad = ctx.createLinearGradient(0, 400, 0, 620)
         imgGrad.addColorStop(0, 'rgba(0,0,0,0)')
@@ -1443,10 +1481,8 @@ export default function Marketing() {
         ctx.fillStyle = '#ffffff'
         ctx.fillRect(imgX, imgY, imgSize, imgSize)
 
-        const scale = Math.max(imgSize / activeImg.width, imgSize / activeImg.height)
-        const drawW = activeImg.width * scale
-        const drawH = activeImg.height * scale
-        ctx.drawImage(activeImg, imgX + (imgSize - drawW) / 2, imgY + (imgSize - drawH) / 2, drawW, drawH)
+        const { drawX, drawY, drawW, drawH } = computeProductImageBounds(activeImg, imgSize, imgSize, imgX, imgY, canvasImgFit, canvasImgScale, canvasImgOffsetY)
+        ctx.drawImage(activeImg, drawX, drawY, drawW, drawH)
         ctx.restore()
 
         if (canvasShowPrice && script.product_price) {
@@ -1565,10 +1601,8 @@ export default function Marketing() {
         ctx.fillStyle = '#ffffff'
         ctx.fillRect(imgBoxX, imgBoxY, imgBoxSize, imgBoxSize)
 
-        const scale = Math.max(imgBoxSize / activeImg.width, imgBoxSize / activeImg.height)
-        const drawW = activeImg.width * scale
-        const drawH = activeImg.height * scale
-        ctx.drawImage(activeImg, imgBoxX + (imgBoxSize - drawW) / 2, imgBoxY + (imgBoxSize - drawH) / 2, drawW, drawH)
+        const { drawX, drawY, drawW, drawH } = computeProductImageBounds(activeImg, imgBoxSize, imgBoxSize, imgBoxX, imgBoxY, canvasImgFit, canvasImgScale, canvasImgOffsetY)
+        ctx.drawImage(activeImg, drawX, drawY, drawW, drawH)
         ctx.restore()
 
         ctx.lineWidth = 3
@@ -1681,10 +1715,8 @@ export default function Marketing() {
         ctx.fillStyle = '#ffffff'
         ctx.fillRect(imgAreaX, imgAreaY, imgAreaSize, imgAreaSize)
 
-        const scale = Math.max(imgAreaSize / activeImg.width, imgAreaSize / activeImg.height)
-        const drawW = activeImg.width * scale
-        const drawH = activeImg.height * scale
-        ctx.drawImage(activeImg, imgAreaX + (imgAreaSize - drawW) / 2, imgAreaY + (imgAreaSize - drawH) / 2, drawW, drawH)
+        const { drawX, drawY, drawW, drawH } = computeProductImageBounds(activeImg, imgAreaSize, imgAreaSize, imgAreaX, imgAreaY, canvasImgFit, canvasImgScale, canvasImgOffsetY)
+        ctx.drawImage(activeImg, drawX, drawY, drawW, drawH)
         ctx.restore()
 
         if (drawBorder) {
@@ -2439,6 +2471,67 @@ export default function Marketing() {
                         />
                         Mostrar Recuadro / Borde en Imagen y Encabezado
                       </label>
+                    </div>
+
+                    {/* Row 5: Ajuste y Recorte de Foto del Producto */}
+                    <div style={{display: 'flex', flexDirection: 'column', gap: 6, marginTop: 4, padding: '8px 10px', borderRadius: 6, backgroundColor: 'rgba(255,255,255,0.02)', border: '1px dashed var(--border-color)'}}>
+                      <div style={{fontSize: '0.78rem', fontWeight: 700, color: 'var(--accent-blue)', display: 'flex', alignItems: 'center', justifyContent: 'space-between'}}>
+                        <span>🖼️ Recorte & Tamaño de Foto del Producto:</span>
+                        {(canvasImgFit !== 'contain' || canvasImgScale !== 100 || canvasImgOffsetY !== 0) && (
+                          <button 
+                            type="button" 
+                            onClick={() => { setCanvasImgFit('contain'); setCanvasImgScale(100); setCanvasImgOffsetY(0); }}
+                            style={{background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', fontSize: '0.7rem', textDecoration: 'underline'}}
+                          >
+                            Restablecer Ajustes
+                          </button>
+                        )}
+                      </div>
+
+                      <div style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10, alignItems: 'center'}}>
+                        <label style={{fontSize: '0.76rem', fontWeight: 600}}>Modo de Encuadre:
+                          <select 
+                            value={canvasImgFit} 
+                            onChange={e => setCanvasImgFit(e.target.value)}
+                            style={{width: '100%', marginTop: 3, padding: '4px 8px', borderRadius: 6, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-dark)', color: 'var(--text-primary)', fontSize: '0.76rem'}}
+                          >
+                            <option value="contain">📐 Ajustar Completo (Sin Cortar / Recomendado)</option>
+                            <option value="cover">🔍 Rellenar Recuadro (Zoom Completo / Cortar Bordes)</option>
+                          </select>
+                        </label>
+
+                        <label style={{fontSize: '0.76rem', fontWeight: 600, display: 'flex', flexDirection: 'column'}}>
+                          <div style={{display: 'flex', justifyContent: 'space-between'}}>
+                            <span>Zoom / Escala:</span>
+                            <span style={{color: 'var(--accent-blue)', fontWeight: 700}}>{canvasImgScale}%</span>
+                          </div>
+                          <input 
+                            type="range" 
+                            min="50" 
+                            max="150" 
+                            step="1"
+                            value={canvasImgScale} 
+                            onChange={e => setCanvasImgScale(Number(e.target.value))}
+                            style={{width: '100%', marginTop: 5, accentColor: 'var(--accent-blue)', cursor: 'pointer'}}
+                          />
+                        </label>
+
+                        <label style={{fontSize: '0.76rem', fontWeight: 600, display: 'flex', flexDirection: 'column'}}>
+                          <div style={{display: 'flex', justifyContent: 'space-between'}}>
+                            <span>Subir / Bajar Foto:</span>
+                            <span style={{color: 'var(--accent-blue)', fontWeight: 700}}>{canvasImgOffsetY > 0 ? `+${canvasImgOffsetY}` : canvasImgOffsetY}%</span>
+                          </div>
+                          <input 
+                            type="range" 
+                            min="-40" 
+                            max="40" 
+                            step="1"
+                            value={canvasImgOffsetY} 
+                            onChange={e => setCanvasImgOffsetY(Number(e.target.value))}
+                            style={{width: '100%', marginTop: 5, accentColor: 'var(--accent-blue)', cursor: 'pointer'}}
+                          />
+                        </label>
+                      </div>
                     </div>
                   </div>
                 )}
