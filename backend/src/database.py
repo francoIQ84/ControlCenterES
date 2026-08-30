@@ -482,6 +482,32 @@ def init_db():
             cursor.execute('ALTER TABLE whatsapp_chat_history ADD COLUMN IF NOT EXISTS reply_tokens INT DEFAULT 0;')
             cursor.execute('ALTER TABLE whatsapp_chat_history ADD COLUMN IF NOT EXISTS total_tokens INT DEFAULT 0;')
 
+            # Subscriptions & Billing Columns in tenants table
+            cursor.execute('ALTER TABLE tenants ADD COLUMN IF NOT EXISTS admin_email VARCHAR(255);')
+            cursor.execute('ALTER TABLE tenants ADD COLUMN IF NOT EXISTS admin_phone VARCHAR(50);')
+            cursor.execute("ALTER TABLE tenants ADD COLUMN IF NOT EXISTS billing_cycle VARCHAR(20) DEFAULT 'monthly';")
+            cursor.execute('ALTER TABLE tenants ADD COLUMN IF NOT EXISTS plan_price REAL DEFAULT 0.0;')
+            cursor.execute('ALTER TABLE tenants ADD COLUMN IF NOT EXISTS next_billing_date DATE;')
+            cursor.execute('ALTER TABLE tenants ADD COLUMN IF NOT EXISTS last_reminder_sent_at TIMESTAMP;')
+
+            # Subscriptions Payments history table
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS tenant_subscription_payments (
+                    id SERIAL PRIMARY KEY,
+                    tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+                    mp_payment_id VARCHAR(100),
+                    amount REAL NOT NULL,
+                    currency VARCHAR(10) DEFAULT 'ARS',
+                    billing_cycle VARCHAR(20) DEFAULT 'monthly',
+                    period_start DATE,
+                    period_end DATE,
+                    status VARCHAR(50) DEFAULT 'approved',
+                    payment_method VARCHAR(50),
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_tenant_sub_payments_tenant ON tenant_subscription_payments(tenant_id);')
+
             # Auto-migrate existing users to have 'inpi' permission if they are admins
             try:
                 cursor.execute("UPDATE users SET permissions = permissions || ',inpi' WHERE permissions NOT LIKE '%inpi%' AND (permissions LIKE '%settings%' OR permissions LIKE '%dashboard%');")

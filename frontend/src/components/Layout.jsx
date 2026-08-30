@@ -120,13 +120,13 @@ const PAGE_HELP = {
     ]
   },
   '/tenants': {
-    title: '🏢 Inquilinos',
-    description: 'Administración de la plataforma multi-tenant.',
+    title: '🏢 Negocios',
+    description: 'Administración de la plataforma de negocios.',
     features: [
-      'Crear y gestionar cuentas de negocio (inquilinos)',
-      'Asignar módulos contratados a cada inquilino',
+      'Crear y gestionar cuentas de negocio',
+      'Asignar módulos contratados a cada negocio',
       'Ver estado de cada cuenta (activo, prueba, suspendido)',
-      'Gestionar dominios y configuración por inquilino'
+      'Gestionar dominios y configuración por negocio'
     ]
   },
   '/settings': {
@@ -607,7 +607,7 @@ export default function Layout() {
           {!isSimpleView && isPlatformAdmin && hasPermission('settings') && (
             <NavLink to="/tenants" className={({isActive}) => `nav-link ${isActive ? 'active' : ''}`}>
               <Building2 size={20} style={{ minWidth: 20 }} />
-              <span className="nav-text">Inquilinos</span>
+              <span className="nav-text">Negocios</span>
             </NavLink>
           )}
           {hasPermission('settings') && (

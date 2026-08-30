@@ -107,6 +107,9 @@ def background_sync_loop():
             # pg_dump vuelca la base entera. Va una sola vez, fuera del bucle.
             check_and_run_monthly_auto_backup()
 
+            # Revisión automática de vencimientos y recordatorios de suscripciones de negocios (SaaS)
+            _check_platform_tenant_subscriptions()
+
             count = _for_each_tenant("Sincronización", _sync_one_tenant)
             if count == 0:
                 print("[Scheduler] No hay tenants activos para sincronizar.")
@@ -258,4 +261,182 @@ def _check_vencimientos_alerts_for_tenant(tenant):
                         print(f"[Scheduler-Vencimientos][{slug}] Error al enviar WhatsApp: {send_err}")
     except Exception as e:
         print(f"[Scheduler-Vencimientos][{slug}] Error procesando alertas de vencimientos: {e}")
+
+
+def _check_platform_tenant_subscriptions():
+    """Revisa los vencimientos de planes de los negocios (SaaS) y envía links de pago y recordatorios por WhatsApp/Email."""
+    import requests
+    from src import database, tenancy, config
+    from datetime import date, datetime, timedelta
+
+    try:
+        with database.get_connection() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute("""
+                    SELECT id::text, slug, name, plan_id, plan_price, billing_cycle,
+                           admin_email, admin_phone, next_billing_date, last_reminder_sent_at, status
+                    FROM tenants
+                    WHERE plan_id != 'master' AND next_billing_date IS NOT NULL
+                """)
+                tenants = cursor.fetchall()
+
+        today = date.today()
+
+        for t in tenants:
+            slug = t["slug"]
+            name = t["name"]
+            next_date = t["next_billing_date"]
+            status = t["status"]
+            phone = t.get("admin_phone")
+            email = t.get("admin_email")
+            plan_id = t.get("plan_id") or "starter"
+            cycle = t.get("billing_cycle") or "monthly"
+            price = float(t.get("plan_price") or 35000.0)
+            if cycle == "annual" and price == 35000.0:
+                price = price * 10
+
+            last_rem = t.get("last_reminder_sent_at")
+            already_reminded_today = False
+            if last_rem:
+                if isinstance(last_rem, datetime):
+                    already_reminded_today = last_rem.date() == today
+                elif isinstance(last_rem, str) and last_rem[:10] == today.isoformat():
+                    already_reminded_today = True
+
+            days_diff = (next_date - today).days
+
+            # 1. Caso Mora Grave (> 5 días vencido): Suspensión automática
+            if days_diff < -5 and status in ('active', 'trial'):
+                print(f"[Scheduler-Suscripciones][{slug}] Suspensión preventiva por mora ({abs(days_diff)} días vencido).")
+                with database.get_connection() as conn:
+                    with conn.cursor() as cursor:
+                        cursor.execute("UPDATE tenants SET status = 'suspended', updated_at = CURRENT_TIMESTAMP WHERE slug = %s", (slug,))
+                tenancy.invalidate_tenant_cache(slug)
+
+                if phone and not already_reminded_today:
+                    msg = f"🛑 *Aviso de Suspensión Preventiva - ControlCenterES*\n\n" \
+                          f"Hola *{name}*, tu cuenta ha sido pausada temporalmente debido a que la suscripción de tu plan *{plan_id.upper()}* venció hace {abs(days_diff)} días.\n\n" \
+                          f"Para reactivar tu cuenta y reanudar el acceso de inmediato, por favor completá el pago de renovación o contactate con soporte."
+                    try:
+                        requests.post("http://127.0.0.1:8091/send-broadcast", json={
+                            "recipients": [{"phone": phone, "name": name}],
+                            "message": msg,
+                            "delaySeconds": 1
+                        }, timeout=10)
+                        with database.get_connection() as conn:
+                            with conn.cursor() as cursor:
+                                cursor.execute("UPDATE tenants SET last_reminder_sent_at = NOW() WHERE slug = %s", (slug,))
+                    except Exception as e:
+                        print(f"[Scheduler-Suscripciones][{slug}] Error enviando aviso de suspensión: {e}")
+                continue
+
+            # 2. Caso Recordatorio Preventivo (entre 5 días antes y 5 días después)
+            if -5 <= days_diff <= 5 and status in ('active', 'trial', 'suspended'):
+                if already_reminded_today:
+                    continue
+
+                payment_link = ""
+                with tenancy.tenant_context(tenancy.MASTER_TENANT_ID):
+                    mp_token = config.get_access_token()
+
+                if mp_token:
+                    try:
+                        period_str = today.strftime("%Y-%m")
+                        ext_ref = f"sub_{slug}_{plan_id}_{cycle}_{period_str}"
+                        mp_body = {
+                            "items": [{
+                                "title": f"Suscripción ControlCenterES Plan {plan_id.upper()} ({cycle.capitalize()}) - {name}"[:256],
+                                "quantity": 1,
+                                "currency_id": "ARS",
+                                "unit_price": price
+                            }],
+                            "payer": {
+                                "name": name,
+                                "email": email or "cliente@controlcenter.app"
+                            },
+                            "external_reference": ext_ref,
+                            "back_urls": {
+                                "success": f"https://{slug}.controlcenter.app",
+                                "failure": f"https://{slug}.controlcenter.app",
+                                "pending": f"https://{slug}.controlcenter.app"
+                            },
+                            "auto_return": "approved"
+                        }
+                        res = requests.post(
+                            "https://api.mercadopago.com/checkout/preferences",
+                            headers={"Authorization": f"Bearer {mp_token}", "Content-Type": "application/json"},
+                            json=mp_body,
+                            timeout=10
+                        )
+                        if res.status_code in (200, 201):
+                            payment_link = res.json().get("init_point")
+                    except Exception as err:
+                        print(f"[Scheduler-Suscripciones][{slug}] Error generando link MP: {err}")
+
+                d_str = next_date.strftime("%d/%m/%Y")
+                amt_str = f"${price:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.')
+
+                if days_diff > 0:
+                    wa_msg = f"🔔 *Recordatorio de Suscripción - ControlCenterES*\n\n" \
+                             f"Hola *{name}*, te recordamos que la suscripción a tu plan *{plan_id.upper()}* ({cycle}) vence el *{d_str}* (en {days_diff} días).\n\n" \
+                             f"💰 *Monto a abonar:* {amt_str}\n"
+                elif days_diff == 0:
+                    wa_msg = f"⚠️ *Vencimiento de Suscripción Hoy - ControlCenterES*\n\n" \
+                             f"Hola *{name}*, tu suscripción al plan *{plan_id.upper()}* vence *hoy {d_str}*.\n\n" \
+                             f"💰 *Monto a abonar:* {amt_str}\n"
+                else:
+                    wa_msg = f"🚨 *Aviso de Saldo Pendiente - ControlCenterES*\n\n" \
+                             f"Hola *{name}*, tu suscripción al plan *{plan_id.upper()}* venció el *{d_str}* (hace {abs(days_diff)} días).\n\n" \
+                             f"Te quedan {5 - abs(days_diff)} días de período de gracia antes de la pausa automática de tu cuenta.\n" \
+                             f"💰 *Monto a abonar:* {amt_str}\n"
+
+                if payment_link:
+                    wa_msg += f"\n👉 *Pagar suscripción online aquí:* {payment_link}\n"
+                
+                wa_msg += f"\n_Tu plan se renovará automáticamente al acreditarse el pago._"
+
+                sent_ok = False
+                if phone:
+                    try:
+                        res = requests.post("http://127.0.0.1:8091/send-broadcast", json={
+                            "recipients": [{"phone": phone, "name": name}],
+                            "message": wa_msg,
+                            "delaySeconds": 1
+                        }, timeout=10)
+                        if res.status_code == 200:
+                            sent_ok = True
+                            print(f"[Scheduler-Suscripciones][{slug}] Recordatorio WhatsApp enviado a {phone}")
+                    except Exception as send_err:
+                        print(f"[Scheduler-Suscripciones][{slug}] Error enviando WhatsApp: {send_err}")
+
+                if email:
+                    try:
+                        from src.utils.email_sender import send_smtp_email
+                        subject = f"Recordatorio de Suscripción ControlCenterES - {name}"
+                        html = f"""
+                        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e2e8f0; border-radius: 12px;">
+                            <h2 style="color: #3b82f6;">Recordatorio de Suscripción</h2>
+                            <p>Hola <strong>{name}</strong>,</p>
+                            <p>Te recordamos el estado de tu suscripción para el plan <strong>{plan_id.upper()}</strong> ({cycle}):</p>
+                            <div style="background-color: #f8fafc; padding: 16px; border-radius: 8px; margin: 15px 0;">
+                                <p style="margin: 0 0 6px;"><strong>Fecha de vencimiento:</strong> {d_str}</p>
+                                <p style="margin: 0;"><strong>Importe:</strong> {amt_str}</p>
+                            </div>
+                            {f'<div style="text-align: center; margin: 25px 0;"><a href="{payment_link}" style="background-color: #10b981; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block;">Pagar Renovación Online</a></div>' if payment_link else ''}
+                            <p style="color: #64748b; font-size: 13px;">Al acreditarse el pago, la renovación se aplica automáticamente.</p>
+                        </div>
+                        """
+                        with tenancy.tenant_context(tenancy.MASTER_TENANT_ID):
+                            send_smtp_email(email, subject, html)
+                            sent_ok = True
+                    except Exception as mail_err:
+                        print(f"[Scheduler-Suscripciones][{slug}] Error enviando Email: {mail_err}")
+
+                if sent_ok:
+                    with database.get_connection() as conn:
+                        with conn.cursor() as cursor:
+                            cursor.execute("UPDATE tenants SET last_reminder_sent_at = NOW() WHERE slug = %s", (slug,))
+    except Exception as e:
+        print(f"[Scheduler-Suscripciones Error] {e}")
+
 
