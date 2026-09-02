@@ -608,6 +608,7 @@ export default function Sales() {
         const sStatus = o.shipping_status || 'pending'
         if (shippingFilter === 'delivered' && sStatus !== 'delivered') return false
         if (shippingFilter === 'pending' && sStatus === 'delivered') return false
+        if (shippingFilter === 'ready_for_pickup' && !['ready_for_pickup', 'to_be_withdrawn'].includes(sStatus)) return false
         if (shippingFilter === 'in_transit' && !['shipped', 'in_transit', 'active', 'out_for_delivery'].includes(sStatus)) return false
         if (shippingFilter === 'ready_to_ship' && !['ready_to_ship', 'handling'].includes(sStatus)) return false
       }
@@ -781,6 +782,20 @@ export default function Sales() {
           }}
         >
           <Check size={12} /> Entregado
+        </span>
+      )
+    } else if (status === 'ready_for_pickup' || status === 'to_be_withdrawn') {
+      return (
+        <span 
+          onClick={() => handleToggleShipping(order.order_id, order.shipping_status)}
+          title="En punto de retiro / sucursal esperando al comprador"
+          style={{
+            display: 'inline-flex', alignItems: 'center', gap: 4, padding: '4px 8px',
+            borderRadius: 6, fontSize: '0.75rem', fontWeight: 600, cursor: 'pointer',
+            backgroundColor: 'rgba(234, 88, 12, 0.15)', color: '#ea580c'
+          }}
+        >
+          📍 En punto de retiro
         </span>
       )
     } else if (status === 'shipped' || status === 'in_transit' || status === 'active' || status === 'out_for_delivery') {
@@ -979,9 +994,10 @@ export default function Sales() {
               >
                 <option value="ALL">📦 Todas las entregas</option>
                 <option value="pending">⏳ Pendiente</option>
-                <option value="delivered">✅ Entregado</option>
+                <option value="ready_for_pickup">📍 En punto de retiro</option>
                 <option value="in_transit">🚚 En camino</option>
                 <option value="ready_to_ship">📦 Listo p/ enviar</option>
+                <option value="delivered">✅ Entregado</option>
               </select>
 
               {(searchQuery || platformFilter !== 'ALL' || shippingFilter !== 'ALL') && (
@@ -1258,7 +1274,7 @@ export default function Sales() {
                       </button>
                     </div>
                     {o.source_platform === 'MERCADOLIBRE' && meliEnableManualMsg && (
-                      <div style={{display: 'flex', gap: 4, marginTop: 5, justifyContent: 'center', width: '100%'}}>
+                      <div style={{display: 'flex', gap: 4, marginTop: 5, justifyContent: 'center', width: '100%', flexWrap: 'wrap'}}>
                         <button 
                           onClick={() => handleSendMeliMessage(o.order_id, 'purchase')} 
                           className="btn" 
@@ -1274,6 +1290,14 @@ export default function Sales() {
                           style={{padding: '3px 6px', fontSize: '0.65rem', backgroundColor: 'var(--bg-dark)', color: 'var(--text-primary)', border: '1px solid var(--border-color)', width: 'auto'}}
                         >
                           🚚 Envío
+                        </button>
+                        <button 
+                          onClick={() => handleSendMeliMessage(o.order_id, 'pickup')} 
+                          className="btn" 
+                          title="Enviar mensaje de paquete en punto de retiro" 
+                          style={{padding: '3px 6px', fontSize: '0.65rem', backgroundColor: 'rgba(234, 88, 12, 0.15)', color: '#ea580c', border: '1px solid rgba(234, 88, 12, 0.4)', width: 'auto'}}
+                        >
+                          📍 Retiro
                         </button>
                         <button 
                           onClick={() => handleSendMeliMessage(o.order_id, 'invoice')} 

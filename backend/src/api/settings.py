@@ -16,10 +16,12 @@ class SetupRequest(BaseModel):
     meli_sync_interval: Optional[int] = 30
     meli_msg_purchase: Optional[str] = ""
     meli_msg_shipping: Optional[str] = ""
+    meli_msg_pickup: Optional[str] = ""
     meli_msg_invoice: Optional[str] = ""
     meli_enable_manual_msg: Optional[bool] = False
     meli_send_purchase_msg: Optional[bool] = True
     meli_send_shipping_msg: Optional[bool] = True
+    meli_send_pickup_msg: Optional[bool] = True
     meli_send_invoice_msg: Optional[bool] = True
 
 class CodeRequest(BaseModel):
@@ -60,10 +62,12 @@ def get_config(_=Depends(require_permission("settings"))):
         "meli_sync_interval": sync_interval,
         "meli_msg_purchase": database.get_setting('meli_msg_purchase', '¡Hola! Gracias por tu compra. Nos pondremos en contacto a la brevedad para coordinar. ¡Saludos!'),
         "meli_msg_shipping": database.get_setting('meli_msg_shipping', 'Hola, te informamos que tu pedido está en camino. Puedes realizar el seguimiento desde el detalle de tu compra. ¡Gracias por confiar en nosotros!'),
+        "meli_msg_pickup": database.get_setting('meli_msg_pickup', '¡Hola! Te informamos que tu paquete ya está disponible y a la espera de ser retirado en el punto de retiro / sucursal seleccionada. Recuerda llevar tu DNI y el código de seguimiento. ¡Muchas gracias por tu compra!'),
         "meli_msg_invoice": database.get_setting('meli_msg_invoice', 'Hola, te informamos que ya adjuntamos tu factura digital a los detalles de tu compra. ¡Saludos!'),
         "meli_enable_manual_msg": database.get_setting('meli_enable_manual_msg', '0') == '1',
         "meli_send_purchase_msg": database.get_setting('meli_send_purchase_msg', '1') == '1',
         "meli_send_shipping_msg": database.get_setting('meli_send_shipping_msg', '1') == '1',
+        "meli_send_pickup_msg": database.get_setting('meli_send_pickup_msg', '1') == '1',
         "meli_send_invoice_msg": database.get_setting('meli_send_invoice_msg', '1') == '1'
     }
 
@@ -86,10 +90,12 @@ def save_setup(req: SetupRequest, _=Depends(require_permission("settings"))):
     database.set_setting('meli_sync_interval', str(req.meli_sync_interval or 30))
     database.set_setting('meli_msg_purchase', (req.meli_msg_purchase or '').strip())
     database.set_setting('meli_msg_shipping', (req.meli_msg_shipping or '').strip())
+    database.set_setting('meli_msg_pickup', (req.meli_msg_pickup or '').strip())
     database.set_setting('meli_msg_invoice', (req.meli_msg_invoice or '').strip())
     database.set_setting('meli_enable_manual_msg', '1' if req.meli_enable_manual_msg else '0')
     database.set_setting('meli_send_purchase_msg', '1' if req.meli_send_purchase_msg else '0')
     database.set_setting('meli_send_shipping_msg', '1' if req.meli_send_shipping_msg else '0')
+    database.set_setting('meli_send_pickup_msg', '1' if req.meli_send_pickup_msg else '0')
     database.set_setting('meli_send_invoice_msg', '1' if req.meli_send_invoice_msg else '0')
     return {"success": True}
 

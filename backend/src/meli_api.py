@@ -575,7 +575,7 @@ def sync_orders(limit=50, date_from=None, date_to=None, quick=False):
                 'currency_id': 'ARS',
                 'status': 'paid' if i < 12 else 'cancelled',
                 'payment_status': 'approved' if i < 12 else 'rejected',
-                'shipping_status': 'delivered' if i < 8 else ('shipped' if i < 11 else 'pending'),
+                'shipping_status': 'ready_for_pickup' if i == 5 else ('delivered' if i < 8 else ('shipped' if i < 11 else 'pending')),
                 'items': items
             })
         database.save_orders_and_customers(orders)
@@ -749,12 +749,17 @@ def sync_orders(limit=50, date_from=None, date_to=None, quick=False):
                         s_res = api_request("GET", f"/shipments/{ship_id}")
                         if s_res.status_code == 200:
                             s_data = s_res.json()
-                            st = s_data.get('status')
-                            subst = s_data.get('substatus')
-                            if st in ('shipped', 'in_transit', 'active', 'out_for_delivery') or subst in ('dropped_off', 'shipped'):
-                                order_dict['shipping_status'] = 'shipped'
+                            st = str(s_data.get('status') or '').lower()
+                            subst = str(s_data.get('substatus') or '').lower()
+                            if st in ('ready_for_pickup', 'to_be_withdrawn', 'waiting_for_withdrawal') or subst in (
+                                'ready_for_pickup', 'waiting_for_withdrawal', 'to_be_withdrawn', 'in_branch', 
+                                'waiting_for_pickup', 'ready_to_withdraw', 'waiting_for_buyer'
+                            ):
+                                order_dict['shipping_status'] = 'ready_for_pickup'
                             elif st == 'delivered':
                                 order_dict['shipping_status'] = 'delivered'
+                            elif st in ('shipped', 'in_transit', 'active', 'out_for_delivery') or subst in ('dropped_off', 'shipped'):
+                                order_dict['shipping_status'] = 'shipped'
                             elif st in ('ready_to_ship', 'handling'):
                                 order_dict['shipping_status'] = 'ready_to_ship'
                             elif st:
@@ -770,23 +775,28 @@ def sync_orders(limit=50, date_from=None, date_to=None, quick=False):
         # Save orders to DB FIRST (before sending messages to avoid race conditions)
         database.save_orders_and_customers(orders)
 
-        # Check which orders are new (no purchase message sent), and which transitioned to shipped
+        # Check which orders are new (no purchase message sent), which transitioned to shipped, and which are ready for pickup
         new_order_ids = []
         shipped_order_ids = []
+        pickup_order_ids = []
         with database.get_connection() as conn:
             with conn.cursor() as cursor:
                 for o in orders:
-                    cursor.execute("SELECT shipping_status, shipping_msg_sent, purchase_msg_sent FROM orders_cache WHERE order_id = %s", (o['order_id'],))
+                    cursor.execute("SELECT shipping_status, shipping_msg_sent, shipping_pickup_msg_sent, purchase_msg_sent FROM orders_cache WHERE order_id = %s", (o['order_id'],))
                     row = cursor.fetchone()
                     if row:
                         # New order detection: exists in DB but purchase message never sent
                         if not row.get('purchase_msg_sent'):
                             new_order_ids.append(o['order_id'])
                         # Shipping transition detection
-                        old_status = row['shipping_status']
-                        msg_sent = row['shipping_msg_sent']
+                        old_status = row.get('shipping_status')
+                        msg_sent = row.get('shipping_msg_sent')
                         if o['shipping_status'] == 'shipped' and old_status != 'shipped' and not msg_sent:
                             shipped_order_ids.append(o['order_id'])
+                        # Pickup point detection
+                        pickup_sent = row.get('shipping_pickup_msg_sent')
+                        if o['shipping_status'] == 'ready_for_pickup' and not pickup_sent:
+                            pickup_order_ids.append(o['order_id'])
 
         # Send automatic post-sale purchase message for new orders
         send_purchase_enabled = database.get_setting('meli_send_purchase_msg', '1') == '1'
@@ -827,6 +837,23 @@ def sync_orders(limit=50, date_from=None, date_to=None, quick=False):
                         cursor.execute("UPDATE orders_cache SET shipping_msg_sent = 1 WHERE order_id = %s", (order_id,))
                 if not ok_msg:
                     print(f"[Sync] Error al enviar mensaje de envío para {order_id}: {info_msg}")
+
+        # Send automatic pickup message for orders waiting at pickup point / branch
+        send_pickup_enabled = database.get_setting('meli_send_pickup_msg', '1') == '1'
+        pickup_msg = database.get_setting('meli_msg_pickup', '¡Hola! Te informamos que tu paquete ya está disponible y a la espera de ser retirado en el punto de retiro / sucursal seleccionada. Recuerda llevar tu DNI y el código de seguimiento. ¡Muchas gracias por tu compra!')
+        if send_pickup_enabled and pickup_msg:
+            for order_id in pickup_order_ids:
+                order_info = next((ord for ord in orders if ord['order_id'] == order_id), None)
+                if order_info and not is_recent_order(order_info['date_created'], max_hours=168):
+                    print(f"[Sync] Evitando enviar mensaje automático de retiro para orden antigua {order_id} ({order_info['date_created']})")
+                    continue
+                ok_msg, info_msg = send_post_sale_message(order_id, pickup_msg)
+                # Always mark as sent to prevent duplicates
+                with database.get_connection() as conn:
+                    with conn.cursor() as cursor:
+                        cursor.execute("UPDATE orders_cache SET shipping_pickup_msg_sent = 1 WHERE order_id = %s", (order_id,))
+                if not ok_msg:
+                    print(f"[Sync] Error al enviar mensaje de retiro para {order_id}: {info_msg}")
 
         update_progress(status="completed", progress=100, message="Sincronización finalizada con éxito.")
         return True, len(orders)

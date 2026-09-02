@@ -14,10 +14,12 @@ export default function Settings() {
     meli_sync_interval: 30,
     meli_msg_purchase: '',
     meli_msg_shipping: '',
+    meli_msg_pickup: '',
     meli_msg_invoice: '',
     meli_enable_manual_msg: false,
     meli_send_purchase_msg: true,
     meli_send_shipping_msg: true,
+    meli_send_pickup_msg: true,
     meli_send_invoice_msg: true
   })
   const [status, setStatus] = useState({ is_authenticated: false, user_id: null })
@@ -1205,6 +1207,25 @@ export default function Settings() {
                   disabled={config.meli_send_shipping_msg === false}
                   placeholder="ej. Hola, te informamos que tu pedido está en camino. Puedes realizar el seguimiento desde el detalle de tu compra. ¡Gracias por confiar en nosotros!"
                   style={{width: '100%', marginTop: 8, minHeight: 70, padding: 8, backgroundColor: config.meli_send_shipping_msg === false ? 'var(--bg-dark)' : 'var(--bg-card)', color: 'var(--text-primary)', border: '1px solid var(--border-color)', borderRadius: 4, opacity: config.meli_send_shipping_msg === false ? 0.6 : 1}}
+                />
+              </div>
+
+              <div style={{borderBottom: '1px solid var(--border-color)', paddingBottom: 15}}>
+                <label style={{display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.9rem', cursor: 'pointer', fontWeight: 600}}>
+                  <input 
+                    type="checkbox" 
+                    checked={config.meli_send_pickup_msg !== false} 
+                    onChange={e => setConfig({...config, meli_send_pickup_msg: e.target.checked})} 
+                    style={{width: 'auto'}}
+                  />
+                  Enviar mensaje automático cuando el pedido esté en punto de retiro
+                </label>
+                <textarea 
+                  value={config.meli_msg_pickup || ""} 
+                  onChange={e => setConfig({...config, meli_msg_pickup: e.target.value})} 
+                  disabled={config.meli_send_pickup_msg === false}
+                  placeholder="ej. ¡Hola! Te informamos que tu paquete ya está disponible y a la espera de ser retirado en el punto de retiro / sucursal seleccionada. Recuerda llevar tu DNI y el código de seguimiento. ¡Muchas gracias por tu compra!"
+                  style={{width: '100%', marginTop: 8, minHeight: 70, padding: 8, backgroundColor: config.meli_send_pickup_msg === false ? 'var(--bg-dark)' : 'var(--bg-card)', color: 'var(--text-primary)', border: '1px solid var(--border-color)', borderRadius: 4, opacity: config.meli_send_pickup_msg === false ? 0.6 : 1}}
                 />
               </div>
 
