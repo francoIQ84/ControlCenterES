@@ -130,6 +130,40 @@ export default function Settings() {
   })
   const [tnExporting, setTnExporting] = useState(false)
   const [tnExportProgress, setTnExportProgress] = useState(null)
+  const [tnManualToken, setTnManualToken] = useState('')
+  const [tnManualStoreId, setTnManualStoreId] = useState('')
+  const [tnSavingManual, setTnSavingManual] = useState(false)
+  const [showManualTnModal, setShowManualTnModal] = useState(false)
+
+  const handleSaveTnManualToken = async () => {
+    if (!tnManualToken || !tnManualStoreId) {
+      alert("Por favor ingresa tanto el Access Token como el Store ID (User ID).")
+      return
+    }
+    setTnSavingManual(true)
+    try {
+      const res = await fetch('/api/tiendanube/manual-token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          access_token: tnManualToken.trim(),
+          store_id: tnManualStoreId.trim()
+        })
+      })
+      const data = await res.json()
+      if (res.ok) {
+        alert("🎉 ¡Tiendanube conectada exitosamente!")
+        fetchTnStatus()
+        setShowManualTnModal(false)
+      } else {
+        alert("Error al conectar: " + (data.detail || "Verifica las credenciales."))
+      }
+    } catch(err) {
+      alert("Error de conexión: " + err.message)
+    } finally {
+      setTnSavingManual(false)
+    }
+  }
 
   const fetchTnStatus = () => {
     setTnLoading(true)
@@ -1856,7 +1890,7 @@ export default function Settings() {
                 <p style={{fontSize: '0.9rem', fontWeight: 600}}>1. Autorizar aplicación:</p>
                 <button 
                   className="btn" 
-                  onClick={handleTnAuth}
+                  onClick={handleTnConnect}
                   style={{backgroundColor: '#0052cc', color: '#fff', fontWeight: 'bold', width: '100%', padding: '10px 15px'}}
                 >
                   Conectar con Tiendanube
@@ -2218,6 +2252,67 @@ export default function Settings() {
                   <p style={{fontSize: '0.75rem', color: 'var(--text-secondary)', textAlign: 'center', margin: 0}}>
                     Serás redirigido a la pantalla oficial de Tiendanube para otorgar el acceso seguro.
                   </p>
+
+                  <div style={{marginTop: 15, paddingTop: 15, borderTop: '1px dashed var(--border-color)'}}>
+                    <button
+                      type="button"
+                      onClick={() => setShowManualTnModal(!showManualTnModal)}
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        color: 'var(--accent-blue)',
+                        fontSize: '0.8rem',
+                        cursor: 'pointer',
+                        padding: 0,
+                        textDecoration: 'underline',
+                        display: 'block',
+                        width: '100%',
+                        textAlign: 'center'
+                      }}
+                    >
+                      {showManualTnModal ? '▲ Ocultar vinculación manual por Token' : '🔑 ¿Generaste el Access Token en Tiendanube Partners? Pegalo acá directamente'}
+                    </button>
+
+                    {showManualTnModal && (
+                      <div style={{marginTop: 12, display: 'flex', flexDirection: 'column', gap: 10, backgroundColor: 'var(--bg-hover)', padding: 12, borderRadius: 8}}>
+                        <div>
+                          <label style={{fontSize: '0.8rem', fontWeight: 600, display: 'block', marginBottom: 4}}>
+                            Store ID / User ID (ej: 1234567):
+                          </label>
+                          <input
+                            type="text"
+                            value={tnManualStoreId}
+                            onChange={e => setTnManualStoreId(e.target.value)}
+                            placeholder="Store ID / User ID"
+                            style={{width: '100%', padding: '6px 8px', borderRadius: 6, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)', fontSize: '0.85rem'}}
+                          />
+                        </div>
+
+                        <div>
+                          <label style={{fontSize: '0.8rem', fontWeight: 600, display: 'block', marginBottom: 4}}>
+                            Access Token (Bearer Token):
+                          </label>
+                          <input
+                            type="password"
+                            value={tnManualToken}
+                            onChange={e => setTnManualToken(e.target.value)}
+                            placeholder="Pega el access_token de Tiendanube"
+                            style={{width: '100%', padding: '6px 8px', borderRadius: 6, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)', fontSize: '0.85rem'}}
+                          />
+                        </div>
+
+                        <button
+                          type="button"
+                          className="btn"
+                          onClick={handleSaveTnManualToken}
+                          disabled={tnSavingManual || !tnManualToken || !tnManualStoreId}
+                          style={{backgroundColor: 'var(--accent-emerald)', color: '#fff', padding: '8px 12px', fontSize: '0.85rem', fontWeight: 600}}
+                        >
+                          {tnSavingManual ? 'Verificando y Guardando...' : '✓ Vincular con Token Manual'}
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
             </div>

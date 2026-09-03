@@ -11,6 +11,7 @@ Incluye:
 
 import threading
 from typing import Optional
+import requests
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, BackgroundTasks
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, Field
@@ -38,6 +39,11 @@ class TnConfigRequest(BaseModel):
     client_secret: str
 
 
+class TnManualTokenRequest(BaseModel):
+    access_token: str
+    store_id: str
+
+
 # ---------------------------------------------------------------------------
 # Estado de la Integración y Configuración
 # ---------------------------------------------------------------------------
@@ -59,6 +65,50 @@ def save_tn_config(req: TnConfigRequest,
     database.set_setting("tn_client_id", req.client_id.strip())
     database.set_setting("tn_client_secret", req.client_secret.strip())
     return {"success": True, "message": "Credenciales de Tiendanube guardadas correctamente."}
+
+
+@router.post("/manual-token")
+def save_manual_token(req: TnManualTokenRequest,
+                      _: dict = Depends(get_current_user),
+                      __=Depends(require_permission("settings"))):
+    token = req.access_token.strip()
+    store_id = req.store_id.strip()
+    if not token or not store_id:
+        raise HTTPException(status_code=400, detail="access_token y store_id son requeridos.")
+
+    # Validar conectividad contra la API de Tiendanube con este token y store_id
+    headers = {
+        "Authentication": f"bearer {token}",
+        "User-Agent": tn_api.DEFAULT_USER_AGENT
+    }
+    url = f"https://api.tiendanube.com/v1/{store_id}/products?limit=1"
+    try:
+        r = requests.get(url, headers=headers, timeout=15)
+        if r.status_code not in (200, 201):
+            raise HTTPException(status_code=400, detail=f"Tiendanube rechazó el token (HTTP {r.status_code}): {r.text}")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Error al verificar credenciales con Tiendanube: {str(e)}")
+
+    client_id = tn_api.get_client_id()
+    integrations.save_credentials("tiendanube", {
+        "client_id": client_id,
+        "access_token": token,
+        "store_id": store_id,
+        "user_id": store_id,
+        "token_type": "bearer"
+    }, external_account_id=store_id, is_active=True)
+
+    database.set_setting("tn_access_token", token)
+    database.set_setting("tn_store_id", store_id)
+
+    try:
+        tn_api.register_all_webhooks(store_id, token)
+    except Exception:
+        pass
+
+    return {"success": True, "message": f"¡Tiendanube conectada exitosamente para la tienda #{store_id}!"}
 
 
 @router.delete("/disconnect")
