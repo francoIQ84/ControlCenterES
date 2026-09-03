@@ -53,8 +53,8 @@ def sync_afip_endpoint(pto_vta: Optional[int] = None, cbte_tipo: Optional[int] =
     cuit = cuit_raw.replace("-", "").strip()
     env = database.get_setting('afip_environment', 'homologacion')
     
-    cert_path = "backend/data/afip/arca.crt"
-    key_path = "backend/data/afip/arca.key"
+    cert_path = "backend/data/afip/arca.crt" if os.path.exists("backend/data/afip/arca.crt") else "data/afip/arca.crt"
+    key_path = "backend/data/afip/arca.key" if os.path.exists("backend/data/afip/arca.key") else "data/afip/arca.key"
     has_credentials = os.path.exists(cert_path) and os.path.exists(key_path)
     
     # 2. Get existing invoice numbers from DB to avoid double-querying

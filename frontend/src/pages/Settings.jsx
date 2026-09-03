@@ -5,12 +5,12 @@ import LeadMagnetSettings from '../components/LeadMagnetSettings'
 import { useTenant } from '../TenantContext'
 
 export default function Settings() {
-  const { isSimpleView } = useTenant()
+  const { isSimpleView, channels, isChannelEnabled, updateChannels } = useTenant()
   const [config, setConfig] = useState({ 
     client_id: '', 
     client_secret: '', 
     redirect_uri: '', 
-    demo_mode: true,
+    demo_mode: false,
     meli_sync_interval: 30,
     meli_msg_purchase: '',
     meli_msg_shipping: '',
@@ -27,9 +27,36 @@ export default function Settings() {
 
   const [syncingHistorical, setSyncingHistorical] = useState(false)
   const [syncingToday, setSyncingToday] = useState(false)
+  const [syncProgress, setSyncProgress] = useState(null)
+
+  // Polling automático de progreso en tiempo real
+  useEffect(() => {
+    let intervalId = null
+    const checkProgress = async () => {
+      try {
+        const res = await fetch('/api/settings/sync-progress')
+        if (res.ok) {
+          const data = await res.json()
+          if (data && data.status) {
+            setSyncProgress(data)
+          }
+        }
+      } catch (err) {
+        console.error("Error al consultar progreso de sincronización:", err)
+      }
+    }
+
+    checkProgress()
+    intervalId = setInterval(checkProgress, 1200)
+
+    return () => {
+      if (intervalId) clearInterval(intervalId)
+    }
+  }, [])
 
   const handleSyncToday = async () => {
     setSyncingToday(true)
+    setSyncProgress({ status: 'syncing_products', progress: 5, message: 'Iniciando sincronización del día...' })
     try {
       const dateFrom = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().split('.')[0] + 'Z'
       const res = await fetch('/api/settings/sync-all', {
@@ -37,10 +64,9 @@ export default function Settings() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ limit: 500, date_from: dateFrom })
       })
-      if (res.ok) {
-        alert("Sincronización del día de hoy iniciada en segundo plano.")
-      } else {
-        alert("Error al iniciar la sincronización.")
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}))
+        alert("Error al iniciar la sincronización: " + (errData.detail || "Error desconocido"))
       }
     } catch (err) {
       alert("Error de conexión: " + err.message)
@@ -51,16 +77,16 @@ export default function Settings() {
 
   const handleSyncHistorical = async () => {
     setSyncingHistorical(true)
+    setSyncProgress({ status: 'syncing_products', progress: 5, message: 'Iniciando sincronización histórica (2 años)...' })
     try {
       const res = await fetch('/api/settings/sync-all', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ limit: 2000 })
       })
-      if (res.ok) {
-        alert("Sincronización histórica (2 años) iniciada en segundo plano.")
-      } else {
-        alert("Error al iniciar la sincronización.")
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}))
+        alert("Error al iniciar la sincronización: " + (errData.detail || "Error desconocido"))
       }
     } catch (err) {
       alert("Error de conexión: " + err.message)
@@ -70,9 +96,262 @@ export default function Settings() {
   }
   
   // Tabs & Logs
-  const [activeTab, setActiveTab] = useState("connection") // "connection", "users", "security", "web_config", "arca"
+  const [activeTab, setActiveTab] = useState("channels") // "channels", "connection", "tiendanube", "users", "security", "web_config", "arca"
   const [history, setHistory] = useState([])
   const [historyLoading, setHistoryLoading] = useState(false)
+
+  // Tiendanube State
+  const [tnStatus, setTnStatus] = useState({
+    is_connected: false,
+    is_demo_mode: false,
+    store_id: null,
+    total_local_products: 0,
+    synced_products_count: 0,
+    last_sync_at: null,
+    auth_url: null,
+    client_id_configured: false
+  })
+  const [tnLoading, setTnLoading] = useState(false)
+  const [tnSyncing, setTnSyncing] = useState(false)
+  const [tnExportingBranding, setTnExportingBranding] = useState(false)
+  const [tnConfig, setTnConfig] = useState({
+    client_id: '',
+    client_secret: '',
+    redirect_uri: 'https://admin.hidroponiarosario.com/api/tiendanube/callback'
+  })
+  const [tnSavingConfig, setTnSavingConfig] = useState(false)
+  const [tnConfigMsg, setTnConfigMsg] = useState(null)
+  const [showTnSecret, setShowTnSecret] = useState(false)
+  const [tnExportOptions, setTnExportOptions] = useState({
+    price_source: 'auto',
+    only_with_stock: false,
+    price_modifier_pct: 0.0,
+    sync_branding: true
+  })
+  const [tnExporting, setTnExporting] = useState(false)
+  const [tnExportProgress, setTnExportProgress] = useState(null)
+
+  const fetchTnStatus = () => {
+    setTnLoading(true)
+    fetch('/api/tiendanube/status')
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (data) setTnStatus(data)
+      })
+      .catch(err => console.error("Error fetching Tiendanube status:", err))
+      .finally(() => setTnLoading(false))
+  }
+
+  const fetchTnConfig = () => {
+    fetch('/api/tiendanube/config')
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (data) setTnConfig(prev => ({ ...prev, ...data }))
+      })
+      .catch(err => console.error("Error fetching Tiendanube config:", err))
+  }
+
+  const handleSaveTnConfig = async () => {
+    setTnSavingConfig(true)
+    setTnConfigMsg(null)
+    try {
+      const res = await fetch('/api/tiendanube/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          client_id: tnConfig.client_id,
+          client_secret: tnConfig.client_secret
+        })
+      })
+      const data = await res.json()
+      if (res.ok) {
+        setTnConfigMsg({ type: 'success', text: 'Credenciales de Tiendanube guardadas con éxito.' })
+        fetchTnStatus()
+      } else {
+        setTnConfigMsg({ type: 'error', text: data.detail || 'Error al guardar credenciales.' })
+      }
+    } catch (err) {
+      setTnConfigMsg({ type: 'error', text: 'Error de conexión: ' + err.message })
+    } finally {
+      setTnSavingConfig(false)
+    }
+  }
+
+  const handleTnConnect = () => {
+    if (tnStatus.auth_url) {
+      window.location.href = tnStatus.auth_url
+    } else {
+      fetch('/api/tiendanube/auth-url')
+        .then(r => r.json())
+        .then(d => {
+          if (d.auth_url) window.location.href = d.auth_url
+          else alert("No se pudo generar la URL de autorización de Tiendanube.")
+        })
+        .catch(err => alert("Error: " + err.message))
+    }
+  }
+
+  const handleTnDisconnect = async () => {
+    if (!window.confirm("¿Seguro que deseas desvincular la cuenta de Tiendanube de este sistema?")) return
+    try {
+      const res = await fetch('/api/tiendanube/disconnect', { method: 'DELETE' })
+      if (res.ok) {
+        alert("Tiendanube desvinculada.")
+        fetchTnStatus()
+      } else {
+        alert("Error al desvincular")
+      }
+    } catch(err) {
+      alert("Error: " + err.message)
+    }
+  }
+
+  const handleTnSyncOrders = async () => {
+    setTnSyncing(true)
+    try {
+      const res = await fetch('/api/tiendanube/sync-orders', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ limit: 100 })
+      })
+      const data = await res.json()
+      if (res.ok) {
+        alert(data.message || "Órdenes de Tiendanube sincronizadas con éxito.")
+        fetchTnStatus()
+      } else {
+        alert("Error: " + (data.detail || "No se pudieron sincronizar las órdenes"))
+      }
+    } catch(err) {
+      alert("Error de conexión: " + err.message)
+    } finally {
+      setTnSyncing(false)
+    }
+  }
+
+  const handleTnExportBranding = async () => {
+    setTnExportingBranding(true)
+    try {
+      const res = await fetch('/api/tiendanube/export-branding', { method: 'POST' })
+      const data = await res.json()
+      if (res.ok) {
+        alert("✅ " + (data.message || "Logotipo e información de tienda sincronizados con Tiendanube."))
+      } else {
+        alert("Error: " + (data.detail || "No se pudo sincronizar la marca"))
+      }
+    } catch(err) {
+      alert("Error de conexión: " + err.message)
+    } finally {
+      setTnExportingBranding(false)
+    }
+  }
+
+  const handleTnStartExport = async () => {
+    if (!window.confirm("¿Deseas iniciar la exportación masiva de productos y categorías a Tiendanube?")) return
+    setTnExporting(true)
+    try {
+      const res = await fetch('/api/tiendanube/export-catalog', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(tnExportOptions)
+      })
+      if (res.ok) {
+        const poll = setInterval(async () => {
+          try {
+            const pRes = await fetch('/api/tiendanube/export-progress')
+            if (pRes.ok) {
+              const pData = await pRes.json()
+              setTnExportProgress(pData)
+              if (pData.status === 'completed' || pData.status === 'failed') {
+                clearInterval(poll)
+                setTnExporting(false)
+                fetchTnStatus()
+              }
+            }
+          } catch(e) {
+            console.error(e)
+          }
+        }, 1500)
+      } else {
+        const errData = await res.json()
+        alert("Error: " + (errData.detail || "No se pudo iniciar la exportación"))
+        setTnExporting(false)
+      }
+    } catch(err) {
+      alert("Error: " + err.message)
+      setTnExporting(false)
+    }
+  }
+
+  const [tnImporting, setTnImporting] = useState(false)
+  const [tnImportProgress, setTnImportProgress] = useState(null)
+
+  const handleTnStartImport = async () => {
+    if (!window.confirm("¿Deseas importar todo tu catálogo y categorías desde Tiendanube hacia ControlCenterES?")) return
+    setTnImporting(true)
+    try {
+      const res = await fetch('/api/tiendanube/import-catalog', { method: 'POST' })
+      if (res.ok) {
+        const poll = setInterval(async () => {
+          try {
+            const pRes = await fetch('/api/tiendanube/export-progress')
+            if (pRes.ok) {
+              const pData = await pRes.json()
+              setTnImportProgress(pData)
+              if (pData.status === 'completed' || pData.status === 'failed') {
+                clearInterval(poll)
+                setTnImporting(false)
+                fetchTnStatus()
+                alert(pData.message || "Importación desde Tiendanube completada.")
+              }
+            }
+          } catch(e) {
+            console.error(e)
+          }
+        }, 1500)
+      } else {
+        const errData = await res.json()
+        alert("Error: " + (errData.detail || "No se pudo iniciar la importación"))
+        setTnImporting(false)
+      }
+    } catch(err) {
+      alert("Error: " + err.message)
+      setTnImporting(false)
+    }
+  }
+
+  const handleTnImportAll = async () => {
+    if (!window.confirm("¿Deseas realizar una IMPORTACIÓN TOTAL desde Tiendanube? (Se importará el logotipo de tu tienda, datos de contacto, categorías, todos los productos con imágenes y stock, y las últimas ventas).")) return
+    setTnImporting(true)
+    try {
+      const res = await fetch('/api/tiendanube/import-all', { method: 'POST' })
+      if (res.ok) {
+        const poll = setInterval(async () => {
+          try {
+            const pRes = await fetch('/api/tiendanube/export-progress')
+            if (pRes.ok) {
+              const pData = await pRes.json()
+              setTnImportProgress(pData)
+              if (pData.status === 'completed' || pData.status === 'failed') {
+                clearInterval(poll)
+                setTnImporting(false)
+                fetchTnStatus()
+                alert(pData.message || "Importación total desde Tiendanube finalizada con éxito.")
+              }
+            }
+          } catch(e) {
+            console.error(e)
+          }
+        }, 1500)
+      } else {
+        const errData = await res.json()
+        alert("Error: " + (errData.detail || "No se pudo iniciar la importación total"))
+        setTnImporting(false)
+      }
+    } catch(err) {
+      alert("Error: " + err.message)
+      setTnImporting(false)
+    }
+  }
 
   // User Management
   const [users, setUsers] = useState([])
@@ -163,6 +442,13 @@ export default function Settings() {
   const [backupsLoading, setBackupsLoading] = useState(false)
   const [creatingBackup, setCreatingBackup] = useState(false)
   const [diskSpace, setDiskSpace] = useState(null)
+
+  // Restore State
+  const [restoreFile, setRestoreFile] = useState(null)
+  const [restorePreview, setRestorePreview] = useState(null)
+  const [restorePreviewLoading, setRestorePreviewLoading] = useState(false)
+  const [restoring, setRestoring] = useState(false)
+  const [restoreResult, setRestoreResult] = useState(null)
 
   // WhatsApp Chatbot State
   const [waConfig, setWaConfig] = useState({
@@ -447,7 +733,26 @@ export default function Settings() {
   useEffect(() => {
     fetch('/api/settings/config').then(r=>r.json()).then(setConfig)
     fetch('/api/settings/status').then(r=>r.json()).then(setStatus)
+    fetchTnStatus()
+
+    // Detectar si venimos del flujo OAuth de Tiendanube
+    const params = new URLSearchParams(window.location.search)
+    if (params.get('tn_status') === 'success') {
+      alert("🎉 ¡Tiendanube conectada exitosamente! Todos los webhooks y sincronización han sido configurados automáticamente.")
+      setActiveTab('tiendanube')
+      window.history.replaceState({}, document.title, window.location.pathname)
+    } else if (params.get('tn_error')) {
+      alert("Error al conectar Tiendanube: " + params.get('tn_error'))
+      setActiveTab('tiendanube')
+      window.history.replaceState({}, document.title, window.location.pathname)
+    }
   }, [])
+
+  useEffect(() => {
+    if (activeTab === "tiendanube") {
+      fetchTnStatus()
+    }
+  }, [activeTab])
 
   useEffect(() => {
     if (activeTab === "arca") {
@@ -611,6 +916,9 @@ export default function Settings() {
   useEffect(() => {
     if (activeTab === "users") {
       fetchUsers()
+    } else if (activeTab === "tiendanube") {
+      fetchTnStatus()
+      fetchTnConfig()
     }
   }, [activeTab])
 
@@ -774,6 +1082,54 @@ export default function Settings() {
       window.URL.revokeObjectURL(url)
     } catch(err) {
       alert("Error de conexión: " + err.message)
+    }
+  }
+
+  const handleRestoreFileChange = (e) => {
+    const f = e.target.files?.[0]
+    if (!f) return
+    setRestoreFile(f)
+    setRestorePreview(null)
+    setRestoreResult(null)
+    // Upload to preview endpoint
+    setRestorePreviewLoading(true)
+    // We can't preview an uploaded file directly — we'll show file info
+    // and let the user confirm before restoring
+    const sizeMB = (f.size / (1024 * 1024)).toFixed(2)
+    setRestorePreview({
+      filename: f.name,
+      size_mb: sizeMB,
+      // We'll fetch manifest after upload if it's a known backup on server
+    })
+    setRestorePreviewLoading(false)
+  }
+
+  const handleRestore = async () => {
+    if (!restoreFile) return
+    if (!window.confirm('⚠️ ATENCIÓN: Esto reemplazará TODOS los datos actuales del sistema (base de datos, archivos, certificados, sesión de WhatsApp) con los del respaldo seleccionado.\n\n¿Estás seguro de que deseas continuar?')) return
+    if (!window.confirm('🔴 ÚLTIMA CONFIRMACIÓN: Esta acción NO se puede deshacer (se creará un respaldo de seguridad automático antes de restaurar).\n\n¿Confirmar restauración?')) return
+
+    setRestoring(true)
+    setRestoreResult(null)
+    try {
+      const formData = new FormData()
+      formData.append('file', restoreFile)
+      const res = await fetch('/api/backup/restore', {
+        method: 'POST',
+        body: formData,
+      })
+      const data = await res.json()
+      if (res.ok) {
+        setRestoreResult({ success: true, ...data })
+        fetchBackups()
+        fetchDiskSpace()
+      } else {
+        setRestoreResult({ success: false, error: data.detail?.message || data.detail || 'Error desconocido' })
+      }
+    } catch (err) {
+      setRestoreResult({ success: false, error: err.message })
+    } finally {
+      setRestoring(false)
     }
   }
 
@@ -988,15 +1344,19 @@ export default function Settings() {
         marginBottom: 25
       }}>
         {[
-          { id: 'connection', label: 'Conexión ML / MP', icon: '🔌' },
+          { id: 'channels', label: 'Canales & Módulos', icon: '🎛️' },
+          ...(isChannelEnabled('meli') ? [{ id: 'connection', label: 'Conexión ML / MP', icon: '🔌' }] : []),
+          ...(isChannelEnabled('tiendanube') ? [{ id: 'tiendanube', label: 'Tiendanube', icon: '🛍️' }] : []),
           { id: 'users', label: 'Gestión de Usuarios', icon: '👥' },
-          { id: 'web_config', label: 'Configuración Web', icon: '🌐' },
-          { id: 'lead_magnet', label: 'Pop-up Lead Magnet & Emails', icon: '🌱' },
+          ...(isChannelEnabled('web') ? [
+            { id: 'web_config', label: 'Configuración Web', icon: '🌐' },
+            { id: 'lead_magnet', label: 'Pop-up Lead Magnet & Emails', icon: '🌱' },
+          ] : []),
           { id: 'security', label: 'Seguridad & Accesos', icon: '🔒' },
-          { id: 'arca', label: 'Facturación ARCA (ex AFIP)', icon: '🧾' },
+          ...(isChannelEnabled('arca') ? [{ id: 'arca', label: 'Facturación ARCA (ex AFIP)', icon: '🧾' }] : []),
           { id: 'backups', label: 'Respaldos', icon: '💾' },
-          { id: 'whatsapp', label: 'Asistente WhatsApp (IA)', icon: '🤖' }
-        ].filter(t => !isSimpleView || ['connection', 'web_config', 'whatsapp'].includes(t.id)).map(t => {
+          ...(isChannelEnabled('whatsapp') ? [{ id: 'whatsapp', label: 'Asistente WhatsApp (IA)', icon: '🤖' }] : [])
+        ].filter(t => !isSimpleView || ['channels', 'connection', 'tiendanube', 'web_config', 'whatsapp'].includes(t.id)).map(t => {
           const isActive = activeTab === t.id
           return (
             <button
@@ -1025,6 +1385,145 @@ export default function Settings() {
           )
         })}
       </div>
+
+      {/* Tab: Channels & Modules Management */}
+      {activeTab === 'channels' && (
+        <div style={{display: 'flex', flexDirection: 'column', gap: 20}}>
+          <div className="card" style={{
+            background: 'linear-gradient(135deg, rgba(37, 99, 235, 0.08) 0%, rgba(16, 185, 129, 0.04) 100%)',
+            border: '1px solid var(--border-color)',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            flexWrap: 'wrap',
+            gap: 15
+          }}>
+            <div>
+              <div style={{display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6}}>
+                <span style={{fontSize: '1.8rem'}}>🎛️</span>
+                <h3 style={{margin: 0, fontSize: '1.25rem'}}>Canales de Venta e Integraciones Habilitadas</h3>
+              </div>
+              <p style={{margin: 0, fontSize: '0.85rem', color: 'var(--text-secondary)'}}>
+                Enciende o apaga las plataformas que utilizas. El sistema ocultará automáticamente todos los menús, botones, columnas y filtros de las plataformas desactivadas para mantener tu espacio 100% limpio y sin distracciones.
+              </p>
+            </div>
+          </div>
+
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))',
+            gap: 16
+          }}>
+            {[
+              {
+                id: 'channel_local',
+                icon: '🏪',
+                title: 'Venta en Mostrador / Local (POS)',
+                description: 'Punto de Venta presencial, cobranzas en caja, facturación de mostrador y lector de código de barras/QR.',
+                active: isChannelEnabled('local')
+              },
+              {
+                id: 'channel_web',
+                icon: '🌐',
+                title: 'Tienda Web Propia (Ecommerce)',
+                description: 'Catálogo online integrado, carrito de compras, pop-up lead magnet, precios web y pedidos directos.',
+                active: isChannelEnabled('web')
+              },
+              {
+                id: 'channel_meli',
+                icon: '🛍️',
+                title: 'Mercado Libre / Mercado Pago',
+                description: 'Sincronización bidireccional de publicaciones, stock en vivo, preguntas con IA, cobros y envíos.',
+                active: isChannelEnabled('meli')
+              },
+              {
+                id: 'channel_tiendanube',
+                icon: '🛍️',
+                title: 'Tiendanube (Nuvemshop)',
+                description: 'Exportador/importador masivo de catálogo, sincronización de stock y pedidos en tiempo real por webhooks.',
+                active: isChannelEnabled('tiendanube')
+              },
+              {
+                id: 'channel_arca',
+                icon: '🧾',
+                title: 'Facturación ARCA (ex AFIP)',
+                description: 'Emisión de comprobantes electrónicos oficiales (Facturas A, B, C) con obtención directa de CAE.',
+                active: isChannelEnabled('arca')
+              },
+              {
+                id: 'channel_whatsapp',
+                icon: '🤖',
+                title: 'Asistente WhatsApp (IA)',
+                description: 'Bot de inteligencia artificial para responder preguntas, consultar stock y cotizar productos las 24hs.',
+                active: isChannelEnabled('whatsapp')
+              }
+            ].map(channel => (
+              <div
+                key={channel.id}
+                className="card"
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  justifyContent: 'space-between',
+                  gap: 14,
+                  border: channel.active ? '1px solid var(--accent-blue)' : '1px solid var(--border-color)',
+                  backgroundColor: channel.active ? 'rgba(37, 99, 235, 0.03)' : 'var(--bg-card)',
+                  transition: 'all 0.2s ease'
+                }}
+              >
+                <div>
+                  <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8}}>
+                    <div style={{display: 'flex', alignItems: 'center', gap: 8}}>
+                      <span style={{fontSize: '1.5rem'}}>{channel.icon}</span>
+                      <strong style={{fontSize: '1rem', color: 'var(--text-primary)'}}>{channel.title}</strong>
+                    </div>
+
+                    <span style={{
+                      padding: '4px 10px',
+                      borderRadius: 12,
+                      fontSize: '0.75rem',
+                      fontWeight: 700,
+                      backgroundColor: channel.active ? 'rgba(16, 185, 129, 0.15)' : 'rgba(156, 163, 175, 0.15)',
+                      color: channel.active ? 'var(--accent-emerald)' : 'var(--text-secondary)',
+                      border: channel.active ? '1px solid var(--accent-emerald)' : '1px solid var(--border-color)'
+                    }}>
+                      {channel.active ? '🟢 HABILITADO' : '⚪ DESACTIVADO'}
+                    </span>
+                  </div>
+
+                  <p style={{fontSize: '0.82rem', color: 'var(--text-secondary)', margin: 0, lineHeight: 1.4}}>
+                    {channel.description}
+                  </p>
+                </div>
+
+                <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid var(--border-color)', paddingTop: 12}}>
+                  <span style={{fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-primary)'}}>
+                    Estado del Canal:
+                  </span>
+
+                  <button
+                    type="button"
+                    className="btn"
+                    onClick={() => updateChannels({ [channel.id]: !channel.active })}
+                    style={{
+                      backgroundColor: channel.active ? 'rgba(239, 68, 68, 0.1)' : 'var(--accent-blue)',
+                      color: channel.active ? 'var(--accent-red)' : '#fff',
+                      border: channel.active ? '1px solid var(--accent-red)' : 'none',
+                      padding: '6px 14px',
+                      fontSize: '0.82rem',
+                      fontWeight: 600,
+                      borderRadius: 6,
+                      cursor: 'pointer'
+                    }}
+                  >
+                    {channel.active ? 'Desactivar Canal' : 'Activar Canal'}
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Lead Magnet Tab */}
       {activeTab === 'lead_magnet' && (
@@ -1058,10 +1557,7 @@ export default function Settings() {
                     </button>
                   </div>
                 </label>
-                <label style={{display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.9rem', cursor: 'pointer', marginTop: 5}}>
-                  <input type="checkbox" checked={config.demo_mode} onChange={e => setConfig({...config, demo_mode: e.target.checked})} style={{width: 'auto'}}/>
-                  Activar Modo Demo (Datos de prueba ficticios)
-                </label>
+
                 <label style={{display: 'flex', flexDirection: 'column', gap: 5, fontSize: '0.9rem', marginTop: 5}}>
                   Intervalo de Sincronización Automática
                   <select 
@@ -1115,6 +1611,115 @@ export default function Settings() {
                 </details>
 
                 <div style={{ marginTop: '24px', paddingTop: '16px', borderTop: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                  {/* Real-time sync progress card */}
+                  {syncProgress && (syncProgress.status === 'syncing_products' || syncProgress.status === 'syncing_sales' || syncProgress.status === 'syncing_mp' || syncProgress.status === 'completed' || syncProgress.status === 'failed') && (
+                    <div style={{
+                      padding: '14px 16px',
+                      borderRadius: '10px',
+                      backgroundColor: syncProgress.status === 'completed' 
+                        ? 'rgba(16, 185, 129, 0.08)' 
+                        : syncProgress.status === 'failed' 
+                          ? 'rgba(239, 68, 68, 0.08)' 
+                          : 'rgba(59, 130, 246, 0.08)',
+                      border: `1px solid ${
+                        syncProgress.status === 'completed' 
+                          ? 'var(--accent-emerald, #10b981)' 
+                          : syncProgress.status === 'failed' 
+                            ? 'var(--accent-red, #ef4444)' 
+                            : 'var(--accent-blue, #3b82f6)'
+                      }`,
+                      boxShadow: '0 4px 12px rgba(0,0,0,0.05)',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '10px'
+                    }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          {syncProgress.status === 'completed' ? (
+                            <span style={{ fontSize: '1.2rem' }}>✅</span>
+                          ) : syncProgress.status === 'failed' ? (
+                            <span style={{ fontSize: '1.2rem' }}>❌</span>
+                          ) : (
+                            <RefreshCw size={18} className="animate-spin" style={{ color: 'var(--accent-blue, #3b82f6)' }} />
+                          )}
+                          <strong style={{ fontSize: '0.88rem', color: 'var(--text-primary)' }}>
+                            {syncProgress.status === 'completed' 
+                              ? '¡Sincronización Completada!' 
+                              : syncProgress.status === 'failed' 
+                                ? 'Error en la Sincronización' 
+                                : syncProgress.status === 'syncing_products'
+                                  ? 'Paso 1/3: Sincronizando Catálogo y Publicaciones'
+                                  : syncProgress.status === 'syncing_sales'
+                                    ? 'Paso 2/3: Descargando Ventas y Facturación'
+                                    : 'Paso 3/3: Sincronizando Mercado Pago'}
+                          </strong>
+                        </div>
+                        
+                        <span style={{
+                          fontSize: '0.85rem',
+                          fontWeight: 700,
+                          padding: '2px 8px',
+                          borderRadius: '6px',
+                          backgroundColor: 'var(--bg-card, #fff)',
+                          border: '1px solid var(--border-color)',
+                          color: syncProgress.status === 'completed' 
+                            ? 'var(--accent-emerald)' 
+                            : syncProgress.status === 'failed' 
+                              ? 'var(--accent-red)' 
+                              : 'var(--accent-blue)'
+                        }}>
+                          {syncProgress.progress || 0}%
+                        </span>
+                      </div>
+
+                      {/* Progress Bar */}
+                      <div style={{
+                        width: '100%',
+                        height: '8px',
+                        backgroundColor: 'rgba(0,0,0,0.08)',
+                        borderRadius: '4px',
+                        overflow: 'hidden'
+                      }}>
+                        <div style={{
+                          width: `${Math.min(100, Math.max(5, syncProgress.progress || 0))}%`,
+                          height: '100%',
+                          backgroundColor: syncProgress.status === 'completed' 
+                            ? 'var(--accent-emerald, #10b981)' 
+                            : syncProgress.status === 'failed' 
+                              ? 'var(--accent-red, #ef4444)' 
+                              : 'var(--accent-blue, #3b82f6)',
+                          borderRadius: '4px',
+                          transition: 'width 0.4s ease'
+                        }} />
+                      </div>
+
+                      {/* Message / Details */}
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                        <span style={{ fontStyle: 'italic', wordBreak: 'break-word', flex: 1 }}>
+                          {syncProgress.message || 'Procesando sincronización en segundo plano...'}
+                        </span>
+                        {(syncProgress.status === 'completed' || syncProgress.status === 'failed') && (
+                          <button
+                            type="button"
+                            onClick={() => setSyncProgress(null)}
+                            style={{
+                              marginLeft: '10px',
+                              background: 'none',
+                              border: 'none',
+                              color: 'var(--text-secondary)',
+                              cursor: 'pointer',
+                              fontWeight: 600,
+                              fontSize: '0.75rem',
+                              textDecoration: 'underline'
+                            }}
+                          >
+                            Cerrar
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
                   <div>
                     <span style={{ fontSize: '0.85rem', fontWeight: 600, display: 'block', marginBottom: '8px', color: 'var(--text-primary)' }}>
                       Sincronización Rápida del Día:
@@ -1122,11 +1727,15 @@ export default function Settings() {
                     <button 
                       className="btn" 
                       onClick={handleSyncToday}
-                      disabled={syncingToday || syncingHistorical}
+                      disabled={syncingToday || syncingHistorical || (syncProgress && (syncProgress.status === 'syncing_products' || syncProgress.status === 'syncing_sales' || syncProgress.status === 'syncing_mp'))}
                       style={{ width: '100%', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '8px', padding: '10px 14px', fontSize: '0.85rem', backgroundColor: 'var(--accent-emerald)', color: '#fff' }}
                     >
-                      <RefreshCw size={16} className={syncingToday ? 'animate-spin' : ''} />
-                      <span>{syncingToday ? 'Sincronizando hoy...' : '⚡ Sincronizar Hoy (Últimas 24 hs)'}</span>
+                      <RefreshCw size={16} className={(syncingToday || (syncProgress && (syncProgress.status === 'syncing_products' || syncProgress.status === 'syncing_sales' || syncProgress.status === 'syncing_mp'))) ? 'animate-spin' : ''} />
+                      <span>
+                        {(syncingToday || (syncProgress && (syncProgress.status === 'syncing_products' || syncProgress.status === 'syncing_sales' || syncProgress.status === 'syncing_mp')))
+                          ? `Sincronizando (${syncProgress?.progress || 0}%)...` 
+                          : '⚡ Sincronizar Hoy (Últimas 24 hs)'}
+                      </span>
                     </button>
                     <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'block', marginTop: '6px', textAlign: 'center' }}>
                       Actualización rápida de publicaciones, ventas y pagos del día de hoy.
@@ -1140,11 +1749,13 @@ export default function Settings() {
                     <button 
                       className="btn btn-secondary" 
                       onClick={handleSyncHistorical}
-                      disabled={syncingHistorical || syncingToday}
+                      disabled={syncingHistorical || syncingToday || (syncProgress && (syncProgress.status === 'syncing_products' || syncProgress.status === 'syncing_sales' || syncProgress.status === 'syncing_mp'))}
                       style={{ width: '100%', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '8px', padding: '10px 14px', fontSize: '0.85rem' }}
                     >
                       <RefreshCw size={16} className={syncingHistorical ? 'animate-spin' : ''} />
-                      <span>{syncingHistorical ? 'Sincronizando...' : '🔄 Sincronizar Histórico (2 Años)'}</span>
+                      <span>
+                        {syncingHistorical ? `Sincronizando (${syncProgress?.progress || 0}%)...` : '🔄 Sincronizar Histórico (2 Años)'}
+                      </span>
                     </button>
                     <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'block', marginTop: '6px', textAlign: 'center' }}>
                       Descarga y actualiza todas las ventas, productos y cobros de los últimos 2 años.
@@ -1249,6 +1860,445 @@ export default function Settings() {
               </div>
 
               <button className="btn" onClick={handleSave} style={{alignSelf: 'flex-start'}}>Guardar Cambios de Configuración</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Tab: Tiendanube Integration */}
+      {activeTab === 'tiendanube' && (
+        <div style={{display: 'flex', flexDirection: 'column', gap: 20}}>
+          {/* Header Banner */}
+          <div className="card" style={{
+            background: 'linear-gradient(135deg, rgba(0, 128, 255, 0.12) 0%, rgba(37, 99, 235, 0.05) 100%)',
+            border: '1px solid rgba(0, 128, 255, 0.3)',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            flexWrap: 'wrap',
+            gap: 15
+          }}>
+            <div>
+              <div style={{display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6}}>
+                <span style={{fontSize: '1.8rem'}}>🛍️</span>
+                <h3 style={{margin: 0, fontSize: '1.25rem', color: 'var(--text-primary)'}}>
+                  Integración Oficial con Tiendanube (Nuvemshop)
+                </h3>
+              </div>
+              <p style={{margin: 0, fontSize: '0.85rem', color: 'var(--text-secondary)'}}>
+                Sincronización en tiempo real de stock, precios, pedidos, clientes y facturación automática con AFIP.
+              </p>
+            </div>
+
+            <div style={{display: 'flex', alignItems: 'center', gap: 10}}>
+              {tnStatus.is_connected ? (
+                <span style={{
+                  padding: '6px 14px',
+                  borderRadius: 20,
+                  backgroundColor: 'rgba(16, 185, 129, 0.15)',
+                  color: 'var(--accent-emerald)',
+                  fontWeight: '700',
+                  fontSize: '0.85rem',
+                  border: '1px solid var(--accent-emerald)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6
+                }}>
+                  <span style={{width: 8, height: 8, borderRadius: '50%', backgroundColor: 'var(--accent-emerald)'}}></span>
+                  Tienda #{tnStatus.store_id || 'Conectada'}
+                </span>
+              ) : (
+                <span style={{
+                  padding: '6px 14px',
+                  borderRadius: 20,
+                  backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                  color: 'var(--accent-red)',
+                  fontWeight: '600',
+                  fontSize: '0.85rem',
+                  border: '1px solid var(--accent-red)'
+                }}>
+                  No Vinculada
+                </span>
+              )}
+            </div>
+          </div>
+
+          <div style={{display: 'flex', gap: 20, alignItems: 'flex-start', flexWrap: 'wrap'}}>
+            {/* Card 1: Estado y Conexión 1-Clic */}
+            <div className="card" style={{flex: 1, minWidth: 320}}>
+              <h3>Conexión y Autenticación</h3>
+              <p style={{fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: 15}}>
+                Conecta tu tienda con 1 solo clic. Las credenciales se almacenan cifradas y los webhooks se configuran solos.
+              </p>
+
+              {tnStatus.is_connected ? (
+                <div style={{display: 'flex', flexDirection: 'column', gap: 14}}>
+                  <div style={{
+                    padding: 14,
+                    borderRadius: 8,
+                    backgroundColor: 'var(--bg-hover)',
+                    border: '1px solid var(--border-color)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 8
+                  }}>
+                    <div style={{display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem'}}>
+                      <span style={{color: 'var(--text-secondary)'}}>Identificador de Tienda:</span>
+                      <strong style={{color: 'var(--text-primary)'}}>#{tnStatus.store_id || '999888'}</strong>
+                    </div>
+                    <div style={{display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem'}}>
+                      <span style={{color: 'var(--text-secondary)'}}>Total Productos Locales:</span>
+                      <strong style={{color: 'var(--text-primary)'}}>{tnStatus.total_local_products}</strong>
+                    </div>
+                    <div style={{display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem'}}>
+                      <span style={{color: 'var(--text-secondary)'}}>Productos en Tiendanube:</span>
+                      <strong style={{color: 'var(--accent-blue)'}}>{tnStatus.synced_products_count}</strong>
+                    </div>
+                    <div style={{display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem'}}>
+                      <span style={{color: 'var(--text-secondary)'}}>Recepción en Tiempo Real:</span>
+                      <strong style={{color: 'var(--accent-emerald)'}}>⚡ Webhooks Activos</strong>
+                    </div>
+                  </div>
+
+                  <div style={{display: 'flex', flexDirection: 'column', gap: 10, marginTop: 5}}>
+                    <button
+                      className="btn"
+                      onClick={handleTnSyncOrders}
+                      disabled={tnSyncing}
+                      style={{backgroundColor: 'var(--accent-blue)', color: '#fff', padding: '10px 14px', fontSize: '0.85rem'}}
+                    >
+                      {tnSyncing ? 'Sincronizando órdenes...' : '🔄 Sincronizar Pedidos Recientes'}
+                    </button>
+
+                    <button
+                      className="btn btn-secondary"
+                      onClick={handleTnExportBranding}
+                      disabled={tnExportingBranding}
+                      style={{padding: '10px 14px', fontSize: '0.85rem'}}
+                    >
+                      {tnExportingBranding ? 'Sincronizando marca...' : '🎨 Sincronizar Logo y Datos a Tiendanube'}
+                    </button>
+
+                    <button
+                      className="btn"
+                      onClick={handleTnDisconnect}
+                      style={{backgroundColor: 'rgba(239, 68, 68, 0.15)', color: 'var(--accent-red)', border: '1px solid var(--accent-red)', padding: '8px 12px', fontSize: '0.8rem', marginTop: 10}}
+                    >
+                      Desvincular Tiendanube
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div style={{display: 'flex', flexDirection: 'column', gap: 14}}>
+                  <div style={{fontSize: '0.85rem', color: 'var(--text-secondary)', backgroundColor: 'var(--bg-hover)', padding: '10px 12px', borderRadius: '8px', lineHeight: 1.4}}>
+                    🔑 Ingresa tu <strong>App ID</strong> y <strong>Client Secret</strong> de Tiendanube Partners para habilitar la vinculación automática.
+                  </div>
+
+                  <div>
+                    <label style={{fontSize: '0.85rem', fontWeight: 600, display: 'block', marginBottom: 4, color: 'var(--text-primary)'}}>
+                      App ID (Client ID):
+                    </label>
+                    <input 
+                      type="text" 
+                      value={tnConfig.client_id || ''}
+                      onChange={e => setTnConfig({ ...tnConfig, client_id: e.target.value })}
+                      placeholder="ej. 41040"
+                      style={{width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)', fontSize: '0.88rem'}}
+                    />
+                  </div>
+
+                  <div>
+                    <label style={{fontSize: '0.85rem', fontWeight: 600, display: 'block', marginBottom: 4, color: 'var(--text-primary)'}}>
+                      Client Secret:
+                    </label>
+                    <div style={{display: 'flex', gap: 6}}>
+                      <input 
+                        type={showTnSecret ? "text" : "password"} 
+                        value={tnConfig.client_secret || ''}
+                        onChange={e => setTnConfig({ ...tnConfig, client_secret: e.target.value })}
+                        placeholder="Pega el Client Secret copiado de Tiendanube"
+                        style={{flex: 1, padding: '8px 10px', borderRadius: 6, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)', fontSize: '0.88rem'}}
+                      />
+                      <button 
+                        type="button" 
+                        className="btn btn-secondary"
+                        onClick={() => setShowTnSecret(!showTnSecret)}
+                        style={{padding: '6px 12px', fontSize: '0.8rem'}}
+                      >
+                        {showTnSecret ? 'Ocultar' : 'Ver'}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label style={{fontSize: '0.85rem', fontWeight: 600, display: 'block', marginBottom: 4, color: 'var(--text-primary)'}}>
+                      URL de Redirección (para Tiendanube Partners ➔ Configuración):
+                    </label>
+                    <div style={{display: 'flex', gap: 6}}>
+                      <input 
+                        type="text" 
+                        readOnly 
+                        value="https://admin.hidroponiarosario.com/api/tiendanube/callback"
+                        style={{flex: 1, padding: '8px 10px', borderRadius: 6, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-hover)', color: 'var(--text-secondary)', fontSize: '0.78rem', fontFamily: 'monospace'}}
+                      />
+                      <button 
+                        type="button" 
+                        className="btn btn-secondary"
+                        onClick={() => {
+                          navigator.clipboard.writeText("https://admin.hidroponiarosario.com/api/tiendanube/callback")
+                          alert("URL de redirección copiada al portapapeles.")
+                        }}
+                        style={{padding: '6px 12px', fontSize: '0.8rem'}}
+                      >
+                        📋 Copiar
+                      </button>
+                    </div>
+                    <span style={{fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: 4, display: 'block'}}>
+                      Pega esta URL en Tiendanube Partners ➔ Pestaña <strong>Configuración</strong> ➔ <strong>URLs de redireccionamiento</strong>.
+                    </span>
+                  </div>
+
+                  <button 
+                    type="button" 
+                    className="btn"
+                    onClick={handleSaveTnConfig}
+                    disabled={tnSavingConfig}
+                    style={{backgroundColor: 'var(--accent-blue)', color: '#fff', padding: '9px 14px', fontSize: '0.85rem', fontWeight: 600}}
+                  >
+                    {tnSavingConfig ? 'Guardando...' : '💾 Guardar Credenciales de Tiendanube'}
+                  </button>
+
+                  {tnConfigMsg && (
+                    <div style={{
+                      padding: '8px 12px',
+                      borderRadius: 6,
+                      fontSize: '0.8rem',
+                      backgroundColor: tnConfigMsg.type === 'success' ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)',
+                      border: `1px solid ${tnConfigMsg.type === 'success' ? 'var(--accent-emerald)' : 'var(--accent-red)'}`,
+                      color: tnConfigMsg.type === 'success' ? 'var(--accent-emerald)' : 'var(--accent-red)'
+                    }}>
+                      {tnConfigMsg.text}
+                    </div>
+                  )}
+
+                  <hr style={{border: 'none', borderTop: '1px solid var(--border-color)', margin: '4px 0'}} />
+
+                  <button
+                    className="btn"
+                    onClick={handleTnConnect}
+                    disabled={!tnConfig.client_id}
+                    style={{
+                      backgroundColor: tnConfig.client_id ? '#0080FF' : 'var(--bg-hover)',
+                      color: tnConfig.client_id ? '#fff' : 'var(--text-secondary)',
+                      fontWeight: '700',
+                      padding: '12px 18px',
+                      fontSize: '0.95rem',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: 8,
+                      borderRadius: 8,
+                      boxShadow: tnConfig.client_id ? '0 4px 12px rgba(0, 128, 255, 0.3)' : 'none',
+                      cursor: tnConfig.client_id ? 'pointer' : 'not-allowed'
+                    }}
+                  >
+                    <span>🛍️</span>
+                    <span>Conectar con Tiendanube (1 Clic)</span>
+                  </button>
+
+                  <p style={{fontSize: '0.75rem', color: 'var(--text-secondary)', textAlign: 'center', margin: 0}}>
+                    Serás redirigido a la pantalla oficial de Tiendanube para otorgar el acceso seguro.
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {/* Card 2: Exportación Masiva de Catálogo */}
+            <div className="card" style={{flex: 1.3, minWidth: 340}}>
+              <div style={{display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8}}>
+                <span style={{fontSize: '1.3rem'}}>🚀</span>
+                <h3 style={{margin: 0}}>Poblador / Exportador de Catálogo</h3>
+              </div>
+              <p style={{fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: 16}}>
+                ¿Creaste una tienda nueva y está vacía? Exporta todos tus productos de ControlCenterES con fotos en HD, descripciones, categorías, precios y stock real de forma 100% automatizada.
+              </p>
+
+              <div style={{display: 'flex', flexDirection: 'column', gap: 14}}>
+                <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12}}>
+                  <label style={{fontSize: '0.85rem', display: 'flex', flexDirection: 'column', gap: 4}}>
+                    Origen de Precio:
+                    <select
+                      value={tnExportOptions.price_source}
+                      onChange={e => setTnExportOptions({...tnExportOptions, price_source: e.target.value})}
+                      style={{padding: '8px', borderRadius: 6, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)'}}
+                    >
+                      <option value="auto">Automático (Precio Web o Lista)</option>
+                      <option value="list">Precio de Lista / Mostrador</option>
+                      <option value="web">Precio Web Exclusivo</option>
+                    </select>
+                  </label>
+
+                  <label style={{fontSize: '0.85rem', display: 'flex', flexDirection: 'column', gap: 4}}>
+                    Ajuste Porcentual (%):
+                    <input
+                      type="number"
+                      step="0.5"
+                      value={tnExportOptions.price_modifier_pct}
+                      onChange={e => setTnExportOptions({...tnExportOptions, price_modifier_pct: parseFloat(e.target.value) || 0.0})}
+                      placeholder="ej. -5 para 5% OFF"
+                      style={{padding: '8px', borderRadius: 6, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)'}}
+                    />
+                  </label>
+                </div>
+
+                <div style={{display: 'flex', flexDirection: 'column', gap: 8, marginTop: 4}}>
+                  <label style={{display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.85rem', cursor: 'pointer'}}>
+                    <input
+                      type="checkbox"
+                      checked={tnExportOptions.only_with_stock}
+                      onChange={e => setTnExportOptions({...tnExportOptions, only_with_stock: e.target.checked})}
+                      style={{width: 'auto'}}
+                    />
+                    Exportar únicamente artículos con stock mayor a 0
+                  </label>
+
+                  <label style={{display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.85rem', cursor: 'pointer'}}>
+                    <input
+                      type="checkbox"
+                      checked={tnExportOptions.sync_branding}
+                      onChange={e => setTnExportOptions({...tnExportOptions, sync_branding: e.target.checked})}
+                      style={{width: 'auto'}}
+                    />
+                    Sincronizar también logotipo y datos de contacto oficiales
+                  </label>
+                </div>
+
+                {/* Progress Box */}
+                {tnExportProgress && (
+                  <div style={{
+                    padding: 12,
+                    borderRadius: 8,
+                    backgroundColor: 'var(--bg-hover)',
+                    border: '1px solid var(--border-color)',
+                    marginTop: 6
+                  }}>
+                    <div style={{display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', marginBottom: 6}}>
+                      <span>{tnExportProgress.message || 'Procesando exportación...'}</span>
+                      <strong>{tnExportProgress.progress || 0}%</strong>
+                    </div>
+                    <div style={{width: '100%', height: 8, borderRadius: 4, backgroundColor: 'rgba(255,255,255,0.1)', overflow: 'hidden'}}>
+                      <div style={{
+                        width: `${tnExportProgress.progress || 0}%`,
+                        height: '100%',
+                        backgroundColor: tnExportProgress.status === 'failed' ? 'var(--accent-red)' : '#0080FF',
+                        transition: 'width 0.3s ease'
+                      }}></div>
+                    </div>
+                  </div>
+                )}
+
+                <button
+                  className="btn"
+                  onClick={handleTnStartExport}
+                  disabled={tnExporting || !tnStatus.is_connected}
+                  style={{
+                    backgroundColor: 'var(--accent-emerald)',
+                    color: '#fff',
+                    fontWeight: '700',
+                    padding: '12px 16px',
+                    fontSize: '0.9rem',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 8,
+                    marginTop: 6,
+                    opacity: (!tnStatus.is_connected || tnExporting) ? 0.6 : 1
+                  }}
+                >
+                  <RefreshCw size={16} className={tnExporting ? 'animate-spin' : ''} />
+                  <span>{tnExporting ? 'Exportando catálogo a Tiendanube...' : '🚀 Iniciar Exportación Masiva de Catálogo'}</span>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Card 3: Importación Inversa desde Tiendanube a ControlCenterES */}
+          <div className="card" style={{
+            border: '1px solid rgba(16, 185, 129, 0.3)',
+            background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.05) 0%, rgba(37, 99, 235, 0.03) 100%)'
+          }}>
+            <div style={{display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8}}>
+              <span style={{fontSize: '1.4rem'}}>📥</span>
+              <h3 style={{margin: 0}}>Traer productos y ventas desde Tiendanube a este sistema</h3>
+            </div>
+            <p style={{fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: 16, lineHeight: 1.5}}>
+              ¿Ya tienes una tienda funcionando en Tiendanube con productos cargados y quieres empezar a usar ControlCenterES? Importa tu catálogo con fotos en HD, descripciones, categorías, precios, stock, logotipo oficial e historial de ventas con 1 solo clic.
+            </p>
+
+            {/* Progress Box for Import */}
+            {tnImportProgress && (
+              <div style={{
+                padding: 14,
+                borderRadius: 8,
+                backgroundColor: 'var(--bg-hover)',
+                border: '1px solid var(--border-color)',
+                marginBottom: 16
+              }}>
+                <div style={{display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem', marginBottom: 6}}>
+                  <span>{tnImportProgress.message || 'Importando desde Tiendanube...'}</span>
+                  <strong>{tnImportProgress.progress || 0}%</strong>
+                </div>
+                <div style={{width: '100%', height: 10, borderRadius: 5, backgroundColor: 'rgba(255,255,255,0.1)', overflow: 'hidden'}}>
+                  <div style={{
+                    width: `${tnImportProgress.progress || 0}%`,
+                    height: '100%',
+                    backgroundColor: tnImportProgress.status === 'failed' ? 'var(--accent-red)' : 'var(--accent-emerald)',
+                    transition: 'width 0.3s ease'
+                  }}></div>
+                </div>
+              </div>
+            )}
+
+            <div style={{display: 'flex', gap: 12, flexWrap: 'wrap'}}>
+              <button
+                className="btn"
+                onClick={handleTnStartImport}
+                disabled={tnImporting || !tnStatus.is_connected}
+                style={{
+                  backgroundColor: 'var(--accent-blue)',
+                  color: '#fff',
+                  fontWeight: '600',
+                  padding: '10px 18px',
+                  fontSize: '0.85rem',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  opacity: (!tnStatus.is_connected || tnImporting) ? 0.6 : 1
+                }}
+              >
+                <RefreshCw size={15} className={tnImporting ? 'animate-spin' : ''} />
+                <span>{tnImporting ? 'Importando...' : '📥 Importar Catálogo & Categorías'}</span>
+              </button>
+
+              <button
+                className="btn"
+                onClick={handleTnImportAll}
+                disabled={tnImporting || !tnStatus.is_connected}
+                style={{
+                  backgroundColor: 'var(--accent-emerald)',
+                  color: '#fff',
+                  fontWeight: '700',
+                  padding: '10px 20px',
+                  fontSize: '0.85rem',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  opacity: (!tnStatus.is_connected || tnImporting) ? 0.6 : 1
+                }}
+              >
+                <RefreshCw size={15} className={tnImporting ? 'animate-spin' : ''} />
+                <span>{tnImporting ? 'Importando todo...' : '✨ Importar TODO (Logo, Catálogo y Ventas)'}</span>
+              </button>
             </div>
           </div>
         </div>
@@ -2200,6 +3250,7 @@ export default function Settings() {
       {/* Tab 6: Backups */}
       {activeTab === 'backups' && (
         <div style={{display: 'flex', gap: 20, alignItems: 'flex-start', flexDirection: 'column'}}>
+          {/* Info Card */}
           <div style={{
             backgroundColor: 'rgba(59, 130, 246, 0.1)',
             border: '1px solid var(--accent-blue)',
@@ -2209,18 +3260,43 @@ export default function Settings() {
             fontSize: '0.9rem',
             lineHeight: '1.5'
           }}>
-            <div style={{fontWeight: 'bold', color: 'var(--accent-blue)', marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '8px'}}>
+            <div style={{fontWeight: 'bold', color: 'var(--accent-blue)', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '8px'}}>
               🕒 Respaldos Automáticos Programados Activos
             </div>
-            <div>
-              El sistema realiza un respaldo automático completo <strong>1 vez al mes</strong> y conserva <strong>1 año de historial (los últimos 12 respaldos automáticos)</strong>. Los respaldos que crees manualmente se conservan indefinidamente.
+            <div style={{marginBottom: 10}}>
+              El sistema realiza un respaldo automático completo <strong>1 vez al mes</strong> y conserva <strong>1 año de historial (los últimos 12 respaldos automáticos)</strong>. Los respaldos manuales se conservan indefinidamente.
+            </div>
+            <div style={{fontSize: '0.82rem', color: 'var(--text-secondary)', marginTop: 8}}>
+              <strong>📦 Contenido de cada respaldo:</strong>
+              <div style={{display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 6}}>
+                {[
+                  { icon: '🗄️', label: 'Base de datos completa (clientes, ventas, inventario, gastos, settings, marketing)' },
+                  { icon: '🖼️', label: 'Imágenes y archivos (uploads/)' },
+                  { icon: '🧾', label: 'Facturas PDF (invoices/)' },
+                  { icon: '🔐', label: 'Certificados AFIP/ARCA (.crt, .key)' },
+                  { icon: '💬', label: 'Sesión de WhatsApp (auth_state/)' },
+                  { icon: '📇', label: 'Contactos WhatsApp (contacts_cache)' },
+                ].map((item, i) => (
+                  <span key={i} style={{
+                    padding: '3px 10px',
+                    borderRadius: 6,
+                    backgroundColor: 'rgba(59, 130, 246, 0.08)',
+                    border: '1px solid rgba(59, 130, 246, 0.2)',
+                    fontSize: '0.76rem',
+                    whiteSpace: 'nowrap'
+                  }}>
+                    {item.icon} {item.label}
+                  </span>
+                ))}
+              </div>
             </div>
           </div>
 
+          {/* Backup List Card */}
           <div className="card" style={{width: '100%'}}>
             <h3>Respaldos del Sistema (Backups)</h3>
             <p style={{fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: 15}}>
-              Descarga un archivo ZIP completo con la base de datos PostgreSQL, configuraciones (.env), imágenes y facturas de la tienda.
+              Archivo ZIP completo con base de datos, configuraciones, imágenes, facturas, certificados AFIP y sesión de WhatsApp.
             </p>
             
             <button 
@@ -2229,7 +3305,7 @@ export default function Settings() {
               disabled={creatingBackup}
               style={{marginBottom: 20, backgroundColor: 'var(--accent-emerald)', color: '#fff'}}
             >
-              {creatingBackup ? 'Creando respaldo (puede demorar)...' : 'Crear Nuevo Respaldo Manual'}
+              {creatingBackup ? 'Creando respaldo (puede demorar)...' : '💾 Crear Nuevo Respaldo Manual'}
             </button>
             
             {backupsLoading ? <p>Cargando respaldos...</p> : (
@@ -2238,7 +3314,8 @@ export default function Settings() {
                   <tr>
                     <th style={{textAlign: 'left', padding: '12px 10px'}}>Archivo</th>
                     <th style={{textAlign: 'left', padding: '12px 10px'}}>Tipo</th>
-                    <th style={{textAlign: 'left', padding: '12px 10px'}}>Fecha de Creación</th>
+                    <th style={{textAlign: 'left', padding: '12px 10px'}}>Contenido</th>
+                    <th style={{textAlign: 'left', padding: '12px 10px'}}>Fecha</th>
                     <th style={{textAlign: 'left', padding: '12px 10px'}}>Tamaño</th>
                     <th style={{textAlign: 'left', padding: '12px 10px'}}>Acciones</th>
                   </tr>
@@ -2246,16 +3323,17 @@ export default function Settings() {
                 <tbody>
                   {backups.map(b => {
                     const isAuto = b.type === 'auto' || b.filename.startsWith('backup_auto_')
+                    const c = b.contents || {}
                     return (
                       <tr key={b.filename} style={{borderBottom: '1px solid var(--border-color)'}}>
-                        <td style={{padding: '12px 10px', fontSize: '0.85rem', fontWeight: 600}}>
+                        <td style={{padding: '12px 10px', fontSize: '0.82rem', fontWeight: 600}}>
                           {b.filename}
                         </td>
-                        <td style={{padding: '12px 10px', fontSize: '0.85rem'}}>
+                        <td style={{padding: '12px 10px', fontSize: '0.82rem'}}>
                           <span style={{
                             padding: '3px 8px',
                             borderRadius: '4px',
-                            fontSize: '0.75rem',
+                            fontSize: '0.73rem',
                             fontWeight: '600',
                             backgroundColor: isAuto ? 'rgba(139, 92, 246, 0.15)' : 'rgba(16, 185, 129, 0.15)',
                             color: isAuto ? 'var(--accent-purple)' : 'var(--accent-emerald)',
@@ -2264,19 +3342,30 @@ export default function Settings() {
                             {isAuto ? 'Automático' : 'Manual'}
                           </span>
                         </td>
-                        <td style={{padding: '12px 10px', fontSize: '0.85rem'}}>
+                        <td style={{padding: '12px 10px', fontSize: '0.82rem'}}>
+                          <div style={{display: 'flex', gap: 4, flexWrap: 'wrap'}}>
+                            {c.database !== false && <span title="Base de datos" style={{cursor: 'default'}}>🗄️</span>}
+                            {c.uploads && <span title="Uploads (imágenes, PDFs)" style={{cursor: 'default'}}>🖼️</span>}
+                            {c.invoices && <span title="Facturas" style={{cursor: 'default'}}>🧾</span>}
+                            {c.afip_certs && <span title="Certificados AFIP/ARCA" style={{cursor: 'default'}}>🔐</span>}
+                            {c.whatsapp_session && <span title="Sesión WhatsApp" style={{cursor: 'default'}}>💬</span>}
+                            {c.whatsapp_contacts && <span title="Contactos WhatsApp" style={{cursor: 'default'}}>📇</span>}
+                            {!b.contents && <span style={{fontSize: '0.7rem', color: 'var(--text-secondary)'}} title="Backup legacy sin manifiesto">v1</span>}
+                          </div>
+                        </td>
+                        <td style={{padding: '12px 10px', fontSize: '0.82rem'}}>
                           {new Date(b.created_at).toLocaleString()}
                         </td>
-                        <td style={{padding: '12px 10px', fontSize: '0.85rem'}}>
+                        <td style={{padding: '12px 10px', fontSize: '0.82rem'}}>
                           {(b.size_bytes / (1024 * 1024)).toFixed(2)} MB
                         </td>
-                        <td style={{padding: '12px 10px', fontSize: '0.85rem'}}>
+                        <td style={{padding: '12px 10px', fontSize: '0.82rem'}}>
                           <button 
                             onClick={() => handleDownloadBackup(b.filename)}
                             className="btn"
-                            style={{padding: '4px 12px', fontSize: '0.75rem', backgroundColor: 'var(--accent-blue)', color: '#fff', border: 'none', cursor: 'pointer', display: 'inline-block'}}
+                            style={{padding: '4px 12px', fontSize: '0.73rem', backgroundColor: 'var(--accent-blue)', color: '#fff', border: 'none', cursor: 'pointer', display: 'inline-block'}}
                           >
-                            Descargar
+                            ⬇ Descargar
                           </button>
                         </td>
                       </tr>
@@ -2284,7 +3373,7 @@ export default function Settings() {
                   })}
                   {backups.length === 0 && (
                     <tr>
-                      <td colSpan="5" style={{padding: '20px', textAlign: 'center', color: 'var(--text-secondary)'}}>
+                      <td colSpan="6" style={{padding: '20px', textAlign: 'center', color: 'var(--text-secondary)'}}>
                         No hay respaldos creados aún.
                       </td>
                     </tr>
@@ -2294,6 +3383,131 @@ export default function Settings() {
             )}
           </div>
 
+          {/* Restore Card */}
+          <div className="card" style={{width: '100%'}}>
+            <h3 style={{display: 'flex', alignItems: 'center', gap: 8}}>🔄 Restaurar Sistema desde Respaldo</h3>
+            <p style={{fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: 15}}>
+              Sube un archivo ZIP de respaldo para restaurar completamente el sistema: base de datos, configuraciones, archivos, certificados AFIP y sesión de WhatsApp.
+            </p>
+
+            {/* Warning */}
+            <div style={{
+              backgroundColor: 'rgba(239, 68, 68, 0.08)',
+              border: '1px solid rgba(239, 68, 68, 0.3)',
+              borderRadius: 8,
+              padding: '12px 16px',
+              marginBottom: 18,
+              fontSize: '0.84rem',
+              lineHeight: 1.5,
+            }}>
+              <strong style={{color: 'var(--accent-red)'}}>⚠️ Advertencias importantes:</strong>
+              <ul style={{margin: '6px 0 0 16px', padding: 0, color: 'var(--text-secondary)'}}>
+                <li>Esta acción <strong>reemplaza todos los datos actuales</strong> con los del respaldo.</li>
+                <li>Se crea un respaldo de seguridad automático antes de restaurar.</li>
+                <li>La sesión de WhatsApp <strong>no puede estar activa en dos servidores a la vez</strong>. Si estás migrando, asegurate de detener el servicio en el servidor anterior.</li>
+                <li>El archivo <code>.env</code> (con la clave de cifrado y conexión a BD) debe estar configurado manualmente en el servidor destino.</li>
+              </ul>
+            </div>
+
+            {/* File Input */}
+            <div style={{
+              border: '2px dashed var(--border-color)',
+              borderRadius: 10,
+              padding: '25px 20px',
+              textAlign: 'center',
+              marginBottom: 18,
+              backgroundColor: restoreFile ? 'rgba(16, 185, 129, 0.05)' : 'var(--bg-dark)',
+              transition: 'all 0.2s ease',
+            }}>
+              <input
+                type="file"
+                accept=".zip"
+                onChange={handleRestoreFileChange}
+                id="restore-file-input"
+                style={{display: 'none'}}
+              />
+              <label htmlFor="restore-file-input" style={{cursor: 'pointer', display: 'block'}}>
+                {restoreFile ? (
+                  <div>
+                    <div style={{fontSize: '1.5rem', marginBottom: 6}}>📦</div>
+                    <div style={{fontWeight: 600, fontSize: '0.95rem'}}>{restoreFile.name}</div>
+                    <div style={{fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: 4}}>
+                      {(restoreFile.size / (1024 * 1024)).toFixed(2)} MB — Click para cambiar archivo
+                    </div>
+                  </div>
+                ) : (
+                  <div>
+                    <div style={{fontSize: '2rem', marginBottom: 8}}>📁</div>
+                    <div style={{fontWeight: 600, fontSize: '0.9rem'}}>Click aquí para seleccionar archivo ZIP de respaldo</div>
+                    <div style={{fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: 4}}>o arrastra y soltá el archivo</div>
+                  </div>
+                )}
+              </label>
+            </div>
+
+            {/* Restore Button */}
+            {restoreFile && (
+              <button
+                className="btn"
+                onClick={handleRestore}
+                disabled={restoring}
+                style={{
+                  backgroundColor: restoring ? 'var(--text-secondary)' : 'var(--accent-red)',
+                  color: '#fff',
+                  padding: '10px 24px',
+                  fontSize: '0.9rem',
+                  fontWeight: 700,
+                  border: 'none',
+                  cursor: restoring ? 'not-allowed' : 'pointer',
+                  marginBottom: 15,
+                }}
+              >
+                {restoring ? '⏳ Restaurando sistema (esto puede demorar varios minutos)...' : '🔄 Restaurar Sistema desde este Respaldo'}
+              </button>
+            )}
+
+            {/* Restore Result */}
+            {restoreResult && (
+              <div style={{
+                padding: '15px 18px',
+                borderRadius: 8,
+                border: `1px solid ${restoreResult.success ? 'rgba(16, 185, 129, 0.4)' : 'rgba(239, 68, 68, 0.4)'}`,
+                backgroundColor: restoreResult.success ? 'rgba(16, 185, 129, 0.08)' : 'rgba(239, 68, 68, 0.08)',
+                marginTop: 10,
+              }}>
+                <div style={{fontWeight: 700, fontSize: '0.95rem', marginBottom: 8, color: restoreResult.success ? 'var(--accent-emerald)' : 'var(--accent-red)'}}>
+                  {restoreResult.success ? '✅ Restauración completada exitosamente' : '❌ Error en la restauración'}
+                </div>
+                {restoreResult.success && restoreResult.restore_log && (
+                  <div style={{fontSize: '0.82rem', color: 'var(--text-secondary)'}}>
+                    <div>🗄️ Base de datos: {restoreResult.restore_log.database_restored ? '✅ Restaurada' : '❌ No restaurada'}</div>
+                    {restoreResult.restore_log.directories_restored?.length > 0 && (
+                      <div>📁 Directorios restaurados: {restoreResult.restore_log.directories_restored.join(', ')}</div>
+                    )}
+                    {restoreResult.restore_log.files_restored?.length > 0 && (
+                      <div>📄 Archivos restaurados: {restoreResult.restore_log.files_restored.join(', ')}</div>
+                    )}
+                    {restoreResult.restore_log.services_restarted && (
+                      <div>🔄 Servicios reiniciados automáticamente</div>
+                    )}
+                    {restoreResult.restore_log.pre_restore_backup && (
+                      <div>💾 Respaldo pre-restauración: {restoreResult.restore_log.pre_restore_backup}</div>
+                    )}
+                    {restoreResult.restore_log.errors?.length > 0 && (
+                      <div style={{marginTop: 8, color: 'var(--accent-amber)'}}>
+                        ⚠️ Advertencias: {restoreResult.restore_log.errors.join('; ')}
+                      </div>
+                    )}
+                  </div>
+                )}
+                {!restoreResult.success && (
+                  <div style={{fontSize: '0.85rem'}}>{restoreResult.error}</div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Disk Space Card */}
           <div style={{width: '100%', display: 'flex', flexDirection: 'column', gap: 20}}>
             <div className="card">
               <h3>Espacio en la VPS</h3>

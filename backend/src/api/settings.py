@@ -12,7 +12,7 @@ class SetupRequest(BaseModel):
     client_id: str
     client_secret: str
     redirect_uri: str
-    demo_mode: bool
+    demo_mode: Optional[bool] = False
     meli_sync_interval: Optional[int] = 30
     meli_msg_purchase: Optional[str] = ""
     meli_msg_shipping: Optional[str] = ""
@@ -37,8 +37,8 @@ def get_auth_status():
     token_valid = meli_api.validate_token()
     
     afip_enabled = database.get_setting('afip_enabled', '0') == '1'
-    cert_exists = os.path.exists("backend/data/afip/arca.crt")
-    key_exists = os.path.exists("backend/data/afip/arca.key")
+    cert_exists = os.path.exists("backend/data/afip/arca.crt") or os.path.exists("data/afip/arca.crt")
+    key_exists = os.path.exists("backend/data/afip/arca.key") or os.path.exists("data/afip/arca.key")
     
     return {
         "is_authenticated": bool(user_id and token_valid),
@@ -58,7 +58,7 @@ def get_config(_=Depends(require_permission("settings"))):
         "client_id": database.get_setting('meli_client_id', ''),
         "client_secret": database.get_setting('meli_client_secret', ''),
         "redirect_uri": database.get_setting('meli_redirect_uri', 'https://lvh.me:8090/meli_callback'),
-        "demo_mode": database.get_setting('demo_mode', '1') == '1',
+        "demo_mode": database.get_setting('demo_mode', '0') in ('1', 'true'),
         "meli_sync_interval": sync_interval,
         "meli_msg_purchase": database.get_setting('meli_msg_purchase', '¡Hola! Gracias por tu compra. Nos pondremos en contacto a la brevedad para coordinar. ¡Saludos!'),
         "meli_msg_shipping": database.get_setting('meli_msg_shipping', 'Hola, te informamos que tu pedido está en camino. Puedes realizar el seguimiento desde el detalle de tu compra. ¡Gracias por confiar en nosotros!'),
@@ -98,6 +98,43 @@ def save_setup(req: SetupRequest, _=Depends(require_permission("settings"))):
     database.set_setting('meli_send_pickup_msg', '1' if req.meli_send_pickup_msg else '0')
     database.set_setting('meli_send_invoice_msg', '1' if req.meli_send_invoice_msg else '0')
     return {"success": True}
+
+class ChannelsUpdateRequest(BaseModel):
+    channel_local: Optional[bool] = None
+    channel_web: Optional[bool] = None
+    channel_meli: Optional[bool] = None
+    channel_tiendanube: Optional[bool] = None
+    channel_whatsapp: Optional[bool] = None
+    channel_arca: Optional[bool] = None
+
+@router.get("/channels")
+def get_channels_config():
+    """Retorna los canales e integraciones habilitadas en el sistema."""
+    return {
+        "channel_local": database.get_setting("channel_local", "1") == "1",
+        "channel_web": database.get_setting("channel_web", "1") == "1",
+        "channel_meli": database.get_setting("channel_meli", "1") == "1",
+        "channel_tiendanube": database.get_setting("channel_tiendanube", "1") == "1",
+        "channel_whatsapp": database.get_setting("channel_whatsapp", "1") == "1",
+        "channel_arca": database.get_setting("channel_arca", "1") == "1",
+    }
+
+@router.post("/channels")
+def update_channels_config(req: ChannelsUpdateRequest, _=Depends(require_permission("settings"))):
+    """Actualiza la activación o desactivación de canales de venta."""
+    if req.channel_local is not None:
+        database.set_setting("channel_local", "1" if req.channel_local else "0")
+    if req.channel_web is not None:
+        database.set_setting("channel_web", "1" if req.channel_web else "0")
+    if req.channel_meli is not None:
+        database.set_setting("channel_meli", "1" if req.channel_meli else "0")
+    if req.channel_tiendanube is not None:
+        database.set_setting("channel_tiendanube", "1" if req.channel_tiendanube else "0")
+    if req.channel_whatsapp is not None:
+        database.set_setting("channel_whatsapp", "1" if req.channel_whatsapp else "0")
+    if req.channel_arca is not None:
+        database.set_setting("channel_arca", "1" if req.channel_arca else "0")
+    return {"success": True, "message": "Canales de venta actualizados con éxito."}
 
 @router.post("/exchange-code")
 def exchange_code(req: CodeRequest, _=Depends(require_permission("settings"))):
@@ -238,8 +275,8 @@ class CsrRequest(BaseModel):
 
 @router.get("/arca-config")
 def get_arca_config(_=Depends(require_permission("settings"))):
-    cert_exists = os.path.exists("backend/data/afip/arca.crt")
-    key_exists = os.path.exists("backend/data/afip/arca.key")
+    cert_exists = os.path.exists("backend/data/afip/arca.crt") or os.path.exists("data/afip/arca.crt")
+    key_exists = os.path.exists("backend/data/afip/arca.key") or os.path.exists("data/afip/arca.key")
     return {
         "afip_enabled": database.get_setting('afip_enabled', '0') == '1',
         "afip_cuit": database.get_setting('afip_cuit', ''),

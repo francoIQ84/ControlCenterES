@@ -350,8 +350,8 @@ def create_invoice(order: dict):
     env = database.get_setting('afip_environment', 'homologacion')
     concept = int(database.get_setting('afip_concept', '1'))
     
-    cert_path = "backend/data/afip/arca.crt"
-    key_path = "backend/data/afip/arca.key"
+    cert_path = "backend/data/afip/arca.crt" if os.path.exists("backend/data/afip/arca.crt") else "data/afip/arca.crt"
+    key_path = "backend/data/afip/arca.key" if os.path.exists("backend/data/afip/arca.key") else "data/afip/arca.key"
     has_credentials = os.path.exists(cert_path) and os.path.exists(key_path)
     
     if not afip_enabled or not has_credentials:
@@ -538,8 +538,8 @@ def lookup_cuit(target_cuit: str, env: str = None):
     if env is None:
         env = database.get_setting('afip_environment', 'homologacion')
     
-    cert_path = "backend/data/afip/arca.crt"
-    key_path = "backend/data/afip/arca.key"
+    cert_path = "backend/data/afip/arca.crt" if os.path.exists("backend/data/afip/arca.crt") else "data/afip/arca.crt"
+    key_path = "backend/data/afip/arca.key" if os.path.exists("backend/data/afip/arca.key") else "data/afip/arca.key"
     has_credentials = os.path.exists(cert_path) and os.path.exists(key_path)
     
     clean_target = target_cuit.replace("-", "").strip()
@@ -799,8 +799,8 @@ def consult_invoice(token: str, sign: str, cuit: str, pto_vta: int, cbte_tipo: i
     afip_enabled = database.get_setting('afip_enabled', '0') == '1'
     cuit_raw = database.get_setting('afip_cuit', '')
     cuit_clean = cuit_raw.replace("-", "").strip()
-    cert_path = "backend/data/afip/arca.crt"
-    key_path = "backend/data/afip/arca.key"
+    cert_path = "backend/data/afip/arca.crt" if os.path.exists("backend/data/afip/arca.crt") else "data/afip/arca.crt"
+    key_path = "backend/data/afip/arca.key" if os.path.exists("backend/data/afip/arca.key") else "data/afip/arca.key"
     has_credentials = os.path.exists(cert_path) and os.path.exists(key_path)
 
     if not afip_enabled or not has_credentials:
