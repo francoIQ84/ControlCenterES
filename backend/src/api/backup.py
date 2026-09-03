@@ -17,7 +17,6 @@ BACKUP_DIR = "backups"
 # Directories/files to include in the backup beyond the DB dump.
 # Each entry is (source_path_relative_to_cwd, arcname_prefix_in_zip).
 _EXTRA_DIRS = [
-    ("uploads", "uploads"),
     ("invoices", "invoices"),
     ("data/afip", "data/afip"),
     ("whatsapp/auth_state", "whatsapp/auth_state"),
@@ -117,6 +116,9 @@ def run_backup_dump(is_auto: bool = False):
     backup_filename = f"{prefix}{timestamp}.zip"
     backup_path = os.path.join(BACKUP_DIR, backup_filename)
 
+    media_filename = f"{prefix}{timestamp}_media.zip"
+    media_path = os.path.join(BACKUP_DIR, media_filename)
+
     db_url = get_db_url()
     sql_filename = f"database_{timestamp}.sql"
     sql_path = os.path.join(BACKUP_DIR, sql_filename)
@@ -168,7 +170,6 @@ def run_backup_dump(is_auto: bool = False):
             },
             "contents": {
                 "database": True,
-                "uploads": os.path.isdir("uploads"),
                 "invoices": os.path.isdir("invoices"),
                 "afip_certs": os.path.isdir("data/afip"),
                 "whatsapp_session": os.path.isdir("whatsapp/auth_state"),
@@ -178,6 +179,25 @@ def run_backup_dump(is_auto: bool = False):
             "files": manifest_files,
         }
         zipf.writestr("backup_manifest.json", json.dumps(manifest, indent=2, ensure_ascii=False))
+
+    # -- Build the Media ZIP --
+    if os.path.isdir("uploads"):
+        with zipfile.ZipFile(media_path, 'w', zipfile.ZIP_DEFLATED) as zipm:
+            media_manifest_files = []
+            _add_directory_to_zip(zipm, "uploads", "uploads", media_manifest_files)
+            
+            media_manifest = {
+                "version": "2.0",
+                "created_at": datetime.now().isoformat(),
+                "type": "auto" if is_auto else "manual",
+                "is_media_only": True,
+                "contents": {
+                    "uploads": True,
+                },
+                "files_count": len(media_manifest_files),
+                "files": media_manifest_files,
+            }
+            zipm.writestr("backup_manifest.json", json.dumps(media_manifest, indent=2, ensure_ascii=False))
 
     # Clean up temporary SQL dump
     if os.path.exists(sql_path):
@@ -197,9 +217,17 @@ def run_backup_dump(is_auto: bool = False):
             folder_id = gdrive_creds.pop("folder_id")
             file_id = google_drive.upload_file(backup_path, backup_filename, folder_id, gdrive_creds)
             if file_id:
-                print(f"[Backup] Subida a Google Drive exitosa. ID: {file_id}")
+                print(f"[Backup] Subida de sistema a Google Drive exitosa. ID: {file_id}")
             else:
-                print("[Backup] Error en la subida a Google Drive (ver logs).")
+                print("[Backup] Error en la subida a Google Drive del archivo de sistema (ver logs).")
+                
+            if os.path.exists(media_path):
+                print(f"[Backup] Subiendo medios a Google Drive...")
+                media_file_id = google_drive.upload_file(media_path, media_filename, folder_id, gdrive_creds)
+                if media_file_id:
+                    print(f"[Backup] Subida de medios a Google Drive exitosa. ID: {media_file_id}")
+                else:
+                    print("[Backup] Error en la subida a Google Drive del archivo de medios (ver logs).")
     except Exception as e:
         print(f"[Backup] Error al procesar integración con Google Drive: {e}")
 
@@ -256,12 +284,24 @@ def list_backups():
     if not os.path.exists(BACKUP_DIR):
         return []
 
-    backups = []
+    groups = {}
     for f in os.listdir(BACKUP_DIR):
-        if f.endswith('.zip'):
+        if f.endswith('.zip') and not f.startswith('_restore_'):
             filepath = os.path.join(BACKUP_DIR, f)
             stat = os.stat(filepath)
-            b_type = "auto" if f.startswith("backup_auto_") else "manual"
+            
+            group_id = f.replace('.zip', '').replace('_media', '')
+            is_media = f.endswith('_media.zip')
+            b_type = "auto" if "auto_" in f else "manual"
+
+            if group_id not in groups:
+                groups[group_id] = {
+                    "id": group_id,
+                    "created_at": datetime.fromtimestamp(stat.st_ctime).isoformat(),
+                    "type": b_type,
+                    "main_file": None,
+                    "media_file": None,
+                }
 
             # Try to read manifest for contents summary
             contents = None
@@ -272,15 +312,20 @@ def list_backups():
                         contents = manifest.get("contents")
             except Exception:
                 pass
-
-            backups.append({
+                
+            file_data = {
                 "filename": f,
                 "size_bytes": stat.st_size,
-                "created_at": datetime.fromtimestamp(stat.st_ctime).isoformat(),
-                "type": b_type,
                 "contents": contents,
-            })
+            }
+            
+            if is_media:
+                groups[group_id]["media_file"] = file_data
+            else:
+                groups[group_id]["main_file"] = file_data
+                groups[group_id]["created_at"] = datetime.fromtimestamp(stat.st_ctime).isoformat()
 
+    backups = list(groups.values())
     backups.sort(key=lambda x: x["created_at"], reverse=True)
     return backups
 
@@ -393,20 +438,38 @@ async def restore_backup(file: UploadFile = File(...)):
         os.remove(tmp_path)
         raise HTTPException(status_code=400, detail="El archivo no es un ZIP válido")
 
+    # Check if this is a media-only backup
+    is_media_only = False
+    try:
+        with zipfile.ZipFile(tmp_path, 'r') as zf:
+            if "backup_manifest.json" in names:
+                manifest = json.loads(zf.read("backup_manifest.json"))
+                if manifest.get("is_media_only"):
+                    is_media_only = True
+    except Exception:
+        pass
+        
+    has_uploads = any(n.startswith("uploads/") for n in names)
+    
     # Find the SQL dump file
     sql_files = [n for n in names if n.endswith('.sql')]
     if not sql_files:
-        os.remove(tmp_path)
-        raise HTTPException(status_code=400,
-                            detail="El backup no contiene un volcado de base de datos (.sql)")
+        if has_uploads and not any(n.startswith("invoices/") or n.startswith("data/afip/") for n in names):
+            is_media_only = True
+            
+        if not is_media_only:
+            os.remove(tmp_path)
+            raise HTTPException(status_code=400,
+                                detail="El backup no contiene un volcado de base de datos (.sql) ni es un respaldo exclusivo de medios.")
 
     # --- 1. Pre-restore safety snapshot ---
     pre_restore_file = None
-    try:
-        pre_restore_file = run_backup_dump(is_auto=False)
-        print(f"[Restore] Pre-restore snapshot created: {pre_restore_file}")
-    except Exception as e:
-        print(f"[Restore] Warning: could not create pre-restore snapshot: {e}")
+    if not is_media_only:
+        try:
+            pre_restore_file = run_backup_dump(is_auto=False)
+            print(f"[Restore] Pre-restore snapshot created: {pre_restore_file}")
+        except Exception as e:
+            print(f"[Restore] Warning: could not create pre-restore snapshot: {e}")
 
     restore_log = {
         "pre_restore_backup": pre_restore_file,
@@ -424,26 +487,27 @@ async def restore_backup(file: UploadFile = File(...)):
             zf.extractall(extract_dir)
 
         # --- 3. Restore the database ---
-        sql_path = os.path.join(extract_dir, sql_files[0])
-        db_url = get_db_url()
+        if not is_media_only:
+            sql_path = os.path.join(extract_dir, sql_files[0])
+            db_url = get_db_url()
 
-        process = subprocess.run(
-            ["psql", db_url, "-f", sql_path],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            timeout=300,
-        )
-        if process.returncode != 0:
-            stderr = process.stderr.decode()
-            # psql often returns warnings that aren't fatal; only treat as
-            # error if the exit code is non-zero AND there's an ERROR line.
-            error_lines = [l for l in stderr.split('\n') if 'ERROR' in l.upper()]
-            if error_lines:
-                restore_log["errors"].append(f"psql errors: {'; '.join(error_lines[:5])}")
-            else:
-                # Non-fatal warnings (e.g. "role already exists"), consider OK
-                pass
-        restore_log["database_restored"] = True
+            process = subprocess.run(
+                ["psql", db_url, "-f", sql_path],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                timeout=300,
+            )
+            if process.returncode != 0:
+                stderr = process.stderr.decode()
+                # psql often returns warnings that aren't fatal; only treat as
+                # error if the exit code is non-zero AND there's an ERROR line.
+                error_lines = [l for l in stderr.split('\n') if 'ERROR' in l.upper()]
+                if error_lines:
+                    restore_log["errors"].append(f"psql errors: {'; '.join(error_lines[:5])}")
+                else:
+                    # Non-fatal warnings (e.g. "role already exists"), consider OK
+                    pass
+            restore_log["database_restored"] = True
 
         # --- 4. Restore asset directories ---
         dirs_to_restore = [
@@ -452,6 +516,9 @@ async def restore_backup(file: UploadFile = File(...)):
             ("data/afip", "data/afip"),
             ("whatsapp/auth_state", "whatsapp/auth_state"),
         ]
+        if is_media_only:
+            dirs_to_restore = [("uploads", "uploads")]
+            
         for src_rel, dest_rel in dirs_to_restore:
             src_full = os.path.join(extract_dir, src_rel)
             if os.path.isdir(src_full):
@@ -467,34 +534,36 @@ async def restore_backup(file: UploadFile = File(...)):
                         shutil.copy2(src_file, dest_file)
                 restore_log["directories_restored"].append(dest_rel)
 
-        # --- 5. Restore individual files ---
-        extra_files = [
-            ("whatsapp/contacts_cache.json", "whatsapp/contacts_cache.json"),
-        ]
-        for src_rel, dest_rel in extra_files:
-            src_full = os.path.join(extract_dir, src_rel)
-            if os.path.isfile(src_full):
-                os.makedirs(os.path.dirname(dest_rel), exist_ok=True)
-                shutil.copy2(src_full, dest_rel)
-                restore_log["files_restored"].append(dest_rel)
+        # --- 5. Restore specific individual files ---
+        if not is_media_only:
+            files_to_restore = [
+                ("whatsapp/contacts_cache.json", "whatsapp/contacts_cache.json")
+            ]
+            for src_rel, dest_rel in files_to_restore:
+                src_full = os.path.join(extract_dir, src_rel)
+                if os.path.isfile(src_full):
+                    os.makedirs(os.path.dirname(dest_rel), exist_ok=True)
+                    shutil.copy2(src_full, dest_rel)
+                    restore_log["files_restored"].append(dest_rel)
 
         # --- 6. Restart services ---
-        if sys.platform == "linux":
-            services = [
-                "controlcenter-backend",
-                "controlcenter-whatsapp",
-                "controlcenter-storefront",
-            ]
-            for svc in services:
-                try:
-                    subprocess.run(
-                        ["systemctl", "restart", svc],
-                        stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                        timeout=30,
-                    )
-                except Exception as e:
-                    restore_log["errors"].append(f"Error restarting {svc}: {e}")
-            restore_log["services_restarted"] = True
+        if not is_media_only:
+            if sys.platform == "linux":
+                services = [
+                    "controlcenter-backend",
+                    "controlcenter-whatsapp",
+                    "controlcenter-storefront",
+                ]
+                for svc in services:
+                    try:
+                        subprocess.run(
+                            ["systemctl", "restart", svc],
+                            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                            timeout=30,
+                        )
+                    except Exception as e:
+                        restore_log["errors"].append(f"Error restarting {svc}: {e}")
+                restore_log["services_restarted"] = True
 
     except Exception as e:
         restore_log["errors"].append(str(e))

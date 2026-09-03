@@ -3461,12 +3461,12 @@ export default function Settings() {
                 </thead>
                 <tbody>
                   {backups.map(b => {
-                    const isAuto = b.type === 'auto' || b.filename.startsWith('backup_auto_')
-                    const c = b.contents || {}
+                    const isAuto = b.type === 'auto' || b.id.includes('auto_')
+                    const c = b.main_file?.contents || {}
                     return (
-                      <tr key={b.filename} style={{borderBottom: '1px solid var(--border-color)'}}>
+                      <tr key={b.id} style={{borderBottom: '1px solid var(--border-color)'}}>
                         <td style={{padding: '12px 10px', fontSize: '0.82rem', fontWeight: 600}}>
-                          {b.filename}
+                          {b.id}
                         </td>
                         <td style={{padding: '12px 10px', fontSize: '0.82rem'}}>
                           <span style={{
@@ -3484,28 +3484,42 @@ export default function Settings() {
                         <td style={{padding: '12px 10px', fontSize: '0.82rem'}}>
                           <div style={{display: 'flex', gap: 4, flexWrap: 'wrap'}}>
                             {c.database !== false && <span title="Base de datos" style={{cursor: 'default'}}>🗄️</span>}
-                            {c.uploads && <span title="Uploads (imágenes, PDFs)" style={{cursor: 'default'}}>🖼️</span>}
+                            {b.media_file && <span title="Uploads (imágenes, PDFs)" style={{cursor: 'default'}}>🖼️</span>}
                             {c.invoices && <span title="Facturas" style={{cursor: 'default'}}>🧾</span>}
                             {c.afip_certs && <span title="Certificados AFIP/ARCA" style={{cursor: 'default'}}>🔐</span>}
                             {c.whatsapp_session && <span title="Sesión WhatsApp" style={{cursor: 'default'}}>💬</span>}
                             {c.whatsapp_contacts && <span title="Contactos WhatsApp" style={{cursor: 'default'}}>📇</span>}
-                            {!b.contents && <span style={{fontSize: '0.7rem', color: 'var(--text-secondary)'}} title="Backup legacy sin manifiesto">v1</span>}
+                            {!b.main_file?.contents && <span style={{fontSize: '0.7rem', color: 'var(--text-secondary)'}} title="Backup legacy sin manifiesto">v1</span>}
                           </div>
                         </td>
                         <td style={{padding: '12px 10px', fontSize: '0.82rem'}}>
                           {new Date(b.created_at).toLocaleString()}
                         </td>
-                        <td style={{padding: '12px 10px', fontSize: '0.82rem'}}>
-                          {(b.size_bytes / (1024 * 1024)).toFixed(2)} MB
+                        <td style={{padding: '12px 10px', fontSize: '0.82rem', whiteSpace: 'nowrap'}}>
+                          {b.main_file && <div>Sis: {(b.main_file.size_bytes / (1024 * 1024)).toFixed(2)} MB</div>}
+                          {b.media_file && <div style={{color: 'var(--text-secondary)'}}>Med: {(b.media_file.size_bytes / (1024 * 1024)).toFixed(2)} MB</div>}
                         </td>
-                        <td style={{padding: '12px 10px', fontSize: '0.82rem'}}>
-                          <button 
-                            onClick={() => handleDownloadBackup(b.filename)}
-                            className="btn"
-                            style={{padding: '4px 12px', fontSize: '0.73rem', backgroundColor: 'var(--accent-blue)', color: '#fff', border: 'none', cursor: 'pointer', display: 'inline-block'}}
-                          >
-                            ⬇ Descargar
-                          </button>
+                        <td style={{padding: '12px 10px', fontSize: '0.82rem', display: 'flex', gap: '4px', flexWrap: 'wrap'}}>
+                          {b.main_file && (
+                            <button 
+                              onClick={() => handleDownloadBackup(b.main_file.filename)}
+                              className="btn"
+                              style={{padding: '4px 8px', fontSize: '0.73rem', backgroundColor: 'var(--accent-blue)', color: '#fff', border: 'none', cursor: 'pointer', display: 'inline-block'}}
+                              title="Descargar Sistema"
+                            >
+                              ⬇ Sist.
+                            </button>
+                          )}
+                          {b.media_file && (
+                            <button 
+                              onClick={() => handleDownloadBackup(b.media_file.filename)}
+                              className="btn"
+                              style={{padding: '4px 8px', fontSize: '0.73rem', backgroundColor: 'var(--accent-purple)', color: '#fff', border: 'none', cursor: 'pointer', display: 'inline-block'}}
+                              title="Descargar Medios"
+                            >
+                              ⬇ Med.
+                            </button>
+                          )}
                         </td>
                       </tr>
                     )
@@ -3541,10 +3555,10 @@ export default function Settings() {
             }}>
               <strong style={{color: 'var(--accent-red)'}}>⚠️ Advertencias importantes:</strong>
               <ul style={{margin: '6px 0 0 16px', padding: 0, color: 'var(--text-secondary)'}}>
-                <li>Esta acción <strong>reemplaza todos los datos actuales</strong> con los del respaldo.</li>
-                <li>Se crea un respaldo de seguridad automático antes de restaurar.</li>
-                <li>La sesión de WhatsApp <strong>no puede estar activa en dos servidores a la vez</strong>. Si estás migrando, asegurate de detener el servicio en el servidor anterior.</li>
-                <li>El archivo <code>.env</code> (con la clave de cifrado y conexión a BD) debe estar configurado manualmente en el servidor destino.</li>
+                <li>Al subir el <strong>ZIP del sistema</strong>, esta acción <strong>reemplaza todos los datos actuales</strong> de la base de datos y configuraciones.</li>
+                <li>Si subís el <strong>ZIP de medios</strong> (fotos/reels), solo se agregarán o actualizarán las imágenes, <strong>sin borrar ni reiniciar la base de datos</strong>.</li>
+                <li>Se crea un respaldo de seguridad automático antes de restaurar el sistema.</li>
+                <li>La sesión de WhatsApp <strong>no puede estar activa en dos servidores a la vez</strong>.</li>
               </ul>
             </div>
 
