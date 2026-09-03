@@ -1831,6 +1831,48 @@ export default function Settings() {
                 </div>
               </div>
             </div>
+
+            <div className="card" style={{flex: 1, minWidth: 300}}>
+              <h3 style={{display: 'flex', alignItems: 'center', gap: '8px'}}>
+                <span style={{fontSize: '1.2rem'}}>🛍️</span>
+                Estado de Conexión Tiendanube
+              </h3>
+              
+              {tnStatus.is_connected ? (
+                <div style={{color: 'var(--accent-emerald)', fontWeight: 'bold', padding: '8px 12px', borderRadius: '6px', backgroundColor: 'rgba(16, 185, 129, 0.1)', border: '1px solid var(--accent-emerald)'}}>
+                  ✓ Tienda #{tnStatus.store_id || 'Conectada'}
+                </div>
+              ) : (
+                <div style={{color: 'var(--accent-red)', fontWeight: 'bold', padding: '8px 12px', borderRadius: '6px', backgroundColor: 'rgba(239, 68, 68, 0.1)', border: '1px solid var(--accent-red)'}}>
+                  ✗ No vinculada
+                </div>
+              )}
+
+              <div style={{marginTop: 20}}>
+                <div style={{fontSize: '0.85rem', color: 'var(--text-secondary)', backgroundColor: 'var(--bg-hover)', padding: '10px 12px', borderRadius: '6px', marginBottom: 15}}>
+                  💡 <strong>Vinculación en 1-Clic:</strong> Haz clic en <strong>Conectar con Tiendanube</strong> para autorizar la integración oficial.
+                </div>
+                
+                <p style={{fontSize: '0.9rem', fontWeight: 600}}>1. Autorizar aplicación:</p>
+                <button 
+                  className="btn" 
+                  onClick={handleTnAuth}
+                  style={{backgroundColor: '#0052cc', color: '#fff', fontWeight: 'bold', width: '100%', padding: '10px 15px'}}
+                >
+                  Conectar con Tiendanube
+                </button>
+
+                {tnStatus.is_connected && (
+                  <button 
+                    className="btn" 
+                    onClick={handleTnDisconnect}
+                    style={{backgroundColor: 'transparent', color: 'var(--accent-red)', border: '1px solid var(--accent-red)', fontWeight: 'bold', width: '100%', padding: '10px 15px', marginTop: '10px'}}
+                  >
+                    Desvincular Tiendanube
+                  </button>
+                )}
+              </div>
+            </div>
           </div>
 
           <div className="card">

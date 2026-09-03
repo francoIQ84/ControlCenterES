@@ -157,6 +157,7 @@ export default function Layout() {
   const [progress, setProgress] = useState(null)
   const [showProgressModal, setShowProgressModal] = useState(false)
   const [autoSyncing, setAutoSyncing] = useState(false)
+  const [tnStatus, setTnStatus] = useState(null)
 
   // Notification Center State
   const [notifications, setNotifications] = useState([])
@@ -242,6 +243,16 @@ export default function Layout() {
         if (!statusRes.ok) return;
         const statusData = await statusRes.json();
         setMeliStatus(statusData);
+
+        // Obtener estado de Tiendanube
+        if (isChannelEnabled('tiendanube')) {
+          try {
+            const tnRes = await fetch('/api/tiendanube/status');
+            if (tnRes.ok) {
+              setTnStatus(await tnRes.json());
+            }
+          } catch(e) { console.error(e) }
+        }
         
         // 3. Redirección automática si acaba de iniciar sesión y no está vinculado
         const justLoggedIn = localStorage.getItem('justLoggedIn');
@@ -472,6 +483,46 @@ export default function Layout() {
             <span>Meli Vinculado {meliStatus.demo_mode && '(Demo)'}</span>
           ) : (
             <span>🔗 Sin Vincular Meli</span>
+          )}
+        </div>
+      )}
+
+      {/* Vínculo Tiendanube status Badge */}
+      {isChannelEnabled('tiendanube') && tnStatus && (
+        <div 
+          onClick={() => {
+            navigate('/settings');
+          }}
+          title={tnStatus.is_connected ? "Tiendanube conectada." : "¡Hacé clic para configurar Tiendanube!"}
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '8px',
+            padding: isDrawer ? '8px 12px' : '6px 14px',
+            borderRadius: '20px',
+            fontSize: '0.8rem',
+            fontWeight: '600',
+            backgroundColor: tnStatus.is_connected ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.15)',
+            color: tnStatus.is_connected ? 'var(--accent-emerald)' : 'var(--accent-red)',
+            border: `1px solid ${tnStatus.is_connected ? 'rgba(16, 185, 129, 0.3)' : 'rgba(239, 68, 68, 0.3)'}`,
+            cursor: 'pointer',
+            transition: 'all 0.2s',
+            userSelect: 'none',
+            whiteSpace: 'nowrap',
+            flexShrink: 0
+          }}
+        >
+          <span style={{
+            width: '8px',
+            height: '8px',
+            borderRadius: '50%',
+            backgroundColor: tnStatus.is_connected ? 'var(--accent-emerald)' : 'var(--accent-red)',
+            boxShadow: tnStatus.is_connected ? '0 0 8px var(--accent-emerald)' : '0 0 8px var(--accent-red)'
+          }}></span>
+          {tnStatus.is_connected ? (
+            <span>TN Vinculado</span>
+          ) : (
+            <span>🔗 Sin Vincular TN</span>
           )}
         </div>
       )}
