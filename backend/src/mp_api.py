@@ -31,8 +31,11 @@ def sync_mp_payments(date_from=None, limit=2000):
     synced_count = 0
 
     try:
+        from src.progress import update_progress
+        update_progress(status="syncing_mp", progress=85, message="Consultando cobros y transferencias en Mercado Pago...")
         # Part 1: Sync Incoming Payments (Sincronización de VENTAS donde el comercio es el cobrador)
         while True:
+            update_progress(status="syncing_mp", progress=85 + min(10, int((offset / 200) * 10)), message=f"Descargando movimientos de Mercado Pago ({synced_count} procesados)...")
             url = f"{API_BASE_URL}/v1/payments/search"
             headers = {
                 'Authorization': f"Bearer {access_token}",
@@ -347,7 +350,7 @@ def get_mp_balance():
                     SELECT COALESCE(SUM(total_amount), 0) as month_sales
                     FROM orders_cache 
                     WHERE source_platform LIKE 'MERCADOPAGO%'
-                      AND date_created >= (CURRENT_DATE - INTERVAL '30 days')
+                      AND date_created::timestamp >= (CURRENT_DATE - INTERVAL '30 days')
                 """)
                 row_m = cursor.fetchone()
                 month_sales = float(row_m['month_sales']) if row_m else 0.0
@@ -356,7 +359,7 @@ def get_mp_balance():
                     SELECT COALESCE(SUM(total_amount), 0) as today_sales
                     FROM orders_cache 
                     WHERE source_platform LIKE 'MERCADOPAGO%'
-                      AND date_created::date = CURRENT_DATE
+                      AND date_created::timestamp::date = CURRENT_DATE
                 """)
                 row_t = cursor.fetchone()
                 today_sales = float(row_t['today_sales']) if row_t else 0.0

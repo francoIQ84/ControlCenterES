@@ -12,7 +12,7 @@ export default function Customers() {
   const [searchParams] = useSearchParams()
   const initialTab = searchParams.get('tab') || 'customers'
   const [activeTab, setActiveTab] = useState(initialTab) // 'customers' | 'meli_questions' | 'inquiries' | 'leads' | 'whatsapp'
-  const { isSimpleView } = useTenant()
+  const { isSimpleView, isChannelEnabled } = useTenant()
 
   useEffect(() => {
     const t = searchParams.get('tab')
@@ -298,11 +298,12 @@ export default function Customers() {
         const p = (c.source_platform || '').toUpperCase()
         if (platformFilter === 'WHATSAPP') return p === 'WHATSAPP' || p === 'WA'
         if (platformFilter === 'MERCADOLIBRE') return p === 'MERCADOLIBRE' || p === 'MELI'
+        if (platformFilter === 'TIENDANUBE') return p === 'TIENDANUBE' || p === 'TN'
         if (platformFilter === 'MERCADOPAGO') return p === 'MERCADOPAGO' || p === 'MP'
         if (platformFilter === 'INSTAGRAM') return p.includes('INSTAGRAM')
         if (platformFilter === 'FACEBOOK') return p.includes('FACEBOOK')
         if (platformFilter === 'MANUAL') {
-          return p === 'MANUAL' || !p || (!['MERCADOLIBRE', 'MELI', 'MERCADOPAGO', 'MP', 'WHATSAPP', 'WA', 'WEB_LEAD', 'LEAD', 'INSTAGRAM_ADS', 'FACEBOOK_ADS'].includes(p))
+          return p === 'MANUAL' || !p || (!['MERCADOLIBRE', 'MELI', 'TIENDANUBE', 'TN', 'MERCADOPAGO', 'MP', 'WHATSAPP', 'WA', 'WEB_LEAD', 'LEAD', 'INSTAGRAM_ADS', 'FACEBOOK_ADS'].includes(p))
         }
         return p === platformFilter
       })
@@ -419,6 +420,9 @@ export default function Customers() {
     }
     if (p === 'MERCADOLIBRE' || p === 'MELI') {
       return <span style={{ padding: '3px 8px', borderRadius: '6px', fontSize: '11px', fontWeight: '700', backgroundColor: '#fff159', color: '#333' }}>MercadoLibre</span>
+    }
+    if (p === 'TIENDANUBE' || p === 'TN') {
+      return <span style={{ padding: '3px 8px', borderRadius: '6px', fontSize: '11px', fontWeight: '700', backgroundColor: 'rgba(0, 128, 255, 0.15)', color: '#0080FF', border: '1px solid rgba(0, 128, 255, 0.3)' }}>🛍️ Tiendanube</span>
     }
     if (p === 'MERCADOPAGO' || p === 'MP') {
       return <span style={{ padding: '3px 8px', borderRadius: '6px', fontSize: '11px', fontWeight: '700', backgroundColor: '#009ee3', color: '#fff' }}>MercadoPago</span>
@@ -582,7 +586,7 @@ export default function Customers() {
           <Users size={16} /> Clientes ({crmData.customers.length})
         </button>
 
-        {!isSimpleView && (
+        {!isSimpleView && isChannelEnabled('meli') && (
         <button
           onClick={() => setActiveTab('meli_questions')}
           style={{
@@ -704,9 +708,10 @@ export default function Customers() {
                 <option value="ALL">Todos los orígenes</option>
                 <option value="INSTAGRAM">📸 Instagram Ads</option>
                 <option value="FACEBOOK">🟦 Facebook Ads</option>
-                <option value="WHATSAPP">💬 WhatsApp</option>
-                <option value="MERCADOLIBRE">🟡 MercadoLibre</option>
-                <option value="MERCADOPAGO">💳 MercadoPago</option>
+                {isChannelEnabled('whatsapp') && <option value="WHATSAPP">💬 WhatsApp</option>}
+                {isChannelEnabled('meli') && <option value="MERCADOLIBRE">🟡 MercadoLibre</option>}
+                {isChannelEnabled('tiendanube') && <option value="TIENDANUBE">🛍️ Tiendanube</option>}
+                {isChannelEnabled('meli') && <option value="MERCADOPAGO">💳 MercadoPago</option>}
                 <option value="MANUAL">✏️ Manual</option>
               </select>
             </div>

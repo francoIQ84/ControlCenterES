@@ -19,7 +19,7 @@ from src import database, tenancy
 from src.utils import crypto
 
 #: Proveedores admitidos. Debe coincidir con el CHECK de tenant_integrations.
-PROVIDERS = ("mercadolibre", "mercadopago", "afip", "meta", "google", "whatsapp")
+PROVIDERS = ("mercadolibre", "mercadopago", "afip", "meta", "google", "whatsapp", "tiendanube")
 
 #: Claves de la tabla `settings` que cubre cada proveedor, para la lectura
 #: de compatibilidad mientras dure la migración.
@@ -37,6 +37,13 @@ LEGACY_SETTING_KEYS = {
     },
     "google": {
         "api_key": "gemini_api_key",
+    },
+    "tiendanube": {
+        "client_id": "tn_client_id",
+        "client_secret": "tn_client_secret",
+        "access_token": "tn_access_token",
+        "store_id": "tn_store_id",
+        "user_id": "tn_user_id",
     },
 }
 

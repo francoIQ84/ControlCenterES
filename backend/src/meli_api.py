@@ -52,9 +52,9 @@ MOCK_BUYERS = [
 _token_refresh_lock = threading.Lock()
 
 def is_demo_mode():
-    """Returns True if the app is configured in Demo Mode or lacks API keys."""
-    demo_setting = database.get_setting('demo_mode', '1')
-    return demo_setting == '1' or not config.is_configured()
+    """Returns True only if the tenant is explicitly configured in Demo Mode."""
+    demo_setting = database.get_setting('demo_mode', '0')
+    return str(demo_setting).lower() in ('1', 'true')
 
 def validate_token():
     """Checks if there is a valid (and active) token, or if we can refresh it."""

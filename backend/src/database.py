@@ -139,6 +139,11 @@ def init_db():
             cursor.execute('ALTER TABLE products_cache ADD COLUMN IF NOT EXISTS featured_order INTEGER DEFAULT 0;')
             cursor.execute('ALTER TABLE products_cache ADD COLUMN IF NOT EXISTS description_meli TEXT;')
             cursor.execute('ALTER TABLE products_cache ADD COLUMN IF NOT EXISTS use_meli_description INTEGER DEFAULT 1;')
+            cursor.execute('ALTER TABLE products_cache ADD COLUMN IF NOT EXISTS tn_id VARCHAR(100);')
+            cursor.execute('ALTER TABLE products_cache ADD COLUMN IF NOT EXISTS tn_variant_id VARCHAR(100);')
+            cursor.execute('ALTER TABLE products_cache ADD COLUMN IF NOT EXISTS sync_tn INTEGER DEFAULT 1;')
+            cursor.execute('ALTER TABLE products_cache ADD COLUMN IF NOT EXISTS last_sync_tn TEXT;')
+            cursor.execute('ALTER TABLE categories ADD COLUMN IF NOT EXISTS tn_id VARCHAR(100);')
 
             # Orders cache table
             cursor.execute('''
@@ -171,8 +176,6 @@ def init_db():
             cursor.execute('ALTER TABLE orders_cache ADD COLUMN IF NOT EXISTS mp_fee_amount REAL DEFAULT 0.0;')
             cursor.execute('ALTER TABLE orders_cache ADD COLUMN IF NOT EXISTS inventory_linked INTEGER DEFAULT 1;')
             cursor.execute('ALTER TABLE orders_cache ADD COLUMN IF NOT EXISTS cost_amount REAL DEFAULT 0.0;')
-            cursor.execute('ALTER TABLE variable_expenses ADD COLUMN IF NOT EXISTS mp_payment_id BIGINT;')
-            cursor.execute('ALTER TABLE variable_expenses ADD COLUMN IF NOT EXISTS is_auto_mp INTEGER DEFAULT 0;')
 
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS deleted_mp_expenses (
@@ -263,6 +266,8 @@ def init_db():
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             ''')
+            cursor.execute('ALTER TABLE variable_expenses ADD COLUMN IF NOT EXISTS mp_payment_id BIGINT;')
+            cursor.execute('ALTER TABLE variable_expenses ADD COLUMN IF NOT EXISTS is_auto_mp INTEGER DEFAULT 0;')
 
             # Incomes table
             cursor.execute('''
@@ -482,45 +487,6 @@ def init_db():
             cursor.execute('ALTER TABLE whatsapp_chat_history ADD COLUMN IF NOT EXISTS prompt_tokens INT DEFAULT 0;')
             cursor.execute('ALTER TABLE whatsapp_chat_history ADD COLUMN IF NOT EXISTS reply_tokens INT DEFAULT 0;')
             cursor.execute('ALTER TABLE whatsapp_chat_history ADD COLUMN IF NOT EXISTS total_tokens INT DEFAULT 0;')
-
-            # Subscriptions & Billing Columns in tenants table
-            cursor.execute('ALTER TABLE tenants ADD COLUMN IF NOT EXISTS admin_email VARCHAR(255);')
-            cursor.execute('ALTER TABLE tenants ADD COLUMN IF NOT EXISTS admin_phone VARCHAR(50);')
-            cursor.execute("ALTER TABLE tenants ADD COLUMN IF NOT EXISTS billing_cycle VARCHAR(20) DEFAULT 'monthly';")
-            cursor.execute('ALTER TABLE tenants ADD COLUMN IF NOT EXISTS plan_price REAL DEFAULT 0.0;')
-            cursor.execute('ALTER TABLE tenants ADD COLUMN IF NOT EXISTS next_billing_date DATE;')
-            cursor.execute('ALTER TABLE tenants ADD COLUMN IF NOT EXISTS last_reminder_sent_at TIMESTAMP;')
-
-            # Subscriptions Payments history table
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS tenant_subscription_payments (
-                    id SERIAL PRIMARY KEY,
-                    tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
-                    mp_payment_id VARCHAR(100),
-                    amount REAL NOT NULL,
-                    currency VARCHAR(10) DEFAULT 'ARS',
-                    billing_cycle VARCHAR(20) DEFAULT 'monthly',
-                    period_start DATE,
-                    period_end DATE,
-                    status VARCHAR(50) DEFAULT 'approved',
-                    payment_method VARCHAR(50),
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            ''')
-            cursor.execute('CREATE INDEX IF NOT EXISTS idx_tenant_sub_payments_tenant ON tenant_subscription_payments(tenant_id);')
-
-            # Auto-migrate existing users to have 'inpi' permission if they are admins
-            try:
-                cursor.execute("UPDATE users SET permissions = permissions || ',inpi' WHERE permissions NOT LIKE '%inpi%' AND (permissions LIKE '%settings%' OR permissions LIKE '%dashboard%');")
-            except Exception:
-                pass
-
-            # Auto-migrate existing users to have 'marketing' and 'blog' permissions
-            try:
-                cursor.execute("UPDATE users SET permissions = permissions || ',marketing' WHERE permissions NOT LIKE '%marketing%' AND (permissions LIKE '%settings%' OR permissions LIKE '%dashboard%');")
-                cursor.execute("UPDATE users SET permissions = permissions || ',blog' WHERE permissions NOT LIKE '%blog%' AND (permissions LIKE '%settings%' OR permissions LIKE '%dashboard%');")
-            except Exception:
-                pass
 
             # Seed default admin user if no users exist
             cursor.execute("SELECT COUNT(*) as count FROM users")
@@ -835,6 +801,7 @@ def get_all_products(query=None, status_filter=None, is_web_active=None, categor
                        p.visits_meli, p.visits_web, p.category_id, p.sync_meli, p.min_stock, p.featured_order, p.last_modified,
                        p.prev_stock, p.prev_price, p.prev_cost_price, p.prev_cost_meli, p.prev_price_web, COALESCE(p.is_hidden, 0) as is_hidden,
                        COALESCE(p.manufacturing_time, 0) as manufacturing_time, p.description_meli, COALESCE(p.use_meli_description, 1) as use_meli_description,
+                       p.tn_id, p.tn_variant_id, COALESCE(p.sync_tn, 1) as sync_tn, p.last_sync_tn,
                        c.name as category_name, c.slug as category_slug
                  FROM products_cache p
                  LEFT JOIN categories c ON p.category_id = c.id
@@ -893,6 +860,7 @@ def get_product_by_ml_id(ml_id: str):
                        p.visits_meli, p.visits_web, p.category_id, p.sync_meli, p.min_stock, p.featured_order, p.last_modified,
                        p.prev_stock, p.prev_price, p.prev_cost_price, p.prev_cost_meli, p.prev_price_web, COALESCE(p.is_hidden, 0) as is_hidden,
                        COALESCE(p.manufacturing_time, 0) as manufacturing_time, p.description_meli, COALESCE(p.use_meli_description, 1) as use_meli_description,
+                       p.tn_id, p.tn_variant_id, COALESCE(p.sync_tn, 1) as sync_tn, p.last_sync_tn,
                        c.name as category_name, c.slug as category_slug
                  FROM products_cache p
                  LEFT JOIN categories c ON p.category_id = c.id
@@ -900,6 +868,158 @@ def get_product_by_ml_id(ml_id: str):
             """, (ml_id,))
             row = cursor.fetchone()
             return dict(row) if row else None
+
+
+# --- Tiendanube Operations ---
+
+def update_product_tn_mapping(ml_id: str, tn_id: str, tn_variant_id: str = None, last_sync: str = None):
+    now = last_sync or datetime.now().isoformat()
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            if tn_variant_id:
+                cursor.execute("""
+                    UPDATE products_cache 
+                    SET tn_id = %s, tn_variant_id = %s, last_sync_tn = %s, last_modified = %s
+                    WHERE ml_id = %s
+                """, (str(tn_id), str(tn_variant_id), now, now, ml_id))
+            else:
+                cursor.execute("""
+                    UPDATE products_cache 
+                    SET tn_id = %s, last_sync_tn = %s, last_modified = %s
+                    WHERE ml_id = %s
+                """, (str(tn_id), now, now, ml_id))
+
+def update_product_tn_sync_status(ml_id: str, sync_tn: int):
+    now = datetime.now().isoformat()
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute("UPDATE products_cache SET sync_tn = %s, last_modified = %s WHERE ml_id = %s", (int(sync_tn), now, ml_id))
+
+def get_product_by_tn_id(tn_id: str):
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute("""
+                SELECT p.*, c.name as category_name, c.slug as category_slug
+                FROM products_cache p
+                LEFT JOIN categories c ON p.category_id = c.id
+                WHERE p.tn_id = %s
+            """, (str(tn_id),))
+            row = cursor.fetchone()
+            return dict(row) if row else None
+
+def get_product_by_tn_variant_id(tn_variant_id: str):
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute("""
+                SELECT p.*, c.name as category_name, c.slug as category_slug
+                FROM products_cache p
+                LEFT JOIN categories c ON p.category_id = c.id
+                WHERE p.tn_variant_id = %s
+            """, (str(tn_variant_id),))
+            row = cursor.fetchone()
+            return dict(row) if row else None
+
+def update_category_tn_id(category_id: int, tn_id: str):
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute("UPDATE categories SET tn_id = %s WHERE id = %s", (str(tn_id), category_id))
+
+def get_category_by_tn_id(tn_id: str):
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute("SELECT * FROM categories WHERE tn_id = %s", (str(tn_id),))
+            row = cursor.fetchone()
+            return dict(row) if row else None
+
+def deduct_product_stock_by_ml_id(ml_id: str, qty_to_deduct: int):
+    """Descuenta stock del producto de forma atómica y registra el stock previo."""
+    now = datetime.now().isoformat()
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute("SELECT available_quantity FROM products_cache WHERE ml_id = %s", (ml_id,))
+            row = cursor.fetchone()
+            if not row:
+                return False, 0
+            current_qty = row['available_quantity'] or 0
+            new_qty = max(0, current_qty - int(qty_to_deduct))
+            cursor.execute("""
+                UPDATE products_cache 
+                SET available_quantity = %s, prev_stock = %s, last_modified = %s
+                WHERE ml_id = %s
+            """, (new_qty, current_qty, now, ml_id))
+            return True, new_qty
+
+def upsert_category_from_tn(name: str, tn_id: str, slug: str = None) -> int:
+    import re
+    clean_name = (name or "").strip()
+    if not clean_name:
+        clean_name = f"Categoría {tn_id}"
+    if not slug:
+        slug = re.sub(r'[^a-z0-9]+', '-', clean_name.lower()).strip('-') or f"cat-{tn_id}"
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute("""
+                INSERT INTO categories (name, slug, tn_id)
+                VALUES (%s, %s, %s)
+                ON CONFLICT (tenant_id, name) DO UPDATE SET
+                    tn_id = COALESCE(EXCLUDED.tn_id, categories.tn_id)
+                RETURNING id
+            """, (clean_name, slug, str(tn_id)))
+            row = cursor.fetchone()
+            return row['id']
+
+def upsert_imported_tn_product(prod: dict) -> str:
+    now = datetime.now().isoformat()
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            # Buscar si ya existe por tn_id o por ml_id
+            cursor.execute("SELECT ml_id FROM products_cache WHERE tn_id = %s OR ml_id = %s", (str(prod['tn_id']), prod['ml_id']))
+            existing = cursor.fetchone()
+            target_ml_id = existing['ml_id'] if existing else prod['ml_id']
+
+            cursor.execute("""
+                INSERT INTO products_cache 
+                (ml_id, title, price, available_quantity, cost_price, cost_meli, permalink, thumbnail, status, last_sync, price_web, images, description, is_web_active, category_id, sync_meli, min_stock, tn_id, tn_variant_id, sync_tn, last_sync_tn, last_modified)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (tenant_id, ml_id) DO UPDATE SET
+                    title = EXCLUDED.title,
+                    price = CASE WHEN products_cache.price <= 0 THEN EXCLUDED.price ELSE products_cache.price END,
+                    price_web = EXCLUDED.price_web,
+                    available_quantity = EXCLUDED.available_quantity,
+                    tn_id = EXCLUDED.tn_id,
+                    tn_variant_id = COALESCE(EXCLUDED.tn_variant_id, products_cache.tn_variant_id),
+                    sync_tn = 1,
+                    last_sync_tn = EXCLUDED.last_sync_tn,
+                    images = CASE WHEN products_cache.images IS NULL OR products_cache.images = '' THEN EXCLUDED.images ELSE products_cache.images END,
+                    thumbnail = CASE WHEN products_cache.thumbnail IS NULL OR products_cache.thumbnail = '' THEN EXCLUDED.thumbnail ELSE products_cache.thumbnail END,
+                    description = CASE WHEN products_cache.description IS NULL OR products_cache.description = '' THEN EXCLUDED.description ELSE products_cache.description END,
+                    category_id = COALESCE(EXCLUDED.category_id, products_cache.category_id),
+                    last_modified = EXCLUDED.last_modified
+            """, (
+                target_ml_id,
+                prod['title'],
+                prod.get('price', 0.0),
+                prod.get('available_quantity', 0),
+                prod.get('cost_price', 0.0),
+                prod.get('cost_meli', 0.0),
+                prod.get('permalink', ''),
+                prod.get('thumbnail', ''),
+                prod.get('status', 'active'),
+                now,
+                prod.get('price_web', 0.0),
+                prod.get('images', ''),
+                prod.get('description', ''),
+                prod.get('is_web_active', 1),
+                prod.get('category_id'),
+                prod.get('sync_meli', 1),
+                prod.get('min_stock', 0),
+                str(prod['tn_id']),
+                str(prod.get('tn_variant_id', '')),
+                1,
+                now,
+                now
+            ))
+            return target_ml_id
 
 # --- Orders & Customers Operations ---
 

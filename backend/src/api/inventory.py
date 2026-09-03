@@ -363,6 +363,18 @@ def update_product(ml_id: str, payload: UpdateProductRequest):
         payload.featured_order
     )
     
+    # Sync to Tiendanube if linked and sync_tn is enabled
+    try:
+        prod_obj = database.get_product_by_ml_id(ml_id)
+        if prod_obj and prod_obj.get("tn_id") and prod_obj.get("tn_variant_id") and prod_obj.get("sync_tn", 1) == 1:
+            from src import tn_api
+            if tn_api.is_connected() and not tn_api.is_demo_mode():
+                tn_price = payload.price_web if payload.price_web > 0 else payload.price
+                tn_api.update_tn_stock(prod_obj["tn_id"], prod_obj["tn_variant_id"], payload.qty)
+                tn_api.update_tn_price(prod_obj["tn_id"], prod_obj["tn_variant_id"], tn_price)
+    except Exception as tn_err:
+        print(f"[Tiendanube Sync on Edit Product Error] {tn_err}")
+
     # Sync to ML only if the product status is active or paused and NOT local-only AND sync_meli is enabled
     is_local = ml_id.startswith('LOCAL-') or ml_id.startswith('WEB-')
     if db_status in ('active', 'paused') and not is_local and payload.sync_meli == 1:

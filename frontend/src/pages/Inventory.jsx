@@ -6,7 +6,7 @@ import { useTenant } from '../TenantContext'
 
 export default function Inventory() {
   const [products, setProducts] = useState([])
-  const { isSimpleView } = useTenant()
+  const { isSimpleView, isChannelEnabled } = useTenant()
   const [loading, setLoading] = useState(true)
   const [query, setQuery] = useState("")
   const [sortConfig, setSortConfig] = useState({ key: null, direction: 'asc' })
@@ -51,7 +51,88 @@ export default function Inventory() {
     last_applied_at: ''
   })
 
+  // Tiendanube Export State
+  const [showTnExportModal, setShowTnExportModal] = useState(false)
+  const [tnExportOptions, setTnExportOptions] = useState({
+    price_source: 'auto',
+    only_with_stock: false,
+    price_modifier_pct: 0.0,
+    sync_branding: true
+  })
+  const [tnExporting, setTnExporting] = useState(false)
+  const [tnExportProgress, setTnExportProgress] = useState(null)
 
+  const handleTnStartExport = async () => {
+    setTnExporting(true)
+    try {
+      const res = await fetch('/api/tiendanube/export-catalog', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(tnExportOptions)
+      })
+      if (res.ok) {
+        const poll = setInterval(async () => {
+          try {
+            const pRes = await fetch('/api/tiendanube/export-progress')
+            if (pRes.ok) {
+              const pData = await pRes.json()
+              setTnExportProgress(pData)
+              if (pData.status === 'completed' || pData.status === 'failed') {
+                clearInterval(poll)
+                setTnExporting(false)
+                fetchProducts()
+              }
+            }
+          } catch(e) {
+            console.error(e)
+          }
+        }, 1500)
+      } else {
+        const errData = await res.json()
+        alert("Error: " + (errData.detail || "No se pudo iniciar la exportación"))
+        setTnExporting(false)
+      }
+    } catch(err) {
+      alert("Error: " + err.message)
+      setTnExporting(false)
+    }
+  }
+
+  const [tnModalTab, setTnModalTab] = useState('export') // 'export' | 'import'
+  const [tnImporting, setTnImporting] = useState(false)
+
+  const handleTnStartImport = async () => {
+    if (!window.confirm("¿Deseas importar todos los productos, fotos, categorías y stock desde Tiendanube a este sistema?")) return
+    setTnImporting(true)
+    try {
+      const res = await fetch('/api/tiendanube/import-catalog', { method: 'POST' })
+      if (res.ok) {
+        const poll = setInterval(async () => {
+          try {
+            const pRes = await fetch('/api/tiendanube/export-progress')
+            if (pRes.ok) {
+              const pData = await pRes.json()
+              setTnExportProgress(pData)
+              if (pData.status === 'completed' || pData.status === 'failed') {
+                clearInterval(poll)
+                setTnImporting(false)
+                fetchProducts()
+              }
+            }
+          } catch(e) {
+            console.error(e)
+          }
+        }, 1500)
+      } else {
+        const errData = await res.json()
+        alert("Error: " + (errData.detail || "No se pudo iniciar la importación"))
+        setTnImporting(false)
+      }
+    } catch(err) {
+      alert("Error: " + err.message)
+      setTnImporting(false)
+    }
+  }
 
   const initialNewProduct = {
     title: "",
@@ -1051,12 +1132,31 @@ export default function Inventory() {
           </button>
           )}
 
+          {!isSimpleView && isChannelEnabled('tiendanube') && (
+          <button 
+            className="btn" 
+            style={{
+              backgroundColor: '#0080FF', 
+              color: '#ffffff', 
+              border: 'none', 
+              display: 'flex', 
+              alignItems: 'center', 
+              gap: 6,
+              fontWeight: '600'
+            }} 
+            onClick={() => setShowTnExportModal(true)}
+            title="Exportar o importar catálogo con Tiendanube"
+          >
+            🛍️ Tiendanube
+          </button>
+          )}
+
           {!isSimpleView && (
           <button className="btn" style={{backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)', border: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', gap: 5}} onClick={() => setShowCategoriesModal(true)}>
             📁 Gestionar Categorías
           </button>
           )}
-          {!isSimpleView && (
+          {!isSimpleView && isChannelEnabled('meli') && (
           <button 
             className="btn" 
             style={{
@@ -1237,6 +1337,34 @@ export default function Inventory() {
           </div>
           
           <div style={{display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center'}}>
+            {modifiedCount > 0 && (
+              <>
+                <button 
+                  type="button" 
+                  className="btn" 
+                  style={{
+                    padding: '6px 14px', 
+                    fontSize: '0.82rem', 
+                    backgroundColor: '#10b981', 
+                    color: '#ffffff', 
+                    border: 'none', 
+                    borderRadius: 6,
+                    fontWeight: '700', 
+                    display: 'inline-flex', 
+                    alignItems: 'center', 
+                    gap: 6,
+                    boxShadow: '0 2px 8px rgba(16, 185, 129, 0.4)',
+                    cursor: 'pointer'
+                  }}
+                  onClick={saveAllChanges}
+                  title="Guardar todos los cambios pendientes en el servidor"
+                >
+                  <Save size={15} /> Guardar {modifiedCount} cambio{modifiedCount > 1 ? 's' : ''}
+                </button>
+                <div style={{width: 1, height: 20, backgroundColor: 'var(--border-color)', margin: '0 4px'}} />
+              </>
+            )}
+
             <button 
               type="button" 
               className="btn" 
@@ -1829,11 +1957,263 @@ export default function Inventory() {
           </div>
         </div>
       )}
+      {/* Modal: Exportar Catálogo Masivo a Tiendanube */}
+      {showTnExportModal && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0, 0, 0, 0.75)',
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          zIndex: 1100,
+          padding: 20
+        }}>
+          <div className="card" style={{
+            width: '100%',
+            maxWidth: 540,
+            maxHeight: '90vh',
+            overflowY: 'auto',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 16,
+            boxShadow: '0 20px 40px rgba(0,0,0,0.5)',
+            border: '1px solid rgba(0, 128, 255, 0.3)'
+          }}>
+            <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
+              <div style={{display: 'flex', alignItems: 'center', gap: 8}}>
+                <span style={{fontSize: '1.4rem'}}>🛍️</span>
+                <h3 style={{margin: 0, fontSize: '1.2rem', color: 'var(--text-primary)'}}>
+                  Sincronización de Catálogo Tiendanube
+                </h3>
+              </div>
+              <button 
+                type="button" 
+                onClick={() => setShowTnExportModal(false)}
+                disabled={tnExporting || tnImporting}
+                style={{background: 'none', border: 'none', fontSize: '1.3rem', color: 'var(--text-secondary)', cursor: 'pointer'}}
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Sub-tabs: Exportar / Importar */}
+            <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, backgroundColor: 'var(--bg-hover)', padding: 4, borderRadius: 8}}>
+              <button
+                type="button"
+                className="btn"
+                style={{
+                  backgroundColor: tnModalTab === 'export' ? 'var(--accent-blue)' : 'transparent',
+                  color: tnModalTab === 'export' ? '#fff' : 'var(--text-secondary)',
+                  border: 'none',
+                  borderRadius: 6,
+                  padding: '8px 12px',
+                  fontSize: '0.82rem',
+                  fontWeight: '600'
+                }}
+                onClick={() => setTnModalTab('export')}
+              >
+                🚀 Exportar (Sistema → Tiendanube)
+              </button>
+              <button
+                type="button"
+                className="btn"
+                style={{
+                  backgroundColor: tnModalTab === 'import' ? 'var(--accent-emerald)' : 'transparent',
+                  color: tnModalTab === 'import' ? '#fff' : 'var(--text-secondary)',
+                  border: 'none',
+                  borderRadius: 6,
+                  padding: '8px 12px',
+                  fontSize: '0.82rem',
+                  fontWeight: '600'
+                }}
+                onClick={() => setTnModalTab('import')}
+              >
+                📥 Importar (Tiendanube → Sistema)
+              </button>
+            </div>
+
+            {tnModalTab === 'export' ? (
+              <>
+                <p style={{fontSize: '0.85rem', color: 'var(--text-secondary)', margin: 0, lineHeight: 1.5}}>
+                  Toma todos tus productos de ControlCenterES (títulos, fotos en HD, descripciones, categorías, precios y stock) y los crea o actualiza automáticamente en tu tienda de Tiendanube.
+                </p>
+
+                <div style={{
+                  padding: 14,
+                  borderRadius: 8,
+                  backgroundColor: 'var(--bg-hover)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 12
+                }}>
+                  <div>
+                    <label style={{fontSize: '0.85rem', fontWeight: 600, display: 'block', marginBottom: 4}}>
+                      Origen del Precio:
+                    </label>
+                    <select
+                      value={tnExportOptions.price_source}
+                      onChange={e => setTnExportOptions({...tnExportOptions, price_source: e.target.value})}
+                      disabled={tnExporting}
+                      style={{width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)'}}
+                    >
+                      <option value="auto">Automático (Precio Web si existe, sino Precio de Lista)</option>
+                      <option value="list">Precio de Lista / Mostrador</option>
+                      <option value="web">Precio Web Exclusivo</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label style={{fontSize: '0.85rem', fontWeight: 600, display: 'block', marginBottom: 4}}>
+                      Ajuste de Precio Porcentual (%):
+                    </label>
+                    <input
+                      type="number"
+                      step="0.5"
+                      value={tnExportOptions.price_modifier_pct}
+                      onChange={e => setTnExportOptions({...tnExportOptions, price_modifier_pct: parseFloat(e.target.value) || 0.0})}
+                      disabled={tnExporting}
+                      placeholder="ej. -5 para 5% de descuento, o 10 para recargo"
+                      style={{width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)'}}
+                    />
+                    <span style={{fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: 3, display: 'block'}}>
+                      Útil para aplicar precios diferenciales si Tiendanube tiene menores comisiones.
+                    </span>
+                  </div>
+
+                  <label style={{display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.85rem', cursor: 'pointer'}}>
+                    <input
+                      type="checkbox"
+                      checked={tnExportOptions.only_with_stock}
+                      onChange={e => setTnExportOptions({...tnExportOptions, only_with_stock: e.target.checked})}
+                      disabled={tnExporting}
+                      style={{width: 'auto'}}
+                    />
+                    Exportar solo productos con stock disponible (&gt; 0)
+                  </label>
+
+                  <label style={{display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.85rem', cursor: 'pointer'}}>
+                    <input
+                      type="checkbox"
+                      checked={tnExportOptions.sync_branding}
+                      onChange={e => setTnExportOptions({...tnExportOptions, sync_branding: e.target.checked})}
+                      disabled={tnExporting}
+                      style={{width: 'auto'}}
+                    />
+                    Sincronizar logotipo oficial y datos de la tienda
+                  </label>
+                </div>
+              </>
+            ) : (
+              <>
+                <p style={{fontSize: '0.85rem', color: 'var(--text-secondary)', margin: 0, lineHeight: 1.5}}>
+                  ¿Ya tienes productos y variantes creados en tu Tiendanube? Esta función descarga todas tus publicaciones, imágenes en HD, categorías, stock real y precios para comenzar a administrarlos desde ControlCenterES.
+                </p>
+
+                <div style={{
+                  padding: 14,
+                  borderRadius: 8,
+                  backgroundColor: 'var(--bg-hover)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 10,
+                  fontSize: '0.85rem',
+                  lineHeight: 1.5
+                }}>
+                  <div>✅ <strong>Categorías:</strong> Se crearán automáticamente en el sistema.</div>
+                  <div>✅ <strong>Variantes y SKU:</strong> Se mapearán con identificadores locales.</div>
+                  <div>✅ <strong>Fotos y Precios:</strong> Se sincronizarán en alta resolución.</div>
+                  <div>⚡ <strong>Stock:</strong> Quedará vinculado para actualizarse en vivo ante nuevas ventas.</div>
+                </div>
+              </>
+            )}
+
+            {/* Progress Display */}
+            {tnExportProgress && (
+              <div style={{
+                padding: 12,
+                borderRadius: 8,
+                backgroundColor: 'var(--bg-hover)',
+                border: '1px solid var(--border-color)'
+              }}>
+                <div style={{display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem', marginBottom: 6}}>
+                  <span>{tnExportProgress.message || 'Procesando...'}</span>
+                  <strong>{tnExportProgress.progress || 0}%</strong>
+                </div>
+                <div style={{width: '100%', height: 10, borderRadius: 5, backgroundColor: 'rgba(255,255,255,0.1)', overflow: 'hidden'}}>
+                  <div style={{
+                    width: `${tnExportProgress.progress || 0}%`,
+                    height: '100%',
+                    backgroundColor: tnExportProgress.status === 'failed' ? 'var(--accent-red)' : '#0080FF',
+                    transition: 'width 0.3s ease'
+                  }}></div>
+                </div>
+              </div>
+            )}
+
+            <div style={{display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 8}}>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => setShowTnExportModal(false)}
+                disabled={tnExporting || tnImporting}
+                style={{padding: '10px 16px'}}
+              >
+                Cerrar
+              </button>
+
+              {tnModalTab === 'export' ? (
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={handleTnStartExport}
+                  disabled={tnExporting}
+                  style={{
+                    backgroundColor: '#0080FF',
+                    color: '#fff',
+                    fontWeight: '700',
+                    padding: '10px 20px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8
+                  }}
+                >
+                  <RefreshCw size={16} className={tnExporting ? 'animate-spin' : ''} />
+                  <span>{tnExporting ? 'Exportando...' : '🚀 Iniciar Exportación'}</span>
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={handleTnStartImport}
+                  disabled={tnImporting}
+                  style={{
+                    backgroundColor: 'var(--accent-emerald)',
+                    color: '#fff',
+                    fontWeight: '700',
+                    padding: '10px 20px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8
+                  }}
+                >
+                  <RefreshCw size={16} className={tnImporting ? 'animate-spin' : ''} />
+                  <span>{tnImporting ? 'Importando...' : '📥 Iniciar Importación'}</span>
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
 
 function ProductRow({ p, onSave, onOpenGallery, onDraftChange, categories, categoryCounts, viewMode, onOpenQrModal, onToggleHide, isSelected, onToggleSelect }) {
+  const { isChannelEnabled } = useTenant()
   const [qty, setQty] = useState(p.available_quantity)
   const [price, setPrice] = useState(p.price)
   const [cost, setCost] = useState(p.cost_price)
@@ -2026,7 +2406,23 @@ function ProductRow({ p, onSave, onOpenGallery, onDraftChange, categories, categ
                   ⭐ #{featuredOrder}
                 </span>
               )}
-              {p.status !== 'local' && (
+              {isChannelEnabled('tiendanube') && p.tn_id && (
+                <span style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 3,
+                  padding: '1px 5px',
+                  fontSize: '0.65rem',
+                  fontWeight: 600,
+                  borderRadius: 3,
+                  backgroundColor: 'rgba(0, 128, 255, 0.15)',
+                  color: '#0080FF',
+                  border: '1px solid rgba(0, 128, 255, 0.3)'
+                }} title={`Vinculado a Tiendanube (Producto #${p.tn_id})`}>
+                  🛍️ TN #{p.tn_id}
+                </span>
+              )}
+              {isChannelEnabled('meli') && p.status !== 'local' && (
                 <>
                   <a 
                     href={p.permalink || `https://articulo.mercadolibre.com.ar/${p.ml_id.replace('MLA', 'MLA-')}`} 
@@ -2324,7 +2720,23 @@ function ProductRow({ p, onSave, onOpenGallery, onDraftChange, categories, categ
                 ⭐ #{featuredOrder}
               </span>
             )}
-            {p.status !== 'local' && (
+            {isChannelEnabled('tiendanube') && p.tn_id && (
+              <span style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 3,
+                padding: '2px 8px',
+                fontSize: '0.72rem',
+                fontWeight: 600,
+                borderRadius: 4,
+                backgroundColor: 'rgba(0, 128, 255, 0.15)',
+                color: '#0080FF',
+                border: '1px solid rgba(0, 128, 255, 0.3)'
+              }} title={`Vinculado a Tiendanube (Producto #${p.tn_id})`}>
+                🛍️ TN #{p.tn_id}
+              </span>
+            )}
+            {isChannelEnabled('meli') && p.status !== 'local' && (
               <>
                 <a 
                   href={p.permalink || `https://articulo.mercadolibre.com.ar/${p.ml_id.replace('MLA', 'MLA-')}`} 
@@ -2987,8 +3399,6 @@ function QRScannerModal({ onClose, onStockUpdated }) {
           </div>
         )}
       </div>
-
-
     </div>
   )
 }

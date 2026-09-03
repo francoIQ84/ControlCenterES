@@ -147,7 +147,7 @@ const PAGE_HELP = {
 export default function Layout() {
   const navigate = useNavigate()
   const location = useLocation()
-  const { tenant, hasModule, isPlatformAdmin, isSimpleView, toggleViewMode } = useTenant()
+  const { tenant, hasModule, isPlatformAdmin, isSimpleView, toggleViewMode, isChannelEnabled } = useTenant()
   const [lightMode, setLightMode] = useState(true)
   const [syncing, setSyncing] = useState(false)
   const [collapsed, setCollapsed] = useState(typeof window !== 'undefined' ? window.innerWidth < 768 : false)
@@ -412,7 +412,7 @@ export default function Layout() {
   const renderStatusBadges = (isDrawer = false) => (
     <>
       {/* AFIP Status Badge */}
-      {meliStatus && (
+      {isChannelEnabled('arca') && meliStatus && (
         <div style={{
           display: 'inline-flex',
           alignItems: 'center',
@@ -439,7 +439,7 @@ export default function Layout() {
       )}
 
       {/* Vínculo Meli status Badge (Clickable for instant OAuth) */}
-      {meliStatus && (
+      {isChannelEnabled('meli') && meliStatus && (
         <div 
           onClick={handleAuthMeliClick}
           title={meliStatus.is_authenticated ? "Cuenta vinculada con Mercado Libre. Hacé clic para revincular." : "¡Hacé clic para vincular tu cuenta de Mercado Libre!"}
@@ -477,7 +477,7 @@ export default function Layout() {
       )}
 
       {/* Quick 24h Sync Button for Mercado Libre & Mercado Pago */}
-      {meliStatus && meliStatus.is_authenticated && (
+      {isChannelEnabled('meli') && meliStatus && meliStatus.is_authenticated && (
         <button 
           onClick={handleSync24h}
           disabled={syncing || autoSyncing}
@@ -562,7 +562,7 @@ export default function Layout() {
               <span className="nav-text">Ventas</span>
             </NavLink>
           )}
-          {!isSimpleView && canShow('billing') && (
+          {!isSimpleView && canShow('billing') && isChannelEnabled('arca') && (
             <NavLink to="/billing" className={({isActive}) => `nav-link ${isActive ? 'active' : ''}`}>
               <FileText size={20} style={{ minWidth: 20 }} />
               <span className="nav-text">Facturación</span>
@@ -580,13 +580,13 @@ export default function Layout() {
               <span className="nav-text">CRM & Clientes</span>
             </NavLink>
           )}
-          {!isSimpleView && canShow('media') && (
+          {!isSimpleView && canShow('media') && isChannelEnabled('web') && (
             <NavLink to="/media" className={({isActive}) => `nav-link ${isActive ? 'active' : ''}`}>
               <Image size={20} style={{ minWidth: 20 }} />
               <span className="nav-text">Archivos</span>
             </NavLink>
           )}
-          {!isSimpleView && canShow('blog', 'blog') && (
+          {!isSimpleView && canShow('blog', 'blog') && isChannelEnabled('web') && (
             <NavLink to="/cms" className={({isActive}) => `nav-link ${isActive ? 'active' : ''}`}>
               <BookOpen size={20} style={{ minWidth: 20 }} />
               <span className="nav-text">Blog & Web</span>

@@ -4,7 +4,7 @@ import { useTenant } from '../TenantContext'
 
 export default function Sales() {
   const [orders, setOrders] = useState([])
-  const { isSimpleView } = useTenant()
+  const { isSimpleView, isChannelEnabled } = useTenant()
   const [loading, setLoading] = useState(true)
   const [sortConfig, setSortConfig] = useState({ key: 'date_created', direction: 'desc' })
 
@@ -732,6 +732,22 @@ export default function Sales() {
             <ShoppingBag size={12} /> Mercado Libre
           </span>
         )
+      case 'TIENDANUBE':
+        return (
+          <span style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 4,
+            padding: '4px 8px',
+            borderRadius: 6,
+            fontSize: '0.75rem',
+            fontWeight: 600,
+            backgroundColor: 'rgba(0, 128, 255, 0.15)',
+            color: '#0080FF'
+          }}>
+            <ShoppingBag size={12} /> Tiendanube
+          </span>
+        )
       case 'WEB':
         return (
           <span style={{
@@ -972,10 +988,11 @@ export default function Sales() {
                   }}
                 >
                   <option value="ALL">🌐 Todos los canales</option>
-                  <option value="LOCAL">🏪 Local Comercial</option>
-                  <option value="MERCADOLIBRE">🛍️ Mercado Libre</option>
-                  <option value="WEB">🌍 Tienda Web</option>
-                  <option value="MERCADOPAGO">💳 Mercado Pago</option>
+                  {isChannelEnabled('local') && <option value="LOCAL">🏪 Local Comercial</option>}
+                  {isChannelEnabled('meli') && <option value="MERCADOLIBRE">🛍️ Mercado Libre</option>}
+                  {isChannelEnabled('tiendanube') && <option value="TIENDANUBE">🛍️ Tiendanube</option>}
+                  {isChannelEnabled('web') && <option value="WEB">🌍 Tienda Web</option>}
+                  {isChannelEnabled('meli') && <option value="MERCADOPAGO">💳 Mercado Pago</option>}
                 </select>
               </div>
 

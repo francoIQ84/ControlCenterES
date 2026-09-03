@@ -25,6 +25,10 @@ class FolderRequest(BaseModel):
     name: str
     path: str = ""
 
+class MoveRequest(BaseModel):
+    source_path: str
+    target_path: str = ""
+
 @router.get("/list")
 def list_media(path: str = ""):
     target_dir = get_safe_path(path)
@@ -150,3 +154,34 @@ def delete_item(path: str = Query(...)):
         return {"success": True, "message": msg}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error al borrar: {str(e)}")
+
+@router.post("/move")
+def move_item(payload: MoveRequest):
+    source = get_safe_path(payload.source_path)
+    target_dir = get_safe_path(payload.target_path)
+    
+    if not source.exists():
+        raise HTTPException(status_code=404, detail="El archivo o carpeta de origen no existe.")
+    if not target_dir.exists() or not target_dir.is_dir():
+        raise HTTPException(status_code=400, detail="La carpeta de destino no existe.")
+        
+    dest = target_dir / source.name
+    if dest.resolve() == source.resolve():
+        return {"success": True, "message": "El elemento ya está en esa ubicación."}
+        
+    # Prevent moving directory into itself or its children
+    if source.is_dir() and str(dest.resolve()).startswith(str(source.resolve())):
+        raise HTTPException(status_code=400, detail="No se puede mover una carpeta dentro de sí misma.")
+    
+    # If destination already exists, rename with timestamp
+    if dest.exists():
+        stem = dest.stem
+        suffix = dest.suffix
+        dest = target_dir / f"{stem}_{int(time.time())}{suffix}"
+        
+    try:
+        shutil.move(str(source), str(dest))
+        return {"success": True, "message": f"'{source.name}' movido con éxito"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error al mover: {str(e)}")
+

@@ -45,6 +45,10 @@ CREATE TABLE IF NOT EXISTS diffusion_campaigns (
     tenant_id uuid DEFAULT app_current_tenant()
 );
 
+ALTER TABLE diffusion_groups ADD COLUMN IF NOT EXISTS tenant_id uuid DEFAULT app_current_tenant();
+ALTER TABLE diffusion_group_members ADD COLUMN IF NOT EXISTS tenant_id uuid DEFAULT app_current_tenant();
+ALTER TABLE diffusion_campaigns ADD COLUMN IF NOT EXISTS tenant_id uuid DEFAULT app_current_tenant();
+
 CREATE INDEX IF NOT EXISTS idx_diffusion_groups_tenant ON diffusion_groups(tenant_id);
 CREATE INDEX IF NOT EXISTS idx_diffusion_group_members_group ON diffusion_group_members(group_id);
 CREATE INDEX IF NOT EXISTS idx_diffusion_group_members_tenant ON diffusion_group_members(tenant_id);

@@ -19,10 +19,22 @@ import React, { createContext, useContext, useEffect, useState } from 'react'
 
 const TenantContext = createContext(null)
 
+const DEFAULT_CHANNELS = {
+  channel_local: true,
+  channel_web: true,
+  channel_meli: true,
+  channel_tiendanube: true,
+  channel_whatsapp: true,
+  channel_arca: true,
+}
+
 const FALLBACK = {
   tenant: null,
   loading: true,
   error: null,
+  channels: DEFAULT_CHANNELS,
+  isChannelEnabled: () => true,
+  updateChannels: async () => {},
   hasModule: () => true,
   isPlatformAdmin: false,
   isSimpleView: true,
@@ -32,6 +44,7 @@ const FALLBACK = {
 
 export function TenantProvider({ children }) {
   const [tenant, setTenant] = useState(null)
+  const [channels, setChannels] = useState(DEFAULT_CHANNELS)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [viewMode, setViewMode] = useState(() => {
@@ -48,6 +61,41 @@ export function TenantProvider({ children }) {
       try { localStorage.setItem('viewMode', next) } catch {}
       return next
     })
+  }
+
+  const loadChannels = async () => {
+    try {
+      const res = await fetch('/api/settings/channels')
+      if (res.ok) {
+        const data = await res.json()
+        setChannels(prev => ({ ...prev, ...data }))
+      }
+    } catch (e) {
+      console.error("Error loading channels:", e)
+    }
+  }
+
+  const updateChannels = async (newChannels) => {
+    setChannels(prev => ({ ...prev, ...newChannels }))
+    try {
+      const res = await fetch('/api/settings/channels', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newChannels)
+      })
+      if (!res.ok) {
+        loadChannels()
+      }
+    } catch (e) {
+      console.error("Error saving channels:", e)
+      loadChannels()
+    }
+  }
+
+  const isChannelEnabled = (channelName) => {
+    if (!channels) return true
+    const key = channelName.startsWith('channel_') ? channelName : `channel_${channelName}`
+    return channels[key] !== false
   }
 
   const load = async () => {
@@ -71,6 +119,7 @@ export function TenantProvider({ children }) {
     } finally {
       setLoading(false)
     }
+    loadChannels()
   }
 
   useEffect(() => { load() }, [])
@@ -100,6 +149,9 @@ export function TenantProvider({ children }) {
   return (
     <TenantContext.Provider value={{
       tenant,
+      channels,
+      isChannelEnabled,
+      updateChannels,
       loading,
       error,
       hasModule,

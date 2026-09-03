@@ -87,6 +87,16 @@ def _sync_one_tenant(tenant):
     # Alertas automáticas por WhatsApp de vencimientos de servicios e impuestos
     _check_vencimientos_alerts_for_tenant(tenant)
 
+    # Sincronización periódica de Tiendanube (pedidos y estado)
+    try:
+        from src import tn_api
+        if tn_api.is_connected() and not tn_api.is_demo_mode():
+            ok_tn, count_tn = tn_api.sync_orders(limit=50)
+            if ok_tn and count_tn > 0:
+                print(f"[Scheduler][{slug}] Órdenes de Tiendanube sincronizadas: {count_tn}")
+    except Exception as tn_err:
+        print(f"[Scheduler][{slug}] Error en sincronización Tiendanube: {tn_err}")
+
     # Sincronización automática de clientes/leads desde Meta (Instagram & Facebook Ads)
     try:
         from src.utils import social_publisher
