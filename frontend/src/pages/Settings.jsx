@@ -443,6 +443,14 @@ export default function Settings() {
   const [creatingBackup, setCreatingBackup] = useState(false)
   const [diskSpace, setDiskSpace] = useState(null)
 
+  // Google Drive State
+  const [googleDriveConfig, setGoogleDriveConfig] = useState({
+    active: false,
+    folder_id: '',
+    service_account_json: ''
+  })
+  const [savingGDrive, setSavingGDrive] = useState(false)
+
   // Restore State
   const [restoreFile, setRestoreFile] = useState(null)
   const [restorePreview, setRestorePreview] = useState(null)
@@ -967,10 +975,69 @@ export default function Settings() {
       .catch(err => console.error(err))
   }
 
+  const fetchGoogleDriveConfig = () => {
+    fetch('/api/integrations/')
+      .then(r => r.json())
+      .then(data => {
+        if (data && data.integrations) {
+          const gd = data.integrations.find(i => i.provider === 'google_drive')
+          if (gd) {
+            setGoogleDriveConfig({
+              active: gd.is_active || false,
+              folder_id: gd.has_credentials ? '(Configurado - ID oculto por seguridad)' : '',
+              service_account_json: gd.has_credentials ? '********' : ''
+            })
+          }
+        }
+      })
+      .catch(err => console.error(err))
+  }
+
+  const handleSaveGoogleDrive = async () => {
+    setSavingGDrive(true)
+    try {
+      let credentials = {}
+      if (googleDriveConfig.service_account_json && googleDriveConfig.service_account_json !== '********') {
+        try {
+          credentials = JSON.parse(googleDriveConfig.service_account_json)
+        } catch(e) {
+          alert("El JSON de la Service Account no es válido.")
+          setSavingGDrive(false)
+          return
+        }
+      }
+      
+      if (googleDriveConfig.folder_id && googleDriveConfig.folder_id !== '(Configurado - ID oculto por seguridad)') {
+        credentials.folder_id = googleDriveConfig.folder_id
+      }
+
+      const res = await fetch('/api/integrations/google_drive', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          credentials,
+          is_active: googleDriveConfig.active
+        })
+      })
+      if (res.ok) {
+        alert("Configuración de Google Drive guardada con éxito.")
+        fetchGoogleDriveConfig()
+      } else {
+        const data = await res.json()
+        alert("Error al guardar: " + (data.detail || "Error desconocido"))
+      }
+    } catch(err) {
+      alert("Error de conexión: " + err.message)
+    } finally {
+      setSavingGDrive(false)
+    }
+  }
+
   useEffect(() => {
     if (activeTab === "backups") {
       fetchBackups()
       fetchDiskSpace()
+      fetchGoogleDriveConfig()
     }
     if (activeTab === "web_config") {
       fetchFeaturedProducts()
@@ -3250,6 +3317,78 @@ export default function Settings() {
       {/* Tab 6: Backups */}
       {activeTab === 'backups' && (
         <div style={{display: 'flex', gap: 20, alignItems: 'flex-start', flexDirection: 'column'}}>
+          
+          {/* Google Drive Integration Card */}
+          <div style={{
+            backgroundColor: 'var(--bg-dark)',
+            border: '1px solid var(--border-color)',
+            borderRadius: '8px',
+            padding: '20px',
+            width: '100%'
+          }}>
+            <h3 style={{marginBottom: 15, display: 'flex', alignItems: 'center', gap: 8}}>
+              ☁️ Integración con Google Drive
+            </h3>
+            <p style={{fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: 20}}>
+              Al configurar una Service Account de Google Cloud, el sistema subirá automáticamente una copia de todos los respaldos generados (tanto manuales como mensuales) a la carpeta especificada en Drive.
+            </p>
+            
+            <div style={{display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20}}>
+              <label style={{display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: '0.9rem'}}>
+                <input 
+                  type="checkbox" 
+                  checked={googleDriveConfig.active}
+                  onChange={e => setGoogleDriveConfig(prev => ({...prev, active: e.target.checked}))}
+                  style={{width: 16, height: 16}}
+                />
+                Activar subida automática a Google Drive
+              </label>
+            </div>
+
+            <div style={{display: 'flex', flexDirection: 'column', gap: 15, opacity: googleDriveConfig.active ? 1 : 0.5}}>
+              <div>
+                <label style={{display: 'block', marginBottom: 5, fontSize: '0.85rem', fontWeight: 'bold'}}>
+                  ID de la Carpeta Destino
+                </label>
+                <input 
+                  type="text" 
+                  className="input" 
+                  placeholder="Ej: 1A2B3C4D5E6F7G8H9I0J"
+                  value={googleDriveConfig.folder_id}
+                  onChange={e => setGoogleDriveConfig(prev => ({...prev, folder_id: e.target.value}))}
+                  disabled={!googleDriveConfig.active}
+                />
+              </div>
+              
+              <div>
+                <label style={{display: 'block', marginBottom: 5, fontSize: '0.85rem', fontWeight: 'bold'}}>
+                  JSON de Google Cloud Service Account
+                </label>
+                <textarea 
+                  className="input" 
+                  placeholder='{"type": "service_account", "project_id": "...", ...}'
+                  rows={5}
+                  style={{resize: 'vertical', fontFamily: 'monospace', fontSize: '0.8rem'}}
+                  value={googleDriveConfig.service_account_json}
+                  onChange={e => setGoogleDriveConfig(prev => ({...prev, service_account_json: e.target.value}))}
+                  disabled={!googleDriveConfig.active}
+                />
+                <span style={{fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: 4, display: 'block'}}>
+                  Pegá el contenido completo del archivo .json que descargaste desde Google Cloud. No olvides compartir la carpeta de Drive con el correo electrónico (client_email) de esta Service Account con permisos de "Editor".
+                </span>
+              </div>
+              
+              <button 
+                className="btn btn-primary" 
+                onClick={handleSaveGoogleDrive}
+                disabled={savingGDrive || !googleDriveConfig.active}
+                style={{alignSelf: 'flex-start', marginTop: 5}}
+              >
+                {savingGDrive ? 'Guardando...' : 'Guardar Configuración'}
+              </button>
+            </div>
+          </div>
+
           {/* Info Card */}
           <div style={{
             backgroundColor: 'rgba(59, 130, 246, 0.1)',

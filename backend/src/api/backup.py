@@ -183,6 +183,26 @@ def run_backup_dump(is_auto: bool = False):
     if os.path.exists(sql_path):
         os.remove(sql_path)
 
+    # -- Upload to Google Drive if configured for the platform --
+    try:
+        from src import tenancy, integrations
+        from src.utils import google_drive
+        
+        with tenancy.tenant_context(tenancy.MASTER_TENANT_ID):
+            gdrive_creds = integrations.get_credentials("google_drive", allow_legacy=False)
+            
+        if gdrive_creds and gdrive_creds.get("folder_id"):
+            print(f"[Backup] Subiendo a Google Drive (carpeta {gdrive_creds['folder_id']})...")
+            # Remove folder_id from the credentials passed to google_drive
+            folder_id = gdrive_creds.pop("folder_id")
+            file_id = google_drive.upload_file(backup_path, backup_filename, folder_id, gdrive_creds)
+            if file_id:
+                print(f"[Backup] Subida a Google Drive exitosa. ID: {file_id}")
+            else:
+                print("[Backup] Error en la subida a Google Drive (ver logs).")
+    except Exception as e:
+        print(f"[Backup] Error al procesar integración con Google Drive: {e}")
+
     if is_auto:
         prune_old_auto_backups(max_keep=12)
 

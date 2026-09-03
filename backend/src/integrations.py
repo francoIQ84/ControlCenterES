@@ -19,7 +19,7 @@ from src import database, tenancy
 from src.utils import crypto
 
 #: Proveedores admitidos. Debe coincidir con el CHECK de tenant_integrations.
-PROVIDERS = ("mercadolibre", "mercadopago", "afip", "meta", "google", "whatsapp", "tiendanube")
+PROVIDERS = ("mercadolibre", "mercadopago", "afip", "meta", "google", "whatsapp", "tiendanube", "google_drive")
 
 #: Claves de la tabla `settings` que cubre cada proveedor, para la lectura
 #: de compatibilidad mientras dure la migración.
