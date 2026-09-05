@@ -63,8 +63,9 @@ export default function Sales() {
     buyer_nickname: "",
     buyer_name: "",
     source_platform: "LOCAL", // "LOCAL" or "WEB"
-    shipping_status: "pending", // "pending" or "delivered"
+    shipping_status: "delivered", // "pending" or "delivered"
     payment_method: "Efectivo",
+    payment_status: "paid", // "paid" or "pending"
     auto_invoice: false,
     invoice_type: "B",
     items: [{ id: "manual-1", title: "", quantity: 1, price: 0 }]
@@ -436,6 +437,32 @@ export default function Sales() {
     }
   }
 
+  const handleConfirmPayment = async (orderId) => {
+    const targetOrder = orders.find(o => o.order_id === orderId)
+    const amountStr = targetOrder ? `$${Number(targetOrder.total_amount).toLocaleString()}` : ''
+    const methodStr = targetOrder?.payment_method ? ` (${targetOrder.payment_method})` : ''
+    
+    if (!window.confirm(`¿Confirmar que se acreditó el pago de ${amountStr}${methodStr} para la orden #${orderId}? Pasará a estado APROBADO.`)) {
+      return
+    }
+
+    try {
+      const res = await fetch(`/api/sales/${orderId}/payment-status`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ payment_status: 'paid' })
+      })
+      if (res.ok) {
+        setOrders(prev => prev.map(o => o.order_id === orderId ? { ...o, status: 'paid', payment_status: 'approved' } : o))
+      } else {
+        const err = await res.json().catch(() => ({}))
+        alert("Error al confirmar pago: " + (err.detail || "Error desconocido"))
+      }
+    } catch(err) {
+      alert("Error de conexión: " + err.message)
+    }
+  }
+
   const handleAddItem = () => {
     setNewOrder(prev => ({
       ...prev,
@@ -541,8 +568,9 @@ export default function Sales() {
           buyer_nickname: "",
           buyer_name: "",
           source_platform: "LOCAL",
-          shipping_status: "pending",
+          shipping_status: "delivered",
           payment_method: "Efectivo",
+          payment_status: "paid",
           auto_invoice: false,
           invoice_type: "B",
           items: [{ id: "manual-1", title: "", quantity: 1, price: 0 }]
@@ -1200,14 +1228,57 @@ export default function Sales() {
                   </td>
                   <td style={{fontWeight: 600}}>${o.total_amount.toLocaleString()}</td>
                   <td>
-                    <span style={{
-                      padding: '3px 6px', 
-                      borderRadius: 4, 
-                      fontSize: '0.7rem', 
-                      fontWeight: 600,
-                      backgroundColor: o.status === 'paid' || o.status === 'approved' ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)',
-                      color: o.status === 'paid' || o.status === 'approved' ? 'var(--accent-emerald)' : 'var(--accent-red)'
-                    }}>{(o.status === 'paid' || o.status === 'approved') ? `APROBADO ${o.payment_method ? `(${o.payment_method})` : ''}` : o.status.toUpperCase()}</span>
+                    <div style={{display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-start'}}>
+                      {o.status === 'pending' || o.payment_status === 'pending' ? (
+                        <button
+                          type="button"
+                          onClick={() => handleConfirmPayment(o.order_id)}
+                          title="Haz clic para confirmar que el pago fue recibido / acreditado"
+                          style={{
+                            display: 'inline-flex', alignItems: 'center', gap: 5, padding: '4px 8px',
+                            borderRadius: 6, fontSize: '0.72rem', fontWeight: 600, border: '1px solid rgba(245, 158, 11, 0.4)',
+                            cursor: 'pointer', backgroundColor: 'rgba(245, 158, 11, 0.15)', color: '#d97706'
+                          }}
+                        >
+                          <Clock size={12} /> Confirmar Pago
+                        </button>
+                      ) : (
+                        <span style={{
+                          padding: '3px 6px', 
+                          borderRadius: 4, 
+                          fontSize: '0.7rem', 
+                          fontWeight: 600,
+                          backgroundColor: (o.status === 'paid' || o.status === 'approved') ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)',
+                          color: (o.status === 'paid' || o.status === 'approved') ? 'var(--accent-emerald)' : 'var(--accent-red)'
+                        }}>
+                          {(o.status === 'paid' || o.status === 'approved') ? '✓ APROBADO' : (o.status || 'PENDIENTE').toUpperCase()}
+                        </span>
+                      )}
+
+                      {o.payment_method && (
+                        <small style={{fontSize: '0.68rem', color: 'var(--text-secondary)'}}>
+                          {o.payment_method}
+                        </small>
+                      )}
+
+                      {/* Display matched Mercado Pago payment badge if linked */}
+                      {o.mp_payment_id && (
+                        <span 
+                          title={o.mp_fee_amount ? `Cobro MP #${o.mp_payment_id} | Comisión retenida: $${Number(o.mp_fee_amount).toLocaleString()}` : `Cobro MP #${o.mp_payment_id}`}
+                          style={{
+                            display: 'inline-flex', alignItems: 'center', gap: 3,
+                            fontSize: '0.65rem', padding: '2px 6px', borderRadius: 4,
+                            backgroundColor: 'rgba(0, 158, 227, 0.12)', color: '#009ee3',
+                            fontWeight: 600, border: '1px solid rgba(0, 158, 227, 0.25)'
+                          }}
+                        >
+                          💳 MP #{o.mp_payment_id}
+                          {o.mp_fee_amount > 0 && (
+                            <span style={{opacity: 0.85, fontSize: '0.6rem'}}>(-${Number(o.mp_fee_amount).toFixed(0)})</span>
+                          )}
+                        </span>
+                      )}
+                    </div>
                   </td>
                   <td>{renderShippingBadge(o)}</td>
                   <td style={{textAlign: 'center'}}>
@@ -1373,8 +1444,8 @@ export default function Sales() {
             </div>
 
             <form onSubmit={handleCreateManualOrder} style={{flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 15, paddingRight: 5}}>
-              <div style={{display: 'flex', gap: 15}}>
-                <label style={{flex: 1}}>Canal de Venta
+              <div style={{display: 'flex', gap: 15, flexWrap: 'wrap'}}>
+                <label style={{flex: '1 1 170px'}}>Canal de Venta
                   <select 
                     value={newOrder.source_platform}
                     onChange={e => handleSourcePlatformChange(e.target.value)}
@@ -1385,27 +1456,54 @@ export default function Sales() {
                   </select>
                 </label>
 
-                <label style={{flex: 1}}>Medio de Pago
+                <label style={{flex: '1 1 230px'}}>Medio de Pago
                   <select 
                     value={newOrder.payment_method}
-                    onChange={e => setNewOrder({ ...newOrder, payment_method: e.target.value })}
+                    onChange={e => {
+                      const val = e.target.value
+                      setNewOrder(prev => ({
+                        ...prev,
+                        payment_method: val,
+                        // If user selects CBU/Alias bank transfer, suggest pending
+                        payment_status: val.includes('CBU') ? 'pending' : prev.payment_status
+                      }))
+                    }}
                     style={{width: '100%', marginTop: 5}}
                   >
-                    <option value="Efectivo">Efectivo</option>
-                    <option value="Mercado Pago (Point)">Mercado Pago (Point)</option>
-                    <option value="Mercado Pago (Link)">Mercado Pago (Link)</option>
-                    <option value="Transferencia">Transferencia Bancaria</option>
+                    <option value="Efectivo">💵 Efectivo</option>
+                    <option value="Mercado Pago (Point)">💳 Mercado Pago (Point)</option>
+                    <option value="Mercado Pago (Link)">🔗 Mercado Pago (Link / QR)</option>
+                    <option value="Transferencia (Mercado Pago)">📱 Transferencia (Mercado Pago)</option>
+                    <option value="Transferencia (CBU o Alias)">🏦 Transferencia (CBU o Alias Bancario)</option>
+                    <option value="Tarjeta de Débito">💳 Tarjeta de Débito</option>
+                    <option value="Tarjeta de Crédito">💳 Tarjeta de Crédito</option>
+                  </select>
+                </label>
+
+                <label style={{flex: '1 1 200px'}}>Estado del Pago
+                  <select 
+                    value={newOrder.payment_status}
+                    onChange={e => setNewOrder({ ...newOrder, payment_status: e.target.value })}
+                    style={{
+                      width: '100%', 
+                      marginTop: 5,
+                      fontWeight: 600,
+                      color: newOrder.payment_status === 'paid' ? '#10b981' : '#d97706'
+                    }}
+                  >
+                    <option value="paid">✅ Acreditado / Cobrado</option>
+                    <option value="pending">⏳ Pendiente de Acreditación</option>
                   </select>
                 </label>
                 
-                <label style={{flex: 1}}>Estado de Entrega
+                <label style={{flex: '1 1 150px'}}>Estado de Entrega
                   <select 
                     value={newOrder.shipping_status}
                     onChange={e => setNewOrder({ ...newOrder, shipping_status: e.target.value })}
                     style={{width: '100%', marginTop: 5}}
                   >
-                    <option value="pending">Pendiente</option>
-                    <option value="delivered">Entregado</option>
+                    <option value="delivered">✅ Entregado</option>
+                    <option value="pending">⏳ Pendiente</option>
                   </select>
                 </label>
               </div>

@@ -593,22 +593,320 @@ input:focus, select:focus {
     justify-content: center;
   }
 
-  /* Transform table into stacked cards on mobile */
-  .data-table, 
-  .data-table thead, 
-  .data-table tbody, 
-  .data-table th, 
-  .data-table td, 
-  .data-table tr {
-    display: block;
-    width: 100%;
+  /* iPhone 11 / Mobile Optimized Table & Card Layout */
+  .data-table-wrapper {
+    overflow-x: visible !important;
+    width: 100% !important;
+  }
+
+  .data-table {
+    display: block !important;
+    width: 100% !important;
+    border: none !important;
   }
 
   .data-table thead {
-    display: none; /* Hide header columns */
+    display: none !important;
   }
 
-  .data-table tr.product-row-card {
+  .data-table tbody {
+    display: block !important;
+    width: 100% !important;
+  }
+
+  /* Transform each product row into a sleek iPhone-optimized card */
+  .data-table tr.product-row-card.compact-tr {
+    display: grid !important;
+    grid-template-columns: 46px 1fr auto !important;
+    gap: 8px 10px !important;
+    padding: 12px 14px !important;
+    margin-bottom: 14px !important;
+    border: 1px solid var(--border-color) !important;
+    border-radius: 14px !important;
+    background-color: var(--bg-card) !important;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.06) !important;
+    position: relative !important;
+    overflow: hidden !important;
+    align-items: start !important;
+  }
+
+  /* Reset default cell layout inside compact card */
+  .data-table tr.compact-tr td {
+    border: none !important;
+    padding: 0 !important;
+    position: static !important;
+  }
+
+  .data-table tr.compact-tr td::before {
+    display: none !important;
+  }
+
+  /* 1. Thumbnail */
+  .data-table tr.compact-tr td.cell-thumb {
+    grid-column: 1 / 2 !important;
+    grid-row: 1 / 2 !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+  }
+
+  .data-table tr.compact-tr td.cell-thumb img {
+    width: 46px !important;
+    height: 46px !important;
+    object-fit: contain !important;
+    border-radius: 8px !important;
+    border: 1px solid var(--border-color) !important;
+    background: #fff !important;
+  }
+
+  /* 2. Detail (Title & Tags) */
+  .data-table tr.compact-tr td.cell-detail {
+    grid-column: 2 / 3 !important;
+    grid-row: 1 / 2 !important;
+    display: flex !important;
+    flex-direction: column !important;
+    justify-content: center !important;
+  }
+
+  /* 3. Checkbox */
+  .data-table tr.compact-tr td.cell-select {
+    grid-column: 3 / 4 !important;
+    grid-row: 1 / 2 !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: flex-end !important;
+    padding-top: 2px !important;
+  }
+
+  .data-table tr.compact-tr td.cell-select input[type="checkbox"] {
+    width: 20px !important;
+    height: 20px !important;
+    cursor: pointer !important;
+  }
+
+  /* 4. Status ML (Below thumb & detail header) */
+  .data-table tr.compact-tr td.cell-status-ml {
+    grid-column: 1 / -1 !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    padding-bottom: 6px !important;
+    border-bottom: 1px dashed var(--border-color) !important;
+  }
+
+  /* 5. P. EFECTIVO - HERO CARD IN MOBILE (Local Fisico) */
+  .data-table tr.compact-tr td.cell-price-cash {
+    grid-column: 1 / -1 !important;
+    display: block !important;
+    width: 100% !important;
+    margin: 4px 0 !important;
+  }
+
+  .data-table tr.compact-tr td.cell-price-cash .cash-pricing-box {
+    display: flex !important;
+    flex-direction: row !important;
+    justify-content: space-between !important;
+    align-items: center !important;
+    padding: 10px 12px !important;
+    border-radius: 12px !important;
+    background: linear-gradient(135deg, rgba(16, 185, 129, 0.12) 0%, rgba(16, 185, 129, 0.05) 100%) !important;
+    border: 1.5px solid rgba(16, 185, 129, 0.35) !important;
+  }
+
+  .data-table tr.compact-tr td.cell-price-cash .cash-pricing-box::before {
+    content: "💵 COBRO EFECTIVO" !important;
+    display: block !important;
+    font-size: 0.72rem !important;
+    font-weight: 800 !important;
+    letter-spacing: 0.5px !important;
+    color: #059669 !important;
+  }
+
+  .data-table tr.compact-tr td.cell-price-cash .cash-price-val {
+    font-size: 1.25rem !important;
+    font-weight: 800 !important;
+    color: #10b981 !important;
+    letter-spacing: -0.3px !important;
+  }
+
+  .data-table tr.compact-tr td.cell-price-cash .cash-discount-row {
+    display: flex !important;
+    align-items: center !important;
+    gap: 4px !important;
+    background: var(--bg-card) !important;
+    padding: 3px 6px !important;
+    border-radius: 6px !important;
+    border: 1px solid var(--border-color) !important;
+  }
+
+  .data-table tr.compact-tr td.cell-price-cash .cash-discount-row input {
+    width: 48px !important;
+    min-height: 28px !important;
+    height: 28px !important;
+    font-size: 0.88rem !important;
+    font-weight: 700 !important;
+    text-align: center !important;
+    padding: 0 4px !important;
+  }
+
+  /* 6. Pricing & Stock Grid (P. Web, Stock, P. ML) */
+  .data-table tr.compact-tr td.cell-price-web,
+  .data-table tr.compact-tr td.cell-stock,
+  .data-table tr.compact-tr td.cell-price-ml {
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 4px !important;
+  }
+
+  .data-table tr.compact-tr td.cell-price-web {
+    grid-column: 1 / 2 !important;
+  }
+  .data-table tr.compact-tr td.cell-stock {
+    grid-column: 2 / 3 !important;
+  }
+  .data-table tr.compact-tr td.cell-price-ml {
+    grid-column: 3 / 4 !important;
+  }
+
+  .data-table tr.compact-tr td.cell-price-web::before {
+    content: "P. WEB (LISTA)" !important;
+    display: block !important;
+    font-size: 0.66rem !important;
+    font-weight: 700 !important;
+    color: var(--text-secondary) !important;
+  }
+
+  .data-table tr.compact-tr td.cell-stock::before {
+    content: "STOCK" !important;
+    display: block !important;
+    font-size: 0.66rem !important;
+    font-weight: 700 !important;
+    color: var(--text-secondary) !important;
+  }
+
+  .data-table tr.compact-tr td.cell-price-ml::before {
+    content: "P. ML" !important;
+    display: block !important;
+    font-size: 0.66rem !important;
+    font-weight: 700 !important;
+    color: var(--text-secondary) !important;
+  }
+
+  .data-table tr.compact-tr td.cell-price-web input,
+  .data-table tr.compact-tr td.cell-stock input,
+  .data-table tr.compact-tr td.cell-price-ml input {
+    width: 100% !important;
+    min-height: 34px !important;
+    height: 34px !important;
+    font-size: 0.88rem !important;
+    font-weight: 600 !important;
+    box-sizing: border-box !important;
+    padding: 4px 6px !important;
+    border-radius: 8px !important;
+  }
+
+  /* 7. Costs (Base & ML) */
+  .data-table tr.compact-tr td.cell-cost-base,
+  .data-table tr.compact-tr td.cell-cost-ml {
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 4px !important;
+  }
+
+  .data-table tr.compact-tr td.cell-cost-base {
+    grid-column: 1 / 3 !important;
+  }
+  .data-table tr.compact-tr td.cell-cost-ml {
+    grid-column: 3 / 4 !important;
+  }
+
+  .data-table tr.compact-tr td.cell-cost-base::before {
+    content: "COSTO BASE" !important;
+    display: block !important;
+    font-size: 0.65rem !important;
+    font-weight: 700 !important;
+    color: var(--text-secondary) !important;
+  }
+
+  .data-table tr.compact-tr td.cell-cost-ml::before {
+    content: "COSTO ML" !important;
+    display: block !important;
+    font-size: 0.65rem !important;
+    font-weight: 700 !important;
+    color: var(--text-secondary) !important;
+  }
+
+  .data-table tr.compact-tr td.cell-cost-base input,
+  .data-table tr.compact-tr td.cell-cost-ml input {
+    width: 100% !important;
+    min-height: 32px !important;
+    height: 32px !important;
+    font-size: 0.82rem !important;
+    box-sizing: border-box !important;
+    padding: 3px 6px !important;
+    border-radius: 6px !important;
+  }
+
+  /* 8. Estado Web toggle */
+  .data-table tr.compact-tr td.cell-status-web {
+    grid-column: 1 / 2 !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: flex-start !important;
+    padding-top: 4px !important;
+  }
+
+  .data-table tr.compact-tr td.cell-status-web > div {
+    flex-direction: row !important;
+    align-items: center !important;
+    gap: 6px !important;
+  }
+
+  /* 9. Actions full width bottom bar */
+  .data-table tr.compact-tr td.cell-actions {
+    grid-column: 2 / -1 !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: flex-end !important;
+    padding-top: 4px !important;
+  }
+
+  .data-table tr.compact-tr td.cell-actions > div {
+    display: flex !important;
+    gap: 8px !important;
+    align-items: center !important;
+    justify-content: flex-end !important;
+    width: 100% !important;
+  }
+
+  .data-table tr.compact-tr td.cell-actions button {
+    min-height: 36px !important;
+    padding: 6px 10px !important;
+    border-radius: 8px !important;
+  }
+
+  .data-table tr.compact-tr td.cell-actions button:first-child {
+    flex: 1 !important;
+    background-color: var(--accent-blue) !important;
+    color: white !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    gap: 6px !important;
+  }
+
+  .data-table tr.compact-tr td.cell-actions button:first-child::after {
+    content: "Guardar" !important;
+    font-size: 0.78rem !important;
+    font-weight: 600 !important;
+  }
+
+  .data-table tr.compact-tr td.cell-actions button:first-child svg {
+    color: white !important;
+  }
+
+  /* Standard row fallback on mobile */
+  .data-table tr.product-row-card:not(.compact-tr) {
     border: 1px solid var(--border-color);
     border-radius: 12px;
     margin-bottom: 20px;
@@ -617,19 +915,14 @@ input:focus, select:focus {
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
   }
 
-  .data-table td {
+  .data-table tr.product-row-card:not(.compact-tr) td {
     border-bottom: 1px solid var(--border-color);
     padding: 10px 0;
     position: relative;
     text-align: left !important;
   }
 
-  .data-table td:last-child {
-    border-bottom: none;
-  }
-
-  /* Add data label before value */
-  .data-table td::before {
+  .data-table tr.product-row-card:not(.compact-tr) td::before {
     content: attr(data-label);
     display: block;
     font-size: 0.75rem;
@@ -639,54 +932,14 @@ input:focus, select:focus {
     margin-bottom: 6px;
   }
 
-  /* Adjust styles of cells when stacked */
-  .data-table td[data-label="Imagen"] img {
-    width: 80px !important;
-    height: 80px !important;
-  }
-
-  .data-table td[data-label="Stock y Precios"] div {
-    flex-direction: column;
-    align-items: stretch !important;
-    gap: 8px !important;
-  }
-
-  .data-table td[data-label="Stock y Precios"] input {
-    width: 100% !important;
-    margin-left: 0 !important;
-    margin-top: 4px;
-  }
-
-  .data-table td[data-label="Tienda Web"] input {
-    width: 100% !important;
-    margin-left: 0 !important;
-    margin-top: 4px;
-  }
-
-  .data-table td[data-label="Acción"] {
-    display: flex;
-    justify-content: flex-end;
-    padding-top: 15px;
-    border-top: 1px dashed var(--border-color);
-  }
-
-  .data-table td[data-label="Acción"] button {
-    width: 100%;
-    justify-content: center;
-    padding: 10px;
-    background-color: var(--accent-blue);
-    color: white;
-    border-radius: 6px;
-  }
-
   /* Web details nested card adjustment */
   .data-table tr.web-details-row {
-    margin-top: -15px;
-    margin-bottom: 20px;
+    margin-top: -10px;
+    margin-bottom: 16px;
     border: 1px solid var(--border-color);
     border-top: none;
-    border-radius: 0 0 12px 12px;
-    padding: 15px;
+    border-radius: 0 0 14px 14px;
+    padding: 14px;
     background-color: var(--bg-dark);
     display: block;
     width: 100%;

@@ -23,6 +23,7 @@ class UpdateProductRequest(BaseModel):
     min_stock: int = 0
     featured_order: int = 0
     is_hidden: int = 0
+    cash_discount_pct: Optional[float] = 0.0
 
 class CreateProductRequest(BaseModel):
     title: str
@@ -41,6 +42,7 @@ class CreateProductRequest(BaseModel):
     sync_meli: int = 1
     min_stock: int = 0
     featured_order: int = 0
+    cash_discount_pct: Optional[float] = 0.0
 
 @router.get("/")
 def get_products(query: str = None, status: str = None, show_hidden: bool = False, is_hidden: Optional[int] = None, out_of_stock_30d: bool = False, out_of_stock_days: Optional[int] = None):
@@ -102,7 +104,8 @@ def create_product(payload: CreateProductRequest):
         "is_web_active": payload.is_web_active,
         "category_id": payload.category_id,
         "sync_meli": payload.sync_meli,
-        "min_stock": payload.min_stock
+        "min_stock": payload.min_stock,
+        "cash_discount_pct": payload.cash_discount_pct or 0.0
     }
 
     try:
@@ -128,6 +131,7 @@ class BulkUpdateItem(BaseModel):
     min_stock: int = 0
     featured_order: int = 0
     is_hidden: int = 0
+    cash_discount_pct: Optional[float] = 0.0
 
 class BulkUpdateRequest(BaseModel):
     items: list[BulkUpdateItem]
@@ -188,7 +192,8 @@ def bulk_update_products(payload: BulkUpdateRequest):
             item.min_stock,
             item.featured_order,
             item.use_meli_description,
-            item.description_meli
+            item.description_meli,
+            item.cash_discount_pct
         )
 
         is_local = item.ml_id.startswith('LOCAL-') or item.ml_id.startswith('WEB-')
@@ -271,7 +276,8 @@ def bulk_price_adjust_products(payload: BulkPriceAdjustRequest):
                     if not ok:
                         warnings.append(f"{ml_id}: Falló la sincronización con MeLi: {msg}")
 
-    return {"success": True, "count": len(payload.ml_ids), "warnings": warnings, "message": f"Precios ajustados para {len(payload.ml_ids)} productos."}
+    msg_target = "Descuento en efectivo" if payload.target in ('cash_discount', 'cash') else "Precios"
+    return {"success": True, "count": len(payload.ml_ids), "warnings": warnings, "message": f"{msg_target} ajustado(s) correctamente para {len(payload.ml_ids)} productos."}
 
 class SaveDispatchScheduleRequest(BaseModel):
     enabled: bool
@@ -360,7 +366,10 @@ def update_product(ml_id: str, payload: UpdateProductRequest):
         payload.category_id,
         payload.sync_meli,
         payload.min_stock,
-        payload.featured_order
+        payload.featured_order,
+        payload.use_meli_description,
+        payload.description_meli,
+        payload.cash_discount_pct
     )
     
     # Sync to Tiendanube if linked and sync_tn is enabled

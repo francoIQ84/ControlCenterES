@@ -130,6 +130,59 @@ def sync_mp_payments(date_from=None, limit=2000):
 
                 payment_method_label = f"{payment_method_id} ({payment_type})".upper()
 
+                # Check if this standalone MP payment matches an existing manual / local / web sale
+                ext_ref = str(p.get('external_reference') or '').strip()
+                matched_local_order = None
+                try:
+                    with database.get_connection() as conn:
+                        with conn.cursor() as cursor:
+                            # 1. Match by external_reference if present
+                            if ext_ref:
+                                cursor.execute("""
+                                    SELECT order_id, payment_method FROM orders_cache 
+                                    WHERE (order_id::text = %s OR order_id::text = %s)
+                                      AND source_platform IN ('LOCAL', 'WEB')
+                                    LIMIT 1
+                                """, (ext_ref, ext_ref.replace('order_', '')))
+                                matched_local_order = cursor.fetchone()
+
+                            # 2. Smart auto-match: same exact amount (+/- 0.05), created within 48 hours, and mp_payment_id is null
+                            if not matched_local_order and total_amount > 0 and date_created:
+                                clean_dt = date_created[:19]
+                                cursor.execute("""
+                                    SELECT order_id, payment_method FROM orders_cache 
+                                    WHERE source_platform IN ('LOCAL', 'WEB')
+                                      AND (mp_payment_id IS NULL OR mp_payment_id = 0)
+                                      AND ABS(total_amount - %s) < 0.05
+                                      AND CAST(SUBSTRING(date_created FROM 1 FOR 19) AS timestamp) >= (CAST(SUBSTRING(%s FROM 1 FOR 19) AS timestamp) - INTERVAL '48 hours')
+                                      AND CAST(SUBSTRING(date_created FROM 1 FOR 19) AS timestamp) <= (CAST(SUBSTRING(%s FROM 1 FOR 19) AS timestamp) + INTERVAL '48 hours')
+                                    ORDER BY 
+                                      CASE 
+                                        WHEN payment_method ILIKE '%%Mercado Pago%%' OR payment_method ILIKE '%%Transferencia%%' THEN 0 
+                                        ELSE 1 
+                                      END,
+                                      ABS(EXTRACT(EPOCH FROM (CAST(SUBSTRING(date_created FROM 1 FOR 19) AS timestamp) - CAST(SUBSTRING(%s FROM 1 FOR 19) AS timestamp)))) ASC
+                                    LIMIT 1
+                                """, (total_amount, clean_dt, clean_dt, clean_dt))
+                                matched_local_order = cursor.fetchone()
+
+                            if matched_local_order:
+                                matched_oid = matched_local_order['order_id']
+                                cursor.execute("""
+                                    UPDATE orders_cache 
+                                    SET mp_payment_id = %s,
+                                        mp_fee_amount = %s,
+                                        status = 'paid',
+                                        payment_status = 'approved'
+                                    WHERE order_id = %s
+                                """, (payment_id, total_fee, matched_oid))
+                                print(f"[MP Auto-Match] Pago MP #{payment_id} (${total_amount}) vinculado con éxito a la venta local #{matched_oid}")
+                except Exception as e_match:
+                    print(f"[MP Match Error] Error al intentar conciliar pago MP #{payment_id}: {e_match}")
+
+                if matched_local_order:
+                    continue  # Do not insert duplicate sale record!
+
                 # Payer details
                 payer = p.get('payer') or {}
                 email = (payer.get('email') or '').strip()
@@ -376,7 +429,7 @@ def get_mp_balance():
         print(f"[MP Balance Fallback] Error: {e_fb}")
         return None
 
-def create_payment_preference(items: list, buyer_name: str = "", buyer_email: str = ""):
+def create_payment_preference(items: list, buyer_name: str = "", buyer_email: str = "", external_reference: str = ""):
     """
     Creates a Mercado Pago Checkout Preference for in-person QR scanning or Payment Links.
     Returns init_point, preference_id, and qr_code_url.
@@ -439,6 +492,9 @@ def create_payment_preference(items: list, buyer_name: str = "", buyer_email: st
         "auto_return": "approved",
         "statement_descriptor": "HIDROPONIA ROSARIO"
     }
+
+    if external_reference:
+        body["external_reference"] = str(external_reference)
 
     try:
         response = requests.post(url, headers=headers, json=body, timeout=15)

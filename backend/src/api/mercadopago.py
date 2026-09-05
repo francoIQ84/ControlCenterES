@@ -40,10 +40,11 @@ class CreateChargeRequest(BaseModel):
     items: list
     buyer_name: Optional[str] = ""
     buyer_email: Optional[str] = ""
+    external_reference: Optional[str] = ""
 
 @router.post("/create-charge")
 def create_charge(req: CreateChargeRequest, _=Depends(require_permission("sales"))):
-    ok, result_or_err = mp_api.create_payment_preference(req.items, req.buyer_name, req.buyer_email)
+    ok, result_or_err = mp_api.create_payment_preference(req.items, req.buyer_name, req.buyer_email, req.external_reference)
     if ok:
         return {"success": True, "charge": result_or_err}
     else:

@@ -147,7 +147,8 @@ export default function Inventory() {
     publish_to_meli: false,
     category_id: "",
     sync_meli: true,
-    min_stock: 0
+    min_stock: 0,
+    cash_discount_pct: 0
   }
   const [newProduct, setNewProduct] = useState(initialNewProduct)
   const [showAddModal, setShowAddModal] = useState(false)
@@ -190,6 +191,7 @@ export default function Inventory() {
         const costChanged = Math.abs(parseN(d.cost) - parseN(orig.cost_price)) > 0.01
         const costMeliChanged = Math.abs(parseN(d.cost_meli) - parseN(orig.cost_meli)) > 0.01
         const priceWebChanged = Math.abs(parseN(d.price_web) - parseN(orig.price_web)) > 0.01
+        const cashDiscountChanged = Math.abs(parseN(d.cash_discount_pct) - parseN(orig.cash_discount_pct)) > 0.01
         const minStockChanged = parseN(d.min_stock, true) !== parseN(orig.min_stock, true)
         const featuredOrderChanged = parseN(d.featured_order, true) !== parseN(orig.featured_order, true)
 
@@ -220,6 +222,7 @@ export default function Inventory() {
           costChanged ||
           costMeliChanged ||
           priceWebChanged ||
+          cashDiscountChanged ||
           minStockChanged ||
           featuredOrderChanged ||
           webActiveChanged ||
@@ -470,7 +473,7 @@ export default function Inventory() {
     fetchCategories()
   }, [query, hiddenFilter, outOfStockDays])
 
-  const handleUpdate = async (ml_id, qty, price, cost, cost_meli, price_web, images, description, is_web_active, category_id, sync_meli, min_stock, featured_order = 0, use_meli_description = 1, description_meli = "") => {
+  const handleUpdate = async (ml_id, qty, price, cost, cost_meli, price_web, images, description, is_web_active, category_id, sync_meli, min_stock, featured_order = 0, use_meli_description = 1, description_meli = "", cash_discount_pct = 0) => {
     try {
       const res = await fetch(`/api/inventory/${ml_id}`, {
         method: 'PUT',
@@ -481,6 +484,7 @@ export default function Inventory() {
           cost: parseFloat(cost),
           cost_meli: parseFloat(cost_meli) || 0.0,
           price_web: parseFloat(price_web) || 0,
+          cash_discount_pct: parseFloat(cash_discount_pct) || 0,
           images: images || "",
           description: description || "",
           use_meli_description: use_meli_description ? 1 : 0,
@@ -804,11 +808,23 @@ export default function Inventory() {
     e.preventDefault()
     if (selectedIds.length === 0) return
     const val = parseFloat(bulkPriceValue)
-    if (isNaN(val) || val === 0) {
+    if (isNaN(val)) {
+      alert("Por favor ingresa un valor válido.")
+      return
+    }
+    if (val === 0 && bulkPriceType !== 'set_exact') {
       alert("Por favor ingresa un valor de ajuste válido distinto de cero.")
       return
     }
-    if (!confirm(`¿Confirmas aplicar el ajuste de precio (${val > 0 ? '+' : ''}${val}${bulkPriceType === 'percentage' ? '%' : '$'}) a ${selectedIds.length} producto(s)?`)) return
+
+    let confirmMsg = `¿Confirmas aplicar el ajuste de precio (${val > 0 ? '+' : ''}${val}${bulkPriceType === 'percentage' ? '%' : '$'}) a ${selectedIds.length} producto(s)?`
+    if (bulkPriceTarget === 'cash_discount') {
+      confirmMsg = bulkPriceType === 'set_exact'
+        ? `¿Confirmas fijar ${val}% de descuento en efectivo a ${selectedIds.length} producto(s) seleccionados?`
+        : `¿Confirmas ajustar el descuento en efectivo (${val > 0 ? '+' : ''}${val}%) a ${selectedIds.length} producto(s) seleccionados?`
+    }
+
+    if (!confirm(confirmMsg)) return
 
     try {
       setLoading(true)
@@ -1231,12 +1247,15 @@ export default function Inventory() {
                 </label>
               </div>
 
-              <div style={{display: 'flex', gap: 15}}>
-                <label style={{flex: 1, fontSize: '0.85rem'}}>Precio ML / Original *
+              <div style={{display: 'flex', gap: 15, flexWrap: 'wrap'}}>
+                <label style={{flex: 1, minWidth: 130, fontSize: '0.85rem'}}>Precio ML / Original *
                   <input type="number" required step="0.01" min="0" value={newProduct.price} onChange={e => setNewProduct({...newProduct, price: parseFloat(e.target.value) || 0})} style={{width: '100%', marginTop: 5}}/>
                 </label>
-                <label style={{flex: 1, fontSize: '0.85rem'}}>Precio Tienda Web *
+                <label style={{flex: 1, minWidth: 130, fontSize: '0.85rem'}}>Precio Web / Lista *
                   <input type="number" required step="0.01" min="0" value={newProduct.price_web} onChange={e => setNewProduct({...newProduct, price_web: parseFloat(e.target.value) || 0})} style={{width: '100%', marginTop: 5}}/>
+                </label>
+                <label style={{flex: 1, minWidth: 130, fontSize: '0.85rem'}} title="Descuento en efectivo sobre el precio de lista para cobro en local">💵 % Desc. Efectivo
+                  <input type="number" step="1" min="0" max="100" value={newProduct.cash_discount_pct || 0} onChange={e => setNewProduct({...newProduct, cash_discount_pct: parseFloat(e.target.value) || 0})} style={{width: '100%', marginTop: 5}} placeholder="0"/>
                 </label>
               </div>
 
@@ -1474,8 +1493,9 @@ export default function Inventory() {
                     <th onClick={() => requestSort('stock')} style={{cursor: 'pointer', userSelect: 'none', width: 60}} title="Ordenar por Stock">Stock{getSortIcon('stock')}</th>
                     <th style={{width: 75}}>P. ML</th>
                     <th style={{width: 75}}>C. Base</th>
-                    <th style={{width: 75}} title="Costo total de Mercado Libre obtenido desde la API (Comisión de venta + Envío gratis si aplica)">C. ML ⓘ</th>
+                    <th style={{width: 75}}>C. ML ⓘ</th>
                     <th style={{width: 75}}>P. Web</th>
+                    <th style={{width: 95, textAlign: 'center'}} title="Precio y descuento para cobro en efectivo en el local físico (No visible en la web)">💵 P. Efectivo</th>
                     <th onClick={() => requestSort('is_web_active')} style={{cursor: 'pointer', userSelect: 'none', width: 85, textAlign: 'center'}} title="Ordenar por Estado de Tienda Web (Activo/Desactivo)">Estado Web{getSortIcon('is_web_active')}</th>
                     <th style={{width: 100}}>Acciones</th>
                   </tr>
@@ -1710,21 +1730,30 @@ export default function Inventory() {
             width: 480, maxWidth: '90%', padding: 25,
             backgroundColor: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: 12
           }}>
-            <h3 style={{marginTop: 0, marginBottom: 15}}>Ajuste Masivo de Precios</h3>
+            <h3 style={{marginTop: 0, marginBottom: 15}}>Ajuste Masivo de Precios / Efectivo</h3>
             <p style={{fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: 15}}>
-              Modificar el precio de los <strong>{selectedIds.length}</strong> productos seleccionados.
+              Modificar el precio o descuento de los <strong>{selectedIds.length}</strong> productos seleccionados.
             </p>
 
             <form onSubmit={handleApplyBulkPriceAdjust} style={{display: 'flex', flexDirection: 'column', gap: 15}}>
               <label style={{fontSize: '0.85rem'}}>Aplicar a:
                 <select 
                   value={bulkPriceTarget} 
-                  onChange={e => setBulkPriceTarget(e.target.value)}
+                  onChange={e => {
+                    const newTarget = e.target.value
+                    setBulkPriceTarget(newTarget)
+                    if (newTarget === 'cash_discount') {
+                      setBulkPriceType('set_exact')
+                    } else if (bulkPriceType === 'set_exact') {
+                      setBulkPriceType('percentage')
+                    }
+                  }}
                   style={{width: '100%', marginTop: 5, padding: '7px 10px', borderRadius: 6, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)'}}
                 >
                   <option value="both">Ambos (Precio MeLi y Precio Web)</option>
-                  <option value="meli">Solo Precio Mercado Libre</option>
+                  <option value="cash_discount">💵 Descuento en Efectivo (% desc. sobre precio lista)</option>
                   <option value="web">Solo Precio Tienda Web</option>
+                  <option value="meli">Solo Precio Mercado Libre</option>
                 </select>
               </label>
 
@@ -1735,19 +1764,35 @@ export default function Inventory() {
                     onChange={e => setBulkPriceType(e.target.value)}
                     style={{width: '100%', marginTop: 5, padding: '7px 10px', borderRadius: 6, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)'}}
                   >
-                    <option value="percentage">Porcentaje (%)</option>
-                    <option value="fixed">Monto Fijo ($)</option>
+                    {bulkPriceTarget === 'cash_discount' ? (
+                      <>
+                        <option value="set_exact">Fijar porcentaje directo (%)</option>
+                        <option value="percentage">Sumar / Restar al % actual (%)</option>
+                      </>
+                    ) : (
+                      <>
+                        <option value="percentage">Porcentaje (%)</option>
+                        <option value="fixed">Monto Fijo ($)</option>
+                        <option value="set_exact">Fijar Precio Exacto ($)</option>
+                      </>
+                    )}
                   </select>
                 </label>
 
-                <label style={{flex: 1, fontSize: '0.85rem'}}>Valor ({bulkPriceType === 'percentage' ? '%' : '$'}):
+                <label style={{flex: 1, fontSize: '0.85rem'}}>
+                  {bulkPriceTarget === 'cash_discount' 
+                    ? 'Descuento (%):' 
+                    : `Valor (${bulkPriceType === 'percentage' ? '%' : '$'}):`
+                  }
                   <input 
                     type="number" 
                     step="any"
+                    min={bulkPriceTarget === 'cash_discount' && bulkPriceType === 'set_exact' ? "0" : undefined}
+                    max={bulkPriceTarget === 'cash_discount' && bulkPriceType === 'set_exact' ? "100" : undefined}
                     required 
                     value={bulkPriceValue}
                     onChange={e => setBulkPriceValue(e.target.value)}
-                    placeholder="ej: 10 o -5"
+                    placeholder={bulkPriceTarget === 'cash_discount' ? "ej: 10" : "ej: 10 o -5"}
                     style={{width: '100%', marginTop: 5, padding: '7px 10px', borderRadius: 6, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)'}}
                   />
                 </label>
@@ -1756,18 +1801,34 @@ export default function Inventory() {
               <div style={{
                 padding: '10px 14px',
                 borderRadius: 6,
-                backgroundColor: 'rgba(59, 130, 246, 0.1)',
-                border: '1px solid rgba(59, 130, 246, 0.2)',
+                backgroundColor: bulkPriceTarget === 'cash_discount' ? 'rgba(16, 185, 129, 0.1)' : 'rgba(59, 130, 246, 0.1)',
+                border: bulkPriceTarget === 'cash_discount' ? '1px solid rgba(16, 185, 129, 0.3)' : '1px solid rgba(59, 130, 246, 0.2)',
                 fontSize: '0.8rem',
-                color: 'var(--accent-blue)'
+                color: bulkPriceTarget === 'cash_discount' ? '#059669' : 'var(--accent-blue)'
               }}>
                 💡 <strong>Resumen del ajuste:</strong> {
-                  parseFloat(bulkPriceValue) === 0 ? "Sin cambio" : (
-                    parseFloat(bulkPriceValue) > 0 
-                      ? `Aumentará los precios un ${bulkPriceType === 'percentage' ? `${bulkPriceValue}%` : `$${bulkPriceValue}`}`
-                      : `Reducirá los precios un ${bulkPriceType === 'percentage' ? `${Math.abs(bulkPriceValue)}%` : `$${Math.abs(bulkPriceValue)}`}`
+                  bulkPriceTarget === 'cash_discount' ? (
+                    bulkPriceType === 'set_exact' ? (
+                      `Fijará un ${bulkPriceValue || 0}% de descuento en efectivo en los ${selectedIds.length} productos seleccionados (el precio para cobrar en efectivo en el local se recalculará automáticamente).`
+                    ) : (
+                      parseFloat(bulkPriceValue) === 0 ? "Sin cambio" : (
+                        parseFloat(bulkPriceValue) > 0
+                          ? `Aumentará el % de descuento en efectivo un ${bulkPriceValue}% en los productos seleccionados.`
+                          : `Reducirá el % de descuento en efectivo un ${Math.abs(bulkPriceValue)}% en los productos seleccionados.`
+                      )
+                    )
+                  ) : (
+                    parseFloat(bulkPriceValue) === 0 ? "Sin cambio" : (
+                      bulkPriceType === 'set_exact' ? (
+                        `Fijará el precio a $${bulkPriceValue} en los productos seleccionados.`
+                      ) : (
+                        parseFloat(bulkPriceValue) > 0 
+                          ? `Aumentará los precios un ${bulkPriceType === 'percentage' ? `${bulkPriceValue}%` : `$${bulkPriceValue}`}`
+                          : `Reducirá los precios un ${bulkPriceType === 'percentage' ? `${Math.abs(bulkPriceValue)}%` : `$${Math.abs(bulkPriceValue)}`}`
+                      )
+                    )
                   )
-                } en los productos seleccionados.
+                }
               </div>
 
               <div style={{display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 10}}>
@@ -2221,6 +2282,7 @@ function ProductRow({ p, onSave, onOpenGallery, onDraftChange, categories, categ
   const [minStock, setMinStock] = useState(p.min_stock || 0)
   
   const [priceWeb, setPriceWeb] = useState(p.price_web || 0)
+  const [cashDiscountPct, setCashDiscountPct] = useState(p.cash_discount_pct !== undefined ? p.cash_discount_pct : 0)
   const [isWebActive, setIsWebActive] = useState(p.is_web_active === 1)
   const [categoryId, setCategoryId] = useState(p.category_id || "")
   const [syncMeli, setSyncMeli] = useState(p.sync_meli !== 0)
@@ -2275,6 +2337,10 @@ function ProductRow({ p, onSave, onOpenGallery, onDraftChange, categories, categ
   const numCost = parseNum(cost)
   const numCostMeli = parseNum(costMeli)
   const numPriceWeb = parseNum(priceWeb)
+  const numCashDiscountPct = parseNum(cashDiscountPct)
+
+  const baseListPrice = numPriceWeb > 0 ? numPriceWeb : numPrice
+  const finalCashPrice = Math.round(baseListPrice * (1 - (numCashDiscountPct / 100)))
 
   const totalCostMeli = numCost + numCostMeli
   const profitMeli = numPrice > 0 ? numPrice - totalCostMeli : 0
@@ -2305,6 +2371,7 @@ function ProductRow({ p, onSave, onOpenGallery, onDraftChange, categories, categ
       cost: parseNum(cost),
       cost_meli: parseNum(costMeli),
       price_web: parseNum(priceWeb),
+      cash_discount_pct: parseNum(cashDiscountPct),
       images: getCombinedImages(),
       description: description || "",
       use_meli_description: useMeliDescription ? 1 : 0,
@@ -2315,13 +2382,13 @@ function ProductRow({ p, onSave, onOpenGallery, onDraftChange, categories, categ
       min_stock: parseNum(minStock, true),
       featured_order: parseNum(featuredOrder, true)
     })
-  }, [qty, price, cost, costMeli, priceWeb, isWebActive, description, useMeliDescription, descMeli, useMeliImage, customMainUrl, additionalUrls, categoryId, syncMeli, minStock, featuredOrder])
+  }, [qty, price, cost, costMeli, priceWeb, cashDiscountPct, isWebActive, description, useMeliDescription, descMeli, useMeliImage, customMainUrl, additionalUrls, categoryId, syncMeli, minStock, featuredOrder])
 
   if (viewMode === 'compact') {
     return (
       <React.Fragment>
         <tr className="product-row-card compact-tr" style={{borderBottom: '1px solid var(--border-color)', fontSize: '0.85rem', backgroundColor: isSelected ? 'rgba(59, 130, 246, 0.12)' : undefined}}>
-          <td data-label="Selección" className="sticky-col-left-1" style={{padding: '5px 8px', textAlign: 'center'}}>
+          <td data-label="Selección" className="sticky-col-left-1 cell-select" style={{padding: '5px 8px', textAlign: 'center'}}>
             <input 
               type="checkbox" 
               checked={isSelected}
@@ -2329,14 +2396,14 @@ function ProductRow({ p, onSave, onOpenGallery, onDraftChange, categories, categ
               style={{cursor: 'pointer'}}
             />
           </td>
-          <td data-label="Imagen" className="sticky-col-left-2" style={{padding: '5px 8px'}}>
+          <td data-label="Imagen" className="sticky-col-left-2 cell-thumb" style={{padding: '5px 8px'}}>
             <img 
               src={p.thumbnail || 'https://via.placeholder.com/35'} 
               alt="thumb" 
               style={{width: 35, height: 35, objectFit: 'contain', borderRadius: 4, border: '1px solid var(--border-color)', backgroundColor: '#fff'}}
             />
           </td>
-          <td data-label="Detalle" style={{padding: '6px 10px'}}>
+          <td data-label="Detalle" className="cell-detail" style={{padding: '6px 10px'}}>
             <div 
               style={{
                 fontWeight: 600, 
@@ -2494,7 +2561,7 @@ function ProductRow({ p, onSave, onOpenGallery, onDraftChange, categories, categ
               🕒 Modif: {p.last_modified ? new Date(p.last_modified).toLocaleString('es-AR', { dateStyle: 'short', timeStyle: 'short' }) : 'Sin cambios'}
             </div>
           </td>
-          <td data-label="Estado ML" style={{padding: '5px 8px'}}>
+          <td data-label="Estado ML" className="cell-status-ml" style={{padding: '5px 8px'}}>
             <span style={{
               fontSize: '0.78rem', 
               fontWeight: 600,
@@ -2506,37 +2573,69 @@ function ProductRow({ p, onSave, onOpenGallery, onDraftChange, categories, categ
               {p.status === 'active' ? 'Activa' : p.status === 'paused' ? 'Pausada' : p.status === 'under_review' ? 'En Revisión' : p.status === 'local' ? 'Local' : p.status}
             </span>
           </td>
-          <td data-label="Stock" style={{padding: '5px 8px'}}>
+          <td data-label="Stock" className="cell-stock" style={{padding: '5px 8px'}}>
             <input type="number" value={qty} onChange={e => setQty(e.target.value)} style={{width: 55, padding: '3px 5px', fontSize: '0.8rem', border: '1px solid var(--border-color)', borderRadius: 4, backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)'}}/>
             {p.prev_stock !== null && p.prev_stock !== undefined && (
               <div style={{fontSize: '0.65rem', color: 'var(--text-secondary)', marginTop: 1}}>ant: {p.prev_stock}</div>
             )}
           </td>
-          <td data-label="P. ML" style={{padding: '5px 8px'}}>
+          <td data-label="P. ML" className="cell-price-ml" style={{padding: '5px 8px'}}>
             <input type="number" value={price} onChange={e => setPrice(e.target.value)} style={{width: 75, padding: '3px 5px', fontSize: '0.8rem', border: '1px solid var(--border-color)', borderRadius: 4, backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)'}} disabled={p.status === 'local'}/>
             {p.prev_price !== null && p.prev_price !== undefined && (
               <div style={{fontSize: '0.65rem', color: 'var(--text-secondary)', marginTop: 1}}>ant: ${p.prev_price.toLocaleString('es-AR')}</div>
             )}
           </td>
-          <td data-label="C. Base" style={{padding: '5px 8px'}}>
+          <td data-label="C. Base" className="cell-cost-base" style={{padding: '5px 8px'}}>
             <input type="number" value={cost} onChange={e => setCost(e.target.value)} style={{width: 75, padding: '3px 5px', fontSize: '0.8rem', border: '1px solid var(--border-color)', borderRadius: 4, backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)'}}/>
             {p.prev_cost_price !== null && p.prev_cost_price !== undefined && (
               <div style={{fontSize: '0.65rem', color: 'var(--text-secondary)', marginTop: 1}}>ant: ${p.prev_cost_price.toLocaleString('es-AR')}</div>
             )}
           </td>
-          <td data-label="C. ML" style={{padding: '5px 8px'}}>
+          <td data-label="C. ML" className="cell-cost-ml" style={{padding: '5px 8px'}}>
             <input type="number" value={costMeli} onChange={e => setCostMeli(e.target.value)} style={{width: 65, padding: '3px 5px', fontSize: '0.8rem', border: '1px solid var(--border-color)', borderRadius: 4, backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)'}}/>
             {p.prev_cost_meli !== null && p.prev_cost_meli !== undefined && (
               <div style={{fontSize: '0.65rem', color: 'var(--text-secondary)', marginTop: 1}}>ant: ${p.prev_cost_meli.toLocaleString('es-AR')}</div>
             )}
           </td>
-          <td data-label="P. Web" style={{padding: '5px 8px'}}>
+          <td data-label="P. Web" className="cell-price-web" style={{padding: '5px 8px'}}>
             <input type="number" value={priceWeb} onChange={e => setPriceWeb(e.target.value)} style={{width: 75, padding: '3px 5px', fontSize: '0.8rem', border: '1px solid var(--border-color)', borderRadius: 4, backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)'}}/>
             {p.prev_price_web !== null && p.prev_price_web !== undefined && (
               <div style={{fontSize: '0.65rem', color: 'var(--text-secondary)', marginTop: 1}}>ant: ${p.prev_price_web.toLocaleString('es-AR')}</div>
             )}
           </td>
-          <td data-label="Estado Web" style={{padding: '5px 8px', textAlign: 'center'}}>
+          <td data-label="P. Efectivo" className="cell-price-cash" style={{padding: '5px 8px', textAlign: 'center'}}>
+            <div className="cash-pricing-box" style={{display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, padding: '4px 6px', borderRadius: 6, backgroundColor: 'rgba(16, 185, 129, 0.08)', border: '1px solid rgba(16, 185, 129, 0.25)'}}>
+              <div className="cash-price-val" style={{fontWeight: 700, fontSize: '0.9rem', color: '#10b981', whiteSpace: 'nowrap', lineHeight: 1.1}} title="Precio a cobrar en efectivo en el local físico">
+                ${finalCashPrice.toLocaleString('es-AR')}
+              </div>
+              <div className="cash-discount-row" style={{display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 2}}>
+                <span style={{fontSize: '0.66rem', color: 'var(--text-secondary)', fontWeight: 600}}>%</span>
+                <input 
+                  type="number" 
+                  step="1"
+                  min="0"
+                  max="100"
+                  value={cashDiscountPct} 
+                  onChange={e => setCashDiscountPct(e.target.value)} 
+                  placeholder="0"
+                  title="% Descuento efectivo sobre precio de lista"
+                  style={{
+                    width: 44, 
+                    padding: '2px 4px', 
+                    fontSize: '0.76rem', 
+                    fontWeight: 600,
+                    textAlign: 'center',
+                    border: '1px solid var(--border-color)', 
+                    borderRadius: 4, 
+                    backgroundColor: 'var(--bg-card)', 
+                    color: 'var(--text-primary)'
+                  }}
+                />
+                <span style={{fontSize: '0.66rem', color: 'var(--text-secondary)'}}>desc</span>
+              </div>
+            </div>
+          </td>
+          <td data-label="Estado Web" className="cell-status-web" style={{padding: '5px 8px', textAlign: 'center'}}>
             <div style={{display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2}}>
               <span style={{
                 fontSize: '0.72rem', 
@@ -2554,9 +2653,9 @@ function ProductRow({ p, onSave, onOpenGallery, onDraftChange, categories, categ
               />
             </div>
           </td>
-          <td data-label="Acciones" style={{padding: '5px 8px'}}>
+          <td data-label="Acciones" className="cell-actions" style={{padding: '5px 8px'}}>
             <div style={{display: 'flex', gap: 6, alignItems: 'center'}}>
-              <button className="btn-icon" onClick={() => onSave(p.ml_id, qty, price, cost, costMeli, priceWeb, getCombinedImages(), description, isWebActive, categoryId, syncMeli, minStock, featuredOrder, useMeliDescription ? 1 : 0, descMeli)} title="Guardar Todo" style={{padding: 4}}>
+              <button className="btn-icon" onClick={() => onSave(p.ml_id, qty, price, cost, costMeli, priceWeb, getCombinedImages(), description, isWebActive, categoryId, syncMeli, minStock, featuredOrder, useMeliDescription ? 1 : 0, descMeli, cashDiscountPct)} title="Guardar Todo" style={{padding: 4}}>
                 <Save size={14} className="text-blue-500" />
               </button>
               <button type="button" className="btn-icon" onClick={() => onOpenQrModal(p)} title="Ver / Imprimir QR" style={{padding: 4, color: 'var(--accent-blue)'}}>
@@ -2573,7 +2672,7 @@ function ProductRow({ p, onSave, onOpenGallery, onDraftChange, categories, categ
         </tr>
         {showWebDetails && (
           <tr className="web-details-row" style={{backgroundColor: 'var(--bg-dark)'}}>
-            <td colSpan="11" style={{padding: 15}}>
+            <td colSpan="12" style={{padding: 15}}>
               <div style={{display: 'flex', gap: 20, flexWrap: 'wrap'}}>
                 {/* Columna 1: Imagen Principal */}
                 <div style={{flex: 1, minWidth: 200, display: 'flex', flexDirection: 'column', gap: 8}}>
@@ -2869,6 +2968,24 @@ function ProductRow({ p, onSave, onOpenGallery, onDraftChange, categories, categ
                 Margen Web: {marginWeb.toFixed(1)}% (Beneficio: ${profitWeb.toFixed(2)})
               </div>
             )}
+            <div style={{marginTop: 6, padding: '5px 8px', borderRadius: 6, backgroundColor: 'rgba(16, 185, 129, 0.08)', border: '1px solid rgba(16, 185, 129, 0.25)'}}>
+              <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.8rem'}}>
+                <span style={{color: 'var(--text-secondary)', fontWeight: 600}}>💵 Efectivo:</span>
+                <span style={{color: '#10b981', fontWeight: 700, fontSize: '0.85rem'}}>${finalCashPrice.toLocaleString('es-AR')}</span>
+              </div>
+              <div style={{display: 'flex', alignItems: 'center', gap: 5, marginTop: 4}}>
+                <span style={{fontSize: '0.72rem', color: 'var(--text-secondary)'}}>% Desc. Efectivo:</span>
+                <input 
+                  type="number" 
+                  step="1" 
+                  min="0" 
+                  max="100" 
+                  value={cashDiscountPct} 
+                  onChange={e => setCashDiscountPct(e.target.value)} 
+                  style={{width: 50, padding: '2px 4px', fontSize: '0.75rem', textAlign: 'center'}}
+                />
+              </div>
+            </div>
             <button className="btn" style={{padding: '4px 8px', fontSize: '0.75rem', marginTop: 5}} onClick={() => setShowWebDetails(!showWebDetails)}>
               Editar Contenido Web
             </button>
@@ -2876,7 +2993,7 @@ function ProductRow({ p, onSave, onOpenGallery, onDraftChange, categories, categ
         </td>
         <td data-label="Acción">
           <div style={{display: 'flex', gap: 6, alignItems: 'center'}}>
-            <button className="btn-icon" onClick={() => onSave(p.ml_id, qty, price, cost, costMeli, priceWeb, getCombinedImages(), description, isWebActive, categoryId, syncMeli, minStock, featuredOrder, useMeliDescription ? 1 : 0, descMeli)} title="Guardar Todo">
+            <button className="btn-icon" onClick={() => onSave(p.ml_id, qty, price, cost, costMeli, priceWeb, getCombinedImages(), description, isWebActive, categoryId, syncMeli, minStock, featuredOrder, useMeliDescription ? 1 : 0, descMeli, cashDiscountPct)} title="Guardar Todo">
               <Save size={18} className="text-blue-500" />
             </button>
             <button type="button" className="btn-icon" onClick={() => onOpenQrModal(p)} title="Ver / Imprimir QR" style={{color: 'var(--accent-blue)'}}>

@@ -79,8 +79,8 @@ def _sync_one_tenant(tenant):
 
     # Programación automática de disponibilidad de envíos MeLi
     try:
-        from src.api.inventory import process_auto_shipping_schedules
-        process_auto_shipping_schedules()
+        from src import meli_api
+        meli_api.apply_dispatch_schedule_rules(force=False)
     except Exception as ship_err:
         print(f"[Scheduler][{slug}] Error en auto-envíos MeLi: {ship_err}")
 

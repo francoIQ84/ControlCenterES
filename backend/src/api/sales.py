@@ -18,6 +18,9 @@ class SyncSalesRequest(BaseModel):
 class UpdateShippingRequest(BaseModel):
     shipping_status: str
 
+class UpdatePaymentStatusRequest(BaseModel):
+    payment_status: str
+
 class ManualOrderProduct(BaseModel):
     id: str
     title: str
@@ -32,6 +35,7 @@ class ManualOrderRequest(BaseModel):
     source_platform: str
     items: List[ManualOrderProduct]
     payment_method: Optional[str] = None
+    payment_status: Optional[str] = "paid"
 
 @router.get("/")
 def get_sales(search: Optional[str] = None, source_platform: Optional[str] = None):
@@ -201,6 +205,13 @@ def update_shipping(order_id: int, req: UpdateShippingRequest):
     database.update_order_shipping_status(order_id, req.shipping_status)
     return {"success": True}
 
+@router.put("/{order_id}/payment-status")
+def update_payment_status(order_id: int, req: UpdatePaymentStatusRequest):
+    status_val = "paid" if req.payment_status in ("paid", "approved") else "pending"
+    pay_status_val = "approved" if status_val == "paid" else "pending"
+    database.update_order_payment_status(order_id, status_val, pay_status_val)
+    return {"success": True}
+
 @router.post("/")
 def create_order(req: ManualOrderRequest):
     order_id = int(time.time() * 1000) + random.randint(1, 999)
@@ -215,17 +226,21 @@ def create_order(req: ManualOrderRequest):
             "price": item.price
         })
         
+    order_status = "paid" if (req.payment_status or "paid") in ("paid", "approved") else "pending"
+    pay_status = "approved" if order_status == "paid" else "pending"
+
     database.create_manual_order(
         order_id=order_id,
         date_created=date_created,
         buyer_nickname=req.buyer_nickname,
         buyer_name=req.buyer_name,
         total_amount=req.total_amount,
-        status="paid",
+        status=order_status,
         shipping_status=req.shipping_status,
         items=items_list,
         source_platform=req.source_platform,
-        payment_method=req.payment_method
+        payment_method=req.payment_method,
+        payment_status=pay_status
     )
     return {"success": True, "order_id": order_id}
 
