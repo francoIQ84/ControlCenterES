@@ -49,6 +49,7 @@ export default function Marketing() {
   const [videoEngine, setVideoEngine] = useState('gemini_canvas')
   const [generatingVideo, setGeneratingVideo] = useState(false)
   const [generatedVideoUrl, setGeneratedVideoUrl] = useState('')
+  const [generatedServerMediaUrl, setGeneratedServerMediaUrl] = useState('')
   const [videoScriptData, setVideoScriptData] = useState(null)
   
   // Canvas Customizer states
@@ -519,6 +520,7 @@ export default function Marketing() {
     setPlatforms({ instagram: true, facebook: true })
     setCaption('')
     setMediaUrl('')
+    setGeneratedServerMediaUrl('')
     setScheduledAt('')
     setGeneratedData(null)
   }
@@ -535,6 +537,7 @@ export default function Marketing() {
     })
     setCaption(p.caption || '')
     setMediaUrl(p.media_urls || '')
+    setGeneratedServerMediaUrl(p.media_urls || '')
     if (p.scheduled_at) {
       try {
         const d = new Date(p.scheduled_at)
@@ -793,6 +796,7 @@ export default function Marketing() {
           const uploadData = await uploadRes.json()
           if (uploadRes.ok && uploadData.url) {
             setMediaUrl(uploadData.url)
+            setGeneratedServerMediaUrl(uploadData.url)
           }
 
         } catch(e) {
@@ -1775,24 +1779,29 @@ export default function Marketing() {
       ctx.fillText(footerTxt, size / 2, 1040)
     }
 
-    // Export as PNG blob and upload
+    // Export as JPEG blob and upload
     return new Promise((resolve) => {
       canvas.toBlob(async (blob) => {
+        if (!blob) {
+          resolve(null)
+          return
+        }
         const blobUrl = URL.createObjectURL(blob)
         try {
           const formData = new FormData()
-          const file = new File([blob], `post_${Date.now()}.png`, { type: 'image/png' })
+          const file = new File([blob], `post_${Date.now()}.jpg`, { type: 'image/jpeg' })
           formData.append('file', file)
           const uploadRes = await fetch('/api/media/upload?path=reels', { method: 'POST', body: formData })
           const uploadData = await uploadRes.json()
           if (uploadRes.ok && uploadData.url) {
             setMediaUrl(uploadData.url)
+            setGeneratedServerMediaUrl(uploadData.url)
           }
         } catch (e) {
           console.warn("Error uploading post image:", e)
         }
         resolve(blobUrl)
-      }, 'image/png')
+      }, 'image/jpeg', 0.95)
     })
   }
 
@@ -1868,6 +1877,17 @@ export default function Marketing() {
 
     const finalStatus = statusOverride || (scheduledAt ? 'scheduled' : 'draft')
 
+    let cleanMediaUrl = mediaUrl.trim()
+    if (cleanMediaUrl.startsWith('blob:')) {
+      if (generatedServerMediaUrl && !generatedServerMediaUrl.startsWith('blob:')) {
+        cleanMediaUrl = generatedServerMediaUrl
+        setMediaUrl(generatedServerMediaUrl)
+      } else {
+        alert("El archivo aún se está subiendo al servidor. Por favor aguarda unos segundos antes de guardar la publicación.")
+        return
+      }
+    }
+
     setSubmitting(true)
     try {
       const res = await fetch('/api/marketing/posts', {
@@ -1880,7 +1900,7 @@ export default function Marketing() {
           post_type: postType,
           platforms: selectedPlatforms,
           caption: caption.trim(),
-          media_urls: mediaUrl.trim(),
+          media_urls: cleanMediaUrl,
           scheduled_at: scheduledAt ? new Date(scheduledAt).toISOString() : null,
           status: finalStatus
         })
@@ -2574,8 +2594,13 @@ export default function Marketing() {
                       <button 
                         className="btn" 
                         onClick={() => {
-                          setMediaUrl(generatedVideoUrl)
-                          alert(`¡${postType === 'post' ? 'Imagen' : 'Video'} asignado correctamente a la publicación!`)
+                          const validTarget = generatedServerMediaUrl || (!generatedVideoUrl.startsWith('blob:') ? generatedVideoUrl : null) || (!mediaUrl.startsWith('blob:') ? mediaUrl : null)
+                          if (validTarget) {
+                            setMediaUrl(validTarget)
+                            alert(`¡${postType === 'post' ? 'Imagen' : 'Video'} asignado correctamente a la publicación!`)
+                          } else {
+                            alert("El archivo aún se está procesando y subiendo al servidor. Aguarda unos segundos y vuelve a presionar el botón.")
+                          }
                         }}
                         style={{flex: 1, padding: '6px 10px', fontSize: '0.75rem', backgroundColor: 'var(--accent-emerald)', color: '#fff', fontWeight: 600}}
                       >

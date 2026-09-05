@@ -170,7 +170,10 @@ def wait_for_container_ready(container_id: str, access_token: str, max_wait_sec:
     return False, f"Tiempo de espera agotado ({max_wait_sec}s) procesando el video/imagen en los servidores de Instagram."
 
 import os
+import io
+import hashlib
 import subprocess
+from PIL import Image
 
 def ensure_mp4_h264(local_file_path: str) -> str:
     """
@@ -200,33 +203,131 @@ def ensure_mp4_h264(local_file_path: str) -> str:
 
     return local_file_path
 
+def ensure_jpeg_image(path_or_url: str) -> str:
+    """
+    Ensures that local or remote images are converted to a standard RGB JPEG file (.jpg).
+    Instagram Graph API strictly requires JPEG format for photo posts.
+    Facebook Photos API endpoint accepts JPEG/PNG but rejects WebP.
+    """
+    if not path_or_url:
+        return path_or_url
+
+    clean_path = path_or_url.strip().lstrip("/")
+
+    # Case 1: Local file inside uploads/
+    if clean_path.startswith("uploads/"):
+        local_disk_path = os.path.abspath(clean_path)
+        if not os.path.exists(local_disk_path):
+            return path_or_url
+
+        ext = os.path.splitext(local_disk_path)[1].lower()
+        if ext in ('.jpg', '.jpeg'):
+            return path_or_url
+
+        jpg_path = os.path.splitext(local_disk_path)[0] + "_meta.jpg"
+        if os.path.exists(jpg_path) and os.path.getsize(jpg_path) > 0:
+            rel = os.path.relpath(jpg_path, os.path.abspath("uploads")).replace("\\", "/")
+            return f"/uploads/{rel}"
+
+        try:
+            with Image.open(local_disk_path) as img:
+                if img.mode in ("RGBA", "LA", "P"):
+                    bg = Image.new("RGB", img.size, (255, 255, 255))
+                    if img.mode == "P":
+                        img = img.convert("RGBA")
+                    bg.paste(img, mask=img.split()[-1] if img.mode == "RGBA" else None)
+                    rgb_img = bg
+                else:
+                    rgb_img = img.convert("RGB")
+                rgb_img.save(jpg_path, "JPEG", quality=95, optimize=True)
+            rel = os.path.relpath(jpg_path, os.path.abspath("uploads")).replace("\\", "/")
+            return f"/uploads/{rel}"
+        except Exception as e:
+            print(f"Pillow local image conversion warning: {e}")
+            return path_or_url
+
+    # Case 2: Remote URL (e.g. Mercado Libre or Tienda Nube .webp or external images)
+    if path_or_url.startswith("http://") or path_or_url.startswith("https://"):
+        clean_url_path = path_or_url.lower().split('?')[0]
+        # If it's already a standard jpg/jpeg from a remote CDN, Meta can fetch it directly
+        if clean_url_path.endswith(('.jpg', '.jpeg')):
+            return path_or_url
+
+        try:
+            cache_dir = os.path.abspath(os.path.join("uploads", "social_cache"))
+            os.makedirs(cache_dir, exist_ok=True)
+            url_hash = hashlib.md5(path_or_url.encode('utf-8')).hexdigest()
+            cached_path = os.path.join(cache_dir, f"{url_hash}.jpg")
+
+            if not (os.path.exists(cached_path) and os.path.getsize(cached_path) > 0):
+                req = urllib.request.Request(
+                    path_or_url,
+                    headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
+                )
+                with urllib.request.urlopen(req, timeout=15) as resp:
+                    data = resp.read()
+
+                with Image.open(io.BytesIO(data)) as img:
+                    if img.mode in ("RGBA", "LA", "P"):
+                        bg = Image.new("RGB", img.size, (255, 255, 255))
+                        if img.mode == "P":
+                            img = img.convert("RGBA")
+                        bg.paste(img, mask=img.split()[-1] if img.mode == "RGBA" else None)
+                        rgb_img = bg
+                    else:
+                        rgb_img = img.convert("RGB")
+                    rgb_img.save(cached_path, "JPEG", quality=95, optimize=True)
+
+            rel = os.path.relpath(cached_path, os.path.abspath("uploads")).replace("\\", "/")
+            return f"/uploads/{rel}"
+        except Exception as e:
+            print(f"Pillow remote image conversion warning: {e}")
+            return path_or_url
+
+    return path_or_url
+
 def prepare_media_url_for_meta(raw_url: str) -> str:
     """
     Prepares media URL for Meta Graph API compliance:
-    1. If relative local file, converts WebM/non-H264 video to H.264 MP4 if needed via ffmpeg.
-    2. Builds a fully qualified, public HTTPS URL that Meta servers can download.
+    1. Rejects browser-local blob: URLs.
+    2. If relative local file, converts WebM/non-H264 video to H.264 MP4 if needed via ffmpeg.
+       Converts non-JPEG images (.png, .webp) to standard RGB JPEG via Pillow.
+    3. If remote WebP or non-JPEG image, caches and converts it to standard RGB JPEG in uploads/social_cache/.
+    4. Builds a fully qualified, public HTTPS URL that Meta servers can download.
     """
     if not raw_url:
         return ""
 
     url = raw_url.strip()
 
-    # 1. Handle local file conversion if relative
-    clean_path = url.lstrip("/")
-    if clean_path.startswith("uploads/"):
-        local_disk_path = os.path.abspath(clean_path)
-        if os.path.exists(local_disk_path):
-            converted_path = ensure_mp4_h264(local_disk_path)
-            rel_path = os.path.relpath(converted_path, os.path.abspath("uploads")).replace("\\", "/")
-            url = f"/uploads/{rel_path}"
+    # Reject browser-local blob URLs immediately
+    if url.startswith("blob:"):
+        return ""
 
-    # 2. Make fully qualified absolute public URL
+    video_exts = ('.mp4', '.mov', '.avi', '.webm', '.mkv')
+    clean_no_query = url.lower().split('?')[0]
+    is_video = any(clean_no_query.endswith(ext) for ext in video_exts)
+
+    if is_video:
+        # Handle local video conversion if relative
+        clean_path = url.lstrip("/")
+        if clean_path.startswith("uploads/"):
+            local_disk_path = os.path.abspath(clean_path)
+            if os.path.exists(local_disk_path):
+                converted_path = ensure_mp4_h264(local_disk_path)
+                rel_path = os.path.relpath(converted_path, os.path.abspath("uploads")).replace("\\", "/")
+                url = f"/uploads/{rel_path}"
+    else:
+        # Convert non-JPEG images (both local and remote) to standard RGB JPEG
+        url = ensure_jpeg_image(url)
+
+    # Make fully qualified absolute public URL
     if not (url.startswith("http://") or url.startswith("https://")):
         base_url = database.get_setting("public_base_url", "").strip()
         if not base_url:
             base_url = database.get_setting("storefront_url", "").strip()
         if not base_url:
-            base_url = "https://admin.hidroponiarosario.com.ar"
+            base_url = "https://admin.hidroponiarosario.com"
 
         base_url = base_url.rstrip("/")
         if not base_url.startswith("http"):
@@ -245,6 +346,9 @@ def prepare_media_url_for_meta(raw_url: str) -> str:
 
 def publish_to_instagram_photo(image_url: str, caption: str):
     image_url = prepare_media_url_for_meta(image_url)
+    if not image_url:
+        return False, "La imagen no es válida o es una URL de tipo blob local no accesible desde internet."
+
     creds = get_meta_credentials()
     access_token = creds["access_token"]
     ig_id = creds["instagram_account_id"]
@@ -370,19 +474,18 @@ def publish_to_facebook_page(media_url: str, caption: str, is_video: bool = Fals
         return False, "Credenciales de Facebook Page no configuradas."
 
     try:
-        is_real_video = is_video and media_url and any(media_url.lower().split('?')[0].endswith(ext) for ext in ['.mp4', '.mov', '.avi', '.webm', '.mkv'])
+        video_extensions = ['.mp4', '.mov', '.avi', '.webm', '.mkv']
+        is_real_video = is_video and media_url and any(media_url.lower().split('?')[0].endswith(ext) for ext in video_extensions)
         if is_real_video and (media_url.startswith("http://") or media_url.startswith("https://")):
             post_url = f"{META_GRAPH_BASE_URL}/{page_id}/videos"
             payload = {"file_url": media_url, "description": caption, "access_token": access_token}
-        elif media_url and (media_url.startswith("http://") or media_url.startswith("https://")) and not media_url.lower().split('?')[0].endswith(".webp"):
+        elif media_url and (media_url.startswith("http://") or media_url.startswith("https://")):
             post_url = f"{META_GRAPH_BASE_URL}/{page_id}/photos"
             payload = {"url": media_url, "caption": caption, "access_token": access_token}
         else:
-            # Feed text post fallback (handles text-only or webp images cleanly)
+            # Feed text-only post fallback (sin links inválidos de imágenes)
             post_url = f"{META_GRAPH_BASE_URL}/{page_id}/feed"
             payload = {"message": caption, "access_token": access_token}
-            if media_url and (media_url.startswith("http://") or media_url.startswith("https://")):
-                payload["link"] = media_url
 
         params = urllib.parse.urlencode(payload).encode('utf-8')
         req = urllib.request.Request(post_url, data=params, method="POST")
@@ -409,6 +512,10 @@ def publish_post_to_all_platforms(post_data: dict):
     post_type = (post_data.get("post_type") or "post").lower()
     caption = post_data.get("caption") or ""
     raw_media_url = (post_data.get("media_urls") or "").split(",")[0].strip()
+
+    if raw_media_url.startswith("blob:"):
+        return False, "Error: La imagen seleccionada es un enlace local temporal (blob) y no fue subida al servidor. Edita la publicación y vuelve a guardar la imagen."
+
     media_url = prepare_media_url_for_meta(get_high_res_image_url(raw_media_url))
 
     creds = get_meta_credentials()
