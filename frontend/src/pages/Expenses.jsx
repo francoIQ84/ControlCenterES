@@ -246,6 +246,20 @@ export default function Expenses() {
       alert("Error al guardar ingreso")
     }
   }
+  const handleTogglePaidFixed = async (exp) => {
+    try {
+      const res = await fetch(`/api/expenses/fixed/${exp.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...exp, is_paid: !exp.is_paid })
+      })
+      if (res.ok) {
+        fetchFixed()
+      }
+    } catch (e) {
+      alert("Error al actualizar estado")
+    }
+  }
 
   const handleDeleteFixed = async (id) => {
     if (!confirm("¿Eliminar este gasto fijo?")) return
@@ -1252,6 +1266,7 @@ export default function Expenses() {
                         <th style={{textAlign: 'left'}}>Descripción</th>
                         <th style={{textAlign: 'left'}}>Categoría</th>
                         <th style={{textAlign: 'right'}}>Monto</th>
+                        <th style={{textAlign: 'center'}}>Pagado</th>
                         <th style={{textAlign: 'center', width: 50}}></th>
                       </tr>
                     </thead>
@@ -1262,6 +1277,15 @@ export default function Expenses() {
                           <td>{exp.description}</td>
                           <td><span className="badge" style={{backgroundColor: 'var(--bg-hover)', color: 'var(--text-primary)'}}>{exp.category}</span></td>
                           <td style={{textAlign: 'right', fontWeight: 'bold'}}>${Math.round(exp.amount).toLocaleString()}</td>
+                          <td style={{textAlign: 'center'}}>
+                            <input 
+                              type="checkbox" 
+                              checked={exp.is_paid || false} 
+                              onChange={() => handleTogglePaidFixed(exp)}
+                              style={{ width: 18, height: 18, cursor: 'pointer', accentColor: 'var(--accent-blue)' }}
+                              title="Marcar como pagado"
+                            />
+                          </td>
                           <td style={{textAlign: 'center', whiteSpace: 'nowrap'}}>
                             <button className="btn-icon" onClick={() => setEditModal({ open: true, type: 'fixed', item: { ...exp } })} style={{color: 'var(--accent-blue)', marginRight: 6}} title="Editar">
                               <Pencil size={16} />
@@ -1277,7 +1301,7 @@ export default function Expenses() {
                       <tr>
                         <td colSpan="2" style={{textAlign: 'right', fontWeight: 'bold', paddingTop: 15}}>Total Mensual Fijo:</td>
                         <td style={{textAlign: 'right', fontWeight: 'bold', fontSize: '1.1rem', color: '#ef4444', paddingTop: 15}}>${Math.round(totalFixed).toLocaleString()}</td>
-                        <td></td>
+                        <td colSpan="2"></td>
                       </tr>
                     </tfoot>
                   </table>

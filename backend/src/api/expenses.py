@@ -28,6 +28,7 @@ class FixedExpenseCreate(BaseModel):
     category: str
     month: int
     year: int
+    is_paid: Optional[bool] = False
 
 class VariableExpenseCreate(BaseModel):
     date: str
@@ -158,8 +159,8 @@ def create_fixed_expense(expense: FixedExpenseCreate, current_user: dict = Depen
     with database.get_connection() as conn:
         with conn.cursor() as cursor:
             cursor.execute(
-                "INSERT INTO fixed_expenses (description, amount, category, month, year) VALUES (%s, %s, %s, %s, %s) RETURNING *",
-                (expense.description, expense.amount, expense.category, expense.month, expense.year)
+                "INSERT INTO fixed_expenses (description, amount, category, month, year, is_paid) VALUES (%s, %s, %s, %s, %s, %s) RETURNING *",
+                (expense.description, expense.amount, expense.category, expense.month, expense.year, expense.is_paid)
             )
             return cursor.fetchone()
 
@@ -169,9 +170,9 @@ def update_fixed_expense(expense_id: int, expense: FixedExpenseCreate, current_u
         with conn.cursor() as cursor:
             cursor.execute(
                 """UPDATE fixed_expenses 
-                   SET description = %s, amount = %s, category = %s, month = %s, year = %s 
+                   SET description = %s, amount = %s, category = %s, month = %s, year = %s, is_paid = %s
                    WHERE id = %s RETURNING *""",
-                (expense.description, expense.amount, expense.category, expense.month, expense.year, expense_id)
+                (expense.description, expense.amount, expense.category, expense.month, expense.year, expense.is_paid, expense_id)
             )
             row = cursor.fetchone()
             if not row:
