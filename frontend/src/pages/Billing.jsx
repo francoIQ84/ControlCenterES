@@ -381,7 +381,7 @@ export default function Billing() {
           <p style={{ padding: '25px', textAlign: 'center', color: '#777' }}>No se encontraron comprobantes facturados.</p>
         ) : (
           <div style={{overflowX: 'auto', width: '100%'}}>
-            <table className="data-table">
+            <table className="mobile-cards data-table">
             <thead>
               <tr>
                 <th onClick={() => requestSort('invoice_number')} style={{ cursor: 'pointer', userSelect: 'none' }}>
@@ -405,13 +405,13 @@ export default function Billing() {
             <tbody>
               {sortedSales.map(o => (
                 <tr key={o.order_id}>
-                  <td style={{ fontWeight: 'bold' }}>{o.invoice_number || '-'}</td>
-                  <td>{formatDate(o.date_created)}</td>
-                  <td>
+                  <td data-label="Nro. Comprobante" style={{ fontWeight: 'bold' }}>{o.invoice_number || '-'}</td>
+                  <td data-label="Fecha Emisión">{formatDate(o.date_created)}</td>
+                  <td data-label="Comprador">
                     <div>{o.buyer?.name || 'Consumidor Final'}</div>
                     <small style={{ color: '#888', fontSize: '0.75rem' }}>ID: {o.order_id}</small>
                   </td>
-                  <td>
+                  <td data-label="CUIT / DNI">
                     <span style={{ fontSize: '0.85rem' }}>
                       {o.buyer?.document_number ? (
                         <>
@@ -423,19 +423,19 @@ export default function Billing() {
                       )}
                     </span>
                   </td>
-                  <td style={{ fontSize: '0.8rem', maxWidth: '220px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={o.buyer?.address || ''}>
+                  <td data-label="Domicilio Fiscal" style={{ fontSize: '0.8rem', maxWidth: '220px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={o.buyer?.address || ''}>
                     {o.buyer?.address || '-'}
                   </td>
-                  <td>
+                  <td data-label="CAE">
                     <div>{o.afip_cae || '-'}</div>
                     {o.afip_cae_exp && (
                       <div style={{ color: '#888', fontSize: '0.7rem' }}>Vence: {formatDate(o.afip_cae_exp)}</div>
                     )}
                   </td>
-                  <td style={{ textAlign: 'right', fontWeight: 'bold', color: '#10b981' }}>
+                  <td data-label="Total" style={{ textAlign: 'right', fontWeight: 'bold', color: '#10b981' }}>
                     ${Number(o.total_amount || 0).toLocaleString('es-AR', { minimumFractionDigits: 2 })}
                   </td>
-                  <td style={{ textAlign: 'center' }}>
+                  <td data-label="Acción" style={{ textAlign: 'center' }}>
                     <a
                       href={`/api/sales/${o.order_id}/invoice/pdf?token=${localStorage.getItem('adminToken')}`}
                       target="_blank"

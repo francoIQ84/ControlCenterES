@@ -276,7 +276,7 @@ export default function BlogCMS() {
             </div>
           ) : (
             <div style={{ overflowX: 'auto', backgroundColor: 'var(--bg-card)', borderRadius: 10, border: '1px solid var(--border-color)' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.88rem' }}>
+              <table className="mobile-cards" style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.88rem' }}>
                 <thead>
                   <tr style={{ borderBottom: '1px solid var(--border-color)', backgroundColor: 'rgba(0,0,0,0.02)', textAlign: 'left' }}>
                     <th style={{ padding: '12px 15px' }}>Portada</th>
@@ -290,28 +290,28 @@ export default function BlogCMS() {
                 <tbody>
                   {filteredPosts.map(post => (
                     <tr key={post.id} style={{ borderBottom: '1px solid var(--border-color)' }}>
-                      <td style={{ padding: '10px 15px', width: 70 }}>
+                      <td data-label="Portada" style={{ padding: '10px 15px', width: 70 }}>
                         <img
                           src={post.cover_image || 'https://via.placeholder.com/60'}
                           alt={post.title}
                           style={{ width: 50, height: 50, objectFit: 'cover', borderRadius: 6, border: '1px solid var(--border-color)' }}
                         />
                       </td>
-                      <td style={{ padding: '10px 15px' }}>
+                      <td data-label="Título & Resumen" style={{ padding: '10px 15px' }}>
                         <div style={{ fontWeight: 600, fontSize: '0.9rem', color: 'var(--text-primary)' }}>{post.title}</div>
                         <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: 3 }}>
                           URL: /blog/{post.slug}
                         </div>
                       </td>
-                      <td style={{ padding: '10px 15px' }}>
+                      <td data-label="Categoría" style={{ padding: '10px 15px' }}>
                         <span style={{ padding: '3px 8px', borderRadius: 4, backgroundColor: 'rgba(59, 130, 246, 0.12)', color: '#2563eb', fontSize: '0.75rem', fontWeight: 600 }}>
                           {post.category}
                         </span>
                       </td>
-                      <td style={{ padding: '10px 15px', color: 'var(--text-secondary)', fontSize: '0.8rem' }}>
+                      <td data-label="Fecha Publicación" style={{ padding: '10px 15px', color: 'var(--text-secondary)', fontSize: '0.8rem' }}>
                         {post.published_at ? new Date(post.published_at).toLocaleDateString('es-AR', { dateStyle: 'medium' }) : 'Inmediata'}
                       </td>
-                      <td style={{ padding: '10px 15px' }}>
+                      <td data-label="Estado" style={{ padding: '10px 15px' }}>
                         {post.is_published === 1 ? (
                           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: 'var(--accent-emerald)', fontSize: '0.8rem', fontWeight: 600 }}>
                             <Eye size={14} /> Publicado
@@ -322,7 +322,7 @@ export default function BlogCMS() {
                           </span>
                         )}
                       </td>
-                      <td style={{ padding: '10px 15px', textAlign: 'right' }}>
+                      <td data-label="Acciones" style={{ padding: '10px 15px', textAlign: 'right' }}>
                         <button onClick={() => openEditPostModal(post)} className="btn" style={{ padding: '4px 8px', marginRight: 6, fontSize: '0.8rem' }} title="Editar">
                           <Edit2 size={14} />
                         </button>

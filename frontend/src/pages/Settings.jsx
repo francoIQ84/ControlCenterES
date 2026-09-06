@@ -2578,7 +2578,7 @@ export default function Settings() {
             </p>
             
             {usersLoading ? <p>Cargando usuarios...</p> : (
-              <table className="data-table" style={{width: '100%', borderCollapse: 'collapse'}}>
+              <table className="mobile-cards data-table" style={{width: '100%', borderCollapse: 'collapse'}}>
                 <thead>
                   <tr>
                     <th style={{textAlign: 'left', padding: '12px 10px'}}>Usuario</th>
@@ -2592,16 +2592,16 @@ export default function Settings() {
                 <tbody>
                   {users.map(u => (
                     <tr key={u.id} style={{borderBottom: '1px solid var(--border-color)'}}>
-                      <td style={{padding: '12px 10px', fontSize: '0.85rem', fontWeight: 600}}>
+                      <td data-label="Usuario" style={{padding: '12px 10px', fontSize: '0.85rem', fontWeight: 600}}>
                         {u.username}
                       </td>
-                      <td style={{padding: '12px 10px', fontSize: '0.85rem'}}>
+                      <td data-label="Nombre Completo" style={{padding: '12px 10px', fontSize: '0.85rem'}}>
                         {u.full_name}
                       </td>
-                      <td style={{padding: '12px 10px', fontSize: '0.85rem', color: u.email ? 'var(--text-primary)' : 'var(--text-secondary)'}}>
+                      <td data-label="Correo (2FA)" style={{padding: '12px 10px', fontSize: '0.85rem', color: u.email ? 'var(--text-primary)' : 'var(--text-secondary)'}}>
                         {u.email || <span style={{opacity: 0.5, fontStyle: 'italic'}}>Sin correo</span>}
                       </td>
-                      <td style={{padding: '12px 10px', fontSize: '0.85rem'}}>
+                      <td data-label="Seguridad" style={{padding: '12px 10px', fontSize: '0.85rem'}}>
                         {u.two_factor_enabled ? (
                           <span style={{
                             display: 'inline-flex',
@@ -2631,10 +2631,10 @@ export default function Settings() {
                           </span>
                         )}
                       </td>
-                      <td style={{padding: '12px 10px', fontSize: '0.85rem'}}>
+                      <td data-label="Fecha" style={{padding: '12px 10px', fontSize: '0.85rem'}}>
                         {u.created_at ? new Date(u.created_at).toLocaleDateString() : 'N/A'}
                       </td>
-                      <td style={{padding: '12px 10px', fontSize: '0.85rem', display: 'flex', gap: 6}}>
+                      <td data-label="Acciones" style={{padding: '12px 10px', fontSize: '0.85rem', display: 'flex', gap: 6}}>
                         <button 
                           className="btn" 
                           style={{padding: '4px 8px', fontSize: '0.75rem', backgroundColor: 'var(--accent-blue)', color: '#fff'}}
@@ -3279,7 +3279,7 @@ export default function Settings() {
           </p>
           
           {historyLoading ? <p>Cargando historial...</p> : (
-            <table className="data-table" style={{width: '100%', borderCollapse: 'collapse'}}>
+            <table className="mobile-cards data-table" style={{width: '100%', borderCollapse: 'collapse'}}>
               <thead>
                 <tr>
                   <th style={{textAlign: 'left', padding: '12px 10px'}}>Fecha</th>
@@ -3300,19 +3300,19 @@ export default function Settings() {
                 ) : (
                   history.map(item => (
                     <tr key={item.id} style={{borderBottom: '1px solid var(--border-color)'}}>
-                      <td style={{padding: '12px 10px', fontSize: '0.85rem'}}>
+                      <td data-label="Fecha" style={{padding: '12px 10px', fontSize: '0.85rem'}}>
                         {new Date(item.timestamp).toLocaleString()}
                       </td>
-                      <td style={{padding: '12px 10px', fontSize: '0.85rem', fontWeight: 600}}>
+                      <td data-label="Usuario" style={{padding: '12px 10px', fontSize: '0.85rem', fontWeight: 600}}>
                         {item.username || 'Desconocido'}
                       </td>
-                      <td style={{padding: '12px 10px', fontSize: '0.85rem', fontFamily: 'monospace'}}>
+                      <td data-label="Dirección IP" style={{padding: '12px 10px', fontSize: '0.85rem', fontFamily: 'monospace'}}>
                         {item.ip_address}
                       </td>
-                      <td style={{padding: '12px 10px', fontSize: '0.85rem'}}>
+                      <td data-label="Ubicación" style={{padding: '12px 10px', fontSize: '0.85rem'}}>
                         {item.country === 'Red Local' ? 'Red Local' : `${item.city}, ${item.region}, ${item.country}`}
                       </td>
-                      <td style={{padding: '12px 10px', fontSize: '0.85rem'}}>
+                      <td data-label="Estado" style={{padding: '12px 10px', fontSize: '0.85rem'}}>
                         {item.status === 'success' ? (
                           <span style={{
                             backgroundColor: 'rgba(16, 185, 129, 0.15)',
@@ -3333,7 +3333,7 @@ export default function Settings() {
                           }}>Fallido</span>
                         )}
                       </td>
-                      <td style={{
+                      <td data-label="Navegador / Dispositivo" style={{
                         padding: '12px 10px', 
                         fontSize: '0.75rem', 
                         color: 'var(--text-secondary)',
@@ -3789,7 +3789,7 @@ export default function Settings() {
             </button>
             
             {backupsLoading ? <p>Cargando respaldos...</p> : (
-              <table className="data-table" style={{width: '100%', borderCollapse: 'collapse'}}>
+              <table className="mobile-cards data-table" style={{width: '100%', borderCollapse: 'collapse'}}>
                 <thead>
                   <tr>
                     <th style={{textAlign: 'left', padding: '12px 10px'}}>Archivo</th>
@@ -3806,10 +3806,10 @@ export default function Settings() {
                     const c = b.main_file?.contents || {}
                     return (
                       <tr key={b.id} style={{borderBottom: '1px solid var(--border-color)'}}>
-                        <td style={{padding: '12px 10px', fontSize: '0.82rem', fontWeight: 600}}>
+                        <td data-label="Archivo" style={{padding: '12px 10px', fontSize: '0.82rem', fontWeight: 600}}>
                           {b.id}
                         </td>
-                        <td style={{padding: '12px 10px', fontSize: '0.82rem'}}>
+                        <td data-label="Tipo" style={{padding: '12px 10px', fontSize: '0.82rem'}}>
                           <span style={{
                             padding: '3px 8px',
                             borderRadius: '4px',
@@ -3822,7 +3822,7 @@ export default function Settings() {
                             {isAuto ? 'Automático' : 'Manual'}
                           </span>
                         </td>
-                        <td style={{padding: '12px 10px', fontSize: '0.82rem'}}>
+                        <td data-label="Contenido" style={{padding: '12px 10px', fontSize: '0.82rem'}}>
                           <div style={{display: 'flex', gap: 4, flexWrap: 'wrap'}}>
                             {c.database !== false && <span title="Base de datos" style={{cursor: 'default'}}>🗄️</span>}
                             {b.media_file && <span title="Uploads (imágenes, PDFs)" style={{cursor: 'default'}}>🖼️</span>}
@@ -3833,14 +3833,14 @@ export default function Settings() {
                             {!b.main_file?.contents && <span style={{fontSize: '0.7rem', color: 'var(--text-secondary)'}} title="Backup legacy sin manifiesto">v1</span>}
                           </div>
                         </td>
-                        <td style={{padding: '12px 10px', fontSize: '0.82rem'}}>
+                        <td data-label="Fecha" style={{padding: '12px 10px', fontSize: '0.82rem'}}>
                           {new Date(b.created_at).toLocaleString()}
                         </td>
-                        <td style={{padding: '12px 10px', fontSize: '0.82rem', whiteSpace: 'nowrap'}}>
+                        <td data-label="Tamaño" style={{padding: '12px 10px', fontSize: '0.82rem', whiteSpace: 'nowrap'}}>
                           {b.main_file && <div>Sis: {(b.main_file.size_bytes / (1024 * 1024)).toFixed(2)} MB</div>}
                           {b.media_file && <div style={{color: 'var(--text-secondary)'}}>Med: {(b.media_file.size_bytes / (1024 * 1024)).toFixed(2)} MB</div>}
                         </td>
-                        <td style={{padding: '12px 10px', fontSize: '0.82rem', display: 'flex', gap: '4px', flexWrap: 'wrap'}}>
+                        <td data-label="Acciones" style={{padding: '12px 10px', fontSize: '0.82rem', display: 'flex', gap: '4px', flexWrap: 'wrap'}}>
                           {b.main_file && (
                             <button 
                               onClick={() => handleDownloadBackup(b.main_file.filename)}
@@ -4443,7 +4443,7 @@ export default function Settings() {
 
               {pausedChats.length > 0 ? (
                 <div style={{overflowX: 'auto'}}>
-                  <table style={{width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem'}}>
+                  <table className="mobile-cards" style={{width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem'}}>
                     <thead>
                       <tr style={{borderBottom: '1px solid var(--border-color)', textAlign: 'left'}}>
                         <th style={{padding: '8px'}}>Número de Cliente</th>
@@ -4455,8 +4455,8 @@ export default function Settings() {
                     <tbody>
                       {pausedChats.map((c, i) => (
                         <tr key={i} style={{borderBottom: '1px solid var(--border-color)'}}>
-                          <td style={{padding: '8px', fontFamily: 'monospace', fontWeight: 600}}>+{c.sender}</td>
-                          <td style={{padding: '8px'}}>
+                          <td data-label="Número de Cliente" style={{padding: '8px', fontFamily: 'monospace', fontWeight: 600}}>+{c.sender}</td>
+                          <td data-label="Motivo de Pausa" style={{padding: '8px'}}>
                             <span style={{
                               padding: '2px 8px',
                               borderRadius: 10,
@@ -4468,8 +4468,8 @@ export default function Settings() {
                               {c.reason === 'intervencion_operador' ? '👤 Respuesta de Vendedor' : '🤖 Solicitud de Cliente'}
                             </span>
                           </td>
-                          <td style={{padding: '8px'}}>{new Date(c.paused_until).toLocaleString()}</td>
-                          <td style={{padding: '8px', textAlign: 'right'}}>
+                          <td data-label="Pausado Hasta" style={{padding: '8px'}}>{new Date(c.paused_until).toLocaleString()}</td>
+                          <td data-label="Acción" style={{padding: '8px', textAlign: 'right'}}>
                             <button
                               type="button"
                               onClick={() => handleUnpauseChat(c.sender)}
@@ -4956,7 +4956,7 @@ export default function Settings() {
                 <>
                   {inquiriesSummary?.top_products && inquiriesSummary.top_products.length > 0 ? (
                     <div style={{overflowX: 'auto', marginBottom: 20}}>
-                      <table style={{width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.85rem'}}>
+                      <table className="mobile-cards" style={{width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.85rem'}}>
                         <thead>
                           <tr style={{borderBottom: '1px solid var(--border-color)', color: 'var(--text-secondary)'}}>
                             <th style={{padding: '8px 12px'}}>Producto Consultado</th>
@@ -4973,11 +4973,11 @@ export default function Settings() {
                             const customers = p.customers_list || [];
                             return (
                               <tr key={idx} style={{borderBottom: '1px solid var(--border-color)'}}>
-                                <td style={{padding: '10px 12px', fontWeight: 600}}>{p.product_name}</td>
-                                <td style={{padding: '10px 12px', textAlign: 'center', fontWeight: 'bold'}}>{p.count}</td>
-                                <td style={{padding: '10px 12px', textAlign: 'center', color: 'var(--accent-emerald)'}}>{p.in_stock_count}</td>
-                                <td style={{padding: '10px 12px', textAlign: 'center', color: hasOutOfStock ? 'var(--accent-red)' : 'var(--text-secondary)'}}>{p.out_of_stock_count}</td>
-                                <td style={{padding: '10px 12px'}}>
+                                <td data-label="Producto Consultado" style={{padding: '10px 12px', fontWeight: 600}}>{p.product_name}</td>
+                                <td data-label="Total Consultas" style={{padding: '10px 12px', textAlign: 'center', fontWeight: 'bold'}}>{p.count}</td>
+                                <td data-label="Con Stock" style={{padding: '10px 12px', textAlign: 'center', color: 'var(--accent-emerald)'}}>{p.in_stock_count}</td>
+                                <td data-label="Sin Stock" style={{padding: '10px 12px', textAlign: 'center', color: hasOutOfStock ? 'var(--accent-red)' : 'var(--text-secondary)'}}>{p.out_of_stock_count}</td>
+                                <td data-label="Estado / Oportunidad" style={{padding: '10px 12px'}}>
                                   {hasOutOfStock ? (
                                     <span style={{padding: '3px 8px', borderRadius: 12, backgroundColor: 'rgba(239, 68, 68, 0.15)', color: 'var(--accent-red)', fontSize: '0.75rem', fontWeight: 600}}>
                                       ⚠️ Oportunidad (Sin Stock)
@@ -4988,7 +4988,7 @@ export default function Settings() {
                                     </span>
                                   )}
                                 </td>
-                                <td style={{padding: '10px 12px'}}>
+                                <td data-label="Clientes Interesados" style={{padding: '10px 12px'}}>
                                   {customers.length > 0 ? (
                                     <div style={{display: 'flex', flexWrap: 'wrap', gap: 4, alignItems: 'center'}}>
                                       {customers.slice(0, 3).map((cust, ci) => {
@@ -5048,7 +5048,7 @@ export default function Settings() {
                 <>
                   {inquiriesList && inquiriesList.length > 0 ? (
                     <div style={{overflowX: 'auto', marginBottom: 20}}>
-                      <table style={{width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.85rem'}}>
+                      <table className="mobile-cards" style={{width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.85rem'}}>
                         <thead>
                           <tr style={{borderBottom: '1px solid var(--border-color)', color: 'var(--text-secondary)'}}>
                             <th style={{padding: '8px 12px'}}>Fecha / Hora</th>
@@ -5065,19 +5065,19 @@ export default function Settings() {
                             const waLink = `https://wa.me/${cleanPhone}?text=${encodeURIComponent(`Hola ${inq.customer_name || ''}, te contactamos de Hidroponia Rosario por tu consulta sobre ${inq.product_name}`)}`;
                             return (
                               <tr key={idx} style={{borderBottom: '1px solid var(--border-color)'}}>
-                                <td style={{padding: '10px 12px', color: 'var(--text-secondary)', fontSize: '0.78rem', whiteSpace: 'nowrap'}}>
+                                <td data-label="Fecha / Hora" style={{padding: '10px 12px', color: 'var(--text-secondary)', fontSize: '0.78rem', whiteSpace: 'nowrap'}}>
                                   {inq.created_at ? new Date(inq.created_at).toLocaleString() : 'Reciente'}
                                 </td>
-                                <td style={{padding: '10px 12px', fontWeight: 600}}>
+                                <td data-label="Cliente" style={{padding: '10px 12px', fontWeight: 600}}>
                                   {inq.customer_name || 'Cliente WhatsApp'}
                                 </td>
-                                <td style={{padding: '10px 12px', fontFamily: 'monospace', fontSize: '0.82rem'}}>
+                                <td data-label="Número WhatsApp" style={{padding: '10px 12px', fontFamily: 'monospace', fontSize: '0.82rem'}}>
                                   +{inq.sender}
                                 </td>
-                                <td style={{padding: '10px 12px', fontWeight: 600, color: 'var(--text-primary)'}}>
+                                <td data-label="Producto Consultado" style={{padding: '10px 12px', fontWeight: 600, color: 'var(--text-primary)'}}>
                                   {inq.product_name}
                                 </td>
-                                <td style={{padding: '10px 12px', textAlign: 'center'}}>
+                                <td data-label="Disponibilidad" style={{padding: '10px 12px', textAlign: 'center'}}>
                                   {inq.in_stock ? (
                                     <span style={{padding: '2px 8px', borderRadius: 10, backgroundColor: 'rgba(16, 185, 129, 0.15)', color: 'var(--accent-emerald)', fontSize: '0.72rem', fontWeight: 600}}>
                                       ✓ En Stock
@@ -5088,7 +5088,7 @@ export default function Settings() {
                                     </span>
                                   )}
                                 </td>
-                                <td style={{padding: '10px 12px', textAlign: 'right'}}>
+                                <td data-label="Acción" style={{padding: '10px 12px', textAlign: 'right'}}>
                                   <a
                                     href={waLink}
                                     target="_blank"

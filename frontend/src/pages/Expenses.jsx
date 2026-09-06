@@ -851,7 +851,7 @@ export default function Expenses() {
               </div>
 
               <div style={{ overflowX: 'auto' }}>
-                <table className="data-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <table className="mobile-cards data-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
                   <thead>
                     <tr>
                       <th style={{ textAlign: 'left' }}>Estado</th>
@@ -877,7 +877,7 @@ export default function Expenses() {
 
                       return (
                         <tr key={item.id} style={{ opacity: isPaid ? 0.75 : 1 }}>
-                          <td>
+                          <td data-label="Estado">
                             {isPaid ? (
                               <span className="badge" style={{ backgroundColor: 'rgba(16, 185, 129, 0.15)', color: '#10b981', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
                                 <CheckCircle2 size={13} /> Pagado
@@ -892,24 +892,24 @@ export default function Expenses() {
                               </span>
                             )}
                           </td>
-                          <td style={{ fontWeight: 600 }}>
+                          <td data-label="Servicio / Impuesto" style={{ fontWeight: 600 }}>
                             {item.description}
                             {item.auto_recurring && (
                               <span title="Repetitivo mensual" style={{ marginLeft: 6, fontSize: '0.75rem', opacity: 0.6 }}>🔄</span>
                             )}
                           </td>
-                          <td>
+                          <td data-label="Categoría">
                             <span className="badge" style={{ backgroundColor: 'var(--bg-hover)', color: 'var(--text-primary)' }}>
                               {item.category || 'Servicios'}
                             </span>
                           </td>
-                          <td style={{ whiteSpace: 'nowrap', fontWeight: isOverdue ? 'bold' : 'normal', color: isOverdue ? '#ef4444' : 'inherit' }}>
+                          <td data-label="Vencimiento" style={{ whiteSpace: 'nowrap', fontWeight: isOverdue ? 'bold' : 'normal', color: isOverdue ? '#ef4444' : 'inherit' }}>
                             {item.due_date}
                           </td>
-                          <td style={{ textAlign: 'right', fontWeight: 'bold', fontSize: '1.05rem', color: isPaid ? '#10b981' : isOverdue ? '#ef4444' : 'var(--text-primary)' }}>
+                          <td data-label="Monto" style={{ textAlign: 'right', fontWeight: 'bold', fontSize: '1.05rem', color: isPaid ? '#10b981' : isOverdue ? '#ef4444' : 'var(--text-primary)' }}>
                             ${Math.round(item.amount).toLocaleString()}
                           </td>
-                          <td style={{ textAlign: 'center', whiteSpace: 'nowrap' }}>
+                          <td data-label="Link / Código de Pago" style={{ textAlign: 'center', whiteSpace: 'nowrap' }}>
                             <div style={{ display: 'flex', gap: 6, justifyContent: 'center', alignItems: 'center' }}>
                               {item.payment_link ? (
                                 <a 
@@ -953,7 +953,7 @@ export default function Expenses() {
                               )}
                             </div>
                           </td>
-                          <td style={{ textAlign: 'center', whiteSpace: 'nowrap' }}>
+                          <td data-label="Acciones" style={{ textAlign: 'center', whiteSpace: 'nowrap' }}>
                             <div style={{ display: 'flex', gap: 6, justifyContent: 'center' }}>
                               {!isPaid ? (
                                 <button 
@@ -1260,7 +1260,7 @@ export default function Expenses() {
 
               {loading ? <p>Cargando...</p> : (
                 <div style={{ overflowX: 'auto' }}>
-                  <table className="data-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
+                  <table className="mobile-cards data-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
                     <thead>
                       <tr>
                         <th style={{textAlign: 'left'}}>Descripción</th>
@@ -1274,10 +1274,10 @@ export default function Expenses() {
                       {fixedExpenses.length === 0 && <tr><td colSpan="4" style={{textAlign: 'center', color: 'var(--text-secondary)'}}>No hay gastos fijos para este mes.</td></tr>}
                       {fixedExpenses.map(exp => (
                         <tr key={exp.id}>
-                          <td>{exp.description}</td>
-                          <td><span className="badge" style={{backgroundColor: 'var(--bg-hover)', color: 'var(--text-primary)'}}>{exp.category}</span></td>
-                          <td style={{textAlign: 'right', fontWeight: 'bold'}}>${Math.round(exp.amount).toLocaleString()}</td>
-                          <td style={{textAlign: 'center'}}>
+                          <td data-label="Descripción">{exp.description}</td>
+                          <td data-label="Categoría"><span className="badge" style={{backgroundColor: 'var(--bg-hover)', color: 'var(--text-primary)'}}>{exp.category}</span></td>
+                          <td data-label="Monto" style={{textAlign: 'right', fontWeight: 'bold'}}>${Math.round(exp.amount).toLocaleString()}</td>
+                          <td data-label="Pagado" style={{textAlign: 'center'}}>
                             <input 
                               type="checkbox" 
                               checked={exp.is_paid || false} 
@@ -1286,7 +1286,7 @@ export default function Expenses() {
                               title="Marcar como pagado"
                             />
                           </td>
-                          <td style={{textAlign: 'center', whiteSpace: 'nowrap'}}>
+                          <td data-label="Acciones" style={{textAlign: 'center', whiteSpace: 'nowrap'}}>
                             <button className="btn-icon" onClick={() => setEditModal({ open: true, type: 'fixed', item: { ...exp } })} style={{color: 'var(--accent-blue)', marginRight: 6}} title="Editar">
                               <Pencil size={16} />
                             </button>
@@ -1358,7 +1358,7 @@ export default function Expenses() {
 
               {loading ? <p>Cargando...</p> : (
                 <div style={{ overflowX: 'auto' }}>
-                  <table className="data-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
+                  <table className="mobile-cards data-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
                     <thead>
                       <tr>
                         <th style={{textAlign: 'left'}}>Fecha</th>
@@ -1372,11 +1372,11 @@ export default function Expenses() {
                       {variableExpenses.length === 0 && <tr><td colSpan="5" style={{textAlign: 'center', color: 'var(--text-secondary)'}}>No hay gastos variables para este mes.</td></tr>}
                       {variableExpenses.map(exp => (
                         <tr key={exp.id}>
-                          <td style={{whiteSpace: 'nowrap'}}>{exp.date}</td>
-                          <td>{exp.description}</td>
-                          <td><span className="badge" style={{backgroundColor: 'var(--bg-hover)', color: 'var(--text-primary)'}}>{exp.category}</span></td>
-                          <td style={{textAlign: 'right', fontWeight: 'bold'}}>${Math.round(exp.amount).toLocaleString()}</td>
-                          <td style={{textAlign: 'center', whiteSpace: 'nowrap'}}>
+                          <td data-label="Fecha" style={{whiteSpace: 'nowrap'}}>{exp.date}</td>
+                          <td data-label="Descripción">{exp.description}</td>
+                          <td data-label="Categoría"><span className="badge" style={{backgroundColor: 'var(--bg-hover)', color: 'var(--text-primary)'}}>{exp.category}</span></td>
+                          <td data-label="Monto" style={{textAlign: 'right', fontWeight: 'bold'}}>${Math.round(exp.amount).toLocaleString()}</td>
+                          <td data-label="Acciones" style={{textAlign: 'center', whiteSpace: 'nowrap'}}>
                             <button className="btn-icon" onClick={() => setEditModal({ open: true, type: 'variable', item: { ...exp } })} style={{color: 'var(--accent-blue)', marginRight: 6}} title="Editar">
                               <Pencil size={16} />
                             </button>
@@ -1489,7 +1489,7 @@ export default function Expenses() {
                       </div>
                     ) : (
                       <div style={{ overflowX: 'auto', maxHeight: '420px', overflowY: 'auto' }}>
-                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
+                        <table className="mobile-cards" style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
                           <thead style={{ position: 'sticky', top: 0, backgroundColor: 'var(--card-bg)', zIndex: 1 }}>
                             <tr style={{ borderBottom: '1px solid var(--border-color)', textAlign: 'left', color: 'var(--text-secondary)' }}>
                               <th style={{ padding: '8px 10px' }}>Fecha</th>
@@ -1505,22 +1505,22 @@ export default function Expenses() {
                             {filteredSalesList.map((s, idx) => {
                               const isDup = salesIdCounts[String(s.order_id)] > 1
                               return (
-                                <tr key={s.order_id + '-' + idx} style={{ borderBottom: '1px solid var(--border-color)', backgroundColor: isDup ? 'rgba(239, 68, 68, 0.08)' : 'transparent' }}>
-                                  <td style={{ padding: '8px 10px', whiteSpace: 'nowrap' }}>{s.date_created || '-'}</td>
-                                  <td style={{ padding: '8px 10px', fontWeight: 'bold', color: isDup ? '#ef4444' : 'var(--text-main)' }}>
+                                <tr key={s.order_id + '-' + idx} style={{ borderBottom: '1px solid var(--border-color)', backgroundColor: isDup ? 'rgba(239, 68, 68, 0.08)' : 'var(--bg-card)' }}>
+                                  <td data-label="Fecha" style={{ padding: '8px 10px', whiteSpace: 'nowrap' }}>{s.date_created || '-'}</td>
+                                  <td data-label="ID Venta / Cobro" style={{ padding: '8px 10px', fontWeight: 'bold', color: isDup ? '#ef4444' : 'var(--text-main)' }}>
                                     #{s.order_id} {isDup && <span style={{ fontSize: '0.75rem', color: '#ef4444' }}>(Duplicado)</span>}
                                   </td>
-                                  <td style={{ padding: '8px 10px' }}>
+                                  <td data-label="Origen" style={{ padding: '8px 10px' }}>
                                     <span className="badge" style={{ backgroundColor: 'var(--bg-dark)', padding: '2px 8px', borderRadius: 4, border: '1px solid var(--border-color)', fontSize: '0.78rem' }}>
                                       {s.source_platform || 'MERCADOPAGO'}
                                     </span>
                                   </td>
-                                  <td style={{ padding: '8px 10px', color: 'var(--text-secondary)' }}>{s.payment_method || '-'}</td>
-                                  <td style={{ padding: '8px 10px' }}>{s.buyer_name || s.buyer_nickname || 'Cliente MP'}</td>
-                                  <td style={{ padding: '8px 10px' }}>
+                                  <td data-label="Medio de Pago" style={{ padding: '8px 10px', color: 'var(--text-secondary)' }}>{s.payment_method || '-'}</td>
+                                  <td data-label="Cliente" style={{ padding: '8px 10px' }}>{s.buyer_name || s.buyer_nickname || 'Cliente MP'}</td>
+                                  <td data-label="Estado" style={{ padding: '8px 10px' }}>
                                     <span style={{ color: '#10b981', fontWeight: 500 }}>{s.status || 'approved'}</span>
                                   </td>
-                                  <td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 'bold', color: '#10b981' }}>
+                                  <td data-label="Monto Total" style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 'bold', color: '#10b981' }}>
                                     ${s.total_amount?.toLocaleString()}
                                   </td>
                                 </tr>
@@ -1605,7 +1605,7 @@ export default function Expenses() {
 
             {loading ? <p>Cargando...</p> : (
               <div style={{ overflowX: 'auto' }}>
-                <table className="data-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <table className="mobile-cards data-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
                   <thead>
                     <tr>
                       <th style={{textAlign: 'left'}}>Fecha</th>
@@ -1621,11 +1621,11 @@ export default function Expenses() {
                     )}
                     {manualIncomes.map(inc => (
                       <tr key={inc.id}>
-                        <td style={{whiteSpace: 'nowrap'}}>{inc.date}</td>
-                        <td>{inc.description}</td>
-                        <td><span className="badge" style={{backgroundColor: 'rgba(16,185,129,0.1)', color: '#10b981'}}>{inc.category}</span></td>
-                        <td style={{textAlign: 'right', fontWeight: 'bold', color: '#10b981'}}>${Math.round(inc.amount).toLocaleString()}</td>
-                        <td style={{textAlign: 'center', whiteSpace: 'nowrap'}}>
+                        <td data-label="Fecha" style={{whiteSpace: 'nowrap'}}>{inc.date}</td>
+                        <td data-label="Descripción">{inc.description}</td>
+                        <td data-label="Categoría"><span className="badge" style={{backgroundColor: 'rgba(16,185,129,0.1)', color: '#10b981'}}>{inc.category}</span></td>
+                        <td data-label="Monto" style={{textAlign: 'right', fontWeight: 'bold', color: '#10b981'}}>${Math.round(inc.amount).toLocaleString()}</td>
+                        <td data-label="Acciones" style={{textAlign: 'center', whiteSpace: 'nowrap'}}>
                           <button className="btn-icon" onClick={() => setEditModal({ open: true, type: 'incomes', item: { ...inc } })} style={{color: 'var(--accent-blue)', marginRight: 6}} title="Editar">
                             <Pencil size={16} />
                           </button>

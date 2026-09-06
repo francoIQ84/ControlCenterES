@@ -461,7 +461,7 @@ export default function LeadMagnetSettings() {
             </p>
           ) : (
             <div style={{ overflowX: 'auto' }}>
-              <table className="data-table" style={{ width: '100%', fontSize: '0.85rem', borderCollapse: 'collapse' }}>
+              <table className="mobile-cards data-table" style={{ width: '100%', fontSize: '0.85rem', borderCollapse: 'collapse' }}>
                 <thead>
                   <tr style={{ backgroundColor: 'rgba(0,0,0,0.03)', textAlign: 'left', borderBottom: '2px solid var(--border-color)' }}>
                     <th style={{ padding: 10 }}>ID</th>
@@ -476,13 +476,13 @@ export default function LeadMagnetSettings() {
                 <tbody>
                   {leads.map(l => (
                     <tr key={l.id} style={{ borderBottom: '1px solid var(--border-color)' }}>
-                      <td style={{ padding: 10, fontWeight: 600 }}>#{l.id}</td>
-                      <td style={{ padding: 10, fontWeight: 600 }}>{l.name || '-'}</td>
-                      <td style={{ padding: 10, color: 'var(--accent-blue)' }}>{l.email}</td>
-                      <td style={{ padding: 10 }}>{l.country || 'Argentina'}</td>
-                      <td style={{ padding: 10, fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{l.pdf_sent || 'Guía estándar'}</td>
-                      <td style={{ padding: 10 }}>{new Date(l.created_at).toLocaleString()}</td>
-                      <td style={{ padding: 10, textAlign: 'center' }}>
+                      <td data-label="ID" style={{ padding: 10, fontWeight: 600 }}>#{l.id}</td>
+                      <td data-label="Nombre" style={{ padding: 10, fontWeight: 600 }}>{l.name || '-'}</td>
+                      <td data-label="Email" style={{ padding: 10, color: 'var(--accent-blue)' }}>{l.email}</td>
+                      <td data-label="País" style={{ padding: 10 }}>{l.country || 'Argentina'}</td>
+                      <td data-label="PDF Enviado" style={{ padding: 10, fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{l.pdf_sent || 'Guía estándar'}</td>
+                      <td data-label="Fecha Registro" style={{ padding: 10 }}>{new Date(l.created_at).toLocaleString()}</td>
+                      <td data-label="Acción" style={{ padding: 10, textAlign: 'center' }}>
                         <button
                           className="btn-icon"
                           onClick={() => handleDeleteLead(l.id)}

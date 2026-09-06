@@ -1263,7 +1263,7 @@ export default function Tenants() {
                   </div>
                 ) : (
                   <div style={{ overflowX: 'auto' }}>
-                    <table className="data-table" style={{ width: '100%' }}>
+                    <table className="mobile-cards data-table" style={{ width: '100%' }}>
                       <thead>
                         <tr>
                           <th>Fecha</th>
@@ -1276,13 +1276,13 @@ export default function Tenants() {
                       <tbody>
                         {paymentHistory.map(p => (
                           <tr key={p.id}>
-                            <td>{new Date(p.created_at).toLocaleDateString('es-AR')}</td>
-                            <td><strong>${p.amount?.toLocaleString('es-AR')} {p.currency}</strong></td>
-                            <td style={{ fontSize: '0.78rem' }}>
+                            <td data-label="Fecha">{new Date(p.created_at).toLocaleDateString('es-AR')}</td>
+                            <td data-label="Monto"><strong>${p.amount?.toLocaleString('es-AR')} {p.currency}</strong></td>
+                            <td data-label="Período Cubierto" style={{ fontSize: '0.78rem' }}>
                               {p.period_start} al {p.period_end}
                             </td>
-                            <td><code>{p.mp_payment_id || '—'}</code></td>
-                            <td><StatusBadge status="active" /></td>
+                            <td data-label="Comprobante MP"><code>{p.mp_payment_id || '—'}</code></td>
+                            <td data-label="Estado"><StatusBadge status="active" /></td>
                           </tr>
                         ))}
                       </tbody>
@@ -1306,7 +1306,7 @@ export default function Tenants() {
         {error && <p style={{ color: 'var(--accent-red)' }}>{error}</p>}
         {loading && !tenants.length ? <p>Cargando negocios…</p> : (
           <div style={{ overflowX: 'auto' }}>
-            <table className="data-table" style={{ width: '100%' }}>
+            <table className="mobile-cards data-table" style={{ width: '100%' }}>
               <thead>
                 <tr>
                   <th>Negocio</th>
@@ -1324,7 +1324,7 @@ export default function Tenants() {
                   const isMaster = t.plan_id === 'master'
                   return (
                     <tr key={t.id}>
-                      <td>
+                      <td data-label="Negocio">
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                           <strong>{t.name}</strong>
                           {isMaster && (
@@ -1335,16 +1335,16 @@ export default function Tenants() {
                         </div>
                         {t.cuit && <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>CUIT: {t.cuit}</div>}
                       </td>
-                      <td>
+                      <td data-label="Subdominio">
                         <code>{t.slug}</code>
                       </td>
-                      <td>
+                      <td data-label="Plan Actual">
                         <PlanBadge planId={t.plan_id} />
                       </td>
-                      <td>
+                      <td data-label="Vencimiento">
                         <DueDateBadge dateStr={t.next_billing_date} isMaster={isMaster} />
                       </td>
-                      <td>
+                      <td data-label="Módulos">
                         <button
                           type="button"
                           onClick={() => openEditModal(t)}
@@ -1359,15 +1359,15 @@ export default function Tenants() {
                           <Sliders size={13} />
                         </button>
                       </td>
-                      <td>
+                      <td data-label="Contacto">
                         <div style={{ fontSize: '0.75rem' }}>
                           {t.admin_phone ? <div>📞 {t.admin_phone}</div> : null}
                           {t.admin_email ? <div style={{ color: 'var(--text-secondary)' }}>✉️ {t.admin_email}</div> : null}
                           {!t.admin_phone && !t.admin_email && <span style={{ color: 'var(--text-secondary)' }}>—</span>}
                         </div>
                       </td>
-                      <td><StatusBadge status={t.status} /></td>
-                      <td style={{ textAlign: 'right' }}>
+                      <td data-label="Estado"><StatusBadge status={t.status} /></td>
+                      <td data-label="Acciones" style={{ textAlign: 'right' }}>
                         <div style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
                           {!isMaster && (
                             <button

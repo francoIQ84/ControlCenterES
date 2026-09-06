@@ -2703,7 +2703,7 @@ function ProductReadingRow({ p, isChannelEnabled, onPreviewImage }) {
   return (
     <tr className="reading-row" style={{borderBottom: '1px solid var(--border-color)'}}>
       {/* 1. Foto / Imagen */}
-      <td style={{padding: '10px 12px', textAlign: 'center'}}>
+      <td className="reading-cell-photo" style={{padding: '10px 12px', textAlign: 'center'}}>
         <img 
           src={p.thumbnail || 'https://via.placeholder.com/60'} 
           alt={p.title} 
@@ -2724,7 +2724,7 @@ function ProductReadingRow({ p, isChannelEnabled, onPreviewImage }) {
       </td>
 
       {/* 2. Producto y Código */}
-      <td style={{padding: '10px 14px'}}>
+      <td className="reading-cell-product" style={{padding: '10px 14px'}}>
         <div style={{
           fontWeight: 700, 
           fontSize: '1rem', 
@@ -2781,12 +2781,12 @@ function ProductReadingRow({ p, isChannelEnabled, onPreviewImage }) {
       </td>
 
       {/* 3. Stock */}
-      <td style={{padding: '10px 14px', textAlign: 'center'}}>
+      <td className="reading-cell-stock" style={{padding: '10px 14px', textAlign: 'center'}}>
         {stockBadge}
       </td>
 
       {/* 4. Precio Efectivo (Destacado) */}
-      <td style={{padding: '10px 14px', textAlign: 'center'}}>
+      <td className="reading-cell-cash" style={{padding: '10px 14px', textAlign: 'center'}}>
         <div 
           className="reading-price-cash-card"
           onClick={() => handleCopy(`$${finalCashPrice.toLocaleString('es-AR')}`)}
@@ -2813,7 +2813,7 @@ function ProductReadingRow({ p, isChannelEnabled, onPreviewImage }) {
       </td>
 
       {/* 5. Precio Lista / Tarjeta */}
-      <td style={{padding: '10px 14px', textAlign: 'center'}}>
+      <td className="reading-cell-list" style={{padding: '10px 14px', textAlign: 'center'}}>
         <div 
           style={{display: 'inline-flex', flexDirection: 'column', alignItems: 'center', cursor: 'pointer'}}
           onClick={() => handleCopy(`$${listPrice.toLocaleString('es-AR')}`)}
@@ -2830,7 +2830,7 @@ function ProductReadingRow({ p, isChannelEnabled, onPreviewImage }) {
 
       {/* 6. Precio Mercado Libre (si aplica) */}
       {isChannelEnabled('meli') && (
-        <td style={{padding: '10px 14px', textAlign: 'center'}}>
+        <td className="reading-cell-meli" style={{padding: '10px 14px', textAlign: 'center'}}>
           {p.status !== 'local' && numPrice > 0 ? (
             <div style={{display: 'inline-flex', flexDirection: 'column', alignItems: 'center'}}>
               <div style={{fontSize: '0.98rem', fontWeight: 600, color: 'var(--text-secondary)'}}>
@@ -2847,7 +2847,7 @@ function ProductReadingRow({ p, isChannelEnabled, onPreviewImage }) {
       )}
 
       {/* 7. Disponibilidad / Estado */}
-      <td style={{padding: '10px 14px', textAlign: 'center'}}>
+      <td className="reading-cell-status" style={{padding: '10px 14px', textAlign: 'center'}}>
         {p.is_hidden === 1 ? (
           <span style={{
             fontSize: '0.75rem', 

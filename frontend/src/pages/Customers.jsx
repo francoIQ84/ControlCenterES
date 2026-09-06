@@ -772,7 +772,7 @@ export default function Customers() {
 
           {/* Customer Table */}
           <div className="table-responsive card">
-            <table className="table">
+            <table className="mobile-cards table">
               <thead>
                 <tr>
                   <th style={{ width: '40px', textAlign: 'center' }}>
@@ -813,8 +813,8 @@ export default function Customers() {
                     const cleanPhone = (c.phone || '').replace(/[^0-9]/g, '')
                     const isSelected = selectedCustomerIds.includes(c.buyer_id)
                     return (
-                      <tr key={c.buyer_id} style={{ backgroundColor: isSelected ? 'rgba(59, 130, 246, 0.08)' : 'transparent' }}>
-                        <td style={{ textAlign: 'center' }}>
+                      <tr key={c.buyer_id} style={{ backgroundColor: isSelected ? 'rgba(59, 130, 246, 0.08)' : 'var(--bg-card)' }}>
+                        <td data-label="Seleccionar" style={{ textAlign: 'center' }}>
                           <input
                             type="checkbox"
                             checked={isSelected}
@@ -822,13 +822,13 @@ export default function Customers() {
                             style={{ cursor: 'pointer', width: '16px', height: '16px' }}
                           />
                         </td>
-                        <td>
+                        <td data-label="Cliente">
                           <div style={{ fontWeight: '700' }}>{c.full_name || c.nickname || `Cliente #${c.buyer_id}`}</div>
                           {c.nickname && c.nickname !== c.full_name && (
                             <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>@{c.nickname}</div>
                           )}
                         </td>
-                        <td>
+                        <td data-label="Contacto">
                           <div style={{ display: 'flex', flexDirection: 'column', gap: '3px', fontSize: '13px' }}>
                             {c.phone && (
                               <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -844,15 +844,15 @@ export default function Customers() {
                             )}
                           </div>
                         </td>
-                        <td>{renderPlatformBadge(c.source_platform)}</td>
-                        <td style={{ textAlign: 'center', fontWeight: '700' }}>{c.total_orders || 0}</td>
-                        <td style={{ textAlign: 'right', fontWeight: '700', color: 'var(--accent-blue)' }}>
+                        <td data-label="Origen">{renderPlatformBadge(c.source_platform)}</td>
+                        <td data-label="Compras" style={{ textAlign: 'center', fontWeight: '700' }}>{c.total_orders || 0}</td>
+                        <td data-label="Total Gastado" style={{ textAlign: 'right', fontWeight: '700', color: 'var(--accent-blue)' }}>
                           ${(c.total_spent || 0).toLocaleString('es-AR', { minimumFractionDigits: 2 })}
                         </td>
-                        <td style={{ textAlign: 'center', fontSize: '13px', color: 'var(--text-secondary)' }}>
+                        <td data-label="Última Actividad" style={{ textAlign: 'center', fontSize: '13px', color: 'var(--text-secondary)' }}>
                           {c.last_activity || c.created_at || 'Reciente'}
                         </td>
-                        <td style={{ textAlign: 'center' }}>
+                        <td data-label="Acciones" style={{ textAlign: 'center' }}>
                           <div style={{ display: 'flex', justifyContent: 'center', gap: '8px' }}>
                             {cleanPhone && (
                               <a
@@ -924,7 +924,7 @@ export default function Customers() {
             </div>
           ) : (
             <div className="table-responsive card">
-              <table className="table">
+              <table className="mobile-cards table">
                 <thead>
                   <tr>
                     <th>Producto</th>
@@ -938,7 +938,7 @@ export default function Customers() {
                 <tbody>
                   {crmData.product_inquiries.map((p, idx) => (
                     <tr key={idx}>
-                      <td>
+                      <td data-label="Producto">
                         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                           {p.thumbnail ? (
                             <img src={p.thumbnail} alt={p.catalog_title} style={{ width: '42px', height: '42px', borderRadius: '6px', objectFit: 'cover' }} />
@@ -953,13 +953,13 @@ export default function Customers() {
                           </div>
                         </div>
                       </td>
-                      <td style={{ textAlign: 'center', fontWeight: '800', fontSize: '16px', color: '#8b5cf6' }}>
+                      <td data-label="Consultas Totales" style={{ textAlign: 'center', fontWeight: '800', fontSize: '16px', color: '#8b5cf6' }}>
                         {p.inquiry_count}
                       </td>
-                      <td style={{ textAlign: 'center', fontWeight: '600' }}>
+                      <td data-label="Clientes Únicos" style={{ textAlign: 'center', fontWeight: '600' }}>
                         {p.unique_customers} clientes
                       </td>
-                      <td style={{ textAlign: 'center' }}>
+                      <td data-label="Estado de Stock" style={{ textAlign: 'center' }}>
                         {p.stock > 0 ? (
                           <span style={{ padding: '3px 8px', borderRadius: '6px', fontSize: '11px', fontWeight: '700', backgroundColor: 'rgba(16, 185, 129, 0.15)', color: '#10b981' }}>
                             Con Stock ({p.stock} u.)
@@ -970,10 +970,10 @@ export default function Customers() {
                           </span>
                         )}
                       </td>
-                      <td style={{ textAlign: 'right', fontWeight: '700' }}>
+                      <td data-label="Precio Web" style={{ textAlign: 'right', fontWeight: '700' }}>
                         ${p.price_web ? p.price_web.toLocaleString('es-AR', { minimumFractionDigits: 2 }) : 'N/A'}
                       </td>
-                      <td style={{ textAlign: 'center', fontSize: '13px', color: 'var(--text-secondary)' }}>
+                      <td data-label="Última Consulta" style={{ textAlign: 'center', fontSize: '13px', color: 'var(--text-secondary)' }}>
                         {p.last_inquired_at || 'Reciente'}
                       </td>
                     </tr>
@@ -998,7 +998,7 @@ export default function Customers() {
           </div>
 
           <div className="table-responsive card">
-            <table className="table">
+            <table className="mobile-cards table">
               <thead>
                 <tr>
                   <th>Nombre</th>
@@ -1015,16 +1015,16 @@ export default function Customers() {
                 ) : (
                   crmData.leads.map(l => (
                     <tr key={l.id}>
-                      <td style={{ fontWeight: '600' }}>{l.name || 'Sin especificar'}</td>
-                      <td>
+                      <td data-label="Nombre" style={{ fontWeight: '600' }}>{l.name || 'Sin especificar'}</td>
+                      <td data-label="Email">
                         <a href={`mailto:${l.email}`} style={{ color: 'var(--accent-blue)', textDecoration: 'none' }}>
                           {l.email}
                         </a>
                       </td>
-                      <td>{l.country || 'Argentina'}</td>
-                      <td><span style={{ padding: '2px 6px', borderRadius: '4px', fontSize: '11px', backgroundColor: 'var(--border-color)' }}>{l.source || 'Popup Lead'}</span></td>
-                      <td style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>{l.pdf_sent || 'Guía Hidroponia PDF'}</td>
-                      <td style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>{l.created_at || 'N/D'}</td>
+                      <td data-label="País">{l.country || 'Argentina'}</td>
+                      <td data-label="Origen"><span style={{ padding: '2px 6px', borderRadius: '4px', fontSize: '11px', backgroundColor: 'var(--border-color)' }}>{l.source || 'Popup Lead'}</span></td>
+                      <td data-label="Recurso Enviado" style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>{l.pdf_sent || 'Guía Hidroponia PDF'}</td>
+                      <td data-label="Fecha Registro" style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>{l.created_at || 'N/D'}</td>
                     </tr>
                   ))
                 )}
@@ -1047,7 +1047,7 @@ export default function Customers() {
           </div>
 
           <div className="table-responsive card">
-            <table className="table">
+            <table className="mobile-cards table">
               <thead>
                 <tr>
                   <th>Número / Remitente</th>
@@ -1064,12 +1064,12 @@ export default function Customers() {
                     const cleanPhone = (w.sender || '').replace(/[^0-9]/g, '')
                     return (
                       <tr key={idx}>
-                        <td style={{ fontWeight: '700' }}>
+                        <td data-label="Número / Remitente" style={{ fontWeight: '700' }}>
                           +{w.sender}
                         </td>
-                        <td style={{ textAlign: 'center', fontWeight: '700' }}>{w.total_messages}</td>
-                        <td style={{ textAlign: 'center', fontSize: '13px', color: 'var(--text-secondary)' }}>{w.last_activity || 'N/D'}</td>
-                        <td style={{ textAlign: 'center' }}>
+                        <td data-label="Mensajes Intercambiados" style={{ textAlign: 'center', fontWeight: '700' }}>{w.total_messages}</td>
+                        <td data-label="Última Actividad" style={{ textAlign: 'center', fontSize: '13px', color: 'var(--text-secondary)' }}>{w.last_activity || 'N/D'}</td>
+                        <td data-label="Acción" style={{ textAlign: 'center' }}>
                           <a
                             href={`https://wa.me/${cleanPhone}`}
                             target="_blank"

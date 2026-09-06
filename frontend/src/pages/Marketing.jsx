@@ -3593,7 +3593,7 @@ export default function Marketing() {
               </div>
             ) : (
               <div style={{overflowX: 'auto'}}>
-                <table style={{width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem'}}>
+                <table className="mobile-cards" style={{width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem'}}>
                   <thead>
                     <tr style={{borderBottom: '1px solid var(--border-color)', textAlign: 'left'}}>
                       <th style={{padding: 10}}>Fecha</th>
@@ -3607,20 +3607,20 @@ export default function Marketing() {
                   <tbody>
                     {diffusionCampaigns.map(c => (
                       <tr key={c.id} style={{borderBottom: '1px solid var(--border-color)'}}>
-                        <td style={{padding: 10, color: 'var(--text-secondary)'}}>
+                        <td data-label="Fecha" style={{padding: 10, color: 'var(--text-secondary)'}}>
                           {new Date(c.created_at).toLocaleString('es-AR')}
                         </td>
-                        <td style={{padding: 10, fontWeight: 600}}>{c.title}</td>
-                        <td style={{padding: 10}}>{c.group_name || 'Grupo Eliminado'}</td>
-                        <td style={{padding: 10}}>
+                        <td data-label="Título" style={{padding: 10, fontWeight: 600}}>{c.title}</td>
+                        <td data-label="Grupo" style={{padding: 10}}>{c.group_name || 'Grupo Eliminado'}</td>
+                        <td data-label="Canal" style={{padding: 10}}>
                           <span style={{fontSize: '0.75rem', padding: '2px 6px', borderRadius: 4, backgroundColor: 'var(--bg-dark)'}}>
                             {c.channel === 'whatsapp' ? '🟢 WhatsApp' : c.channel === 'email' ? '📧 Email' : '👥 Ambos'}
                           </span>
                         </td>
-                        <td style={{padding: 10}}>
+                        <td data-label="Alcance" style={{padding: 10}}>
                           ✅ {c.sent_count} / {c.total_targets} enviados {c.failed_count > 0 && <span style={{color: '#ef4444'}}>({c.failed_count} fallidos)</span>}
                         </td>
-                        <td style={{padding: 10}}>
+                        <td data-label="Estado" style={{padding: 10}}>
                           <span style={{fontSize: '0.75rem', padding: '3px 8px', borderRadius: 12, fontWeight: 700, backgroundColor: c.status.startsWith('completed') ? 'rgba(34, 197, 94, 0.15)' : 'rgba(234, 179, 8, 0.15)', color: c.status.startsWith('completed') ? '#22c55e' : '#eab308'}}>
                             {c.status === 'completed' ? 'Completado' : c.status}
                           </span>
@@ -3827,7 +3827,7 @@ export default function Marketing() {
               </div>
             ) : (
               <div style={{maxHeight: 400, overflowY: 'auto'}}>
-                <table style={{width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem'}}>
+                <table className="mobile-cards" style={{width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem'}}>
                   <thead>
                     <tr style={{borderBottom: '1px solid var(--border-color)', textAlign: 'left'}}>
                       <th style={{padding: 8}}>Contacto</th>
@@ -3840,11 +3840,11 @@ export default function Marketing() {
                   <tbody>
                     {groupMembers.map(m => (
                       <tr key={m.id} style={{borderBottom: '1px solid var(--border-color)'}}>
-                        <td style={{padding: 8, fontWeight: 600}}>{m.contact_name || 'Sin Nombre'}</td>
-                        <td style={{padding: 8}}>{m.phone ? `📱 ${m.phone}` : '-'}</td>
-                        <td style={{padding: 8}}>{m.email ? `✉️ ${m.email}` : '-'}</td>
-                        <td style={{padding: 8, fontSize: '0.75rem', color: 'var(--text-secondary)'}}>{m.source}</td>
-                        <td style={{padding: 8}}>
+                        <td data-label="Contacto" style={{padding: 8, fontWeight: 600}}>{m.contact_name || 'Sin Nombre'}</td>
+                        <td data-label="Teléfono WhatsApp" style={{padding: 8}}>{m.phone ? `📱 ${m.phone}` : '-'}</td>
+                        <td data-label="Email" style={{padding: 8}}>{m.email ? `✉️ ${m.email}` : '-'}</td>
+                        <td data-label="Origen" style={{padding: 8, fontSize: '0.75rem', color: 'var(--text-secondary)'}}>{m.source}</td>
+                        <td data-label="Acción" style={{padding: 8}}>
                           <button onClick={() => handleDeleteMember(m.id)} style={{background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer'}} title="Quitar del grupo">
                             <Trash2 size={15} />
                           </button>

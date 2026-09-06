@@ -962,7 +962,7 @@ export default function IndustrialProperty() {
                     </div>
 
                     <div style={{ overflowX: 'auto' }}>
-                      <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.9rem' }}>
+                      <table className="mobile-cards" style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.9rem' }}>
                         <thead>
                           <tr style={{ backgroundColor: 'var(--bg-dark)', borderBottom: '1px solid var(--border-color)', color: 'var(--text-secondary)', fontSize: '0.8rem', textTransform: 'uppercase' }}>
                             <th style={{ padding: '12px 16px' }}>Acta / N°</th>
@@ -986,26 +986,26 @@ export default function IndustrialProperty() {
                               const isMonitored = monitoredActas.includes(String(item.Acta))
                               return (
                                 <tr key={idx} style={{ borderBottom: '1px solid var(--border-color)', transition: 'background-color 0.15s' }}>
-                                  <td style={{ padding: '12px 16px', fontWeight: 600 }}>
+                                  <td data-label="Acta / Nº" style={{ padding: '12px 16px', fontWeight: 600 }}>
                                     {item.Acta || item.Expediente || item.Id_Notificacion || 'N/A'}
                                   </td>
-                                  <td style={{ padding: '12px 16px', fontWeight: 700, color: 'var(--accent-blue)' }}>
+                                  <td data-label="Denominación / Marca" style={{ padding: '12px 16px', fontWeight: 700, color: 'var(--accent-blue)' }}>
                                     {item.Denominacion || item.NombreNotificacion || 'N/A'}
                                     {item.Tipo_Marca && <span style={{ display: 'block', fontSize: '0.75rem', fontWeight: 400, color: 'var(--text-secondary)' }}>Tipo: {item.Tipo_Marca}</span>}
                                   </td>
-                                  <td style={{ padding: '12px 16px' }}>
+                                  <td data-label="Clase" style={{ padding: '12px 16px' }}>
                                     {item.Clase ? <span className="badge badge-secondary">Clase {item.Clase}</span> : '-'}
                                   </td>
-                                  <td style={{ padding: '12px 16px', fontSize: '0.85rem', fontWeight: 600 }}>
+                                  <td data-label="Nº Resolución" style={{ padding: '12px 16px', fontSize: '0.85rem', fontWeight: 600 }}>
                                     {item.Numero_Resolucion ? `Res. ${item.Numero_Resolucion}` : '-'}
                                   </td>
-                                  <td style={{ padding: '12px 16px' }}>
+                                  <td data-label="Estado" style={{ padding: '12px 16px' }}>
                                     {renderStatusBadge(item.Estado)}
                                   </td>
-                                  <td style={{ padding: '12px 16px' }}>
+                                  <td data-label="Declaración Jurada (DJUMT)" style={{ padding: '12px 16px' }}>
                                     {renderDjumtBadge(item)}
                                   </td>
-                                  <td style={{ padding: '12px 16px', textAlign: 'right' }}>
+                                  <td data-label="Acciones" style={{ padding: '12px 16px', textAlign: 'right' }}>
                                     <div style={{ display: 'inline-flex', gap: '8px', alignItems: 'center' }}>
                                       {item.Acta && (
                                         <button

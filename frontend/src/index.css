@@ -1000,6 +1000,17 @@ input:focus, select:focus {
     max-width: 100%;
   }
 
+  /* Sin esto el scroll horizontal lo toma .content-area (que es overflow-y:auto
+     y por lo tanto overflow-x:auto computado): la tabla se sale de la .card y el
+     fondo de la tarjeta queda mas angosto que el contenido. Scrolleando adentro
+     del wrapper la tarjeta mantiene su ancho y las columnas sticky se pegan al
+     borde del wrapper, que es lo correcto. */
+  .data-table-wrapper {
+    position: relative;
+    overflow-x: auto;
+    max-width: 100%;
+  }
+
   .sticky-col-left-1 {
     position: sticky;
     left: 0;
@@ -1214,28 +1225,304 @@ input:focus, select:focus {
   margin-top: 2px;
 }
 
-/* Mobile responsive layout for reading mode */
+/* Mobile responsive layout for reading mode
+
+   La tarjeta se arma como grilla de 3 columnas para aprovechar el ancho y
+   entrar mas productos por pantalla:
+
+     +--------+---------------------------+
+     | foto   | titulo + SKU + categoria  |
+     +--------+--------------+------------+
+     |                       | stock      |
+     |  precio EFECTIVO      | lista      |
+     |  (destacado)          | mercadolib |
+     |                       | estado     |
+     +-----------------------+------------+
+
+   La celda de Mercado Libre es condicional (isChannelEnabled('meli')). Por eso
+   row-gap es 0 y la separacion se hace con margin: si esa celda no existe, la
+   fila implicita colapsa a 0 y no queda un hueco. */
 @media (max-width: 768px) {
   .reading-mode-table thead {
     display: none;
   }
-  
+
   .reading-row {
-    display: flex;
-    flex-direction: column;
-    padding: 14px;
+    display: grid;
+    grid-template-columns: 58px minmax(0, 1fr) minmax(0, 38%);
+    column-gap: 10px;
+    row-gap: 0;
+    align-items: start;
+    padding: 12px;
     margin-bottom: 12px;
     background-color: var(--bg-card);
     border-radius: 12px;
     border: 1px solid var(--border-color);
   }
-  
-  .reading-row td {
-    padding: 6px 0 !important;
+
+  .reading-row > td {
+    padding: 0 !important;
     text-align: left !important;
     border: none !important;
+    min-width: 0;
+  }
+
+  .reading-cell-photo {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .reading-cell-product {
+    grid-column: 2 / 4;
+    grid-row: 1;
+    margin-bottom: 10px;
+  }
+
+  /* El precio efectivo ocupa el bloque izquierdo y se estira a lo alto de la
+     columna derecha, que es la que manda la altura de la tarjeta. */
+  .reading-cell-cash {
+    grid-column: 1 / 3;
+    grid-row: 2 / span 4;
+    align-self: stretch;
+  }
+
+  .reading-cell-cash > div,
+  .reading-cell-cash .reading-price-cash-card {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .reading-cell-stock  { grid-column: 3; grid-row: 2; margin-bottom: 6px; }
+  .reading-cell-list   { grid-column: 3; grid-row: 3; margin-bottom: 6px; }
+  .reading-cell-meli   { grid-column: 3; grid-row: 4; margin-bottom: 6px; }
+  .reading-cell-status { grid-column: 3; grid-row: 5; }
+
+  /* La columna derecha es angosta: bajamos un punto los valores y dejamos que
+     los badges se alineen a la izquierda en vez de centrarse. */
+  .reading-cell-stock > *,
+  .reading-cell-list > *,
+  .reading-cell-meli > *,
+  .reading-cell-status > * {
+    justify-content: flex-start !important;
+    text-align: left !important;
+  }
+
+  .reading-cell-list .reading-price-list-val {
+    font-size: 1rem;
   }
 }
 
 
 
+
+/* ==========================================================================
+   CARD-IFICACION GENERICA DE TABLAS EN MOBILE
+   --------------------------------------------------------------------------
+   Opt-in via la clase .mobile-cards en el <table>. Cada <tr> del <tbody> pasa
+   a ser una tarjeta vertical y cada <td> muestra su encabezado usando el
+   atributo data-label. El <thead> se oculta.
+
+   NO afecta a Inventory.jsx: sus filas (.compact-tr / .product-row-card /
+   .web-details-row / .reading-row) tienen su propio tratamiento mobile y esas
+   tablas no llevan la clase .mobile-cards.
+   ========================================================================== */
+@media (max-width: 768px) {
+  /* El contenedor deja de scrollear en horizontal: ya no hace falta, y el
+     scroll container recortaba popovers/tooltips de las celdas */
+  div:has(> table.mobile-cards) {
+    overflow-x: visible !important;
+    overflow-y: visible !important;
+  }
+
+  table.mobile-cards {
+    display: block !important;
+    width: 100% !important;
+    border: none !important;
+    border-collapse: collapse !important;
+    font-size: 0.85rem !important;
+  }
+
+  table.mobile-cards > thead {
+    display: none !important;
+  }
+
+  table.mobile-cards > tbody,
+  table.mobile-cards > tfoot {
+    display: block !important;
+    width: 100% !important;
+  }
+
+  /* Cada fila = una tarjeta */
+  table.mobile-cards > tbody > tr,
+  table.mobile-cards > tfoot > tr {
+    display: block !important;
+    width: 100% !important;
+    padding: 12px 14px !important;
+    margin: 0 0 12px 0 !important;
+    border: 1px solid var(--border-color) !important;
+    border-radius: 12px !important;
+    background-color: var(--bg-card);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+  }
+
+  table.mobile-cards > tbody > tr:last-child,
+  table.mobile-cards > tfoot > tr:last-child {
+    margin-bottom: 0 !important;
+  }
+
+  /* Cada celda = una linea "ROTULO  valor" dentro de la tarjeta */
+  table.mobile-cards > tbody > tr > td,
+  table.mobile-cards > tfoot > tr > td {
+    display: flex !important;
+    flex-wrap: wrap;
+    align-items: baseline;
+    column-gap: 10px;
+    row-gap: 5px;
+    width: 100% !important;
+    max-width: 100% !important;
+    padding: 7px 0 !important;
+    border: none !important;
+    text-align: left !important;
+    white-space: normal !important;
+    overflow: visible !important;
+    text-overflow: clip !important;
+    overflow-wrap: anywhere;
+  }
+
+  /* Contenido simple (texto, badges, botones sueltos) queda al lado del rotulo */
+  table.mobile-cards > tbody > tr > td > span,
+  table.mobile-cards > tbody > tr > td > a,
+  table.mobile-cards > tbody > tr > td > small,
+  table.mobile-cards > tbody > tr > td > strong,
+  table.mobile-cards > tbody > tr > td > b,
+  table.mobile-cards > tbody > tr > td > em,
+  table.mobile-cards > tbody > tr > td > code,
+  table.mobile-cards > tbody > tr > td > button,
+  table.mobile-cards > tbody > tr > td > input,
+  table.mobile-cards > tbody > tr > td > select,
+  table.mobile-cards > tbody > tr > td > svg {
+    flex: 0 1 auto;
+    min-width: 0;
+  }
+
+  /* Contenido compuesto baja a su propia linea y usa el ancho completo */
+  table.mobile-cards > tbody > tr > td > div,
+  table.mobile-cards > tbody > tr > td > ul,
+  table.mobile-cards > tbody > tr > td > ol,
+  table.mobile-cards > tbody > tr > td > p,
+  table.mobile-cards > tbody > tr > td > table,
+  table.mobile-cards > tbody > tr > td > form,
+  table.mobile-cards > tbody > tr > td > textarea,
+  table.mobile-cards > tbody > tr > td > img {
+    flex: 1 0 100%;
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  table.mobile-cards > tbody > tr > td:first-child,
+  table.mobile-cards > tfoot > tr > td:first-child {
+    padding-top: 0 !important;
+  }
+
+  /* Separador solo si queda alguna celda visible mas abajo en la tarjeta */
+  table.mobile-cards > tbody > tr > td:has(~ td:not(:empty)),
+  table.mobile-cards > tfoot > tr > td:has(~ td:not(:empty)) {
+    border-bottom: 1px solid var(--border-color) !important;
+  }
+
+  table.mobile-cards > tbody > tr > td:last-child,
+  table.mobile-cards > tfoot > tr > td:last-child {
+    padding-bottom: 0 !important;
+  }
+
+  /* Encabezado de la columna, inyectado desde data-label */
+  table.mobile-cards > tbody > tr > td[data-label]::before,
+  table.mobile-cards > tfoot > tr > td[data-label]::before {
+    content: attr(data-label);
+    flex: 0 0 auto;
+    width: 34%;
+    max-width: 125px;
+    font-size: 0.66rem;
+    font-weight: 700;
+    line-height: 1.2;
+    letter-spacing: 0.4px;
+    text-transform: uppercase;
+    color: var(--text-secondary);
+  }
+
+  /* Celdas sin data-label (totales, colSpan, estados vacios) van sin rotulo */
+  table.mobile-cards > tbody > tr > td[data-label=""]::before,
+  table.mobile-cards > tfoot > tr > td[data-label=""]::before {
+    display: none;
+  }
+
+  /* Celdas vacias no ocupan lugar en la tarjeta */
+  table.mobile-cards > tbody > tr > td:empty {
+    display: none !important;
+  }
+
+  /* Filas de estado vacio / totales con colSpan: centrado propio */
+  table.mobile-cards > tbody > tr > td[colspan],
+  table.mobile-cards > tfoot > tr > td[colspan] {
+    text-align: inherit !important;
+  }
+
+  /* Contenido interno: que nada empuje el ancho de la tarjeta */
+  table.mobile-cards > tbody > tr > td img,
+  table.mobile-cards > tbody > tr > td canvas,
+  table.mobile-cards > tbody > tr > td svg:not(.lucide) {
+    max-width: 100%;
+    height: auto;
+  }
+
+  table.mobile-cards > tbody > tr > td pre,
+  table.mobile-cards > tbody > tr > td code {
+    white-space: pre-wrap !important;
+    word-break: break-all;
+  }
+
+  /* Los contenedores centrados de las celdas de acciones se alinean a la izq. */
+  table.mobile-cards > tbody > tr > td > div[style*="center"] {
+    justify-content: flex-start !important;
+    align-items: flex-start !important;
+    text-align: left !important;
+  }
+
+  /* Botones y links de accion: target tactil comodo */
+  table.mobile-cards > tbody > tr > td button,
+  table.mobile-cards > tbody > tr > td a.btn,
+  table.mobile-cards > tbody > tr > td .btn {
+    min-height: 42px !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    font-size: 0.8rem !important;
+  }
+
+  /* Checkboxes y radios quedan chicos si heredan el min-height global */
+  table.mobile-cards > tbody > tr > td input[type="checkbox"],
+  table.mobile-cards > tbody > tr > td input[type="radio"] {
+    min-height: 0 !important;
+    width: 20px;
+    height: 20px;
+  }
+
+  /* Inputs y selects editables dentro de la tarjeta ocupan el ancho util */
+  table.mobile-cards > tbody > tr > td input[type="text"],
+  table.mobile-cards > tbody > tr > td input[type="number"],
+  table.mobile-cards > tbody > tr > td input[type="date"],
+  table.mobile-cards > tbody > tr > td select,
+  table.mobile-cards > tbody > tr > td textarea {
+    width: 100% !important;
+    max-width: 100% !important;
+  }
+
+  /* Tabla anidada dentro de una tarjeta: sin margen extra */
+  table.mobile-cards > tbody > tr > td > table.mobile-cards > tbody > tr {
+    padding: 10px 12px !important;
+    background-color: var(--bg-dark);
+  }
+}
