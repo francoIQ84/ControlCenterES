@@ -215,7 +215,23 @@ def init_db():
                 )
             ''')
             cursor.execute('ALTER TABLE users ADD COLUMN IF NOT EXISTS permissions TEXT;')
+            cursor.execute('ALTER TABLE users ADD COLUMN IF NOT EXISTS email VARCHAR(255);')
+            cursor.execute('ALTER TABLE users ADD COLUMN IF NOT EXISTS two_factor_enabled BOOLEAN DEFAULT FALSE;')
             cursor.execute("UPDATE users SET permissions = 'dashboard,inventory,sales,billing,expenses,customers,media,settings' WHERE permissions IS NULL;")
+
+            # Two Factor Codes table
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS two_factor_codes (
+                    id SERIAL PRIMARY KEY,
+                    user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+                    code VARCHAR(10) NOT NULL,
+                    temp_token VARCHAR(255) UNIQUE NOT NULL,
+                    attempts INTEGER DEFAULT 0,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    expires_at TIMESTAMP NOT NULL
+                )
+            ''')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_two_factor_temp_token ON two_factor_codes(temp_token);')
 
             # Active Sessions table
             cursor.execute('''
@@ -508,6 +524,7 @@ def init_db():
             cursor.execute('ALTER TABLE whatsapp_chat_history ADD COLUMN IF NOT EXISTS prompt_tokens INT DEFAULT 0;')
             cursor.execute('ALTER TABLE whatsapp_chat_history ADD COLUMN IF NOT EXISTS reply_tokens INT DEFAULT 0;')
             cursor.execute('ALTER TABLE whatsapp_chat_history ADD COLUMN IF NOT EXISTS total_tokens INT DEFAULT 0;')
+            cursor.execute('ALTER TABLE whatsapp_product_inquiries ADD COLUMN IF NOT EXISTS customer_name TEXT;')
 
             # Seed default admin user if no users exist
             cursor.execute("SELECT COUNT(*) as count FROM users")
@@ -1397,6 +1414,42 @@ def sync_whatsapp_contacts_bulk(contacts_list):
                 synced_count += 1
     return synced_count
 
+def upsert_whatsapp_customer(phone: str, name: str = ""):
+    """Inserts or updates a single WhatsApp contact in the customers table."""
+    import time
+    if not phone:
+        return
+    clean_phone = phone.strip().replace("+", "")
+    clean_name = (name or "").strip()
+    if not clean_name:
+        clean_name = f"Cliente WhatsApp +{clean_phone}"
+
+    try:
+        with get_connection() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute("SELECT buyer_id, full_name, phone FROM customers WHERE phone = %s OR nickname = %s", (clean_phone, clean_phone))
+                existing = cursor.fetchone()
+                if existing:
+                    if clean_name and not clean_name.startswith("Cliente WhatsApp"):
+                        cursor.execute("""
+                            UPDATE customers 
+                            SET full_name = CASE WHEN full_name IS NULL OR full_name = '' OR full_name LIKE 'Cliente WhatsApp%%' THEN %s ELSE full_name END,
+                                nickname = CASE WHEN nickname IS NULL OR nickname = '' OR nickname LIKE 'Cliente WhatsApp%%' THEN %s ELSE nickname END,
+                                last_activity = CURRENT_TIMESTAMP
+                            WHERE buyer_id = %s
+                        """, (clean_name, clean_name, existing['buyer_id']))
+                    else:
+                        cursor.execute("UPDATE customers SET last_activity = CURRENT_TIMESTAMP WHERE buyer_id = %s", (existing['buyer_id'],))
+                else:
+                    new_buyer_id = int(time.time() * 1000)
+                    cursor.execute("""
+                        INSERT INTO customers (buyer_id, nickname, full_name, phone, source_platform, created_at, last_activity)
+                        VALUES (%s, %s, %s, %s, 'WHATSAPP', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                        ON CONFLICT (tenant_id, buyer_id) DO NOTHING
+                    """, (new_buyer_id, clean_name, clean_name, clean_phone))
+    except Exception as e:
+        print(f"[upsert_whatsapp_customer error] {e}")
+
 def sync_meta_leads_bulk(leads_list):
     """Inserta o actualiza prospectos/leads provenientes de Meta (Instagram Ads / Facebook Ads / Comentarios)."""
     import time
@@ -2146,14 +2199,20 @@ def get_login_history(limit=100):
 def get_user_by_username(username: str):
     with get_connection() as conn:
         with conn.cursor() as cursor:
-            cursor.execute("SELECT id, username, password_hash, full_name, permissions FROM users WHERE username = %s", (username,))
+            cursor.execute("SELECT id, username, password_hash, full_name, permissions, email, two_factor_enabled FROM users WHERE username = %s", (username,))
+            return cursor.fetchone()
+
+def get_user_by_id(user_id: int):
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute("SELECT id, username, password_hash, full_name, permissions, email, two_factor_enabled FROM users WHERE id = %s", (user_id,))
             return cursor.fetchone()
 
 def get_user_by_token(token: str):
     with get_connection() as conn:
         with conn.cursor() as cursor:
             cursor.execute('''
-                SELECT u.id, u.username, u.full_name, u.permissions
+                SELECT u.id, u.username, u.full_name, u.permissions, u.email, u.two_factor_enabled
                 FROM users u
                 JOIN active_sessions s ON u.id = s.user_id
                 WHERE s.token = %s AND s.expires_at > %s
@@ -2163,27 +2222,27 @@ def get_user_by_token(token: str):
 def get_all_users():
     with get_connection() as conn:
         with conn.cursor() as cursor:
-            cursor.execute("SELECT id, username, full_name, permissions, created_at FROM users ORDER BY username ASC")
+            cursor.execute("SELECT id, username, full_name, permissions, email, two_factor_enabled, created_at FROM users ORDER BY username ASC")
             rows = cursor.fetchall()
             for r in rows:
-                if r['created_at']:
+                if r.get('created_at'):
                     if isinstance(r['created_at'], datetime):
                         r['created_at'] = r['created_at'].isoformat()
                     else:
                         r['created_at'] = str(r['created_at'])
             return rows
 
-def create_user(username, password, full_name, permissions=None):
+def create_user(username, password, full_name, permissions=None, email=None, two_factor_enabled=False):
     if permissions is None:
         permissions = "dashboard,inventory,sales,billing,expenses,customers,media,settings,inpi,marketing,blog"
     pw_hash = hash_password(password)
     with get_connection() as conn:
         with conn.cursor() as cursor:
             cursor.execute('''
-                INSERT INTO users (username, password_hash, full_name, permissions)
-                VALUES (%s, %s, %s, %s)
+                INSERT INTO users (username, password_hash, full_name, permissions, email, two_factor_enabled)
+                VALUES (%s, %s, %s, %s, %s, %s)
                 RETURNING id
-            ''', (username, pw_hash, full_name, permissions))
+            ''', (username, pw_hash, full_name, permissions, (email.strip() if email else None), bool(two_factor_enabled)))
             return cursor.fetchone()['id']
 
 def update_user_permissions(user_id, permissions):
@@ -2194,7 +2253,8 @@ def update_user_permissions(user_id, permissions):
 def delete_user(user_id):
     with get_connection() as conn:
         with conn.cursor() as cursor:
-            # Delete active sessions for this user first
+            # Delete active sessions and 2FA codes for this user first
+            cursor.execute("DELETE FROM two_factor_codes WHERE user_id = %s", (user_id,))
             cursor.execute("DELETE FROM active_sessions WHERE user_id = %s", (user_id,))
             cursor.execute("DELETE FROM users WHERE id = %s", (user_id,))
 
@@ -2206,10 +2266,76 @@ def update_user_password(user_id, new_password):
             # Invalidate all active sessions for this user to force re-login
             cursor.execute("DELETE FROM active_sessions WHERE user_id = %s", (user_id,))
 
-def update_user_info(user_id, full_name):
+def update_user_info(user_id, full_name=None, email=None, two_factor_enabled=None):
+    fields = []
+    values = []
+    if full_name is not None:
+        fields.append("full_name = %s")
+        values.append(full_name)
+    if email is not None:
+        fields.append("email = %s")
+        values.append(email.strip() if email else None)
+    if two_factor_enabled is not None:
+        fields.append("two_factor_enabled = %s")
+        values.append(bool(two_factor_enabled))
+    if not fields:
+        return
+    values.append(user_id)
+    query = f"UPDATE users SET {', '.join(fields)} WHERE id = %s"
     with get_connection() as conn:
         with conn.cursor() as cursor:
-            cursor.execute("UPDATE users SET full_name = %s WHERE id = %s", (full_name, user_id))
+            cursor.execute(query, tuple(values))
+
+# --- Two-Factor Authentication (2FA) Operations ---
+
+def create_2fa_code(user_id: int, code: str, temp_token: str, expires_minutes: int = 10):
+    expires_at = datetime.now() + timedelta(minutes=expires_minutes)
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute("DELETE FROM two_factor_codes WHERE user_id = %s", (user_id,))
+            cursor.execute('''
+                INSERT INTO two_factor_codes (user_id, code, temp_token, attempts, expires_at)
+                VALUES (%s, %s, %s, 0, %s)
+            ''', (user_id, code, temp_token, expires_at))
+
+def get_2fa_record(temp_token: str):
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute('''
+                SELECT c.id, c.user_id, c.code, c.temp_token, c.attempts, c.created_at, c.expires_at,
+                       u.username, u.full_name, u.permissions, u.email, u.two_factor_enabled
+                FROM two_factor_codes c
+                JOIN users u ON c.user_id = u.id
+                WHERE c.temp_token = %s
+            ''', (temp_token,))
+            return cursor.fetchone()
+
+def increment_2fa_attempts(temp_token: str):
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute("UPDATE two_factor_codes SET attempts = attempts + 1 WHERE temp_token = %s RETURNING attempts", (temp_token,))
+            res = cursor.fetchone()
+            return res['attempts'] if res else None
+
+def update_2fa_code(temp_token: str, new_code: str, expires_minutes: int = 10):
+    expires_at = datetime.now() + timedelta(minutes=expires_minutes)
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute('''
+                UPDATE two_factor_codes 
+                SET code = %s, attempts = 0, created_at = CURRENT_TIMESTAMP, expires_at = %s 
+                WHERE temp_token = %s
+            ''', (new_code, expires_at, temp_token))
+
+def delete_2fa_code(temp_token: str):
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute("DELETE FROM two_factor_codes WHERE temp_token = %s", (temp_token,))
+
+def delete_user_2fa_codes(user_id: int):
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute("DELETE FROM two_factor_codes WHERE user_id = %s", (user_id,))
 
 def update_order_shipping_status(order_id: int, shipping_status: str):
     with get_connection() as conn:
@@ -2284,14 +2410,14 @@ def add_whatsapp_chat_message(sender: str, message: str, reply: str, prompt_toke
     except Exception as e:
         print(f"[add_whatsapp_chat_message error] {e}")
 
-def add_whatsapp_inquiry(sender: str, product_name: str, in_stock: bool):
+def add_whatsapp_inquiry(sender: str, product_name: str, in_stock: bool, customer_name: str = ""):
     try:
         with get_connection() as conn:
             with conn.cursor() as cursor:
                 cursor.execute('''
-                    INSERT INTO whatsapp_product_inquiries (sender, product_name, in_stock)
-                    VALUES (%s, %s, %s)
-                ''', (sender, product_name, in_stock))
+                    INSERT INTO whatsapp_product_inquiries (sender, product_name, in_stock, customer_name)
+                    VALUES (%s, %s, %s, %s)
+                ''', (sender, product_name, in_stock, customer_name or None))
     except Exception as e:
         print(f"[add_whatsapp_inquiry error] {e}")
 
@@ -2300,16 +2426,36 @@ def get_whatsapp_inquiries_summary():
         with get_connection() as conn:
             with conn.cursor() as cursor:
                 cursor.execute('''
+                    WITH product_groups AS (
+                        SELECT 
+                            INITCAP(LOWER(TRIM(wpi.product_name))) as product_name,
+                            COUNT(*) as count,
+                            SUM(CASE WHEN wpi.in_stock THEN 1 ELSE 0 END) as in_stock_count,
+                            SUM(CASE WHEN NOT wpi.in_stock THEN 1 ELSE 0 END) as out_of_stock_count,
+                            COUNT(DISTINCT wpi.sender) as unique_customers,
+                            MAX(wpi.created_at) as last_inquired
+                        FROM whatsapp_product_inquiries wpi
+                        GROUP BY INITCAP(LOWER(TRIM(wpi.product_name)))
+                        ORDER BY count DESC
+                        LIMIT 25
+                    )
                     SELECT 
-                        INITCAP(LOWER(TRIM(product_name))) as product_name,
-                        COUNT(*) as count,
-                        SUM(CASE WHEN in_stock THEN 1 ELSE 0 END) as in_stock_count,
-                        SUM(CASE WHEN NOT in_stock THEN 1 ELSE 0 END) as out_of_stock_count,
-                        MAX(created_at) as last_inquired
-                    FROM whatsapp_product_inquiries
-                    GROUP BY INITCAP(LOWER(TRIM(product_name)))
-                    ORDER BY count DESC
-                    LIMIT 20
+                        pg.*,
+                        COALESCE(
+                            (SELECT json_agg(DISTINCT sub) FROM (
+                                SELECT jsonb_build_object(
+                                    'sender', w2.sender,
+                                    'name', COALESCE(NULLIF(c2.full_name, ''), NULLIF(w2.customer_name, ''), 'Cliente +' || w2.sender)
+                                ) as sub
+                                FROM whatsapp_product_inquiries w2
+                                LEFT JOIN customers c2 ON c2.phone = w2.sender
+                                WHERE INITCAP(LOWER(TRIM(w2.product_name))) = pg.product_name
+                                LIMIT 15
+                            ) s),
+                            '[]'::json
+                        ) as customers_list
+                    FROM product_groups pg
+                    ORDER BY pg.count DESC
                 ''')
                 top_products = cursor.fetchall()
 
@@ -2317,29 +2463,38 @@ def get_whatsapp_inquiries_summary():
                     SELECT 
                         COUNT(*) as total_inquiries,
                         SUM(CASE WHEN in_stock THEN 1 ELSE 0 END) as total_in_stock,
-                        SUM(CASE WHEN NOT in_stock THEN 1 ELSE 0 END) as total_out_of_stock
+                        SUM(CASE WHEN NOT in_stock THEN 1 ELSE 0 END) as total_out_of_stock,
+                        COUNT(DISTINCT sender) as total_unique_customers
                     FROM whatsapp_product_inquiries
                 ''')
-                totals = cursor.fetchone() or {'total_inquiries': 0, 'total_in_stock': 0, 'total_out_of_stock': 0}
+                totals = cursor.fetchone() or {'total_inquiries': 0, 'total_in_stock': 0, 'total_out_of_stock': 0, 'total_unique_customers': 0}
 
                 return {
                     "total_inquiries": totals['total_inquiries'] or 0,
                     "total_in_stock": totals['total_in_stock'] or 0,
                     "total_out_of_stock": totals['total_out_of_stock'] or 0,
+                    "total_unique_customers": totals.get('total_unique_customers') or 0,
                     "top_products": top_products
                 }
     except Exception as e:
         print(f"[get_whatsapp_inquiries_summary error] {e}")
-        return {"total_inquiries": 0, "total_in_stock": 0, "total_out_of_stock": 0, "top_products": []}
+        return {"total_inquiries": 0, "total_in_stock": 0, "total_out_of_stock": 0, "total_unique_customers": 0, "top_products": []}
 
 def get_whatsapp_inquiries_list(limit: int = 50):
     try:
         with get_connection() as conn:
             with conn.cursor() as cursor:
                 cursor.execute('''
-                    SELECT id, sender, product_name, in_stock, created_at 
-                    FROM whatsapp_product_inquiries 
-                    ORDER BY created_at DESC 
+                    SELECT 
+                        wpi.id, 
+                        wpi.sender, 
+                        wpi.product_name, 
+                        wpi.in_stock, 
+                        wpi.created_at,
+                        COALESCE(NULLIF(c.full_name, ''), NULLIF(wpi.customer_name, ''), 'Cliente +' || wpi.sender) as customer_name
+                    FROM whatsapp_product_inquiries wpi 
+                    LEFT JOIN customers c ON c.phone = wpi.sender
+                    ORDER BY wpi.created_at DESC 
                     LIMIT %s
                 ''', (limit,))
                 return cursor.fetchall()

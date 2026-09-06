@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { RefreshCw } from 'lucide-react'
+import { RefreshCw, ShieldCheck, Mail, Edit2 } from 'lucide-react'
 import MediaBrowser from '../components/MediaBrowser'
 import LeadMagnetSettings from '../components/LeadMagnetSettings'
 import { useTenant } from '../TenantContext'
@@ -395,6 +395,11 @@ export default function Settings() {
   const [newUsername, setNewUsername] = useState("")
   const [newPassword, setNewPassword] = useState("")
   const [newFullName, setNewFullName] = useState("")
+  const [newEmail, setNewEmail] = useState("")
+  const [newTwoFactor, setNewTwoFactor] = useState(false)
+  
+  // Edit User Details & 2FA Form State
+  const [editingDetailsUser, setEditingDetailsUser] = useState(null)
   const [newPerms, setNewPerms] = useState({
     dashboard: true,
     inventory: true,
@@ -495,6 +500,7 @@ export default function Settings() {
   // WhatsApp Chatbot State
   const [waConfig, setWaConfig] = useState({
     enabled: false,
+    read_only: false,
     gemini_api_key: '',
     bot_instructions: '',
     status: 'disconnected',
@@ -569,6 +575,7 @@ export default function Settings() {
   const [inquiriesSummary, setInquiriesSummary] = useState(null)
   const [inquiriesList, setInquiriesList] = useState([])
   const [inquiriesLoading, setInquiriesLoading] = useState(false)
+  const [demandViewTab, setDemandViewTab] = useState('top')
   const [tokenUsage, setTokenUsage] = useState(null)
 
   const fetchTokenUsage = () => {
@@ -711,6 +718,7 @@ export default function Settings() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           enabled: waConfig.enabled,
+          read_only: waConfig.read_only,
           gemini_api_key: waConfig.gemini_api_key,
           bot_instructions: waConfig.bot_instructions
         })
@@ -1277,7 +1285,11 @@ export default function Settings() {
   const handleCreateUser = async (e) => {
     e.preventDefault()
     if (!newUsername || !newPassword || !newFullName) {
-      alert("Todos los campos son requeridos")
+      alert("Usuario, contraseña y nombre completo son requeridos")
+      return
+    }
+    if (newTwoFactor && (!newEmail || !newEmail.trim())) {
+      alert("Para activar la verificación en dos pasos (2FA), debes configurar un correo electrónico para el usuario.")
       return
     }
     
@@ -1291,6 +1303,8 @@ export default function Settings() {
           username: newUsername,
           password: newPassword,
           full_name: newFullName,
+          email: newEmail.trim() || null,
+          two_factor_enabled: newTwoFactor,
           permissions
         })
       })
@@ -1300,6 +1314,8 @@ export default function Settings() {
         setNewUsername("")
         setNewPassword("")
         setNewFullName("")
+        setNewEmail("")
+        setNewTwoFactor(false)
         setNewPerms({
           dashboard: true,
           inventory: true,
@@ -1322,9 +1338,53 @@ export default function Settings() {
     }
   }
 
+  const handleEditDetailsClick = (user) => {
+    setEditingDetailsUser({
+      id: user.id,
+      username: user.username,
+      full_name: user.full_name || "",
+      email: user.email || "",
+      two_factor_enabled: !!user.two_factor_enabled
+    })
+    setEditingUserId(null)
+    setEditingPermissionsUserId(null)
+  }
+
+  const handleUpdateUserDetails = async (e) => {
+    e.preventDefault()
+    if (!editingDetailsUser) return
+    if (editingDetailsUser.two_factor_enabled && (!editingDetailsUser.email || !editingDetailsUser.email.trim())) {
+      alert("Para activar la verificación en dos pasos (2FA), se requiere un correo electrónico válido.")
+      return
+    }
+
+    try {
+      const res = await fetch(`/api/auth/users/${editingDetailsUser.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          full_name: editingDetailsUser.full_name,
+          email: editingDetailsUser.email ? editingDetailsUser.email.trim() : null,
+          two_factor_enabled: !!editingDetailsUser.two_factor_enabled
+        })
+      })
+      const data = await res.json()
+      if (res.ok) {
+        alert("Datos del usuario actualizados exitosamente")
+        setEditingDetailsUser(null)
+        fetchUsers()
+      } else {
+        alert("Error: " + (data.detail || "No se pudo actualizar el usuario"))
+      }
+    } catch(err) {
+      alert("Error al conectar con el servidor: " + err.message)
+    }
+  }
+
   const handleEditPermissionsClick = (user) => {
     setEditingPermissionsUserId(user.id)
     setEditingUserId(null) // Cerrar tarjeta de clave
+    setEditingDetailsUser(null) // Cerrar tarjeta de datos
     const list = (user.permissions || "").split(',').map(p => p.trim())
     setEditPerms({
       dashboard: list.includes('dashboard'),
@@ -2523,7 +2583,9 @@ export default function Settings() {
                   <tr>
                     <th style={{textAlign: 'left', padding: '12px 10px'}}>Usuario</th>
                     <th style={{textAlign: 'left', padding: '12px 10px'}}>Nombre Completo</th>
-                    <th style={{textAlign: 'left', padding: '12px 10px'}}>Fecha de Creación</th>
+                    <th style={{textAlign: 'left', padding: '12px 10px'}}>Correo (2FA)</th>
+                    <th style={{textAlign: 'left', padding: '12px 10px'}}>Seguridad</th>
+                    <th style={{textAlign: 'left', padding: '12px 10px'}}>Fecha</th>
                     <th style={{textAlign: 'left', padding: '12px 10px'}}>Acciones</th>
                   </tr>
                 </thead>
@@ -2536,16 +2598,58 @@ export default function Settings() {
                       <td style={{padding: '12px 10px', fontSize: '0.85rem'}}>
                         {u.full_name}
                       </td>
+                      <td style={{padding: '12px 10px', fontSize: '0.85rem', color: u.email ? 'var(--text-primary)' : 'var(--text-secondary)'}}>
+                        {u.email || <span style={{opacity: 0.5, fontStyle: 'italic'}}>Sin correo</span>}
+                      </td>
+                      <td style={{padding: '12px 10px', fontSize: '0.85rem'}}>
+                        {u.two_factor_enabled ? (
+                          <span style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 4,
+                            padding: '3px 8px',
+                            borderRadius: 12,
+                            backgroundColor: 'rgba(16, 185, 129, 0.15)',
+                            color: 'var(--accent-emerald)',
+                            fontSize: '0.75rem',
+                            fontWeight: 600
+                          }}>
+                            <ShieldCheck size={13} /> 2FA Activo
+                          </span>
+                        ) : (
+                          <span style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 4,
+                            padding: '3px 8px',
+                            borderRadius: 12,
+                            backgroundColor: 'rgba(255, 255, 255, 0.05)',
+                            color: 'var(--text-secondary)',
+                            fontSize: '0.75rem'
+                          }}>
+                            Inactivo
+                          </span>
+                        )}
+                      </td>
                       <td style={{padding: '12px 10px', fontSize: '0.85rem'}}>
                         {u.created_at ? new Date(u.created_at).toLocaleDateString() : 'N/A'}
                       </td>
-                      <td style={{padding: '12px 10px', fontSize: '0.85rem', display: 'flex', gap: 10}}>
+                      <td style={{padding: '12px 10px', fontSize: '0.85rem', display: 'flex', gap: 6}}>
                         <button 
                           className="btn" 
                           style={{padding: '4px 8px', fontSize: '0.75rem', backgroundColor: 'var(--accent-blue)', color: '#fff'}}
+                          onClick={() => handleEditDetailsClick(u)}
+                          title="Editar nombre, correo y 2FA"
+                        >
+                          Editar
+                        </button>
+                        <button 
+                          className="btn" 
+                          style={{padding: '4px 8px', fontSize: '0.75rem', backgroundColor: 'var(--bg-card)', border: '1px solid var(--border-color)', color: 'var(--text-primary)'}}
                           onClick={() => {
                             setEditingUserId(u.id)
                             setEditingPermissionsUserId(null)
+                            setEditingDetailsUser(null)
                             setChangePassword("")
                           }}
                         >
@@ -2598,6 +2702,38 @@ export default function Settings() {
                     style={{width: '100%', marginTop: 5}}
                   />
                 </label>
+                <label>Correo Electrónico (Para 2FA)
+                  <input 
+                    type="email" 
+                    value={newEmail} 
+                    onChange={e => setNewEmail(e.target.value)} 
+                    placeholder="ej. franco@hidroponiarosario.com"
+                    style={{width: '100%', marginTop: 5}}
+                  />
+                </label>
+                <div style={{
+                  backgroundColor: 'var(--bg-dark)',
+                  padding: '10px 12px',
+                  borderRadius: 8,
+                  border: '1px solid var(--border-color)',
+                  marginTop: 2
+                }}>
+                  <label style={{display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', margin: 0}}>
+                    <input 
+                      type="checkbox" 
+                      checked={newTwoFactor} 
+                      onChange={e => setNewTwoFactor(e.target.checked)} 
+                    />
+                    <div>
+                      <span style={{fontSize: '0.85rem', fontWeight: 600, display: 'block'}}>
+                        Activar Doble Factor (2FA por Email)
+                      </span>
+                      <span style={{fontSize: '0.75rem', color: 'var(--text-secondary)'}}>
+                        Envía un código de 6 dígitos al correo en cada inicio de sesión.
+                      </span>
+                    </div>
+                  </label>
+                </div>
                 <label>Contraseña
                   <input 
                     type="password" 
@@ -2662,6 +2798,74 @@ export default function Settings() {
                 <button type="submit" className="btn" style={{marginTop: 5}}>Crear Cuenta</button>
               </form>
             </div>
+
+            {/* Edit User Details & 2FA Card */}
+            {editingDetailsUser && (
+              <div className="card" style={{border: '1px solid var(--accent-blue)'}}>
+                <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8}}>
+                  <h3 style={{margin: 0}}>Editar Usuario: @{editingDetailsUser.username}</h3>
+                </div>
+                <p style={{fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: 12}}>
+                  Actualiza el nombre, correo electrónico y seguridad de doble factor.
+                </p>
+                <form onSubmit={handleUpdateUserDetails} style={{display: 'flex', flexDirection: 'column', gap: 12}}>
+                  <label>Nombre Completo
+                    <input 
+                      type="text" 
+                      required
+                      value={editingDetailsUser.full_name} 
+                      onChange={e => setEditingDetailsUser(prev => ({...prev, full_name: e.target.value}))} 
+                      style={{width: '100%', marginTop: 5}}
+                    />
+                  </label>
+                  <label>Correo Electrónico (para 2FA)
+                    <input 
+                      type="email" 
+                      value={editingDetailsUser.email || ""} 
+                      onChange={e => setEditingDetailsUser(prev => ({...prev, email: e.target.value}))} 
+                      placeholder="ej. usuario@empresa.com"
+                      style={{width: '100%', marginTop: 5}}
+                    />
+                  </label>
+                  <div style={{
+                    backgroundColor: 'var(--bg-dark)',
+                    padding: '12px',
+                    borderRadius: 8,
+                    border: '1px solid var(--border-color)',
+                    marginTop: 2
+                  }}>
+                    <label style={{display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', margin: 0}}>
+                      <input 
+                        type="checkbox" 
+                        checked={!!editingDetailsUser.two_factor_enabled} 
+                        onChange={e => setEditingDetailsUser(prev => ({...prev, two_factor_enabled: e.target.checked}))} 
+                      />
+                      <div>
+                        <span style={{fontSize: '0.85rem', fontWeight: 600, display: 'block'}}>
+                          Verificación en Dos Pasos (2FA por Email)
+                        </span>
+                        <span style={{fontSize: '0.75rem', color: 'var(--text-secondary)'}}>
+                          Requiere código de 6 dígitos por email para iniciar sesión.
+                        </span>
+                      </div>
+                    </label>
+                  </div>
+                  <div style={{display: 'flex', gap: 10, marginTop: 6}}>
+                    <button type="submit" className="btn" style={{flex: 1, backgroundColor: 'var(--accent-blue)', color: '#fff'}}>
+                      Guardar
+                    </button>
+                    <button 
+                      type="button" 
+                      className="btn" 
+                      style={{backgroundColor: 'var(--bg-dark)', color: 'var(--text-secondary)', flex: 1}}
+                      onClick={() => setEditingDetailsUser(null)}
+                    >
+                      Cancelar
+                    </button>
+                  </div>
+                </form>
+              </div>
+            )}
 
             {/* Change Password Card */}
             {editingUserId && (
@@ -3843,15 +4047,105 @@ export default function Settings() {
               
               <form onSubmit={handleSaveWaConfig} style={{display: 'flex', flexDirection: 'column', gap: 15}}>
                 
-                <label style={{display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.95rem', cursor: 'pointer', marginBottom: 5}}>
-                  <input 
-                    type="checkbox" 
-                    checked={waConfig.enabled || false} 
-                    onChange={e => setWaConfig({...waConfig, enabled: e.target.checked})} 
-                    style={{width: 'auto'}}
-                  />
-                  <strong>Activar Asistente Virtual en WhatsApp</strong>
-                </label>
+                {/* Operational Modes Selector */}
+                <div style={{
+                  display: 'flex', 
+                  flexDirection: 'column', 
+                  gap: 12, 
+                  padding: '14px 16px', 
+                  borderRadius: 8, 
+                  backgroundColor: 'var(--bg-dark)', 
+                  border: '1px solid var(--border-color)',
+                  marginBottom: 10
+                }}>
+                  {/* Mode 1: Normal Auto-Responder */}
+                  <label style={{display: 'flex', alignItems: 'flex-start', gap: 10, cursor: 'pointer', margin: 0}}>
+                    <input 
+                      type="checkbox" 
+                      checked={waConfig.enabled || false} 
+                      onChange={e => setWaConfig({...waConfig, enabled: e.target.checked})} 
+                      style={{width: '18px', height: '18px', marginTop: 2, accentColor: '#25D366'}}
+                    />
+                    <div>
+                      <div style={{display: 'flex', alignItems: 'center', gap: 6}}>
+                        <strong style={{fontSize: '0.92rem'}}>Activar Asistente Virtual en WhatsApp (Modo Normal - Respuestas Automáticas)</strong>
+                        <span style={{fontSize: '0.7rem', padding: '2px 6px', borderRadius: 4, backgroundColor: 'rgba(16, 185, 129, 0.15)', color: 'var(--accent-emerald)', fontWeight: 600}}>
+                          🤖 Responde a Clientes
+                        </span>
+                      </div>
+                      <div style={{fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: 2}}>
+                        El bot responde automáticamente consultas de clientes con información de stock, precios y pedidos, además de registrar la demanda de productos.
+                      </div>
+                    </div>
+                  </label>
+
+                  <div style={{height: 1, backgroundColor: 'var(--border-color)', margin: '2px 0'}} />
+
+                  {/* Mode 2: Read-Only Demand Tracker */}
+                  <label style={{display: 'flex', alignItems: 'flex-start', gap: 10, cursor: 'pointer', margin: 0}}>
+                    <input 
+                      type="checkbox" 
+                      checked={waConfig.read_only || false} 
+                      onChange={e => setWaConfig({...waConfig, read_only: e.target.checked})} 
+                      style={{width: '18px', height: '18px', marginTop: 2, accentColor: '#3b82f6'}}
+                    />
+                    <div>
+                      <div style={{display: 'flex', alignItems: 'center', gap: 6}}>
+                        <strong style={{fontSize: '0.92rem'}}>Activar Asistente en Modo Solo Lectura (Monitoreo de Demanda & Productos Consultados)</strong>
+                        <span style={{fontSize: '0.7rem', padding: '2px 6px', borderRadius: 4, backgroundColor: 'rgba(59, 130, 246, 0.15)', color: 'var(--accent-blue)', fontWeight: 600}}>
+                          👁️ Silencioso (Sin Responder)
+                        </span>
+                      </div>
+                      <div style={{fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: 2}}>
+                        La IA analiza en segundo plano las consultas entrantes y actualiza el panel de <strong>Demanda & Productos Solicitados</strong> sin enviar ningún mensaje por WhatsApp (ideal si atiendes manualmente y deseas estadísticas de productos pedidos).
+                      </div>
+                    </div>
+                  </label>
+
+                  {/* Current Active Mode Summary Badge */}
+                  <div style={{
+                    marginTop: 4,
+                    padding: '8px 12px',
+                    borderRadius: 6,
+                    fontSize: '0.78rem',
+                    fontWeight: 500,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    backgroundColor: waConfig.enabled 
+                      ? 'rgba(16, 185, 129, 0.1)' 
+                      : waConfig.read_only 
+                        ? 'rgba(59, 130, 246, 0.1)' 
+                        : 'rgba(156, 163, 175, 0.08)',
+                    color: waConfig.enabled 
+                      ? 'var(--accent-emerald)' 
+                      : waConfig.read_only 
+                        ? 'var(--accent-blue)' 
+                        : 'var(--text-secondary)',
+                    border: `1px solid ${waConfig.enabled 
+                      ? 'rgba(16, 185, 129, 0.25)' 
+                      : waConfig.read_only 
+                        ? 'rgba(59, 130, 246, 0.25)' 
+                        : 'var(--border-color)'}`
+                  }}>
+                    {waConfig.enabled ? (
+                      <>
+                        <span>🟢</span>
+                        <span><strong>Modo Activo:</strong> El bot responde activamente consultas por WhatsApp y registra el ranking de productos consultados.</span>
+                      </>
+                    ) : waConfig.read_only ? (
+                      <>
+                        <span>🔵</span>
+                        <span><strong>Modo Solo Lectura:</strong> Monitoreo silencioso activo. La demanda de productos se registrará en el panel inferior sin responder a los clientes.</span>
+                      </>
+                    ) : (
+                      <>
+                        <span>⚪</span>
+                        <span><strong>Desactivado:</strong> El asistente y el monitoreo de demanda en WhatsApp están inactivos.</span>
+                      </>
+                    )}
+                  </div>
+                </div>
 
                 <label>Google Gemini API Key (Capa Gratuita o Pago)
                   <div style={{display: 'flex', gap: 10, alignItems: 'center', marginTop: 5}}>
@@ -3864,7 +4158,7 @@ export default function Settings() {
                       }} 
                       placeholder="AIzaSy..." 
                       style={{flex: 1}}
-                      required={waConfig.enabled}
+                      required={waConfig.enabled || waConfig.read_only}
                     />
                     <button 
                       type="button" 
@@ -4011,11 +4305,38 @@ export default function Settings() {
               
               {waConfig.status === 'connected' && (
                 <div style={{width: '100%'}}>
-                  <div style={{display: 'inline-flex', alignItems: 'center', gap: 6, padding: '5px 10px', borderRadius: 20, backgroundColor: 'rgba(16, 185, 129, 0.15)', color: 'var(--accent-emerald)', fontWeight: 600, fontSize: '0.8rem', marginBottom: 15}}>
-                    ● CONECTADO
+                  <div style={{
+                    display: 'inline-flex', 
+                    alignItems: 'center', 
+                    gap: 6, 
+                    padding: '5px 12px', 
+                    borderRadius: 20, 
+                    backgroundColor: waConfig.enabled 
+                      ? 'rgba(16, 185, 129, 0.15)' 
+                      : waConfig.read_only 
+                        ? 'rgba(59, 130, 246, 0.15)' 
+                        : 'rgba(156, 163, 175, 0.15)', 
+                    color: waConfig.enabled 
+                      ? 'var(--accent-emerald)' 
+                      : waConfig.read_only 
+                        ? 'var(--accent-blue)' 
+                        : 'var(--text-secondary)', 
+                    fontWeight: 600, 
+                    fontSize: '0.8rem', 
+                    marginBottom: 15
+                  }}>
+                    ● {waConfig.enabled 
+                        ? 'CONECTADO - RESPUESTAS ACTIVAS' 
+                        : waConfig.read_only 
+                          ? 'CONECTADO - SOLO LECTURA' 
+                          : 'CONECTADO - EN PAUSA'}
                   </div>
                   <p style={{fontSize: '0.9rem', margin: '0 0 10px 0'}}>
-                    El asistente virtual está respondiendo activamente consultas.
+                    {waConfig.enabled 
+                      ? 'El asistente virtual está respondiendo activamente consultas de clientes.' 
+                      : waConfig.read_only 
+                        ? '👁️ Modo Solo Lectura activo: Monitoreando y registrando demanda de productos sin enviar respuestas por WhatsApp.' 
+                        : 'Línea conectada, pero el asistente y el monitoreo están desactivados.'}
                   </p>
                   <div style={{fontSize: '0.85rem', padding: '10px 15px', backgroundColor: 'var(--bg-dark)', borderRadius: 6, display: 'inline-block', fontFamily: 'monospace'}}>
                     Línea Vinculada: +{waConfig.phone}
@@ -4538,7 +4859,22 @@ export default function Settings() {
             <div className="card" style={{width: '100%', marginTop: 10}}>
               <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15, flexWrap: 'wrap', gap: 10}}>
                 <div>
-                  <h3 style={{margin: 0}}>📊 Demanda & Productos Solicitados por Clientes</h3>
+                  <div style={{display: 'flex', alignItems: 'center', gap: 10}}>
+                    <h3 style={{margin: 0}}>📊 Demanda & Productos Solicitados por Clientes</h3>
+                    {waConfig.enabled ? (
+                      <span style={{fontSize: '0.72rem', padding: '3px 8px', borderRadius: 12, backgroundColor: 'rgba(16, 185, 129, 0.15)', color: 'var(--accent-emerald)', fontWeight: 600}}>
+                        ● Monitoreo Activo (Modo Normal)
+                      </span>
+                    ) : waConfig.read_only ? (
+                      <span style={{fontSize: '0.72rem', padding: '3px 8px', borderRadius: 12, backgroundColor: 'rgba(59, 130, 246, 0.15)', color: 'var(--accent-blue)', fontWeight: 600}}>
+                        ● Monitoreo Activo (Solo Lectura)
+                      </span>
+                    ) : (
+                      <span style={{fontSize: '0.72rem', padding: '3px 8px', borderRadius: 12, backgroundColor: 'rgba(239, 68, 68, 0.15)', color: 'var(--accent-red)', fontWeight: 600}}>
+                        ● Monitoreo Pausado
+                      </span>
+                    )}
+                  </div>
                   <p style={{fontSize: '0.85rem', color: 'var(--text-secondary)', margin: '4px 0 0 0'}}>
                     Monitoreo en tiempo real del interés y productos más preguntados en WhatsApp por tus clientes.
                   </p>
@@ -4549,11 +4885,18 @@ export default function Settings() {
               </div>
 
               {/* KPI Cards */}
-              <div style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 15, marginBottom: 20}}>
+              <div style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 15, marginBottom: 20}}>
                 <div style={{padding: '15px', borderRadius: 8, backgroundColor: 'var(--bg-dark)', border: '1px solid var(--border-color)'}}>
                   <div style={{fontSize: '0.8rem', color: 'var(--text-secondary)'}}>Total Consultas Registradas</div>
                   <div style={{fontSize: '1.6rem', fontWeight: 'bold', color: 'var(--accent-blue)', marginTop: 4}}>
                     {inquiriesSummary?.total_inquiries || 0}
+                  </div>
+                </div>
+
+                <div style={{padding: '15px', borderRadius: 8, backgroundColor: 'var(--bg-dark)', border: '1px solid var(--border-color)'}}>
+                  <div style={{fontSize: '0.8rem', color: 'var(--text-secondary)'}}>Clientes Únicos (WhatsApp)</div>
+                  <div style={{fontSize: '1.6rem', fontWeight: 'bold', color: '#a855f7', marginTop: 4}}>
+                    {inquiriesSummary?.total_unique_customers || 0}
                   </div>
                 </div>
 
@@ -4565,57 +4908,220 @@ export default function Settings() {
                 </div>
 
                 <div style={{padding: '15px', borderRadius: 8, backgroundColor: 'var(--bg-dark)', border: '1px solid var(--border-color)'}}>
-                  <div style={{fontSize: '0.8rem', color: 'var(--text-secondary)'}}>Sin Stock (Oportunidades Perdidas)</div>
+                  <div style={{fontSize: '0.8rem', color: 'var(--text-secondary)'}}>Sin Stock (Oportunidades)</div>
                   <div style={{fontSize: '1.6rem', fontWeight: 'bold', color: 'var(--accent-red)', marginTop: 4}}>
                     {inquiriesSummary?.total_out_of_stock || 0}
                   </div>
                 </div>
               </div>
 
-              {/* Top Requested Products Table */}
-              <h4 style={{marginBottom: 10, fontSize: '0.95rem'}}>🔥 Top Productos Más Consultados por Clientes</h4>
-              {inquiriesSummary?.top_products && inquiriesSummary.top_products.length > 0 ? (
-                <div style={{overflowX: 'auto', marginBottom: 20}}>
-                  <table style={{width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.85rem'}}>
-                    <thead>
-                      <tr style={{borderBottom: '1px solid var(--border-color)', color: 'var(--text-secondary)'}}>
-                        <th style={{padding: '8px 12px'}}>Producto Consultado</th>
-                        <th style={{padding: '8px 12px', textAlign: 'center'}}>Total Consultas</th>
-                        <th style={{padding: '8px 12px', textAlign: 'center'}}>Con Stock</th>
-                        <th style={{padding: '8px 12px', textAlign: 'center'}}>Sin Stock</th>
-                        <th style={{padding: '8px 12px'}}>Estado / Oportunidad</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {inquiriesSummary.top_products.map((p, idx) => {
-                        const hasOutOfStock = p.out_of_stock_count > 0;
-                        return (
-                          <tr key={idx} style={{borderBottom: '1px solid var(--border-color)'}}>
-                            <td style={{padding: '10px 12px', fontWeight: 600}}>{p.product_name}</td>
-                            <td style={{padding: '10px 12px', textAlign: 'center', fontWeight: 'bold'}}>{p.count}</td>
-                            <td style={{padding: '10px 12px', textAlign: 'center', color: 'var(--accent-emerald)'}}>{p.in_stock_count}</td>
-                            <td style={{padding: '10px 12px', textAlign: 'center', color: hasOutOfStock ? 'var(--accent-red)' : 'var(--text-secondary)'}}>{p.out_of_stock_count}</td>
-                            <td style={{padding: '10px 12px'}}>
-                              {hasOutOfStock ? (
-                                <span style={{padding: '3px 8px', borderRadius: 12, backgroundColor: 'rgba(239, 68, 68, 0.15)', color: 'var(--accent-red)', fontSize: '0.75rem', fontWeight: 600}}>
-                                  ⚠️ Oportunidad (Sin Stock)
-                                </span>
-                              ) : (
-                                <span style={{padding: '3px 8px', borderRadius: 12, backgroundColor: 'rgba(16, 185, 129, 0.15)', color: 'var(--accent-emerald)', fontSize: '0.75rem', fontWeight: 600}}>
-                                  ✓ En Stock
-                                </span>
-                              )}
-                            </td>
+              {/* View Selector Tabs */}
+              <div style={{display: 'flex', gap: 8, marginBottom: 15, borderBottom: '1px solid var(--border-color)', paddingBottom: 10, flexWrap: 'wrap'}}>
+                <button
+                  type="button"
+                  onClick={() => setDemandViewTab('top')}
+                  style={{
+                    padding: '6px 14px',
+                    borderRadius: 6,
+                    fontSize: '0.85rem',
+                    fontWeight: 600,
+                    border: demandViewTab === 'top' ? '1px solid var(--accent-blue)' : '1px solid var(--border-color)',
+                    backgroundColor: demandViewTab === 'top' ? 'rgba(59, 130, 246, 0.15)' : 'transparent',
+                    color: demandViewTab === 'top' ? 'var(--accent-blue)' : 'var(--text-secondary)',
+                    cursor: 'pointer'
+                  }}
+                >
+                  🔥 Top Productos Más Consultados
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDemandViewTab('feed')}
+                  style={{
+                    padding: '6px 14px',
+                    borderRadius: 6,
+                    fontSize: '0.85rem',
+                    fontWeight: 600,
+                    border: demandViewTab === 'feed' ? '1px solid var(--accent-blue)' : '1px solid var(--border-color)',
+                    backgroundColor: demandViewTab === 'feed' ? 'rgba(59, 130, 246, 0.15)' : 'transparent',
+                    color: demandViewTab === 'feed' ? 'var(--accent-blue)' : 'var(--text-secondary)',
+                    cursor: 'pointer'
+                  }}
+                >
+                  👥 Consultas Recientes con Datos del Cliente ({inquiriesList?.length || 0})
+                </button>
+              </div>
+
+              {/* TAB 1: Top Requested Products Table */}
+              {demandViewTab === 'top' && (
+                <>
+                  {inquiriesSummary?.top_products && inquiriesSummary.top_products.length > 0 ? (
+                    <div style={{overflowX: 'auto', marginBottom: 20}}>
+                      <table style={{width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.85rem'}}>
+                        <thead>
+                          <tr style={{borderBottom: '1px solid var(--border-color)', color: 'var(--text-secondary)'}}>
+                            <th style={{padding: '8px 12px'}}>Producto Consultado</th>
+                            <th style={{padding: '8px 12px', textAlign: 'center'}}>Total Consultas</th>
+                            <th style={{padding: '8px 12px', textAlign: 'center'}}>Con Stock</th>
+                            <th style={{padding: '8px 12px', textAlign: 'center'}}>Sin Stock</th>
+                            <th style={{padding: '8px 12px'}}>Estado / Oportunidad</th>
+                            <th style={{padding: '8px 12px'}}>Clientes Interesados (WhatsApp)</th>
                           </tr>
-                        )
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              ) : (
-                <p style={{fontSize: '0.85rem', color: 'var(--text-secondary)', padding: '10px 0'}}>
-                  Aún no hay consultas registradas. A medida que los clientes pregunten por productos en WhatsApp, la IA los registrará y mostrará aquí automáticamente.
-                </p>
+                        </thead>
+                        <tbody>
+                          {inquiriesSummary.top_products.map((p, idx) => {
+                            const hasOutOfStock = p.out_of_stock_count > 0;
+                            const customers = p.customers_list || [];
+                            return (
+                              <tr key={idx} style={{borderBottom: '1px solid var(--border-color)'}}>
+                                <td style={{padding: '10px 12px', fontWeight: 600}}>{p.product_name}</td>
+                                <td style={{padding: '10px 12px', textAlign: 'center', fontWeight: 'bold'}}>{p.count}</td>
+                                <td style={{padding: '10px 12px', textAlign: 'center', color: 'var(--accent-emerald)'}}>{p.in_stock_count}</td>
+                                <td style={{padding: '10px 12px', textAlign: 'center', color: hasOutOfStock ? 'var(--accent-red)' : 'var(--text-secondary)'}}>{p.out_of_stock_count}</td>
+                                <td style={{padding: '10px 12px'}}>
+                                  {hasOutOfStock ? (
+                                    <span style={{padding: '3px 8px', borderRadius: 12, backgroundColor: 'rgba(239, 68, 68, 0.15)', color: 'var(--accent-red)', fontSize: '0.75rem', fontWeight: 600}}>
+                                      ⚠️ Oportunidad (Sin Stock)
+                                    </span>
+                                  ) : (
+                                    <span style={{padding: '3px 8px', borderRadius: 12, backgroundColor: 'rgba(16, 185, 129, 0.15)', color: 'var(--accent-emerald)', fontSize: '0.75rem', fontWeight: 600}}>
+                                      ✓ En Stock
+                                    </span>
+                                  )}
+                                </td>
+                                <td style={{padding: '10px 12px'}}>
+                                  {customers.length > 0 ? (
+                                    <div style={{display: 'flex', flexWrap: 'wrap', gap: 4, alignItems: 'center'}}>
+                                      {customers.slice(0, 3).map((cust, ci) => {
+                                        const cleanPhone = (cust.sender || '').replace(/[^0-9]/g, '');
+                                        const waLink = `https://wa.me/${cleanPhone}?text=${encodeURIComponent(`Hola ${cust.name || ''}, te contactamos de Hidroponia Rosario por tu consulta sobre ${p.product_name}`)}`;
+                                        return (
+                                          <a
+                                            key={ci}
+                                            href={waLink}
+                                            target="_blank"
+                                            rel="noreferrer"
+                                            title={`Escribir a ${cust.name} (+${cust.sender}) por WhatsApp`}
+                                            style={{
+                                              display: 'inline-flex',
+                                              alignItems: 'center',
+                                              gap: 4,
+                                              padding: '2px 8px',
+                                              borderRadius: 12,
+                                              fontSize: '0.72rem',
+                                              backgroundColor: 'rgba(37, 211, 102, 0.12)',
+                                              color: '#25D366',
+                                              border: '1px solid rgba(37, 211, 102, 0.3)',
+                                              textDecoration: 'none',
+                                              fontWeight: 600
+                                            }}
+                                          >
+                                            <span>💬 {cust.name || `+${cust.sender}`}</span>
+                                          </a>
+                                        );
+                                      })}
+                                      {customers.length > 3 && (
+                                        <span style={{fontSize: '0.7rem', color: 'var(--text-secondary)'}}>
+                                          +{customers.length - 3} más
+                                        </span>
+                                      )}
+                                    </div>
+                                  ) : (
+                                    <span style={{fontSize: '0.75rem', color: 'var(--text-secondary)'}}>—</span>
+                                  )}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : (
+                    <p style={{fontSize: '0.85rem', color: 'var(--text-secondary)', padding: '10px 0'}}>
+                      Aún no hay consultas registradas. A medida que los clientes pregunten por productos en WhatsApp, la IA los registrará y mostrará aquí automáticamente.
+                    </p>
+                  )}
+                </>
+              )}
+
+              {/* TAB 2: Live Inquiries Feed with Customer Details */}
+              {demandViewTab === 'feed' && (
+                <>
+                  {inquiriesList && inquiriesList.length > 0 ? (
+                    <div style={{overflowX: 'auto', marginBottom: 20}}>
+                      <table style={{width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.85rem'}}>
+                        <thead>
+                          <tr style={{borderBottom: '1px solid var(--border-color)', color: 'var(--text-secondary)'}}>
+                            <th style={{padding: '8px 12px'}}>Fecha / Hora</th>
+                            <th style={{padding: '8px 12px'}}>Cliente</th>
+                            <th style={{padding: '8px 12px'}}>Número WhatsApp</th>
+                            <th style={{padding: '8px 12px'}}>Producto Consultado</th>
+                            <th style={{padding: '8px 12px', textAlign: 'center'}}>Disponibilidad</th>
+                            <th style={{padding: '8px 12px', textAlign: 'right'}}>Acción</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {inquiriesList.map((inq, idx) => {
+                            const cleanPhone = (inq.sender || '').replace(/[^0-9]/g, '');
+                            const waLink = `https://wa.me/${cleanPhone}?text=${encodeURIComponent(`Hola ${inq.customer_name || ''}, te contactamos de Hidroponia Rosario por tu consulta sobre ${inq.product_name}`)}`;
+                            return (
+                              <tr key={idx} style={{borderBottom: '1px solid var(--border-color)'}}>
+                                <td style={{padding: '10px 12px', color: 'var(--text-secondary)', fontSize: '0.78rem', whiteSpace: 'nowrap'}}>
+                                  {inq.created_at ? new Date(inq.created_at).toLocaleString() : 'Reciente'}
+                                </td>
+                                <td style={{padding: '10px 12px', fontWeight: 600}}>
+                                  {inq.customer_name || 'Cliente WhatsApp'}
+                                </td>
+                                <td style={{padding: '10px 12px', fontFamily: 'monospace', fontSize: '0.82rem'}}>
+                                  +{inq.sender}
+                                </td>
+                                <td style={{padding: '10px 12px', fontWeight: 600, color: 'var(--text-primary)'}}>
+                                  {inq.product_name}
+                                </td>
+                                <td style={{padding: '10px 12px', textAlign: 'center'}}>
+                                  {inq.in_stock ? (
+                                    <span style={{padding: '2px 8px', borderRadius: 10, backgroundColor: 'rgba(16, 185, 129, 0.15)', color: 'var(--accent-emerald)', fontSize: '0.72rem', fontWeight: 600}}>
+                                      ✓ En Stock
+                                    </span>
+                                  ) : (
+                                    <span style={{padding: '2px 8px', borderRadius: 10, backgroundColor: 'rgba(239, 68, 68, 0.15)', color: 'var(--accent-red)', fontSize: '0.72rem', fontWeight: 600}}>
+                                      ⚠️ Sin Stock
+                                    </span>
+                                  )}
+                                </td>
+                                <td style={{padding: '10px 12px', textAlign: 'right'}}>
+                                  <a
+                                    href={waLink}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    style={{
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      gap: 4,
+                                      padding: '4px 10px',
+                                      borderRadius: 6,
+                                      fontSize: '0.75rem',
+                                      backgroundColor: '#25D366',
+                                      color: '#fff',
+                                      textDecoration: 'none',
+                                      fontWeight: 600,
+                                      whiteSpace: 'nowrap'
+                                    }}
+                                  >
+                                    💬 Chat WhatsApp
+                                  </a>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : (
+                    <p style={{fontSize: '0.85rem', color: 'var(--text-secondary)', padding: '10px 0'}}>
+                      No hay historial reciente de consultas para mostrar.
+                    </p>
+                  )}
+                </>
               )}
             </div>
 

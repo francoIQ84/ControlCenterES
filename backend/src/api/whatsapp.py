@@ -11,6 +11,7 @@ router = APIRouter()
 
 class WhatsAppConfigReq(BaseModel):
     enabled: bool
+    read_only: Optional[bool] = False
     gemini_api_key: str
     bot_instructions: str
 
@@ -25,6 +26,7 @@ class StatusUpdateReq(BaseModel):
 class WebhookReq(BaseModel):
     sender: str
     text: str
+    pushName: Optional[str] = ""
 
 class HumanActivityReq(BaseModel):
     sender: str
@@ -50,6 +52,7 @@ def verify_internal_only(request: Request):
 def get_whatsapp_config(_=Depends(verify_session)):
     return {
         "enabled": database.get_setting("whatsapp_enabled", "0") == "1",
+        "read_only": database.get_setting("whatsapp_read_only", "0") == "1",
         "gemini_api_key": database.get_setting("gemini_api_key", ""),
         "bot_instructions": database.get_setting("whatsapp_bot_instructions", (
             "Eres un asistente virtual experto y amable para la tienda 'Hidroponia Rosario'. "
@@ -65,6 +68,7 @@ def get_whatsapp_config(_=Depends(verify_session)):
 @router.post("/config")
 def save_whatsapp_config(req: WhatsAppConfigReq, _=Depends(verify_session), _2=Depends(require_permission("settings"))):
     database.set_setting("whatsapp_enabled", "1" if req.enabled else "0")
+    database.set_setting("whatsapp_read_only", "1" if req.read_only else "0")
     database.set_setting("gemini_api_key", req.gemini_api_key.strip())
     database.set_setting("whatsapp_bot_instructions", req.bot_instructions.strip())
     return {"success": True}
@@ -209,10 +213,126 @@ def human_activity(req: HumanActivityReq, _=Depends(verify_internal_only)):
         print(f"[WhatsApp Human Takeover] Operator wrote to {req.sender}. AI paused for 24h.")
     return {"success": True}
 
+def process_silent_inquiry_tracking(sender: str, user_text: str, catalog_context: str = "", gemini_key: str = "", customer_name: str = ""):
+    """
+    Silently analyzes incoming WhatsApp messages to detect product inquiries (for Demand & Inquiries tracking)
+    without sending any response to the WhatsApp client.
+    Uses Gemini AI with fallback to catalog keyword matching.
+    """
+    if not user_text or len(user_text.strip()) < 2:
+        return []
+
+    user_text = user_text.strip()
+
+    # If catalog_context wasn't passed, build it
+    if not catalog_context:
+        catalog_lines = []
+        try:
+            with database.get_connection() as conn:
+                with conn.cursor() as cursor:
+                    cursor.execute("SELECT ml_id, title, price_web, available_quantity FROM products_cache WHERE available_quantity > 0 AND is_web_active = 1")
+                    for r in cursor.fetchall():
+                        catalog_lines.append(f"- {r['title']} (Ref: {r['ml_id']}): ${r['price_web']} - Stock: {r['available_quantity']}")
+        except Exception as e:
+            print(f"[Silent Tracking Catalog Error] {e}")
+        catalog_context = "\n".join(catalog_lines)
+
+    if not gemini_key:
+        gemini_key = database.get_setting("gemini_api_key", "").strip()
+
+    inquiries_found = []
+    tokens_recorded = False
+
+    # 1. Try Gemini AI analysis if API Key is available
+    if gemini_key:
+        extraction_system_prompt = (
+            "Eres un clasificador y detector de demanda de productos para 'Hidroponia Rosario'.\n"
+            "Tu única tarea es analizar el mensaje del cliente e identificar si pregunta, consulta o muestra interés de compra por uno o más productos, insumos o artículos.\n\n"
+            f"CATÁLOGO DISPONIBLE:\n{catalog_context}\n\n"
+            "FORMATO DE SALIDA ESTRICTO:\n"
+            "Por cada producto detectado, responde únicamente una línea con la etiqueta exacta:\n"
+            "[INQUIRY: Nombre del Producto | IN_STOCK: true/false]\n"
+            "Usa true si el producto existe en el catálogo disponible y tiene stock > 0, o false si está agotado o no figura en el catálogo.\n"
+            "Si el mensaje es un saludo general ('hola', 'buen día'), despedida ('gracias', 'chau'), un comprobante o no consulta por ningún producto en específico, responde exactamente:\n"
+            "NONE\n"
+            "No agregues explicaciones ni saludos."
+        )
+
+        models_to_try = ["gemini-3.6-flash", "gemini-flash-latest", "gemini-flash-lite-latest", "gemini-3.5-flash-lite", "gemini-2.0-flash"]
+        for model_name in models_to_try:
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={gemini_key}"
+            headers = {"Content-Type": "application/json"}
+            payload = {
+                "contents": [{"role": "user", "parts": [{"text": user_text}]}],
+                "systemInstruction": {
+                    "parts": [{"text": extraction_system_prompt}]
+                }
+            }
+            try:
+                res = requests.post(url, headers=headers, json=payload, timeout=10)
+                if res.status_code == 200:
+                    res_data = res.json()
+                    reply_text = res_data['candidates'][0]['content']['parts'][0]['text']
+                    inquiries = re.findall(r'\[INQUIRY:\s*(.*?)\s*\|\s*IN_STOCK:\s*(true|false)\]', reply_text, re.IGNORECASE)
+                    for prod_name, is_stock in inquiries:
+                        if prod_name and prod_name.strip().upper() != "NONE":
+                            in_stock_bool = is_stock.lower() == 'true'
+                            database.add_whatsapp_inquiry(sender, prod_name.strip(), in_stock_bool, customer_name=customer_name)
+                            inquiries_found.append((prod_name.strip(), in_stock_bool))
+
+                    usage = res_data.get('usageMetadata', {})
+                    prompt_tokens = usage.get('promptTokenCount', 0)
+                    reply_tokens = usage.get('candidatesTokenCount', 0)
+                    total_tokens = usage.get('totalTokenCount', 0)
+                    database.add_whatsapp_chat_message(sender, user_text, "[Solo Lectura]", prompt_tokens, reply_tokens, total_tokens)
+                    tokens_recorded = True
+                    print(f"[Silent Inquiry Tracking - {model_name}] Extracted {len(inquiries_found)} inquiries for {sender}.")
+                    break
+                elif res.status_code in (404, 429, 500, 502, 503, 504):
+                    continue
+                else:
+                    break
+            except Exception as e:
+                print(f"[Silent Inquiry Tracking Exception - {model_name}] {e}")
+                break
+
+    # 2. Fallback: Catalog keyword matching if Gemini was unavailable or returned nothing
+    if not inquiries_found:
+        try:
+            with database.get_connection() as conn:
+                with conn.cursor() as cursor:
+                    cursor.execute("SELECT ml_id, title, available_quantity FROM products_cache WHERE COALESCE(is_hidden, 0) = 0")
+                    products = cursor.fetchall()
+                    text_lower = user_text.lower()
+                    for p in products:
+                        title = p['title'].lower()
+                        words = [w for w in title.split() if len(w) > 3 and w not in ['para', 'con', 'de', 'del', 'los', 'las', 'por', 'sobre']]
+                        if len(words) >= 2 and all(w in text_lower for w in words[:2]):
+                            in_stock = (p['available_quantity'] or 0) > 0
+                            database.add_whatsapp_inquiry(sender, p['title'], in_stock, customer_name=customer_name)
+                            inquiries_found.append((p['title'], in_stock))
+                            print(f"[Silent Inquiry Tracking Fallback] Catalog match for {sender}: {p['title']}")
+                            break
+        except Exception as e:
+            print(f"[Silent Inquiry Tracking Catalog Fallback Error] {e}")
+
+    if not tokens_recorded:
+        database.add_whatsapp_chat_message(sender, user_text, "[Solo Lectura]", 0, 0, 0)
+
+    return inquiries_found
+
 @router.post("/webhook")
 def whatsapp_webhook(req: WebhookReq, _=Depends(verify_internal_only)):
+    push_name = (req.pushName or "").strip()
+
+    # Automatically incorporate WhatsApp contact and customer data into CRM
+    database.upsert_whatsapp_customer(req.sender, push_name)
+
     enabled = database.get_setting("whatsapp_enabled", "0") == "1"
-    if not enabled:
+    read_only = database.get_setting("whatsapp_read_only", "0") == "1"
+
+    # If neither normal mode nor read-only mode is active, do nothing
+    if not enabled and not read_only:
         return {"reply": None}
 
     user_text = (req.text or "").strip()
@@ -224,29 +344,14 @@ def whatsapp_webhook(req: WebhookReq, _=Depends(verify_internal_only)):
     # Quick chat commands (#pausa / #pausar / #humano / #bot / #reactivar / #reanudar)
     if any(cmd in user_text_lower for cmd in ["#pausa", "#pausar", "#humano"]):
         database.pause_whatsapp_ai(req.sender, duration_hours=24, reason="comando_chat")
-        return {"reply": "⚙️ *Atención Humana Activada:* El asistente virtual ha sido pausado para esta conversación. Un representante responderá a la brevedad."}
+        if enabled:
+            return {"reply": "⚙️ *Atención Humana Activada:* El asistente virtual ha sido pausado para esta conversación. Un representante responderá a la brevedad."}
+        return {"reply": None}
 
     if any(cmd in user_text_lower for cmd in ["#bot", "#reactivar", "#reanudar"]):
         database.unpause_whatsapp_ai(req.sender)
-        return {"reply": "🤖 *Asistente Virtual Reactivado:* La IA vuelve a estar activa para ayudarte. ¿En qué te puedo colaborar?"}
-
-    # Check if AI is paused for this sender due to human takeover
-    if database.is_whatsapp_ai_paused(req.sender):
-        print(f"[WhatsApp AI Paused] Skipping AI response for sender {req.sender} (Human operator active)")
-        return {"reply": None}
-
-    # Check if bot is within its active schedule
-    if not database.is_whatsapp_in_schedule():
-        off_msg = database.get_whatsapp_off_schedule_message()
-        print(f"[WhatsApp Schedule] Outside active hours for sender {req.sender}")
-        return {"reply": off_msg if off_msg else None}
-
-    gemini_key = database.get_setting("gemini_api_key", "").strip()
-    if not gemini_key:
-        return {"reply": "Error: API Key de Gemini no configurada en el panel de control."}
-
-    user_text = (req.text or "").strip()
-    if not user_text:
+        if enabled:
+            return {"reply": "🤖 *Asistente Virtual Reactivado:* La IA vuelve a estar activa para ayudarte. ¿En qué te puedo colaborar?"}
         return {"reply": None}
 
     # 1. Gather Catalog Stock Context
@@ -260,6 +365,31 @@ def whatsapp_webhook(req: WebhookReq, _=Depends(verify_internal_only)):
     except Exception as e:
         print(f"[Catalog Context Error] {e}")
     catalog_context = "\n".join(catalog_lines)
+
+    gemini_key = database.get_setting("gemini_api_key", "").strip()
+
+    # If in READ-ONLY mode (normal mode disabled, but read-only enabled):
+    # Track inquiries silently and DO NOT send any reply to the client
+    if not enabled and read_only:
+        process_silent_inquiry_tracking(req.sender, user_text, catalog_context, gemini_key, customer_name=push_name)
+        print(f"[WhatsApp Read-Only Mode] Inquiry tracking executed for {req.sender}. No reply sent.")
+        return {"reply": None}
+
+    # Check if AI is paused for this sender due to human takeover
+    if database.is_whatsapp_ai_paused(req.sender):
+        print(f"[WhatsApp AI Paused] Skipping AI response for sender {req.sender} (Human operator active)")
+        process_silent_inquiry_tracking(req.sender, user_text, catalog_context, gemini_key, customer_name=push_name)
+        return {"reply": None}
+
+    # Check if bot is within its active schedule
+    if not database.is_whatsapp_in_schedule():
+        off_msg = database.get_whatsapp_off_schedule_message()
+        print(f"[WhatsApp Schedule] Outside active hours for sender {req.sender}")
+        process_silent_inquiry_tracking(req.sender, user_text, catalog_context, gemini_key, customer_name=push_name)
+        return {"reply": off_msg if off_msg else None}
+
+    if not gemini_key:
+        return {"reply": "Error: API Key de Gemini no configurada en el panel de control."}
 
     # 2. Gather Order Context if Order ID mentioned
     order_context = ""
@@ -312,7 +442,7 @@ def whatsapp_webhook(req: WebhookReq, _=Depends(verify_internal_only)):
     for h in history:
         msg = (h.get('message') or '').strip()
         reply = (h.get('reply') or '').strip()
-        if msg and reply and not reply.startswith("Disculpa, he tenido") and not reply.startswith("Error:"):
+        if msg and reply and not reply.startswith("Disculpa, he tenido") and not reply.startswith("Error:") and not reply.startswith("[Solo Lectura]"):
             contents.append({"role": "user", "parts": [{"text": msg}]})
             contents.append({"role": "model", "parts": [{"text": reply}]})
             
@@ -346,9 +476,9 @@ def whatsapp_webhook(req: WebhookReq, _=Depends(verify_internal_only)):
                 # Parse and extract product inquiries
                 inquiries = re.findall(r'\[INQUIRY:\s*(.*?)\s*\|\s*IN_STOCK:\s*(true|false)\]', reply_text, re.IGNORECASE)
                 for prod_name, is_stock in inquiries:
-                    if prod_name:
+                    if prod_name and prod_name.strip().upper() != "NONE":
                         in_stock_bool = is_stock.lower() == 'true'
-                        database.add_whatsapp_inquiry(req.sender, prod_name.strip(), in_stock_bool)
+                        database.add_whatsapp_inquiry(req.sender, prod_name.strip(), in_stock_bool, customer_name=push_name)
 
                 # Clean tag lines before sending reply to user
                 clean_reply_text = re.sub(r'\[INQUIRY:\s*.*?\s*\|\s*IN_STOCK:\s*(?:true|false)\]', '', reply_text, flags=re.IGNORECASE)
