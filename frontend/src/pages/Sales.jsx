@@ -1160,7 +1160,7 @@ export default function Sales() {
                 const isNew = isNewOrder(o.date_created)
                 return (
                   <tr key={o.order_id} style={{backgroundColor: isNew ? 'rgba(16, 185, 129, 0.06)' : 'transparent'}}>
-                    <td>
+                    <td data-label="Fecha">
                       <div style={{display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap'}}>
                         <span>{new Date(o.date_created).toLocaleString()}</span>
                         {isNew && (
@@ -1182,9 +1182,9 @@ export default function Sales() {
                         )}
                       </div>
                     </td>
-                  <td style={{fontFamily: 'monospace', fontSize: '0.8rem'}}>{o.order_id}</td>
-                  <td>{renderPlatformBadge(o.source_platform)}</td>
-                  <td>
+                  <td data-label="Orden ID" style={{fontFamily: 'monospace', fontSize: '0.8rem'}}>{o.order_id}</td>
+                  <td data-label="Canal">{renderPlatformBadge(o.source_platform)}</td>
+                  <td data-label="Comprador">
                     <div style={{display: 'flex', flexDirection: 'column', gap: 4}}>
                       <div>
                         <strong>{o.buyer?.nickname || 'Cliente Web/Mostrador'}</strong><br/>
@@ -1232,7 +1232,7 @@ export default function Sales() {
                       )}
                     </div>
                   </td>
-                  <td>
+                  <td data-label="Items">
                     <ul style={{margin: 0, paddingLeft: 15, fontSize: '0.8rem', color: 'var(--text-secondary)'}}>
                       {(o.items || []).map(i => (
                         <li key={i.id || i.ml_id || Math.random()}>{i.quantity}x {(i.title || '').substring(0,30)}{(i.title || '').length > 30 ? '...' : ''}</li>
@@ -1258,8 +1258,8 @@ export default function Sales() {
                       </div>
                     )}
                   </td>
-                  <td style={{fontWeight: 600}}>${o.total_amount.toLocaleString()}</td>
-                  <td>
+                  <td data-label="Monto" style={{fontWeight: 600}}>${o.total_amount.toLocaleString()}</td>
+                  <td data-label="Pago">
                     <div style={{display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-start'}}>
                       {o.status === 'pending' || o.payment_status === 'pending' ? (
                         <button
@@ -1312,8 +1312,8 @@ export default function Sales() {
                       )}
                     </div>
                   </td>
-                  <td>{renderShippingBadge(o)}</td>
-                  <td style={{textAlign: 'center'}}>
+                  <td data-label="Entrega">{renderShippingBadge(o)}</td>
+                  <td data-label="Factura" style={{textAlign: 'center'}}>
                     {o.invoice_generated ? (
                       <div style={{display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'center'}}>
                         <a 

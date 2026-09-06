@@ -300,11 +300,11 @@ export default function Dashboard() {
               <tbody>
                 {stats.low_stock_products.map((p) => (
                   <tr key={p.ml_id} style={{borderBottom: '1px solid var(--border-color)'}}>
-                    <td style={{padding: '10px 5px', fontWeight: 600}}>{p.title}</td>
-                    <td style={{padding: '10px 5px', fontFamily: 'monospace', fontSize: '0.8rem'}}>{p.ml_id}</td>
-                    <td style={{textAlign: 'center', padding: '10px 5px', color: 'var(--accent-red)', fontWeight: 'bold'}}>{p.available_quantity}</td>
-                    <td style={{textAlign: 'center', padding: '10px 5px', color: 'var(--text-secondary)'}}>{p.min_stock || 3}</td>
-                    <td style={{textAlign: 'center', padding: '10px 5px'}}>
+                    <td data-label="Producto" style={{padding: '10px 5px', fontWeight: 600}}>{p.title}</td>
+                    <td data-label="ID / SKU" style={{padding: '10px 5px', fontFamily: 'monospace', fontSize: '0.8rem'}}>{p.ml_id}</td>
+                    <td data-label="Stock Actual" style={{textAlign: 'center', padding: '10px 5px', color: 'var(--accent-red)', fontWeight: 'bold'}}>{p.available_quantity}</td>
+                    <td data-label="Stock Mínimo" style={{textAlign: 'center', padding: '10px 5px', color: 'var(--text-secondary)'}}>{p.min_stock || 3}</td>
+                    <td data-label="Estado" style={{textAlign: 'center', padding: '10px 5px'}}>
                       <span className="badge" style={{
                         backgroundColor: p.status === 'active' ? 'rgba(16, 185, 129, 0.15)' : 'var(--bg-dark)',
                         color: p.status === 'active' ? 'var(--accent-emerald)' : 'var(--text-secondary)'
@@ -335,8 +335,8 @@ export default function Dashboard() {
                 <tbody>
                   {stats.visits_by_domain.map((d, idx) => (
                     <tr key={idx} style={{borderBottom: '1px solid var(--border-color)'}}>
-                      <td style={{padding: '10px 5px', fontWeight: 600, fontSize: '0.85rem'}}>{d.domain}</td>
-                      <td style={{textAlign: 'right', padding: '10px 5px', fontWeight: 600, color: 'var(--accent-cyan)'}}>{d.count.toLocaleString()}</td>
+                      <td data-label="Dominio" style={{padding: '10px 5px', fontWeight: 600, fontSize: '0.85rem'}}>{d.domain}</td>
+                      <td data-label="Visitas" style={{textAlign: 'right', padding: '10px 5px', fontWeight: 600, color: 'var(--accent-cyan)'}}>{d.count.toLocaleString()}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -362,8 +362,8 @@ export default function Dashboard() {
                 <tbody>
                   {stats.visits_by_country.map((c, idx) => (
                     <tr key={idx} style={{borderBottom: '1px solid var(--border-color)'}}>
-                      <td style={{padding: '10px 5px', fontWeight: 600, fontSize: '0.85rem'}}>{c.country}</td>
-                      <td style={{textAlign: 'right', padding: '10px 5px', fontWeight: 600, color: 'var(--accent-blue)'}}>{c.count.toLocaleString()}</td>
+                      <td data-label="País" style={{padding: '10px 5px', fontWeight: 600, fontSize: '0.85rem'}}>{c.country}</td>
+                      <td data-label="Visitas" style={{textAlign: 'right', padding: '10px 5px', fontWeight: 600, color: 'var(--accent-blue)'}}>{c.count.toLocaleString()}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -585,7 +585,7 @@ function TopProductsWidget({ products = [] }) {
                 
                 return (
                   <tr key={p.ml_id} style={{borderBottom: '1px solid var(--border-color)'}}>
-                    <td style={{padding: '8px 5px'}}>
+                    <td data-label="Producto" style={{padding: '8px 5px'}}>
                       <div style={{fontWeight: 600, fontSize: '0.85rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '180px'}} title={p.title}>
                         {p.title}
                       </div>
@@ -593,16 +593,16 @@ function TopProductsWidget({ products = [] }) {
                         {p.ml_id}
                       </div>
                     </td>
-                    <td style={{textAlign: 'center', padding: '8px 5px', color: 'var(--accent-amber)', fontWeight: '600', fontSize: '0.85rem'}}>
+                    <td data-label="ML" style={{textAlign: 'center', padding: '8px 5px', color: 'var(--accent-amber)', fontWeight: '600', fontSize: '0.85rem'}}>
                       {meliVisits.toLocaleString()}
                     </td>
-                    <td style={{textAlign: 'center', padding: '8px 5px', color: 'var(--accent-cyan)', fontWeight: '600', fontSize: '0.85rem'}}>
+                    <td data-label="Web" style={{textAlign: 'center', padding: '8px 5px', color: 'var(--accent-cyan)', fontWeight: '600', fontSize: '0.85rem'}}>
                       {webVisits.toLocaleString()}
                     </td>
-                    <td style={{textAlign: 'center', padding: '8px 5px', fontWeight: '600', fontSize: '0.85rem'}}>
+                    <td data-label="Total" style={{textAlign: 'center', padding: '8px 5px', fontWeight: '600', fontSize: '0.85rem'}}>
                       {total.toLocaleString()}
                     </td>
-                    <td style={{padding: '8px 5px'}}>
+                    <td data-label="Porcentaje" style={{padding: '8px 5px'}}>
                       <div style={{display: 'flex', height: '6px', borderRadius: '3px', overflow: 'hidden', backgroundColor: 'var(--bg-dark)'}}>
                         <div style={{width: `${meliPct}%`, backgroundColor: 'var(--accent-amber)'}} title={`Mercado Libre: ${meliPct.toFixed(1)}% (${meliVisits} v.)`}></div>
                         <div style={{width: `${webPct}%`, backgroundColor: 'var(--accent-cyan)'}} title={`Tienda Web: ${webPct.toFixed(1)}% (${webVisits} v.)`}></div>

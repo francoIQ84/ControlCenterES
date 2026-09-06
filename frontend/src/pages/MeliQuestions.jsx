@@ -363,7 +363,7 @@ export default function MeliQuestions({ embedded = false }) {
           </div>
         ) : (
           <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.88rem' }}>
+            <table className="mobile-card-table" style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.88rem' }}>
               <thead>
                 <tr style={{ borderBottom: '1px solid var(--border-color, #374151)', backgroundColor: 'rgba(0,0,0,0.15)', color: '#9ca3af' }}>
                   <th style={{ padding: '12px 16px' }}>Publicación / Comprador</th>
@@ -377,7 +377,7 @@ export default function MeliQuestions({ embedded = false }) {
               <tbody>
                 {questions.map((q) => (
                   <tr key={q.id || q.question_id} style={{ borderBottom: '1px solid var(--border-color, #374151)' }}>
-                    <td style={{ padding: '14px 16px', maxW: 240 }}>
+                    <td data-label="Publicación" style={{ padding: '14px 16px', maxW: 240 }}>
                       <div style={{ fontWeight: 700, color: 'var(--text-main, #f3f4f6)', marginBottom: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 220 }}>
                         {q.item_title || q.item_id}
                       </div>
@@ -389,13 +389,13 @@ export default function MeliQuestions({ embedded = false }) {
                       </div>
                     </td>
 
-                    <td style={{ padding: '14px 16px', maxWidth: 280 }}>
+                    <td data-label="Pregunta" style={{ padding: '14px 16px', maxWidth: 280 }}>
                       <div style={{ fontStyle: 'italic', color: '#e5e7eb', backgroundColor: 'rgba(255,255,255,0.03)', padding: '8px 12px', borderRadius: 8, borderLeft: '3px solid #f59e0b' }}>
                         "{q.question_text}"
                       </div>
                     </td>
 
-                    <td style={{ padding: '14px 16px', maxWidth: 350 }}>
+                    <td data-label="Respuesta AI" style={{ padding: '14px 16px', maxWidth: 350 }}>
                       {q.answer_text ? (
                         <div>
                           <div style={{ color: '#10b981', fontWeight: 500 }}>{q.answer_text}</div>
@@ -415,15 +415,15 @@ export default function MeliQuestions({ embedded = false }) {
                       )}
                     </td>
 
-                    <td style={{ padding: '14px 16px' }}>
+                    <td data-label="Estado" style={{ padding: '14px 16px' }}>
                       {getStatusBadge(q.status)}
                     </td>
 
-                    <td style={{ padding: '14px 16px', fontSize: '0.8rem', color: '#9ca3af' }}>
+                    <td data-label="Tiempo" style={{ padding: '14px 16px', fontSize: '0.8rem', color: '#9ca3af' }}>
                       {q.response_time_ms ? `${(q.response_time_ms / 1000).toFixed(1)}s` : '-'}
                     </td>
 
-                    <td style={{ padding: '14px 16px', textAlign: 'right' }}>
+                    <td data-label="Acción" style={{ padding: '14px 16px', textAlign: 'right' }}>
                       <button
                         onClick={() => handleOpenAnswerModal(q)}
                         style={{

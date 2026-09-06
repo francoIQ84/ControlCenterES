@@ -877,7 +877,7 @@ export default function Expenses() {
 
                       return (
                         <tr key={item.id} style={{ opacity: isPaid ? 0.75 : 1 }}>
-                          <td>
+                          <td data-label="Estado">
                             {isPaid ? (
                               <span className="badge" style={{ backgroundColor: 'rgba(16, 185, 129, 0.15)', color: '#10b981', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
                                 <CheckCircle2 size={13} /> Pagado
@@ -892,24 +892,24 @@ export default function Expenses() {
                               </span>
                             )}
                           </td>
-                          <td style={{ fontWeight: 600 }}>
+                          <td data-label="Servicio" style={{ fontWeight: 600 }}>
                             {item.description}
                             {item.auto_recurring && (
                               <span title="Repetitivo mensual" style={{ marginLeft: 6, fontSize: '0.75rem', opacity: 0.6 }}>🔄</span>
                             )}
                           </td>
-                          <td>
+                          <td data-label="Categoría">
                             <span className="badge" style={{ backgroundColor: 'var(--bg-hover)', color: 'var(--text-primary)' }}>
                               {item.category || 'Servicios'}
                             </span>
                           </td>
-                          <td style={{ whiteSpace: 'nowrap', fontWeight: isOverdue ? 'bold' : 'normal', color: isOverdue ? '#ef4444' : 'inherit' }}>
+                          <td data-label="Vencimiento" style={{ whiteSpace: 'nowrap', fontWeight: isOverdue ? 'bold' : 'normal', color: isOverdue ? '#ef4444' : 'inherit' }}>
                             {item.due_date}
                           </td>
-                          <td style={{ textAlign: 'right', fontWeight: 'bold', fontSize: '1.05rem', color: isPaid ? '#10b981' : isOverdue ? '#ef4444' : 'var(--text-primary)' }}>
+                          <td data-label="Monto" style={{ textAlign: 'right', fontWeight: 'bold', fontSize: '1.05rem', color: isPaid ? '#10b981' : isOverdue ? '#ef4444' : 'var(--text-primary)' }}>
                             ${Math.round(item.amount).toLocaleString()}
                           </td>
-                          <td style={{ textAlign: 'center', whiteSpace: 'nowrap' }}>
+                          <td data-label="Link / Código" style={{ textAlign: 'center', whiteSpace: 'nowrap' }}>
                             <div style={{ display: 'flex', gap: 6, justifyContent: 'center', alignItems: 'center' }}>
                               {item.payment_link ? (
                                 <a 
@@ -953,7 +953,7 @@ export default function Expenses() {
                               )}
                             </div>
                           </td>
-                          <td style={{ textAlign: 'center', whiteSpace: 'nowrap' }}>
+                          <td data-label="Acciones" style={{ textAlign: 'center', whiteSpace: 'nowrap' }}>
                             <div style={{ display: 'flex', gap: 6, justifyContent: 'center' }}>
                               {!isPaid ? (
                                 <button 
@@ -1274,10 +1274,10 @@ export default function Expenses() {
                       {fixedExpenses.length === 0 && <tr><td colSpan="4" style={{textAlign: 'center', color: 'var(--text-secondary)'}}>No hay gastos fijos para este mes.</td></tr>}
                       {fixedExpenses.map(exp => (
                         <tr key={exp.id}>
-                          <td>{exp.description}</td>
-                          <td><span className="badge" style={{backgroundColor: 'var(--bg-hover)', color: 'var(--text-primary)'}}>{exp.category}</span></td>
-                          <td style={{textAlign: 'right', fontWeight: 'bold'}}>${Math.round(exp.amount).toLocaleString()}</td>
-                          <td style={{textAlign: 'center'}}>
+                          <td data-label="Descripción">{exp.description}</td>
+                          <td data-label="Categoría"><span className="badge" style={{backgroundColor: 'var(--bg-hover)', color: 'var(--text-primary)'}}>{exp.category}</span></td>
+                          <td data-label="Monto" style={{textAlign: 'right', fontWeight: 'bold'}}>${Math.round(exp.amount).toLocaleString()}</td>
+                          <td data-label="Pagado" style={{textAlign: 'center'}}>
                             <input 
                               type="checkbox" 
                               checked={exp.is_paid || false} 
@@ -1286,7 +1286,7 @@ export default function Expenses() {
                               title="Marcar como pagado"
                             />
                           </td>
-                          <td style={{textAlign: 'center', whiteSpace: 'nowrap'}}>
+                          <td data-label="" style={{textAlign: 'center', whiteSpace: 'nowrap'}}>
                             <button className="btn-icon" onClick={() => setEditModal({ open: true, type: 'fixed', item: { ...exp } })} style={{color: 'var(--accent-blue)', marginRight: 6}} title="Editar">
                               <Pencil size={16} />
                             </button>
@@ -1372,11 +1372,11 @@ export default function Expenses() {
                       {variableExpenses.length === 0 && <tr><td colSpan="5" style={{textAlign: 'center', color: 'var(--text-secondary)'}}>No hay gastos variables para este mes.</td></tr>}
                       {variableExpenses.map(exp => (
                         <tr key={exp.id}>
-                          <td style={{whiteSpace: 'nowrap'}}>{exp.date}</td>
-                          <td>{exp.description}</td>
-                          <td><span className="badge" style={{backgroundColor: 'var(--bg-hover)', color: 'var(--text-primary)'}}>{exp.category}</span></td>
-                          <td style={{textAlign: 'right', fontWeight: 'bold'}}>${Math.round(exp.amount).toLocaleString()}</td>
-                          <td style={{textAlign: 'center', whiteSpace: 'nowrap'}}>
+                          <td data-label="Fecha" style={{whiteSpace: 'nowrap'}}>{exp.date}</td>
+                          <td data-label="Descripción">{exp.description}</td>
+                          <td data-label="Categoría"><span className="badge" style={{backgroundColor: 'var(--bg-hover)', color: 'var(--text-primary)'}}>{exp.category}</span></td>
+                          <td data-label="Monto" style={{textAlign: 'right', fontWeight: 'bold'}}>${Math.round(exp.amount).toLocaleString()}</td>
+                          <td data-label="" style={{textAlign: 'center', whiteSpace: 'nowrap'}}>
                             <button className="btn-icon" onClick={() => setEditModal({ open: true, type: 'variable', item: { ...exp } })} style={{color: 'var(--accent-blue)', marginRight: 6}} title="Editar">
                               <Pencil size={16} />
                             </button>
@@ -1621,11 +1621,11 @@ export default function Expenses() {
                     )}
                     {manualIncomes.map(inc => (
                       <tr key={inc.id}>
-                        <td style={{whiteSpace: 'nowrap'}}>{inc.date}</td>
-                        <td>{inc.description}</td>
-                        <td><span className="badge" style={{backgroundColor: 'rgba(16,185,129,0.1)', color: '#10b981'}}>{inc.category}</span></td>
-                        <td style={{textAlign: 'right', fontWeight: 'bold', color: '#10b981'}}>${Math.round(inc.amount).toLocaleString()}</td>
-                        <td style={{textAlign: 'center', whiteSpace: 'nowrap'}}>
+                        <td data-label="Fecha" style={{whiteSpace: 'nowrap'}}>{inc.date}</td>
+                        <td data-label="Descripción">{inc.description}</td>
+                        <td data-label="Categoría"><span className="badge" style={{backgroundColor: 'rgba(16,185,129,0.1)', color: '#10b981'}}>{inc.category}</span></td>
+                        <td data-label="Monto" style={{textAlign: 'right', fontWeight: 'bold', color: '#10b981'}}>${Math.round(inc.amount).toLocaleString()}</td>
+                        <td data-label="" style={{textAlign: 'center', whiteSpace: 'nowrap'}}>
                           <button className="btn-icon" onClick={() => setEditModal({ open: true, type: 'incomes', item: { ...inc } })} style={{color: 'var(--accent-blue)', marginRight: 6}} title="Editar">
                             <Pencil size={16} />
                           </button>

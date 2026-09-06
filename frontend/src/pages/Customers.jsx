@@ -814,7 +814,7 @@ export default function Customers() {
                     const isSelected = selectedCustomerIds.includes(c.buyer_id)
                     return (
                       <tr key={c.buyer_id} style={{ backgroundColor: isSelected ? 'rgba(59, 130, 246, 0.08)' : 'transparent' }}>
-                        <td style={{ textAlign: 'center' }}>
+                        <td data-label="" style={{ textAlign: 'center' }}>
                           <input
                             type="checkbox"
                             checked={isSelected}
@@ -822,13 +822,13 @@ export default function Customers() {
                             style={{ cursor: 'pointer', width: '16px', height: '16px' }}
                           />
                         </td>
-                        <td>
+                        <td data-label="Cliente">
                           <div style={{ fontWeight: '700' }}>{c.full_name || c.nickname || `Cliente #${c.buyer_id}`}</div>
                           {c.nickname && c.nickname !== c.full_name && (
                             <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>@{c.nickname}</div>
                           )}
                         </td>
-                        <td>
+                        <td data-label="Contacto">
                           <div style={{ display: 'flex', flexDirection: 'column', gap: '3px', fontSize: '13px' }}>
                             {c.phone && (
                               <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -844,15 +844,15 @@ export default function Customers() {
                             )}
                           </div>
                         </td>
-                        <td>{renderPlatformBadge(c.source_platform)}</td>
-                        <td style={{ textAlign: 'center', fontWeight: '700' }}>{c.total_orders || 0}</td>
-                        <td style={{ textAlign: 'right', fontWeight: '700', color: 'var(--accent-blue)' }}>
+                        <td data-label="Origen">{renderPlatformBadge(c.source_platform)}</td>
+                        <td data-label="Compras" style={{ textAlign: 'center', fontWeight: '700' }}>{c.total_orders || 0}</td>
+                        <td data-label="Total Gastado" style={{ textAlign: 'right', fontWeight: '700', color: 'var(--accent-blue)' }}>
                           ${(c.total_spent || 0).toLocaleString('es-AR', { minimumFractionDigits: 2 })}
                         </td>
-                        <td style={{ textAlign: 'center', fontSize: '13px', color: 'var(--text-secondary)' }}>
+                        <td data-label="Últ. Actividad" style={{ textAlign: 'center', fontSize: '13px', color: 'var(--text-secondary)' }}>
                           {c.last_activity || c.created_at || 'Reciente'}
                         </td>
-                        <td style={{ textAlign: 'center' }}>
+                        <td data-label="Acciones" style={{ textAlign: 'center' }}>
                           <div style={{ display: 'flex', justifyContent: 'center', gap: '8px' }}>
                             {cleanPhone && (
                               <a
