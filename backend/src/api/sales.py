@@ -218,6 +218,9 @@ def create_order(req: ManualOrderRequest):
     date_created = datetime.datetime.now().isoformat()
     
     items_list = []
+    total_cost = 0.0
+    any_linked = False
+
     for item in req.items:
         items_list.append({
             "id": item.id,
@@ -225,6 +228,36 @@ def create_order(req: ManualOrderRequest):
             "quantity": item.quantity,
             "price": item.price
         })
+
+        # Check if item exists in inventory and deduct stock
+        try:
+            prod = database.get_product_by_id(item.id)
+            if prod:
+                any_linked = True
+                qty = max(1, item.quantity)
+                prod_cost = float(prod.get('cost_price') or 0.0)
+                total_cost += (prod_cost * qty)
+
+                ok, new_qty = database.deduct_product_stock_by_ml_id(item.id, qty)
+                if ok:
+                    # Sync stock to Mercado Libre if applicable
+                    is_local = str(item.id).startswith('LOCAL-') or str(item.id).startswith('WEB-')
+                    if not is_local and prod.get('status') in ('active', 'paused') and prod.get('sync_meli', 1) == 1:
+                        try:
+                            meli_api.update_stock_and_price(item.id, new_qty, prod.get('price', item.price))
+                        except Exception as meli_err:
+                            print(f"[MeLi Sync on Manual Order Deduct Error] {meli_err}")
+
+                    # Sync stock to Tiendanube if applicable
+                    try:
+                        if prod.get("tn_id") and prod.get("tn_variant_id") and prod.get("sync_tn", 1) == 1:
+                            from src import tn_api
+                            if tn_api.is_connected() and not tn_api.is_demo_mode():
+                                tn_api.update_tn_stock(prod["tn_id"], prod["tn_variant_id"], new_qty)
+                    except Exception as tn_err:
+                        print(f"[TN Sync on Manual Order Deduct Error] {tn_err}")
+        except Exception as stock_err:
+            print(f"[Stock Deduction on Order Error] {stock_err}")
         
     order_status = "paid" if (req.payment_status or "paid") in ("paid", "approved") else "pending"
     pay_status = "approved" if order_status == "paid" else "pending"
@@ -240,7 +273,9 @@ def create_order(req: ManualOrderRequest):
         items=items_list,
         source_platform=req.source_platform,
         payment_method=req.payment_method,
-        payment_status=pay_status
+        payment_status=pay_status,
+        cost_amount=total_cost,
+        inventory_linked=1 if any_linked else 0
     )
     return {"success": True, "order_id": order_id}
 

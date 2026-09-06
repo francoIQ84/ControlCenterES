@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react'
-import { Package, CloudOff, Cloud, RefreshCw, Save, QrCode, Camera, ExternalLink, Eye, EyeOff } from 'lucide-react'
+import { Package, CloudOff, Cloud, RefreshCw, Save, QrCode, Camera, ExternalLink, Eye, EyeOff, Store, Search, X } from 'lucide-react'
 import { Html5QrcodeScanner } from 'html5-qrcode'
 import MediaBrowser from '../components/MediaBrowser'
 import { useTenant } from '../TenantContext'
@@ -12,9 +12,26 @@ export default function Inventory() {
   const [sortConfig, setSortConfig] = useState({ key: null, direction: 'asc' })
   const [drafts, setDrafts] = useState({})
   const [viewMode, setViewMode] = useState('compact') // 'compact' o 'detailed'
+  const [isReadingMode, setIsReadingMode] = useState(() => localStorage.getItem('inventory_reading_mode') === 'true')
+  const [previewImage, setPreviewImage] = useState(null)
+  const searchInputRef = useRef(null)
   const [hiddenFilter, setHiddenFilter] = useState('visible') // 'visible' | 'all' | 'hidden'
   const [outOfStockDays, setOutOfStockDays] = useState(null) // null | 7 | 14 | 30
   const [stockFilter, setStockFilter] = useState('ALL') // 'ALL' | 'IN_STOCK' | 'OUT_OF_STOCK' | 'CRITICAL'
+
+  const toggleReadingMode = () => {
+    setIsReadingMode(prev => {
+      const next = !prev
+      localStorage.setItem('inventory_reading_mode', next ? 'true' : 'false')
+      return next
+    })
+  }
+
+  useEffect(() => {
+    if (isReadingMode && searchInputRef.current) {
+      searchInputRef.current.focus()
+    }
+  }, [isReadingMode])
   
   // QR Modals state
   const [showQrScanModal, setShowQrScanModal] = useState(false)
@@ -935,273 +952,506 @@ export default function Inventory() {
 
   return (
     <div>
-      <h1 className="page-title">Inventario de Publicaciones</h1>
-      <p className="page-subtitle">Sincronizá tus publicaciones de Mercado Libre y gestioná tu Tienda Web.</p>
-
-      <div className="inventory-controls" style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, gap: 15, flexWrap: 'wrap'}}>
-        <div style={{display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap'}}>
-          <input 
-            type="text" 
-            placeholder="Buscar por nombre o ID..." 
-            value={query} 
-            onChange={e => setQuery(e.target.value)} 
-            className="search-input"
-            style={{width: 220, marginBottom: 0}}
-          />
-          {!isSimpleView && (
-          <select
-            value={categoryFilter}
-            onChange={e => setCategoryFilter(e.target.value)}
-            className="search-input"
-            style={{
-              width: 230,
-              marginBottom: 0,
-              padding: '6px 10px',
-              fontSize: '0.82rem',
-              borderRadius: 6,
-              border: categoryFilter === 'UNCATEGORIZED' ? '1px solid #f59e0b' : '1px solid var(--border-color)',
-              backgroundColor: categoryFilter === 'UNCATEGORIZED' ? 'rgba(245, 158, 11, 0.15)' : 'var(--bg-card)',
-              color: categoryFilter === 'UNCATEGORIZED' ? '#f59e0b' : 'var(--text-primary)',
-              fontWeight: categoryFilter === 'UNCATEGORIZED' ? '700' : 'normal',
-              cursor: 'pointer'
-            }}
-          >
-            <option value="ALL">📁 Todas las Categorías ({products.length})</option>
-            <option value="UNCATEGORIZED">
-              ⚠️ Sin Categoría ({uncategorizedCount})
-            </option>
-            {categories.map(c => (
-              <option key={c.id} value={c.id}>
-                📁 {c.name} ({categoryCounts[String(c.id)] || 0})
-              </option>
-            ))}
-          </select>
-          )}
-          {!isSimpleView && (
-          <select
-            value={stockFilter}
-            onChange={e => setStockFilter(e.target.value)}
-            className="search-input"
-            style={{
-              width: 170,
-              marginBottom: 0,
-              padding: '6px 10px',
-              fontSize: '0.82rem',
-              borderRadius: 6,
-              border: stockFilter !== 'ALL' ? '1px solid var(--accent-blue)' : '1px solid var(--border-color)',
-              backgroundColor: stockFilter !== 'ALL' ? 'rgba(59, 130, 246, 0.15)' : 'var(--bg-card)',
-              color: stockFilter !== 'ALL' ? 'var(--accent-blue)' : 'var(--text-primary)',
-              fontWeight: stockFilter !== 'ALL' ? '700' : 'normal',
-              cursor: 'pointer'
-            }}
-            title="Filtrar por Disponibilidad de Stock"
-          >
-            <option value="ALL">📦 Stock: Todos</option>
-            <option value="IN_STOCK">✅ Con Stock (&gt;0)</option>
-            <option value="OUT_OF_STOCK">❌ Sin Stock (=0)</option>
-            <option value="CRITICAL">⚠️ Stock Crítico (≤ Mínimo)</option>
-          </select>
-          )}
-          {!isSimpleView && (
-          <div style={{display: 'inline-flex', border: '1px solid var(--border-color)', borderRadius: 6, overflow: 'hidden'}}>
-            <button 
-              type="button"
-              className="btn" 
-              style={{
-                padding: '6px 12px', 
-                fontSize: '0.8rem',
-                backgroundColor: viewMode === 'detailed' ? 'var(--accent-blue)' : 'transparent',
-                color: viewMode === 'detailed' ? '#fff' : 'var(--text-secondary)',
-                border: 'none',
-                borderRadius: 0,
-                cursor: 'pointer',
-                boxShadow: 'none'
-              }}
-              onClick={() => setViewMode('detailed')}
-            >
-              Detallada
-            </button>
-            <button 
-              type="button"
-              className="btn" 
-              style={{
-                padding: '6px 12px', 
-                fontSize: '0.8rem',
-                backgroundColor: viewMode === 'compact' ? 'var(--accent-blue)' : 'transparent',
-                color: viewMode === 'compact' ? '#fff' : 'var(--text-secondary)',
-                border: 'none',
-                borderRadius: 0,
-                cursor: 'pointer',
-                boxShadow: 'none'
-              }}
-              onClick={() => setViewMode('compact')}
-            >
-              Comprimida
-            </button>
-          </div>
-          )}
-          {!isSimpleView && (
-          <div style={{ display: 'inline-flex', border: '1px solid var(--border-color)', borderRadius: 6, overflow: 'hidden', backgroundColor: 'var(--bg-card)' }}>
-            <button 
-              type="button"
-              className="btn" 
-              style={{
-                padding: '6px 10px', 
-                fontSize: '0.8rem',
-                backgroundColor: hiddenFilter === 'visible' ? 'var(--accent-blue)' : 'transparent',
-                color: hiddenFilter === 'visible' ? '#fff' : 'var(--text-secondary)',
-                border: 'none',
-                borderRadius: 0,
-                cursor: 'pointer',
-                boxShadow: 'none'
-              }}
-              onClick={() => setHiddenFilter('visible')}
-              title="Mostrar solo productos visibles"
-            >
-              Visibles
-            </button>
-            <button 
-              type="button"
-              className="btn" 
-              style={{
-                padding: '6px 10px', 
-                fontSize: '0.8rem',
-                backgroundColor: hiddenFilter === 'all' ? 'var(--accent-blue)' : 'transparent',
-                color: hiddenFilter === 'all' ? '#fff' : 'var(--text-secondary)',
-                border: 'none',
-                borderRadius: 0,
-                borderLeft: '1px solid var(--border-color)',
-                borderRight: '1px solid var(--border-color)',
-                cursor: 'pointer',
-                boxShadow: 'none'
-              }}
-              onClick={() => setHiddenFilter('all')}
-              title="Mostrar todos los productos (visibles u ocultos)"
-            >
-              Todos
-            </button>
-            <button 
-              type="button"
-              className="btn" 
-              style={{
-                padding: '6px 10px', 
-                fontSize: '0.8rem',
-                backgroundColor: hiddenFilter === 'hidden' ? 'var(--accent-red)' : 'transparent',
-                color: hiddenFilter === 'hidden' ? '#fff' : 'var(--text-secondary)',
-                border: 'none',
-                borderRadius: 0,
-                cursor: 'pointer',
-                boxShadow: 'none'
-              }}
-              onClick={() => setHiddenFilter('hidden')}
-              title="Mostrar solo productos ocultos"
-            >
-              Solo Ocultos
-            </button>
-          </div>
-          )}
-          {!isSimpleView && (
-          <select
-            className="btn"
-            value={outOfStockDays || ''}
-            onChange={e => setOutOfStockDays(e.target.value ? Number(e.target.value) : null)}
-            style={{
-              padding: '6px 10px',
-              fontSize: '0.8rem',
-              backgroundColor: outOfStockDays ? 'rgba(239, 68, 68, 0.15)' : 'var(--bg-card)',
-              color: outOfStockDays ? 'var(--accent-red)' : 'var(--text-secondary)',
-              border: outOfStockDays ? '1px solid var(--accent-red)' : '1px solid var(--border-color)',
-              borderRadius: 6,
-              cursor: 'pointer',
-              fontWeight: outOfStockDays ? '700' : 'normal'
-            }}
-            title="Filtrar productos sin stock según movimiento reciente"
-          >
-            <option value="">📦 Sin Stock: Desactivado</option>
-            <option value="7">⚠️ Sin Stock (Últ. 7 días)</option>
-            <option value="14">⚠️ Sin Stock (Últ. 14 días)</option>
-            <option value="30">⚠️ Sin Stock (Últ. 30 días)</option>
-          </select>
-          )}
+      <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: isReadingMode ? 12 : 20, flexWrap: 'wrap', gap: 12}}>
+        <div>
+          <h1 className="page-title">{isReadingMode ? "Consulta de Mostrador (Stock & Precios)" : "Inventario de Publicaciones"}</h1>
+          <p className="page-subtitle">{isReadingMode ? "Visualización rápida en tiempo real para atención al público en local. Precios de costo y márgenes protegidos." : "Sincronizá tus publicaciones de Mercado Libre y gestioná tu Tienda Web."}</p>
         </div>
-        <div className="control-buttons" style={{display: 'flex', gap: 10, flexWrap: 'wrap'}}>
-          {modifiedCount > 0 && (
-            <button className="btn" style={{backgroundColor: '#10b981', color: 'white', border: 'none'}} onClick={saveAllChanges}>
-              Guardar {modifiedCount} cambios
-            </button>
-          )}
-          {!isSimpleView && (
-          <button 
-            className="btn" 
-            style={{
-              backgroundColor: '#107c41', 
-              color: '#ffffff', 
-              border: 'none', 
-              display: 'flex', 
-              alignItems: 'center', 
-              gap: 6,
-              fontWeight: '600'
-            }} 
-            onClick={exportToExcel}
-          >
-            📊 Exportar a Excel
-          </button>
-          )}
-
-          {!isSimpleView && isChannelEnabled('tiendanube') && (
-          <button 
-            className="btn" 
-            style={{
-              backgroundColor: '#0080FF', 
-              color: '#ffffff', 
-              border: 'none', 
-              display: 'flex', 
-              alignItems: 'center', 
-              gap: 6,
-              fontWeight: '600'
-            }} 
-            onClick={() => setShowTnExportModal(true)}
-            title="Exportar o importar catálogo con Tiendanube"
-          >
-            🛍️ Tiendanube
-          </button>
-          )}
-
-          {!isSimpleView && (
-          <button className="btn" style={{backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)', border: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', gap: 5}} onClick={() => setShowCategoriesModal(true)}>
-            📁 Gestionar Categorías
-          </button>
-          )}
-          {!isSimpleView && isChannelEnabled('meli') && (
-          <button 
-            className="btn" 
-            style={{
-              backgroundColor: 'var(--bg-card)', 
-              color: 'var(--text-primary)', 
-              border: '1px solid var(--border-color)', 
-              display: 'flex', 
-              alignItems: 'center', 
-              gap: 5
-            }} 
-            onClick={() => {
-              fetchDispatchSchedule()
-              setShowDispatchScheduleModal(true)
-            }}
-            title="Programar tiempo de elaboración / disponibilidad de stock semanal para Mercado Libre"
-          >
-            📅 Disponibilidad MeLi
-          </button>
-          )}
-          {!isSimpleView && (
-          <button className="btn" style={{backgroundColor: 'var(--accent-emerald)', color: '#fff', border: 'none', display: 'flex', alignItems: 'center', gap: 6}} onClick={() => setShowQrScanModal(true)}>
-            <QrCode size={16} /> Escanear QR
-          </button>
-          )}
-          <button className="btn" onClick={() => setShowAddModal(true)}>
-            + Agregar Producto
-          </button>
-        </div>
+        <button 
+          type="button" 
+          className="btn"
+          onClick={toggleReadingMode}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            backgroundColor: isReadingMode ? '#10b981' : 'rgba(16, 185, 129, 0.15)',
+            color: isReadingMode ? '#ffffff' : '#10b981',
+            border: '1.5px solid #10b981',
+            fontWeight: 700,
+            padding: '8px 18px',
+            borderRadius: 8,
+            cursor: 'pointer',
+            boxShadow: isReadingMode ? '0 2px 10px rgba(16, 185, 129, 0.4)' : '0 2px 6px rgba(16, 185, 129, 0.15)',
+            fontSize: '0.9rem',
+            transition: 'all 0.15s ease'
+          }}
+          title={isReadingMode ? "Salir de modo mostrador y volver a edición normal" : "Activar Modo Mostrador / Lectura rápida de Stock y Precios para atención en mostrador"}
+        >
+          {isReadingMode ? <X size={18} /> : <Eye size={18} />}
+          <span>{isReadingMode ? "✕ Salir de Modo Mostrador" : "👁️ Modo Mostrador (Lectura)"}</span>
+        </button>
       </div>
+
+      {isReadingMode ? (
+        <div style={{marginBottom: 20}}>
+          {/* Banner Mostrador */}
+          <div className="reading-mode-banner" style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            padding: '12px 18px',
+            background: 'linear-gradient(90deg, rgba(16, 185, 129, 0.15) 0%, rgba(59, 130, 246, 0.12) 100%)',
+            border: '1.5px solid #10b981',
+            borderRadius: 10,
+            marginBottom: 14,
+            gap: 15,
+            flexWrap: 'wrap'
+          }}>
+            <div style={{display: 'flex', alignItems: 'center', gap: 12}}>
+              <div style={{
+                width: 42, 
+                height: 42, 
+                borderRadius: 8, 
+                backgroundColor: '#10b981', 
+                color: '#fff', 
+                display: 'flex', 
+                alignItems: 'center', 
+                justifyContent: 'center',
+                boxShadow: '0 2px 8px rgba(16, 185, 129, 0.35)'
+              }}>
+                <Store size={22} />
+              </div>
+              <div>
+                <div style={{fontWeight: 800, fontSize: '1.05rem', color: '#10b981', display: 'flex', alignItems: 'center', gap: 8}}>
+                  MODO MOSTRADOR ACTIVO
+                  <span style={{fontSize: '0.72rem', backgroundColor: '#10b981', color: '#fff', padding: '2px 8px', borderRadius: 12, fontWeight: 700}}>Solo Lectura</span>
+                </div>
+                <div style={{fontSize: '0.82rem', color: 'var(--text-secondary)', marginTop: 2}}>
+                  Precios y stock protegidos para atención al público. Precios de costo y márgenes 100% ocultos.
+                </div>
+              </div>
+            </div>
+            <button 
+              type="button"
+              className="btn"
+              onClick={toggleReadingMode}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 7,
+                backgroundColor: 'var(--bg-card)',
+                color: 'var(--text-primary)',
+                border: '1px solid var(--border-color)',
+                padding: '7px 15px',
+                fontWeight: 600,
+                borderRadius: 8,
+                cursor: 'pointer'
+              }}
+              title="Volver a la vista de gestión habitual del inventario"
+            >
+              <X size={15} /> Salir de Modo Mostrador
+            </button>
+          </div>
+
+          {/* Barra de Búsqueda y Filtros Rápidos */}
+          <div style={{
+            display: 'flex', 
+            alignItems: 'center', 
+            justifyContent: 'space-between', 
+            gap: 12, 
+            flexWrap: 'wrap',
+            backgroundColor: 'var(--bg-card)',
+            padding: '12px 16px',
+            borderRadius: 10,
+            border: '1px solid var(--border-color)'
+          }}>
+            <div style={{display: 'flex', alignItems: 'center', gap: 12, flex: 1, minWidth: 280, flexWrap: 'wrap'}}>
+              {/* Buscador con autofoco y botón rápido para limpiar */}
+              <div style={{position: 'relative', flex: 1, minWidth: 240, maxWidth: 380}}>
+                <Search size={16} style={{position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-secondary)'}} />
+                <input 
+                  ref={searchInputRef}
+                  type="text" 
+                  placeholder="Buscar por nombre, SKU o código..." 
+                  value={query} 
+                  onChange={e => setQuery(e.target.value)} 
+                  className="search-input"
+                  style={{
+                    width: '100%', 
+                    paddingLeft: 34, 
+                    paddingRight: query ? 30 : 10, 
+                    fontSize: '0.92rem', 
+                    height: 38, 
+                    marginBottom: 0,
+                    backgroundColor: 'var(--bg-dark)',
+                    borderColor: 'var(--border-color)'
+                  }}
+                />
+                {query && (
+                  <button 
+                    type="button" 
+                    onClick={() => setQuery('')}
+                    style={{
+                      position: 'absolute', 
+                      right: 8, 
+                      top: '50%', 
+                      transform: 'translateY(-50%)', 
+                      background: 'transparent', 
+                      border: 'none', 
+                      color: 'var(--text-secondary)', 
+                      cursor: 'pointer',
+                      padding: 4
+                    }}
+                    title="Limpiar búsqueda"
+                  >
+                    <X size={15} />
+                  </button>
+                )}
+              </div>
+
+              {/* Categorías */}
+              <select
+                value={categoryFilter}
+                onChange={e => setCategoryFilter(e.target.value)}
+                className="search-input"
+                style={{
+                  maxWidth: 240,
+                  marginBottom: 0,
+                  height: 38,
+                  padding: '0 10px',
+                  fontSize: '0.84rem',
+                  borderRadius: 6,
+                  backgroundColor: 'var(--bg-dark)',
+                  border: '1px solid var(--border-color)',
+                  color: 'var(--text-primary)'
+                }}
+              >
+                <option value="ALL">📁 Todas las Categorías ({products.length})</option>
+                <option value="UNCATEGORIZED">⚠️ Sin Categoría ({uncategorizedCount})</option>
+                {categories.map(c => (
+                  <option key={c.id} value={c.id}>
+                    📁 {c.name} ({categoryCounts[String(c.id)] || 0})
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div style={{display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap'}}>
+              {/* Filtro Rápido Stock */}
+              <div style={{display: 'inline-flex', border: '1px solid var(--border-color)', borderRadius: 8, overflow: 'hidden'}}>
+                <button 
+                  type="button" 
+                  onClick={() => setStockFilter('ALL')}
+                  style={{
+                    padding: '7px 14px', 
+                    fontSize: '0.84rem', 
+                    fontWeight: stockFilter === 'ALL' ? 700 : 500,
+                    backgroundColor: stockFilter === 'ALL' ? 'var(--accent-blue)' : 'var(--bg-dark)',
+                    color: stockFilter === 'ALL' ? '#fff' : 'var(--text-secondary)',
+                    border: 'none',
+                    cursor: 'pointer'
+                  }}
+                >
+                  📦 Todos
+                </button>
+                <button 
+                  type="button" 
+                  onClick={() => setStockFilter('IN_STOCK')}
+                  style={{
+                    padding: '7px 14px', 
+                    fontSize: '0.84rem', 
+                    fontWeight: stockFilter === 'IN_STOCK' ? 700 : 500,
+                    backgroundColor: stockFilter === 'IN_STOCK' ? '#10b981' : 'var(--bg-dark)',
+                    color: stockFilter === 'IN_STOCK' ? '#fff' : 'var(--text-secondary)',
+                    border: 'none',
+                    borderLeft: '1px solid var(--border-color)',
+                    cursor: 'pointer'
+                  }}
+                >
+                  ✅ Solo con Stock
+                </button>
+              </div>
+
+              <span style={{fontSize: '0.82rem', color: 'var(--text-secondary)', fontWeight: 600}}>
+                {sortedProducts.length} {sortedProducts.length === 1 ? 'producto' : 'productos'}
+              </span>
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div className="inventory-controls" style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, gap: 15, flexWrap: 'wrap'}}>
+          <div style={{display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap'}}>
+            <input 
+              type="text" 
+              placeholder="Buscar por nombre o ID..." 
+              value={query} 
+              onChange={e => setQuery(e.target.value)} 
+              className="search-input"
+              style={{width: 220, marginBottom: 0}}
+            />
+            {!isSimpleView && (
+            <select
+              value={categoryFilter}
+              onChange={e => setCategoryFilter(e.target.value)}
+              className="search-input"
+              style={{
+                width: 230,
+                marginBottom: 0,
+                padding: '6px 10px',
+                fontSize: '0.82rem',
+                borderRadius: 6,
+                border: categoryFilter === 'UNCATEGORIZED' ? '1px solid #f59e0b' : '1px solid var(--border-color)',
+                backgroundColor: categoryFilter === 'UNCATEGORIZED' ? 'rgba(245, 158, 11, 0.15)' : 'var(--bg-card)',
+                color: categoryFilter === 'UNCATEGORIZED' ? '#f59e0b' : 'var(--text-primary)',
+                fontWeight: categoryFilter === 'UNCATEGORIZED' ? '700' : 'normal',
+                cursor: 'pointer'
+              }}
+            >
+              <option value="ALL">📁 Todas las Categorías ({products.length})</option>
+              <option value="UNCATEGORIZED">
+                ⚠️ Sin Categoría ({uncategorizedCount})
+              </option>
+              {categories.map(c => (
+                <option key={c.id} value={c.id}>
+                  📁 {c.name} ({categoryCounts[String(c.id)] || 0})
+                </option>
+              ))}
+            </select>
+            )}
+            {!isSimpleView && (
+            <select
+              value={stockFilter}
+              onChange={e => setStockFilter(e.target.value)}
+              className="search-input"
+              style={{
+                width: 170,
+                marginBottom: 0,
+                padding: '6px 10px',
+                fontSize: '0.82rem',
+                borderRadius: 6,
+                border: stockFilter !== 'ALL' ? '1px solid var(--accent-blue)' : '1px solid var(--border-color)',
+                backgroundColor: stockFilter !== 'ALL' ? 'rgba(59, 130, 246, 0.15)' : 'var(--bg-card)',
+                color: stockFilter !== 'ALL' ? 'var(--accent-blue)' : 'var(--text-primary)',
+                fontWeight: stockFilter !== 'ALL' ? '700' : 'normal',
+                cursor: 'pointer'
+              }}
+              title="Filtrar por Disponibilidad de Stock"
+            >
+              <option value="ALL">📦 Stock: Todos</option>
+              <option value="IN_STOCK">✅ Con Stock (&gt;0)</option>
+              <option value="OUT_OF_STOCK">❌ Sin Stock (=0)</option>
+              <option value="CRITICAL">⚠️ Stock Crítico (≤ Mínimo)</option>
+            </select>
+            )}
+            {!isSimpleView && (
+            <div style={{display: 'inline-flex', border: '1px solid var(--border-color)', borderRadius: 6, overflow: 'hidden'}}>
+              <button 
+                type="button"
+                className="btn" 
+                style={{
+                  padding: '6px 12px', 
+                  fontSize: '0.8rem',
+                  backgroundColor: viewMode === 'detailed' ? 'var(--accent-blue)' : 'transparent',
+                  color: viewMode === 'detailed' ? '#fff' : 'var(--text-secondary)',
+                  border: 'none',
+                  borderRadius: 0,
+                  cursor: 'pointer',
+                  boxShadow: 'none'
+                }}
+                onClick={() => setViewMode('detailed')}
+              >
+                Detallada
+              </button>
+              <button 
+                type="button"
+                className="btn" 
+                style={{
+                  padding: '6px 12px', 
+                  fontSize: '0.8rem',
+                  backgroundColor: viewMode === 'compact' ? 'var(--accent-blue)' : 'transparent',
+                  color: viewMode === 'compact' ? '#fff' : 'var(--text-secondary)',
+                  border: 'none',
+                  borderRadius: 0,
+                  cursor: 'pointer',
+                  boxShadow: 'none'
+                }}
+                onClick={() => setViewMode('compact')}
+              >
+                Comprimida
+              </button>
+            </div>
+            )}
+            {!isSimpleView && (
+            <div style={{ display: 'inline-flex', border: '1px solid var(--border-color)', borderRadius: 6, overflow: 'hidden', backgroundColor: 'var(--bg-card)' }}>
+              <button 
+                type="button"
+                className="btn" 
+                style={{
+                  padding: '6px 10px', 
+                  fontSize: '0.8rem',
+                  backgroundColor: hiddenFilter === 'visible' ? 'var(--accent-blue)' : 'transparent',
+                  color: hiddenFilter === 'visible' ? '#fff' : 'var(--text-secondary)',
+                  border: 'none',
+                  borderRadius: 0,
+                  cursor: 'pointer',
+                  boxShadow: 'none'
+                }}
+                onClick={() => setHiddenFilter('visible')}
+                title="Mostrar solo productos visibles"
+              >
+                Visibles
+              </button>
+              <button 
+                type="button"
+                className="btn" 
+                style={{
+                  padding: '6px 10px', 
+                  fontSize: '0.8rem',
+                  backgroundColor: hiddenFilter === 'all' ? 'var(--accent-blue)' : 'transparent',
+                  color: hiddenFilter === 'all' ? '#fff' : 'var(--text-secondary)',
+                  border: 'none',
+                  borderRadius: 0,
+                  borderLeft: '1px solid var(--border-color)',
+                  borderRight: '1px solid var(--border-color)',
+                  cursor: 'pointer',
+                  boxShadow: 'none'
+                }}
+                onClick={() => setHiddenFilter('all')}
+                title="Mostrar todos los productos (visibles u ocultos)"
+              >
+                Todos
+              </button>
+              <button 
+                type="button"
+                className="btn" 
+                style={{
+                  padding: '6px 10px', 
+                  fontSize: '0.8rem',
+                  backgroundColor: hiddenFilter === 'hidden' ? 'var(--accent-red)' : 'transparent',
+                  color: hiddenFilter === 'hidden' ? '#fff' : 'var(--text-secondary)',
+                  border: 'none',
+                  borderRadius: 0,
+                  cursor: 'pointer',
+                  boxShadow: 'none'
+                }}
+                onClick={() => setHiddenFilter('hidden')}
+                title="Mostrar solo productos ocultos"
+              >
+                Solo Ocultos
+              </button>
+            </div>
+            )}
+            {!isSimpleView && (
+            <select
+              className="btn"
+              value={outOfStockDays || ''}
+              onChange={e => setOutOfStockDays(e.target.value ? Number(e.target.value) : null)}
+              style={{
+                padding: '6px 10px',
+                fontSize: '0.8rem',
+                backgroundColor: outOfStockDays ? 'rgba(239, 68, 68, 0.15)' : 'var(--bg-card)',
+                color: outOfStockDays ? 'var(--accent-red)' : 'var(--text-secondary)',
+                border: outOfStockDays ? '1px solid var(--accent-red)' : '1px solid var(--border-color)',
+                borderRadius: 6,
+                cursor: 'pointer',
+                fontWeight: outOfStockDays ? '700' : 'normal'
+              }}
+              title="Filtrar productos sin stock según movimiento reciente"
+            >
+              <option value="">📦 Sin Stock: Desactivado</option>
+              <option value="7">⚠️ Sin Stock (Últ. 7 días)</option>
+              <option value="14">⚠️ Sin Stock (Últ. 14 días)</option>
+              <option value="30">⚠️ Sin Stock (Últ. 30 días)</option>
+            </select>
+            )}
+          </div>
+          <div className="control-buttons" style={{display: 'flex', gap: 10, flexWrap: 'wrap'}}>
+            {modifiedCount > 0 && (
+              <button className="btn" style={{backgroundColor: '#10b981', color: 'white', border: 'none'}} onClick={saveAllChanges}>
+                Guardar {modifiedCount} cambios
+              </button>
+            )}
+            <button 
+              type="button"
+              className="btn" 
+              style={{
+                backgroundColor: 'rgba(16, 185, 129, 0.12)', 
+                color: '#10b981', 
+                border: '1px solid #10b981', 
+                display: 'flex', 
+                alignItems: 'center', 
+                gap: 6,
+                fontWeight: '700'
+              }} 
+              onClick={toggleReadingMode}
+              title="Activar Modo Mostrador / Lectura rápida de Stock y Precios para atención en local"
+            >
+              <Eye size={15} /> Modo Mostrador
+            </button>
+            {!isSimpleView && (
+            <button 
+              className="btn" 
+              style={{
+                backgroundColor: '#107c41', 
+                color: '#ffffff', 
+                border: 'none', 
+                display: 'flex', 
+                alignItems: 'center', 
+                gap: 6,
+                fontWeight: '600'
+              }} 
+              onClick={exportToExcel}
+            >
+              📊 Exportar a Excel
+            </button>
+            )}
+
+            {!isSimpleView && isChannelEnabled('tiendanube') && (
+            <button 
+              className="btn" 
+              style={{
+                backgroundColor: '#0080FF', 
+                color: '#ffffff', 
+                border: 'none', 
+                display: 'flex', 
+                alignItems: 'center', 
+                gap: 6,
+                fontWeight: '600'
+              }} 
+              onClick={() => setShowTnExportModal(true)}
+              title="Exportar o importar catálogo con Tiendanube"
+            >
+              🛍️ Tiendanube
+            </button>
+            )}
+
+            {!isSimpleView && (
+            <button className="btn" style={{backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)', border: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', gap: 5}} onClick={() => setShowCategoriesModal(true)}>
+              📁 Gestionar Categorías
+            </button>
+            )}
+            {!isSimpleView && isChannelEnabled('meli') && (
+            <button 
+              className="btn" 
+              style={{
+                backgroundColor: 'var(--bg-card)', 
+                color: 'var(--text-primary)', 
+                border: '1px solid var(--border-color)', 
+                display: 'flex', 
+                alignItems: 'center', 
+                gap: 5
+              }} 
+              onClick={() => {
+                fetchDispatchSchedule()
+                setShowDispatchScheduleModal(true)
+              }}
+              title="Programar tiempo de elaboración / disponibilidad de stock semanal para Mercado Libre"
+            >
+              📅 Disponibilidad MeLi
+            </button>
+            )}
+            {!isSimpleView && (
+            <button className="btn" style={{backgroundColor: 'var(--accent-emerald)', color: '#fff', border: 'none', display: 'flex', alignItems: 'center', gap: 6}} onClick={() => setShowQrScanModal(true)}>
+              <QrCode size={16} /> Escanear QR
+            </button>
+            )}
+            <button className="btn" onClick={() => setShowAddModal(true)}>
+              + Agregar Producto
+            </button>
+          </div>
+        </div>
+      )}
 
       {showAddModal && (
         <div style={{
@@ -1322,7 +1572,7 @@ export default function Inventory() {
         </div>
       )}
 
-      {selectedIds.length > 0 && (
+      {selectedIds.length > 0 && !isReadingMode && (
         <div style={{
           position: 'sticky',
           top: 10,
@@ -1472,77 +1722,142 @@ export default function Inventory() {
 
       <div className="card table-card">
         {loading ? <p>Cargando...</p> : (
-          <div className="data-table-wrapper">
-            <table className="data-table">
-              <thead>
-                {viewMode === 'compact' ? (
+          isReadingMode ? (
+            <div className="data-table-wrapper reading-mode-table-wrapper">
+              <table className="data-table reading-mode-table">
+                <thead>
                   <tr>
-                    <th style={{width: 35, textAlign: 'center'}}>
-                      <input 
-                        type="checkbox" 
-                        checked={isAllVisibleSelected}
-                        ref={el => { if (el) el.indeterminate = isSomeVisibleSelected }}
-                        onChange={handleToggleSelectAll}
-                        style={{cursor: 'pointer'}}
-                        title="Seleccionar / Deseleccionar todos los visibles"
-                      />
+                    <th style={{width: 70, textAlign: 'center'}}>FOTO</th>
+                    <th onClick={() => requestSort('title')} style={{cursor: 'pointer', userSelect: 'none', minWidth: 260}}>
+                      PRODUCTO / CÓDIGO {getSortIcon('title')}
                     </th>
-                    <th style={{width: 45}}>IMG</th>
-                    <th onClick={() => requestSort('title')} style={{cursor: 'pointer', userSelect: 'none', minWidth: 220}}>Detalle{getSortIcon('title')}</th>
-                    <th onClick={() => requestSort('status')} style={{cursor: 'pointer', userSelect: 'none', width: 95}} title="Ordenar por Estado de Mercado Libre">Estado ML{getSortIcon('status')}</th>
-                    <th onClick={() => requestSort('stock')} style={{cursor: 'pointer', userSelect: 'none', width: 60}} title="Ordenar por Stock">Stock{getSortIcon('stock')}</th>
-                    <th style={{width: 75}}>P. ML</th>
-                    <th style={{width: 75}}>C. Base</th>
-                    <th style={{width: 75}}>C. ML ⓘ</th>
-                    <th style={{width: 75}}>P. Web</th>
-                    <th style={{width: 95, textAlign: 'center'}} title="Precio y descuento para cobro en efectivo en el local físico (No visible en la web)">💵 P. Efectivo</th>
-                    <th onClick={() => requestSort('is_web_active')} style={{cursor: 'pointer', userSelect: 'none', width: 85, textAlign: 'center'}} title="Ordenar por Estado de Tienda Web (Activo/Desactivo)">Estado Web{getSortIcon('is_web_active')}</th>
-                    <th style={{width: 100}}>Acciones</th>
-                  </tr>
-                ) : (
-                  <tr>
-                    <th style={{width: 35, textAlign: 'center'}}>
-                      <input 
-                        type="checkbox" 
-                        checked={isAllVisibleSelected}
-                        ref={el => { if (el) el.indeterminate = isSomeVisibleSelected }}
-                        onChange={handleToggleSelectAll}
-                        style={{cursor: 'pointer'}}
-                        title="Seleccionar / Deseleccionar todos los visibles"
-                      />
+                    <th onClick={() => requestSort('stock')} style={{cursor: 'pointer', userSelect: 'none', width: 170, textAlign: 'center'}}>
+                      STOCK DISPONIBLE {getSortIcon('stock')}
                     </th>
-                    <th>IMG</th>
-                    <th onClick={() => requestSort('title')} style={{cursor: 'pointer', userSelect: 'none'}}>Detalle{getSortIcon('title')}</th>
-                    <th onClick={() => requestSort('status')} style={{cursor: 'pointer', userSelect: 'none'}}>Estado ML{getSortIcon('status')}</th>
-                    <th onClick={() => requestSort('stock')} style={{cursor: 'pointer', userSelect: 'none'}}>Stock & Precios{getSortIcon('stock')}</th>
-                    <th onClick={() => requestSort('is_web_active')} style={{cursor: 'pointer', userSelect: 'none'}}>Estado Web / Tienda{getSortIcon('is_web_active')}</th>
-                    <th>Acción</th>
+                    <th style={{width: 170, textAlign: 'center'}}>
+                      💵 PRECIO EFECTIVO
+                    </th>
+                    <th style={{width: 160, textAlign: 'center'}}>
+                      💳 LISTA / TARJETA
+                    </th>
+                    {isChannelEnabled('meli') && (
+                      <th style={{width: 130, textAlign: 'center'}}>
+                        🛍️ MERCADO LIBRE
+                      </th>
+                    )}
+                    <th style={{width: 110, textAlign: 'center'}}>
+                      ESTADO
+                    </th>
                   </tr>
-                )}
-              </thead>
-              <tbody>
-                {sortedProducts.map(p => (
-                  <ProductRow 
-                    key={p.ml_id} 
-                    p={p} 
-                    onSave={handleUpdate} 
-                    onOpenGallery={openGallery} 
-                    onDraftChange={handleDraftChange} 
-                    categories={categories} 
-                    categoryCounts={categoryCounts}
-                    viewMode={viewMode}
-                    isSelected={selectedIds.includes(p.ml_id)}
-                    onToggleSelect={handleToggleSelectProduct}
-                    onOpenQrModal={(prod) => {
-                      setSelectedProductForQr(prod)
-                      setShowQrPrintModal(true)
-                    }}
-                    onToggleHide={handleToggleHide}
-                  />
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {sortedProducts.length === 0 ? (
+                    <tr>
+                      <td colSpan={isChannelEnabled('meli') ? 7 : 6} style={{padding: '50px 20px', textAlign: 'center'}}>
+                        <div style={{fontSize: '1.25rem', fontWeight: 700, color: 'var(--text-secondary)'}}>
+                          No se encontraron productos coincidentes
+                        </div>
+                        <div style={{fontSize: '0.88rem', color: 'var(--text-secondary)', marginTop: 6}}>
+                          Intenta buscar con otra palabra clave o restablece los filtros.
+                        </div>
+                        {query && (
+                          <button 
+                            type="button"
+                            className="btn" 
+                            onClick={() => setQuery('')}
+                            style={{marginTop: 15, backgroundColor: 'var(--accent-blue)', color: '#fff', padding: '8px 16px', borderRadius: 8}}
+                          >
+                            Limpiar búsqueda
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  ) : (
+                    sortedProducts.map(p => (
+                      <ProductReadingRow 
+                        key={p.ml_id} 
+                        p={p} 
+                        isChannelEnabled={isChannelEnabled}
+                        onPreviewImage={(url) => setPreviewImage(url)}
+                      />
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div className="data-table-wrapper">
+              <table className="data-table">
+                <thead>
+                  {viewMode === 'compact' ? (
+                    <tr>
+                      <th style={{width: 35, textAlign: 'center'}}>
+                        <input 
+                          type="checkbox" 
+                          checked={isAllVisibleSelected}
+                          ref={el => { if (el) el.indeterminate = isSomeVisibleSelected }}
+                          onChange={handleToggleSelectAll}
+                          style={{cursor: 'pointer'}}
+                          title="Seleccionar / Deseleccionar todos los visibles"
+                        />
+                      </th>
+                      <th style={{width: 45}}>IMG</th>
+                      <th onClick={() => requestSort('title')} style={{cursor: 'pointer', userSelect: 'none', minWidth: 220}}>Detalle{getSortIcon('title')}</th>
+                      <th onClick={() => requestSort('status')} style={{cursor: 'pointer', userSelect: 'none', width: 95}} title="Ordenar por Estado de Mercado Libre">Estado ML{getSortIcon('status')}</th>
+                      <th onClick={() => requestSort('stock')} style={{cursor: 'pointer', userSelect: 'none', width: 60}} title="Ordenar por Stock">Stock{getSortIcon('stock')}</th>
+                      <th style={{width: 75}}>P. ML</th>
+                      <th style={{width: 75}}>C. Base</th>
+                      <th style={{width: 75}}>C. ML ⓘ</th>
+                      <th style={{width: 75}}>P. Web</th>
+                      <th style={{width: 95, textAlign: 'center'}} title="Precio y descuento para cobro en efectivo en el local físico (No visible en la web)">💵 P. Efectivo</th>
+                      <th onClick={() => requestSort('is_web_active')} style={{cursor: 'pointer', userSelect: 'none', width: 85, textAlign: 'center'}} title="Ordenar por Estado de Tienda Web (Activo/Desactivo)">Estado Web{getSortIcon('is_web_active')}</th>
+                      <th style={{width: 100}}>Acciones</th>
+                    </tr>
+                  ) : (
+                    <tr>
+                      <th style={{width: 35, textAlign: 'center'}}>
+                        <input 
+                          type="checkbox" 
+                          checked={isAllVisibleSelected}
+                          ref={el => { if (el) el.indeterminate = isSomeVisibleSelected }}
+                          onChange={handleToggleSelectAll}
+                          style={{cursor: 'pointer'}}
+                          title="Seleccionar / Deseleccionar todos los visibles"
+                        />
+                      </th>
+                      <th>IMG</th>
+                      <th onClick={() => requestSort('title')} style={{cursor: 'pointer', userSelect: 'none'}}>Detalle{getSortIcon('title')}</th>
+                      <th onClick={() => requestSort('status')} style={{cursor: 'pointer', userSelect: 'none'}}>Estado ML{getSortIcon('status')}</th>
+                      <th onClick={() => requestSort('stock')} style={{cursor: 'pointer', userSelect: 'none'}}>Stock & Precios{getSortIcon('stock')}</th>
+                      <th onClick={() => requestSort('is_web_active')} style={{cursor: 'pointer', userSelect: 'none'}}>Estado Web / Tienda{getSortIcon('is_web_active')}</th>
+                      <th>Acción</th>
+                    </tr>
+                  )}
+                </thead>
+                <tbody>
+                  {sortedProducts.map(p => (
+                    <ProductRow 
+                      key={p.ml_id} 
+                      p={p} 
+                      onSave={handleUpdate} 
+                      onOpenGallery={openGallery} 
+                      onDraftChange={handleDraftChange} 
+                      categories={categories} 
+                      categoryCounts={categoryCounts}
+                      viewMode={viewMode}
+                      isSelected={selectedIds.includes(p.ml_id)}
+                      onToggleSelect={handleToggleSelectProduct}
+                      onOpenQrModal={(prod) => {
+                        setSelectedProductForQr(prod)
+                        setShowQrPrintModal(true)
+                      }}
+                      onToggleHide={handleToggleHide}
+                    />
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )
         )}
       </div>
 
@@ -2269,7 +2584,306 @@ export default function Inventory() {
           </div>
         </div>
       )}
+
+      {/* Modal para ampliación de foto en modo mostrador */}
+      {previewImage && (
+        <div 
+          onClick={() => setPreviewImage(null)}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            backgroundColor: 'rgba(0, 0, 0, 0.75)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 99999,
+            cursor: 'pointer',
+            padding: 20
+          }}
+        >
+          <div 
+            onClick={e => e.stopPropagation()}
+            style={{
+              position: 'relative', 
+              maxWidth: 550, 
+              maxHeight: '85vh', 
+              backgroundColor: 'var(--bg-card)', 
+              borderRadius: 12, 
+              padding: 16,
+              border: '1px solid var(--border-color)',
+              boxShadow: '0 20px 50px rgba(0,0,0,0.5)',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center'
+            }}
+          >
+            <img 
+              src={previewImage} 
+              alt="Preview" 
+              style={{width: '100%', maxHeight: '70vh', objectFit: 'contain', borderRadius: 8, backgroundColor: '#fff'}} 
+            />
+            <button 
+              type="button"
+              onClick={() => setPreviewImage(null)}
+              style={{
+                position: 'absolute', 
+                top: -12, 
+                right: -12, 
+                backgroundColor: '#ef4444', 
+                color: '#fff', 
+                border: 'none', 
+                borderRadius: '50%', 
+                width: 32, 
+                height: 32, 
+                cursor: 'pointer', 
+                fontWeight: 800,
+                fontSize: '1rem',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                boxShadow: '0 2px 6px rgba(0,0,0,0.3)'
+              }}
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+      )}
     </div>
+  )
+}
+
+function ProductReadingRow({ p, isChannelEnabled, onPreviewImage }) {
+  const stock = p.available_quantity !== undefined && p.available_quantity !== null ? p.available_quantity : 0
+  const minStock = p.min_stock || 3
+
+  const numPriceWeb = parseFloat(p.price_web) || 0
+  const numPrice = parseFloat(p.price) || 0
+  const listPrice = numPriceWeb > 0 ? numPriceWeb : numPrice
+  const discountPct = parseFloat(p.cash_discount_pct) || 0
+  const finalCashPrice = discountPct > 0 
+    ? Math.round(listPrice * (1 - (discountPct / 100))) 
+    : listPrice
+
+  const [copiedPrice, setCopiedPrice] = useState(false)
+
+  const handleCopy = (textToCopy) => {
+    if (navigator && navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(String(textToCopy))
+      setCopiedPrice(true)
+      setTimeout(() => setCopiedPrice(false), 1500)
+    }
+  }
+
+  // Insignia de Stock
+  let stockBadge
+  if (stock <= 0) {
+    stockBadge = (
+      <div className="reading-stock-badge stock-none" title="Sin unidades disponibles en inventario">
+        <span style={{fontSize: '0.9rem'}}>🔴</span>
+        <span>AGOTADO</span>
+      </div>
+    )
+  } else if (stock <= minStock) {
+    stockBadge = (
+      <div className="reading-stock-badge stock-low" title={`Stock crítico: quedan ${stock} unidades (mínimo: ${minStock})`}>
+        <span style={{fontSize: '0.9rem'}}>🟡</span>
+        <span>¡ÚLTIMAS {stock} u.!</span>
+      </div>
+    )
+  } else {
+    stockBadge = (
+      <div className="reading-stock-badge stock-high" title={`Stock disponible: ${stock} unidades`}>
+        <span style={{fontSize: '0.9rem'}}>🟢</span>
+        <span>{stock} en stock</span>
+      </div>
+    )
+  }
+
+  return (
+    <tr className="reading-row" style={{borderBottom: '1px solid var(--border-color)'}}>
+      {/* 1. Foto / Imagen */}
+      <td style={{padding: '10px 12px', textAlign: 'center'}}>
+        <img 
+          src={p.thumbnail || 'https://via.placeholder.com/60'} 
+          alt={p.title} 
+          onClick={() => p.thumbnail && onPreviewImage(p.thumbnail)}
+          style={{
+            width: 56, 
+            height: 56, 
+            objectFit: 'contain', 
+            borderRadius: 8, 
+            border: '1px solid var(--border-color)', 
+            backgroundColor: '#fff',
+            padding: 2,
+            boxShadow: '0 2px 5px rgba(0,0,0,0.08)',
+            cursor: p.thumbnail ? 'pointer' : 'default'
+          }}
+          title={p.thumbnail ? "Clic para ampliar imagen" : ""}
+        />
+      </td>
+
+      {/* 2. Producto y Código */}
+      <td style={{padding: '10px 14px'}}>
+        <div style={{
+          fontWeight: 700, 
+          fontSize: '1rem', 
+          color: 'var(--text-primary)', 
+          lineHeight: '1.35',
+          marginBottom: 6
+        }}>
+          {p.title}
+        </div>
+        <div style={{display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap'}}>
+          <span 
+            style={{
+              color: 'var(--text-secondary)', 
+              fontSize: '0.75rem', 
+              fontFamily: 'monospace',
+              backgroundColor: 'var(--bg-hover)',
+              padding: '2px 7px',
+              borderRadius: 4,
+              cursor: 'pointer'
+            }}
+            onClick={() => handleCopy(p.ml_id)}
+            title="Clic para copiar código SKU / ID"
+          >
+            📋 {p.ml_id}
+          </span>
+          {p.category_name ? (
+            <span style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              padding: '2px 8px',
+              fontSize: '0.72rem',
+              borderRadius: 4,
+              backgroundColor: 'var(--bg-hover)',
+              color: 'var(--text-secondary)',
+              fontWeight: 500
+            }}>
+              📁 {p.category_name}
+            </span>
+          ) : (
+            <span style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              padding: '2px 6px',
+              fontSize: '0.7rem',
+              borderRadius: 4,
+              backgroundColor: 'rgba(245, 158, 11, 0.15)',
+              color: '#d97706',
+              fontWeight: 500
+            }}>
+              Sin Categoría
+            </span>
+          )}
+        </div>
+      </td>
+
+      {/* 3. Stock */}
+      <td style={{padding: '10px 14px', textAlign: 'center'}}>
+        {stockBadge}
+      </td>
+
+      {/* 4. Precio Efectivo (Destacado) */}
+      <td style={{padding: '10px 14px', textAlign: 'center'}}>
+        <div 
+          className="reading-price-cash-card"
+          onClick={() => handleCopy(`$${finalCashPrice.toLocaleString('es-AR')}`)}
+          title="Clic para copiar precio en efectivo"
+        >
+          <div className="reading-price-cash-val">
+            ${finalCashPrice.toLocaleString('es-AR')}
+          </div>
+          {discountPct > 0 ? (
+            <div className="reading-price-cash-tag">
+              -{discountPct}% EFECTIVO
+            </div>
+          ) : (
+            <div style={{fontSize: '0.7rem', fontWeight: 700, color: '#10b981', marginTop: 2}}>
+              💵 Efectivo
+            </div>
+          )}
+          {copiedPrice && (
+            <div style={{fontSize: '0.65rem', color: '#10b981', fontWeight: 800, marginTop: 2}}>
+              ✓ Copiado
+            </div>
+          )}
+        </div>
+      </td>
+
+      {/* 5. Precio Lista / Tarjeta */}
+      <td style={{padding: '10px 14px', textAlign: 'center'}}>
+        <div 
+          style={{display: 'inline-flex', flexDirection: 'column', alignItems: 'center', cursor: 'pointer'}}
+          onClick={() => handleCopy(`$${listPrice.toLocaleString('es-AR')}`)}
+          title="Clic para copiar precio de lista"
+        >
+          <div className="reading-price-list-val">
+            ${listPrice.toLocaleString('es-AR')}
+          </div>
+          <div className="reading-price-list-label">
+            💳 Lista / Tarjeta
+          </div>
+        </div>
+      </td>
+
+      {/* 6. Precio Mercado Libre (si aplica) */}
+      {isChannelEnabled('meli') && (
+        <td style={{padding: '10px 14px', textAlign: 'center'}}>
+          {p.status !== 'local' && numPrice > 0 ? (
+            <div style={{display: 'inline-flex', flexDirection: 'column', alignItems: 'center'}}>
+              <div style={{fontSize: '0.98rem', fontWeight: 600, color: 'var(--text-secondary)'}}>
+                ${numPrice.toLocaleString('es-AR')}
+              </div>
+              <div style={{fontSize: '0.7rem', color: '#d97706', fontWeight: 600, marginTop: 2}}>
+                🛍️ MeLi
+              </div>
+            </div>
+          ) : (
+            <span style={{color: 'var(--text-secondary)', fontSize: '0.85rem'}}>—</span>
+          )}
+        </td>
+      )}
+
+      {/* 7. Disponibilidad / Estado */}
+      <td style={{padding: '10px 14px', textAlign: 'center'}}>
+        {p.is_hidden === 1 ? (
+          <span style={{
+            fontSize: '0.75rem', 
+            fontWeight: 700, 
+            color: '#ef4444',
+            backgroundColor: 'rgba(239, 68, 68, 0.12)',
+            padding: '4px 8px',
+            borderRadius: 6
+          }}>
+            👁️ Oculto
+          </span>
+        ) : p.is_web_active ? (
+          <span style={{
+            fontSize: '0.75rem', 
+            fontWeight: 700, 
+            color: '#10b981',
+            backgroundColor: 'rgba(16, 185, 129, 0.12)',
+            padding: '4px 8px',
+            borderRadius: 6
+          }}>
+            🌐 Web & Local
+          </span>
+        ) : (
+          <span style={{
+            fontSize: '0.75rem', 
+            fontWeight: 700, 
+            color: 'var(--text-secondary)',
+            backgroundColor: 'var(--bg-hover)',
+            padding: '4px 8px',
+            borderRadius: 6
+          }}>
+            🏬 Solo Local
+          </span>
+        )}
+      </td>
+    </tr>
   )
 }
 

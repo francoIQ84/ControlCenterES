@@ -1,16 +1,26 @@
 "use client";
 
+import React, { useEffect, useState } from 'react';
 import { X, Trash2, Phone } from 'lucide-react';
 import { useCart } from './CartProvider';
 
 export default function CartSidebar({ onClose }: { onClose: () => void }) {
   const { items, removeFromCart, clearCart, total } = useCart();
+  const [phoneNumber, setPhoneNumber] = useState("5493414567890");
+
+  useEffect(() => {
+    fetch("/api/storefront/config")
+      .then((res) => res.json())
+      .then((data) => {
+        if (data && data.contact_phone && data.contact_phone.trim()) {
+          setPhoneNumber(data.contact_phone.replace(/\D/g, ""));
+        }
+      })
+      .catch((err) => console.error(err));
+  }, []);
 
   const handleCheckout = () => {
     if (items.length === 0) return;
-    
-    // Configurable number
-    const phoneNumber = "5491100000000"; 
     
     let message = "Hola! Quisiera realizar el siguiente pedido desde la web:\n\n";
     items.forEach(item => {

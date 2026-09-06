@@ -255,6 +255,7 @@ def init_db():
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             ''')
+            cursor.execute('ALTER TABLE fixed_expenses ADD COLUMN IF NOT EXISTS is_paid BOOLEAN DEFAULT FALSE;')
 
             # Variable Expenses table
             cursor.execute('''
@@ -301,6 +302,25 @@ def init_db():
                 )
             ''')
             cursor.execute('ALTER TABLE service_payments ADD COLUMN IF NOT EXISTS last_alert_sent_at TIMESTAMP;')
+
+            # Tenant subscription payments table
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS tenant_subscription_payments (
+                    id SERIAL PRIMARY KEY,
+                    tenant_id UUID,
+                    mp_payment_id VARCHAR(100),
+                    amount REAL NOT NULL,
+                    currency VARCHAR(10) DEFAULT 'ARS',
+                    billing_cycle VARCHAR(20) DEFAULT 'monthly',
+                    period_start DATE,
+                    period_end DATE,
+                    status VARCHAR(50) DEFAULT 'approved',
+                    payment_method VARCHAR(50),
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_tenant_sub_payments_tenant ON tenant_subscription_payments(tenant_id);')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_tenant_sub_payments_mp_id ON tenant_subscription_payments(mp_payment_id);')
             
             # WhatsApp chat history table
             cursor.execute('''
@@ -2206,14 +2226,14 @@ def delete_order_by_id(order_id: int):
         with conn.cursor() as cursor:
             cursor.execute("DELETE FROM orders_cache WHERE order_id = %s", (order_id,))
 
-def create_manual_order(order_id: int, date_created: str, buyer_nickname: str, buyer_name: str, total_amount: float, status: str, shipping_status: str, items: list, source_platform: str, payment_method: str = None, payment_status: str = 'approved'):
+def create_manual_order(order_id: int, date_created: str, buyer_nickname: str, buyer_name: str, total_amount: float, status: str, shipping_status: str, items: list, source_platform: str, payment_method: str = None, payment_status: str = 'approved', cost_amount: float = 0.0, inventory_linked: int = 0):
     import json
     with get_connection() as conn:
         with conn.cursor() as cursor:
             cursor.execute('''
                 INSERT INTO orders_cache 
-                (order_id, date_created, buyer_id, buyer_nickname, buyer_name, total_amount, currency_id, status, payment_status, shipping_status, items_json, invoice_generated, source_platform, payment_method)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                (order_id, date_created, buyer_id, buyer_nickname, buyer_name, total_amount, currency_id, status, payment_status, shipping_status, items_json, invoice_generated, source_platform, payment_method, cost_amount, inventory_linked)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             ''', (
                 order_id,
                 date_created,
@@ -2228,7 +2248,9 @@ def create_manual_order(order_id: int, date_created: str, buyer_nickname: str, b
                 json.dumps(items),
                 0,
                 source_platform,
-                payment_method
+                payment_method,
+                cost_amount,
+                inventory_linked
             ))
 
 # --- WhatsApp Operations ---

@@ -1095,4 +1095,147 @@ input:focus, select:focus {
   pointer-events: none;
 }
 
+/* ==========================================================================
+   MODO MOSTRADOR / LECTURA RÁPIDA (COUNTER READING MODE)
+   ========================================================================== */
+.reading-mode-table {
+  border-collapse: separate;
+  border-spacing: 0;
+  width: 100%;
+}
+
+.reading-mode-table thead th {
+  background-color: var(--bg-card);
+  color: var(--text-secondary);
+  font-size: 0.76rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  padding: 12px 14px;
+  border-bottom: 2px solid var(--border-color);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.reading-row {
+  transition: background-color 0.15s ease;
+}
+
+.reading-row:hover {
+  background-color: var(--bg-card-hover) !important;
+}
+
+.reading-stock-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 14px;
+  border-radius: 9999px;
+  font-size: 0.92rem;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+  white-space: nowrap;
+}
+
+.reading-stock-badge.stock-high {
+  background: rgba(16, 185, 129, 0.14);
+  color: #10b981;
+  border: 1.5px solid rgba(16, 185, 129, 0.38);
+}
+
+.reading-stock-badge.stock-low {
+  background: rgba(245, 158, 11, 0.16);
+  color: #d97706;
+  border: 1.5px solid rgba(245, 158, 11, 0.45);
+  animation: pulse-subtle-badge 2s infinite ease-in-out;
+}
+
+.reading-stock-badge.stock-none {
+  background: rgba(239, 68, 68, 0.12);
+  color: #ef4444;
+  border: 1.5px solid rgba(239, 68, 68, 0.32);
+}
+
+@keyframes pulse-subtle-badge {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.03); }
+}
+
+.reading-price-cash-card {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 7px 14px;
+  border-radius: 9px;
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.15) 0%, rgba(16, 185, 129, 0.05) 100%);
+  border: 1.5px solid rgba(16, 185, 129, 0.35);
+  min-width: 135px;
+  cursor: pointer;
+  transition: transform 0.12s ease, border-color 0.12s ease;
+}
+
+.reading-price-cash-card:hover {
+  transform: translateY(-1px);
+  border-color: rgba(16, 185, 129, 0.6);
+}
+
+.reading-price-cash-val {
+  font-size: 1.35rem;
+  font-weight: 800;
+  color: #10b981;
+  letter-spacing: -0.5px;
+  line-height: 1.1;
+}
+
+.reading-price-cash-tag {
+  font-size: 0.68rem;
+  font-weight: 800;
+  color: #ffffff;
+  background-color: #10b981;
+  padding: 1px 6px;
+  border-radius: 4px;
+  margin-top: 3px;
+  letter-spacing: 0.3px;
+}
+
+.reading-price-list-val {
+  font-size: 1.12rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  letter-spacing: -0.3px;
+}
+
+.reading-price-list-label {
+  font-size: 0.72rem;
+  color: var(--text-secondary);
+  font-weight: 500;
+  margin-top: 2px;
+}
+
+/* Mobile responsive layout for reading mode */
+@media (max-width: 768px) {
+  .reading-mode-table thead {
+    display: none;
+  }
+  
+  .reading-row {
+    display: flex;
+    flex-direction: column;
+    padding: 14px;
+    margin-bottom: 12px;
+    background-color: var(--bg-card);
+    border-radius: 12px;
+    border: 1px solid var(--border-color);
+  }
+  
+  .reading-row td {
+    padding: 6px 0 !important;
+    text-align: left !important;
+    border: none !important;
+  }
+}
+
+
 

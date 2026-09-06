@@ -196,6 +196,18 @@ def bulk_update_products(payload: BulkUpdateRequest):
             item.cash_discount_pct
         )
 
+        # Sync to Tiendanube if linked and sync_tn is enabled
+        try:
+            prod_obj = database.get_product_by_ml_id(item.ml_id)
+            if prod_obj and prod_obj.get("tn_id") and prod_obj.get("tn_variant_id") and prod_obj.get("sync_tn", 1) == 1:
+                from src import tn_api
+                if tn_api.is_connected() and not tn_api.is_demo_mode():
+                    tn_price = item.price_web if item.price_web > 0 else item.price
+                    tn_api.update_tn_stock(prod_obj["tn_id"], prod_obj["tn_variant_id"], item.qty)
+                    tn_api.update_tn_price(prod_obj["tn_id"], prod_obj["tn_variant_id"], tn_price)
+        except Exception as tn_err:
+            print(f"[Tiendanube Sync on Bulk Edit Error] {tn_err}")
+
         is_local = item.ml_id.startswith('LOCAL-') or item.ml_id.startswith('WEB-')
         if db_status in ('active', 'paused') and not is_local and item.sync_meli == 1:
             ok, msg = meli_api.update_stock_and_price(item.ml_id, item.qty, item.price)

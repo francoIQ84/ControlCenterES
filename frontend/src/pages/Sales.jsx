@@ -489,14 +489,23 @@ export default function Sales() {
     })
   }
 
+  const getProductPriceForOrder = (product, platform, paymentMethod) => {
+    if (!product) return 0
+    let price = platform === 'LOCAL' 
+      ? (product.price || 0)
+      : (product.price_web || product.price || 0)
+    if (paymentMethod === 'Efectivo' && (product.cash_discount_pct || 0) > 0) {
+      price = Math.round(price * (1 - (product.cash_discount_pct / 100)))
+    }
+    return price
+  }
+
   const handleProductSelect = (index, prodId) => {
     const selectedProduct = inventory.find(p => p.ml_id === prodId)
     setNewOrder(prev => {
       const updatedItems = [...prev.items]
       if (selectedProduct) {
-        const price = prev.source_platform === 'LOCAL' 
-          ? selectedProduct.price 
-          : (selectedProduct.price_web || selectedProduct.price)
+        const price = getProductPriceForOrder(selectedProduct, prev.source_platform, prev.payment_method)
         updatedItems[index] = {
           ...updatedItems[index],
           id: prodId,
@@ -588,22 +597,45 @@ export default function Sales() {
     }
   }
 
-  const handleSourcePlatformChange = (newPlatform) => {
-    const updatedItems = newOrder.items.map(item => {
-      const selectedProduct = inventory.find(p => p.ml_id === item.id)
-      if (selectedProduct) {
-        const price = newPlatform === 'LOCAL' 
-          ? selectedProduct.price 
-          : (selectedProduct.price_web || selectedProduct.price)
-        return { ...item, price }
+  const handlePaymentMethodChange = (newMethod) => {
+    setNewOrder(prev => {
+      const updatedItems = prev.items.map(item => {
+        const selectedProduct = inventory.find(p => p.ml_id === item.id)
+        if (selectedProduct) {
+          return {
+            ...item,
+            price: getProductPriceForOrder(selectedProduct, prev.source_platform, newMethod)
+          }
+        }
+        return item
+      })
+      return {
+        ...prev,
+        payment_method: newMethod,
+        payment_status: newMethod.includes('CBU') ? 'pending' : prev.payment_status,
+        items: updatedItems
       }
-      return item
     })
-    setNewOrder(prev => ({
-      ...prev,
-      source_platform: newPlatform,
-      items: updatedItems
-    }))
+  }
+
+  const handleSourcePlatformChange = (newPlatform) => {
+    setNewOrder(prev => {
+      const updatedItems = prev.items.map(item => {
+        const selectedProduct = inventory.find(p => p.ml_id === item.id)
+        if (selectedProduct) {
+          return {
+            ...item,
+            price: getProductPriceForOrder(selectedProduct, newPlatform, prev.payment_method)
+          }
+        }
+        return item
+      })
+      return {
+        ...prev,
+        source_platform: newPlatform,
+        items: updatedItems
+      }
+    })
   }
 
   const requestSort = (key) => {
@@ -1459,15 +1491,7 @@ export default function Sales() {
                 <label style={{flex: '1 1 230px'}}>Medio de Pago
                   <select 
                     value={newOrder.payment_method}
-                    onChange={e => {
-                      const val = e.target.value
-                      setNewOrder(prev => ({
-                        ...prev,
-                        payment_method: val,
-                        // If user selects CBU/Alias bank transfer, suggest pending
-                        payment_status: val.includes('CBU') ? 'pending' : prev.payment_status
-                      }))
-                    }}
+                    onChange={e => handlePaymentMethodChange(e.target.value)}
                     style={{width: '100%', marginTop: 5}}
                   >
                     <option value="Efectivo">💵 Efectivo</option>
@@ -1608,8 +1632,13 @@ export default function Sales() {
                                     <div style={{fontWeight: 'bold', fontSize: '0.85rem'}}>{prod.title}</div>
                                     <div style={{fontSize: '0.75rem', color: 'var(--text-secondary)'}}>SKU/ID: {prod.ml_id}</div>
                                   </div>
-                                  <div style={{fontWeight: 'bold', color: 'var(--accent-green)', fontSize: '0.85rem'}}>
-                                    ${newOrder.source_platform === 'LOCAL' ? prod.price?.toLocaleString() : (prod.price_web || prod.price)?.toLocaleString()}
+                                  <div style={{fontWeight: 'bold', color: 'var(--accent-green)', fontSize: '0.85rem', textAlign: 'right'}}>
+                                    ${getProductPriceForOrder(prod, newOrder.source_platform, newOrder.payment_method).toLocaleString()}
+                                    {newOrder.payment_method === 'Efectivo' && (prod.cash_discount_pct || 0) > 0 && (
+                                      <div style={{fontSize: '0.7rem', color: '#10b981', fontWeight: 600}}>
+                                        💸 -{prod.cash_discount_pct}% efvo
+                                      </div>
+                                    )}
                                   </div>
                                 </div>
                               ))
