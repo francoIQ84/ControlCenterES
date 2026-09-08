@@ -392,6 +392,10 @@ export default function Layout() {
   };
 
   const handleAuthMeliClick = async () => {
+    if (meliStatus && meliStatus.is_authenticated) {
+      navigate('/settings');
+      return;
+    }
     try {
       const configRes = await fetch('/api/settings/config')
       if (configRes.ok) {
@@ -402,7 +406,7 @@ export default function Layout() {
           window.location.href = url
         } else {
           alert("Primero ingresá tu App ID (Client ID) en Configuración > Conexión ML / MP.")
-          window.location.href = '/settings'
+          navigate('/settings')
         }
       }
     } catch (e) {
@@ -449,11 +453,11 @@ export default function Layout() {
         </div>
       )}
 
-      {/* Vínculo Meli status Badge (Clickable for instant OAuth) */}
+      {/* Vínculo Meli status Badge (Clickable for instant OAuth or settings) */}
       {isChannelEnabled('meli') && meliStatus && (
         <div 
           onClick={handleAuthMeliClick}
-          title={meliStatus.is_authenticated ? "Cuenta vinculada con Mercado Libre. Hacé clic para revincular." : "¡Hacé clic para vincular tu cuenta de Mercado Libre!"}
+          title={meliStatus.is_authenticated ? `Cuenta vinculada: ${meliStatus.nickname || meliStatus.user_id}. Hacé clic para administrar en Configuración.` : "¡Hacé clic para vincular tu cuenta de Mercado Libre!"}
           style={{
             display: 'inline-flex',
             alignItems: 'center',
@@ -480,7 +484,7 @@ export default function Layout() {
             boxShadow: meliStatus.is_authenticated ? '0 0 8px var(--accent-emerald)' : '0 0 8px var(--accent-red)'
           }}></span>
           {meliStatus.is_authenticated ? (
-            <span>Meli Vinculado {meliStatus.demo_mode && '(Demo)'}</span>
+            <span>Meli: {meliStatus.nickname || (meliStatus.user_id ? `ID ${meliStatus.user_id}` : 'Vinculado')} {meliStatus.demo_mode && '(Demo)'}</span>
           ) : (
             <span>🔗 Sin Vincular Meli</span>
           )}

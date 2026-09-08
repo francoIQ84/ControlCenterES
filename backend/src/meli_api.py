@@ -82,6 +82,52 @@ def get_auth_url():
     
     return f"{auth_base}/authorization?response_type=code&client_id={client_id}&redirect_uri={redirect_uri}"
 
+def fetch_user_info(custom_token=None):
+    """Fetches details of the authenticated Mercado Libre user (/users/me)."""
+    if is_demo_mode():
+        return {
+            "id": "987654321",
+            "nickname": "DEMO_USER_HIDROPONIA",
+            "email": "demo@hidroponiarosario.com"
+        }
+    token = custom_token or config.get_access_token()
+    if not token:
+        return None
+        
+    url = f"{API_BASE_URL}/users/me"
+    headers = {
+        'Authorization': f"Bearer {token}",
+        'Accept': 'application/json'
+    }
+    try:
+        response = requests.get(url, headers=headers, timeout=12)
+        if response.status_code == 200:
+            data = response.json()
+            return {
+                "id": str(data.get("id", "")),
+                "nickname": str(data.get("nickname", "")),
+                "email": str(data.get("email", "")),
+                "first_name": str(data.get("first_name", "")),
+                "last_name": str(data.get("last_name", ""))
+            }
+        elif response.status_code == 401 and not custom_token:
+            if refresh_access_token():
+                headers['Authorization'] = f"Bearer {config.get_access_token()}"
+                r2 = requests.get(url, headers=headers, timeout=12)
+                if r2.status_code == 200:
+                    d2 = r2.json()
+                    return {
+                        "id": str(d2.get("id", "")),
+                        "nickname": str(d2.get("nickname", "")),
+                        "email": str(d2.get("email", "")),
+                        "first_name": str(d2.get("first_name", "")),
+                        "last_name": str(d2.get("last_name", ""))
+                    }
+        print(f"[Meli API] Error al obtener /users/me ({response.status_code}): {response.text}")
+    except Exception as e:
+        print(f"[Meli API] Excepción al consultar /users/me: {e}")
+    return None
+
 def authenticate_with_code(code):
     """Exchanges the authorization code for access and refresh tokens."""
     if is_demo_mode():
@@ -90,6 +136,7 @@ def authenticate_with_code(code):
         config.set_refresh_token("mock_refresh_token_67890")
         config.set_token_expiry(time.time() + 21600)  # 6 hours
         config.set_user_id("987654321")
+        database.set_setting('meli_nickname', 'DEMO_USER_HIDROPONIA')
         return True, "Autenticado en modo DEMO"
 
     client_id = config.get_client_id()
@@ -120,7 +167,44 @@ def authenticate_with_code(code):
             config.set_access_token(access_token)
             config.set_refresh_token(res_data.get('refresh_token', ''))
             config.set_token_expiry(time.time() + res_data.get('expires_in', 21600))
-            config.set_user_id(str(res_data.get('user_id', '')))
+            new_user_id = str(res_data.get('user_id', ''))
+            config.set_user_id(new_user_id)
+
+            # Retrieve user details from Mercado Libre
+            user_info = fetch_user_info(custom_token=access_token)
+            nickname = user_info.get("nickname", "") if user_info else ""
+            email = user_info.get("email", "") if user_info else ""
+            if nickname:
+                database.set_setting('meli_nickname', nickname)
+            if email:
+                database.set_setting('meli_email', email)
+
+            # Verify allowed/expected account if configured
+            expected_account = database.get_setting('meli_expected_account', '').strip().lower()
+            if expected_account:
+                u_id_str = new_user_id.lower()
+                nick_str = nickname.lower()
+                mail_str = email.lower()
+                matches = (
+                    expected_account == u_id_str or
+                    (nick_str and expected_account in nick_str) or
+                    (mail_str and expected_account in mail_str) or
+                    (nick_str and nick_str in expected_account) or
+                    (mail_str and mail_str in expected_account)
+                )
+                if not matches:
+                    # Account mismatch: revoke/clear tokens immediately to prevent wrong account sync
+                    config.set_access_token("")
+                    config.set_refresh_token("")
+                    config.set_user_id("")
+                    database.delete_setting('meli_nickname')
+                    database.delete_setting('meli_email')
+                    return False, (
+                        f"Cuenta no autorizada: Se detectó la cuenta '{nickname}' ({email or new_user_id}), "
+                        f"pero este sistema está restringido exclusivamente a la cuenta '{expected_account}'. "
+                        f"Por favor cerrá sesión en mercadolibre.com.ar e iniciá sesión con la cuenta oficial."
+                    )
+
             return True, "Autenticación exitosa"
         else:
             return False, f"Error Meli API: {response.text}"

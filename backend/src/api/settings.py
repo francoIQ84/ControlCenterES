@@ -23,9 +23,14 @@ class SetupRequest(BaseModel):
     meli_send_shipping_msg: Optional[bool] = True
     meli_send_pickup_msg: Optional[bool] = True
     meli_send_invoice_msg: Optional[bool] = True
+    meli_expected_account: Optional[str] = None
+    mp_excluded_emails: Optional[str] = None
 
 class CodeRequest(BaseModel):
     code: str
+
+class DisconnectMeliRequest(BaseModel):
+    clear_data: bool = True
 
 class SyncAllRequest(BaseModel):
     limit: int = 2000
@@ -35,6 +40,19 @@ class SyncAllRequest(BaseModel):
 def get_auth_status():
     user_id = config.get_user_id()
     token_valid = meli_api.validate_token()
+    nickname = database.get_setting('meli_nickname', '')
+    email = database.get_setting('meli_email', '')
+    expected_account = database.get_setting('meli_expected_account', '')
+    
+    if user_id and token_valid and not nickname:
+        user_info = meli_api.fetch_user_info()
+        if user_info:
+            nickname = user_info.get("nickname", "")
+            email = user_info.get("email", "")
+            if nickname:
+                database.set_setting('meli_nickname', nickname)
+            if email:
+                database.set_setting('meli_email', email)
     
     afip_enabled = database.get_setting('afip_enabled', '0') == '1'
     cert_exists = os.path.exists("backend/data/afip/arca.crt") or os.path.exists("data/afip/arca.crt")
@@ -43,6 +61,9 @@ def get_auth_status():
     return {
         "is_authenticated": bool(user_id and token_valid),
         "user_id": user_id,
+        "nickname": nickname,
+        "email": email,
+        "expected_account": expected_account,
         "demo_mode": meli_api.is_demo_mode(),
         "afip_active": afip_enabled and cert_exists and key_exists
     }
@@ -68,7 +89,11 @@ def get_config(_=Depends(require_permission("settings"))):
         "meli_send_purchase_msg": database.get_setting('meli_send_purchase_msg', '1') == '1',
         "meli_send_shipping_msg": database.get_setting('meli_send_shipping_msg', '1') == '1',
         "meli_send_pickup_msg": database.get_setting('meli_send_pickup_msg', '1') == '1',
-        "meli_send_invoice_msg": database.get_setting('meli_send_invoice_msg', '1') == '1'
+        "meli_send_invoice_msg": database.get_setting('meli_send_invoice_msg', '1') == '1',
+        "meli_expected_account": database.get_setting('meli_expected_account', ''),
+        "meli_nickname": database.get_setting('meli_nickname', ''),
+        "meli_email": database.get_setting('meli_email', ''),
+        "mp_excluded_emails": database.get_setting('mp_excluded_emails', '')
     }
 
 @router.post("/setup")
@@ -82,6 +107,8 @@ def save_setup(req: SetupRequest, _=Depends(require_permission("settings"))):
         database.delete_setting('meli_refresh_token')
         database.delete_setting('meli_user_id')
         database.delete_setting('meli_token_expiry')
+        database.delete_setting('meli_nickname')
+        database.delete_setting('meli_email')
     
     database.set_setting('meli_client_id', req.client_id)
     database.set_setting('meli_client_secret', req.client_secret)
@@ -97,6 +124,10 @@ def save_setup(req: SetupRequest, _=Depends(require_permission("settings"))):
     database.set_setting('meli_send_shipping_msg', '1' if req.meli_send_shipping_msg else '0')
     database.set_setting('meli_send_pickup_msg', '1' if req.meli_send_pickup_msg else '0')
     database.set_setting('meli_send_invoice_msg', '1' if req.meli_send_invoice_msg else '0')
+    if req.meli_expected_account is not None:
+        database.set_setting('meli_expected_account', req.meli_expected_account.strip())
+    if req.mp_excluded_emails is not None:
+        database.set_setting('mp_excluded_emails', req.mp_excluded_emails.strip())
     return {"success": True}
 
 class ChannelsUpdateRequest(BaseModel):
@@ -140,16 +171,37 @@ def update_channels_config(req: ChannelsUpdateRequest, _=Depends(require_permiss
 def exchange_code(req: CodeRequest, _=Depends(require_permission("settings"))):
     ok, err = meli_api.authenticate_with_code(req.code)
     if ok:
-        return {"success": True}
+        user_id = config.get_user_id()
+        nickname = database.get_setting('meli_nickname', '')
+        email = database.get_setting('meli_email', '')
+        return {"success": True, "user_id": user_id, "nickname": nickname, "email": email}
     else:
         raise HTTPException(status_code=400, detail=err)
+
+@router.post("/disconnect-meli")
+def disconnect_meli(req: DisconnectMeliRequest, _=Depends(require_permission("settings"))):
+    """Desvincula Mercado Libre y opcionalmente limpia el catálogo y órdenes asociadas."""
+    database.delete_setting('meli_access_token')
+    database.delete_setting('meli_refresh_token')
+    database.delete_setting('meli_user_id')
+    database.delete_setting('meli_token_expiry')
+    database.delete_setting('meli_nickname')
+    database.delete_setting('meli_email')
+    
+    if req.clear_data:
+        database.clear_meli_cache(delete_products=True, delete_orders=True, delete_questions=True, delete_mp_expenses=True)
+        
+    return {"success": True, "message": "Cuenta de Mercado Libre desvinculada exitosamente."}
 
 @router.post("/logout")
 def logout(_=Depends(require_permission("settings"))):
     database.delete_setting('meli_access_token')
     database.delete_setting('meli_refresh_token')
     database.delete_setting('meli_user_id')
-    database.clear_all_caches()
+    database.delete_setting('meli_token_expiry')
+    database.delete_setting('meli_nickname')
+    database.delete_setting('meli_email')
+    database.clear_meli_cache(delete_products=True, delete_orders=True, delete_questions=True, delete_mp_expenses=True)
     return {"success": True}
 
 class WebConfigModel(BaseModel):

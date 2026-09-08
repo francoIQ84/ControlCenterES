@@ -74,11 +74,21 @@ function ProtectedRoute() {
         body: JSON.stringify({ code })
       }).then(res => {
         if(res.ok) {
-          alert("¡Cuenta de Mercado Libre vinculada con éxito!")
-          window.location.href = '/settings'
+          res.json().then(data => {
+            const accName = data.nickname || data.email || (data.user_id ? `ID: ${data.user_id}` : '')
+            alert(`🎉 ¡Cuenta de Mercado Libre vinculada con éxito!${accName ? `\n\nCuenta detectada: ${accName}` : ''}`)
+            window.location.href = '/settings'
+          }).catch(() => {
+            alert("🎉 ¡Cuenta de Mercado Libre vinculada con éxito!")
+            window.location.href = '/settings'
+          })
         } else {
           res.json().then(data => {
-             alert("Error vinculando Mercado Libre: " + (data.detail || "Error desconocido"))
+             alert("⚠️ Error al vincular Mercado Libre:\n\n" + (data.detail || "Error desconocido"))
+             window.location.href = '/settings'
+          }).catch(() => {
+             alert("Error al vincular Mercado Libre")
+             window.location.href = '/settings'
           })
         }
       }).catch(err => {

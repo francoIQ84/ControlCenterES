@@ -49,3 +49,19 @@ def create_charge(req: CreateChargeRequest, _=Depends(require_permission("sales"
         return {"success": True, "charge": result_or_err}
     else:
         raise HTTPException(status_code=400, detail=str(result_or_err))
+
+class MPSettingsUpdateRequest(BaseModel):
+    excluded_emails: str
+
+@router.get("/settings")
+def get_mp_settings(_=Depends(require_permission("settings"))):
+    from src import database
+    return {
+        "excluded_emails": database.get_setting("mp_excluded_emails", "")
+    }
+
+@router.post("/settings")
+def save_mp_settings(req: MPSettingsUpdateRequest, _=Depends(require_permission("settings"))):
+    from src import database
+    database.set_setting("mp_excluded_emails", req.excluded_emails.strip())
+    return {"success": True, "excluded_emails": req.excluded_emails.strip()}

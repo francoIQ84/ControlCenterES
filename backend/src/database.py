@@ -2120,6 +2120,36 @@ def clear_all_caches():
             cursor.execute("DELETE FROM orders_cache")
             cursor.execute("DELETE FROM customers")
 
+def clear_meli_cache(delete_products=True, delete_orders=True, delete_questions=True, delete_mp_expenses=True):
+    """
+    Cleans caches specifically populated from Mercado Libre and Mercado Pago,
+    safely preserving Tiendanube, Local, and Web catalog & sales.
+    """
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            if delete_orders:
+                cursor.execute("""
+                    DELETE FROM orders_cache 
+                    WHERE source_platform IN ('MERCADOLIBRE', 'MERCADOPAGO', 'MERCADOPAGO_TRANSFER', 'MERCADOPAGO_QR', 'MERCADOPAGO_LINK')
+                """)
+            if delete_products:
+                # Delete items that only came from MeLi (no tiendanube id)
+                cursor.execute("""
+                    DELETE FROM products_cache 
+                    WHERE (tn_id IS NULL OR tn_id = '') 
+                      AND (ml_id LIKE 'MLA%' OR sync_meli = 1)
+                """)
+                # For shared products with Tiendanube, just untick MeLi sync
+                cursor.execute("""
+                    UPDATE products_cache 
+                    SET sync_meli = 0 
+                    WHERE tn_id IS NOT NULL AND tn_id != ''
+                """)
+            if delete_questions:
+                cursor.execute("DELETE FROM meli_questions")
+            if delete_mp_expenses:
+                cursor.execute("DELETE FROM variable_expenses WHERE is_auto_mp = 1")
+
 # --- Authentication & Session Security Operations ---
 
 def hash_password(password: str) -> str:

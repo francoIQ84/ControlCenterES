@@ -20,10 +20,15 @@ export default function Settings() {
     meli_send_purchase_msg: true,
     meli_send_shipping_msg: true,
     meli_send_pickup_msg: true,
-    meli_send_invoice_msg: true
+    meli_send_invoice_msg: true,
+    meli_expected_account: '',
+    mp_excluded_emails: ''
   })
-  const [status, setStatus] = useState({ is_authenticated: false, user_id: null })
+  const [status, setStatus] = useState({ is_authenticated: false, user_id: null, nickname: '', email: '', expected_account: '' })
   const [code, setCode] = useState("")
+  const [showDisconnectModal, setShowDisconnectModal] = useState(false)
+  const [disconnectClearData, setDisconnectClearData] = useState(true)
+  const [disconnecting, setDisconnecting] = useState(false)
 
   const [syncingHistorical, setSyncingHistorical] = useState(false)
   const [syncingToday, setSyncingToday] = useState(false)
@@ -1281,6 +1286,29 @@ export default function Settings() {
     }
   }
 
+  const handleDisconnectMeli = async () => {
+    setDisconnecting(true)
+    try {
+      const res = await fetch('/api/settings/disconnect-meli', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ clear_data: disconnectClearData })
+      })
+      const data = await res.json()
+      if (res.ok) {
+        alert("🎉 Cuenta de Mercado Libre desvinculada exitosamente." + (disconnectClearData ? " Se limpiaron las publicaciones y ventas importadas." : ""))
+        setShowDisconnectModal(false)
+        window.location.reload()
+      } else {
+        alert("Error al desvincular: " + (data.detail || "Error desconocido"))
+      }
+    } catch(err) {
+      alert("Error de conexión: " + err.message)
+    } finally {
+      setDisconnecting(false)
+    }
+  }
+
   // User CRUD handlers
   const handleCreateUser = async (e) => {
     e.preventDefault()
@@ -1732,6 +1760,42 @@ export default function Settings() {
                     <option value={120}>Cada 120 minutos (2 horas)</option>
                   </select>
                 </label>
+
+                {/* Bloque de Seguridad y Control de Cuentas */}
+                <div style={{marginTop: 15, padding: '12px 14px', borderRadius: '8px', backgroundColor: 'var(--bg-hover)', border: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', gap: 12}}>
+                  <strong style={{fontSize: '0.9rem', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 6}}>
+                    🛡️ Control y Seguridad de Cuentas
+                  </strong>
+
+                  <label style={{display: 'flex', flexDirection: 'column', gap: 4, fontSize: '0.85rem'}}>
+                    <span style={{fontWeight: 600}}>Cuenta autorizada en Mercado Libre (Candado de Seguridad)</span>
+                    <input 
+                      type="text" 
+                      placeholder="ej. hidroponia o hidroponiarosario@gmail.com" 
+                      value={config.meli_expected_account || ''} 
+                      onChange={e => setConfig({...config, meli_expected_account: e.target.value})} 
+                      style={{padding: '7px 10px', borderRadius: '4px', border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)'}}
+                    />
+                    <small style={{color: 'var(--text-secondary)', fontSize: '0.78rem', lineHeight: 1.3}}>
+                      Si configuras el alias o email de tu negocio, el sistema <strong>rechazará automáticamente</strong> cualquier intento accidental de vincular otra cuenta distinta.
+                    </small>
+                  </label>
+
+                  <label style={{display: 'flex', flexDirection: 'column', gap: 4, fontSize: '0.85rem'}}>
+                    <span style={{fontWeight: 600}}>Cuentas / Emails excluidos de Mercado Pago</span>
+                    <input 
+                      type="text" 
+                      placeholder="ej. greenorbitalinfo@gmail.com, francoag84@gmail.com" 
+                      value={config.mp_excluded_emails || ''} 
+                      onChange={e => setConfig({...config, mp_excluded_emails: e.target.value})} 
+                      style={{padding: '7px 10px', borderRadius: '4px', border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)'}}
+                    />
+                    <small style={{color: 'var(--text-secondary)', fontSize: '0.78rem', lineHeight: 1.3}}>
+                      Cuentas personales o socios separadas por coma. Las transferencias entre estas cuentas se ignorarán y no se registrarán como ventas comerciales.
+                    </small>
+                  </label>
+                </div>
+
                 <button className="btn" onClick={handleSave}>Guardar API Config</button>
               </div>
             </div>
@@ -1739,23 +1803,57 @@ export default function Settings() {
             <div className="card" style={{flex: 1, minWidth: 300}}>
               <h3>Estado de Conexión ML / MP</h3>
               {status.is_authenticated ? (
-                <div style={{color: 'var(--accent-emerald)', fontWeight: 'bold', padding: '8px 12px', borderRadius: '6px', backgroundColor: 'rgba(16, 185, 129, 0.1)', border: '1px solid var(--accent-emerald)'}}>
-                  ✓ Conectado a Mercado Libre / Mercado Pago (Usuario ID: {status.user_id})
+                <div style={{display: 'flex', flexDirection: 'column', gap: 10, padding: '14px 16px', borderRadius: '8px', backgroundColor: 'rgba(16, 185, 129, 0.08)', border: '1px solid var(--accent-emerald)'}}>
+                  <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8}}>
+                    <div style={{display: 'flex', alignItems: 'center', gap: 8}}>
+                      <span style={{fontSize: '1.2rem'}}>✅</span>
+                      <strong style={{color: 'var(--accent-emerald)', fontSize: '0.95rem'}}>Conectado a Mercado Libre</strong>
+                    </div>
+                    <button 
+                      type="button"
+                      className="btn" 
+                      onClick={() => setShowDisconnectModal(true)}
+                      style={{backgroundColor: '#ef4444', color: '#fff', fontSize: '0.8rem', padding: '6px 12px', borderRadius: '6px', border: 'none', cursor: 'pointer', fontWeight: 600}}
+                    >
+                      Desvincular Cuenta
+                    </button>
+                  </div>
+                  
+                  <div style={{fontSize: '0.85rem', color: 'var(--text-secondary)', display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '5px 12px', marginTop: 4}}>
+                    <span>Cuenta / Alias:</span>
+                    <strong style={{color: 'var(--text-primary)'}}>{status.nickname || 'Sin alias (ID: ' + status.user_id + ')'}</strong>
+                    {status.email && (
+                      <>
+                        <span>Email registrado:</span>
+                        <strong style={{color: 'var(--text-primary)'}}>{status.email}</strong>
+                      </>
+                    )}
+                    <span>ID de Usuario MeLi:</span>
+                    <span style={{fontFamily: 'monospace', color: 'var(--text-primary)'}}>{status.user_id}</span>
+                    {status.expected_account && (
+                      <>
+                        <span>Candado de protección:</span>
+                        <span style={{color: 'var(--accent-blue)', fontWeight: 600}}>🔒 Exclusivo para: {status.expected_account}</span>
+                      </>
+                    )}
+                  </div>
                 </div>
               ) : (
-                <div style={{color: 'var(--accent-red)', fontWeight: 'bold', padding: '8px 12px', borderRadius: '6px', backgroundColor: 'rgba(239, 68, 68, 0.1)', border: '1px solid var(--accent-red)'}}>
-                  ✗ No autenticado
+                <div style={{color: 'var(--accent-red)', fontWeight: 'bold', padding: '10px 14px', borderRadius: '6px', backgroundColor: 'rgba(239, 68, 68, 0.1)', border: '1px solid var(--accent-red)', display: 'flex', alignItems: 'center', gap: 8}}>
+                  <span>✗</span>
+                  <span>No autenticado (Ninguna cuenta de Mercado Libre vinculada)</span>
                 </div>
               )}
 
               <div style={{marginTop: 20}}>
-                <div style={{fontSize: '0.85rem', color: 'var(--text-secondary)', backgroundColor: 'var(--bg-hover)', padding: '10px 12px', borderRadius: '6px', marginBottom: 15}}>
-                  💡 <strong>Vinculación en 1-Clic:</strong> Haz clic en <strong>Autorizar Mercado Libre / Pago</strong>. Otorga permiso único para ambas plataformas de forma transparente sin copiar códigos.
+                <div style={{fontSize: '0.85rem', color: 'var(--text-secondary)', backgroundColor: 'var(--bg-hover)', padding: '12px 14px', borderRadius: '8px', marginBottom: 15, borderLeft: '4px solid #ffe600', lineHeight: 1.4}}>
+                  ⚠️ <strong>Importante antes de vincular:</strong> Mercado Libre tomará la sesión activa que tengas en este momento en tu navegador.
+                  Asegurate de haber iniciado sesión en <a href="https://www.mercadolibre.com.ar" target="_blank" rel="noreferrer" style={{color: 'var(--accent-blue)', fontWeight: 600, textDecoration: 'underline'}}>mercadolibre.com.ar</a> con la <strong>cuenta oficial del negocio (Hidroponia Rosario)</strong> y no con una cuenta personal.
                 </div>
 
                 <p style={{fontSize: '0.9rem', fontWeight: 600}}>1. Autorizar aplicación:</p>
                 <button className="btn" style={{backgroundColor: '#ffe600', color: '#333', fontWeight: 'bold', width: '100%', padding: '10px 15px'}} onClick={handleAuth}>
-                  Autorizar Mercado Libre / Mercado Pago
+                  {status.is_authenticated ? "Revincular o Cambiar de Cuenta en Mercado Libre" : "Autorizar Mercado Libre / Mercado Pago"}
                 </button>
                 
                 <details style={{marginTop: 20, fontSize: '0.85rem', color: 'var(--text-secondary)'}}>
@@ -1770,6 +1868,69 @@ export default function Settings() {
                     </div>
                   </div>
                 </details>
+
+                {/* Modal de Desvinculación Segura */}
+                {showDisconnectModal && (
+                  <div style={{
+                    position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+                    backgroundColor: 'rgba(0,0,0,0.65)', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    zIndex: 99999, backdropFilter: 'blur(3px)'
+                  }}>
+                    <div style={{
+                      backgroundColor: 'var(--bg-card)', padding: '24px', borderRadius: '12px', maxWidth: '480px', width: '90%',
+                      boxShadow: '0 20px 25px -5px rgba(0,0,0,0.4)', border: '1px solid var(--border-color)'
+                    }}>
+                      <h3 style={{marginTop: 0, color: 'var(--accent-red)', display: 'flex', alignItems: 'center', gap: 8, fontSize: '1.2rem'}}>
+                        ⚠️ Desvincular Mercado Libre / Pago
+                      </h3>
+                      <p style={{fontSize: '0.9rem', color: 'var(--text-secondary)', lineHeight: 1.5, margin: '12px 0'}}>
+                        Estás a punto de desvincular la cuenta <strong>{status.nickname || status.user_id}</strong> de tu sistema ControlCenter.
+                      </p>
+                      
+                      <div style={{
+                        margin: '16px 0', padding: '12px 14px', backgroundColor: 'var(--bg-hover)', borderRadius: '8px',
+                        border: '1px solid var(--border-color)'
+                      }}>
+                        <label style={{display: 'flex', alignItems: 'flex-start', gap: 10, cursor: 'pointer'}}>
+                          <input 
+                            type="checkbox" 
+                            checked={disconnectClearData} 
+                            onChange={e => setDisconnectClearData(e.target.checked)}
+                            style={{marginTop: 3, width: 16, height: 16, cursor: 'pointer'}}
+                          />
+                          <span style={{fontSize: '0.88rem', color: 'var(--text-primary)'}}>
+                            <strong>Limpiar publicaciones y ventas importadas de Mercado Libre</strong><br/>
+                            <small style={{color: 'var(--text-secondary)', display: 'block', marginTop: 4, lineHeight: 1.3}}>
+                              Recomendado si vinculaste una cuenta equivocada y querés dejar el catálogo limpio para tu cuenta oficial.
+                              <br/><strong style={{color: 'var(--accent-emerald)'}}>Tus ventas de Tiendanube y mostrador no se tocarán.</strong>
+                            </small>
+                          </span>
+                        </label>
+                      </div>
+
+                      <div style={{display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 20}}>
+                        <button 
+                          type="button"
+                          className="btn" 
+                          disabled={disconnecting}
+                          onClick={() => setShowDisconnectModal(false)}
+                          style={{backgroundColor: 'var(--bg-hover)', color: 'var(--text-primary)'}}
+                        >
+                          Cancelar
+                        </button>
+                        <button 
+                          type="button"
+                          className="btn" 
+                          disabled={disconnecting}
+                          onClick={handleDisconnectMeli}
+                          style={{backgroundColor: '#ef4444', color: '#fff', fontWeight: 'bold'}}
+                        >
+                          {disconnecting ? "Desvinculando..." : "Sí, Desvincular"}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
 
                 <div style={{ marginTop: '24px', paddingTop: '16px', borderTop: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', gap: '16px' }}>
                   {/* Real-time sync progress card */}

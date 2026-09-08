@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from typing import List, Optional
 from datetime import datetime, date, timedelta
 from pydantic import BaseModel
-from src import database
+from src import database, config
 from src.api.auth import get_current_user
 
 router = APIRouter()
@@ -338,13 +338,27 @@ def get_financial_summary(month: int, year: int, current_user: dict = Depends(ge
             cursor.execute("SELECT COALESCE(SUM(amount), 0) as total FROM incomes WHERE EXTRACT(MONTH FROM date) = %s AND EXTRACT(YEAR FROM date) = %s", (month, year))
             total_manual_incomes = float(cursor.fetchone()['total'])
 
-            cursor.execute("""
+            # Exclude internal self-funding or excluded partner accounts from commercial sales calculation
+            excluded_raw = database.get_setting('mp_excluded_emails', '')
+            excluded_accounts = [e.strip().lower() for e in excluded_raw.split(',') if e.strip()]
+            meli_user_id = str(config.get_user_id() or '')
+
+            sales_query = """
                 SELECT COALESCE(SUM(total_amount), 0) as total 
                 FROM orders_cache 
                 WHERE EXTRACT(MONTH FROM date_created::timestamp) = %s 
                   AND EXTRACT(YEAR FROM date_created::timestamp) = %s 
                   AND LOWER(status) NOT IN ('cancelled', 'cancelado')
-            """, (month, year))
+            """
+            sales_params = [month, year]
+            if meli_user_id:
+                sales_query += " AND (buyer_id::text != %s)"
+                sales_params.append(meli_user_id)
+            if excluded_accounts:
+                sales_query += " AND (LOWER(COALESCE(buyer_nickname, '')) NOT IN %s AND LOWER(COALESCE(buyer_name, '')) NOT IN %s)"
+                sales_params.extend([tuple(excluded_accounts), tuple(excluded_accounts)])
+
+            cursor.execute(sales_query, tuple(sales_params))
             total_sales = float(cursor.fetchone()['total'])
 
             total_incomes = total_sales + total_manual_incomes
@@ -370,15 +384,28 @@ def get_financial_summary(month: int, year: int, current_user: dict = Depends(ge
 def get_expenses_sales(month: int, year: int, current_user: dict = Depends(get_current_user)):
     with database.get_connection() as conn:
         with conn.cursor() as cursor:
-            cursor.execute("""
+            excluded_raw = database.get_setting('mp_excluded_emails', '')
+            excluded_accounts = [e.strip().lower() for e in excluded_raw.split(',') if e.strip()]
+            meli_user_id = str(config.get_user_id() or '')
+
+            sales_query = """
                 SELECT order_id, date_created, buyer_name, buyer_nickname, total_amount, 
                        source_platform, payment_method, status
                 FROM orders_cache 
                 WHERE EXTRACT(MONTH FROM date_created::timestamp) = %s 
                   AND EXTRACT(YEAR FROM date_created::timestamp) = %s 
                   AND LOWER(status) NOT IN ('cancelled', 'cancelado')
-                ORDER BY date_created DESC
-            """, (month, year))
+            """
+            sales_params = [month, year]
+            if meli_user_id:
+                sales_query += " AND (buyer_id::text != %s)"
+                sales_params.append(meli_user_id)
+            if excluded_accounts:
+                sales_query += " AND (LOWER(COALESCE(buyer_nickname, '')) NOT IN %s AND LOWER(COALESCE(buyer_name, '')) NOT IN %s)"
+                sales_params.extend([tuple(excluded_accounts), tuple(excluded_accounts)])
+            sales_query += " ORDER BY date_created DESC"
+
+            cursor.execute(sales_query, tuple(sales_params))
             rows = cursor.fetchall()
             for r in rows:
                 if r.get('date_created'):
@@ -606,13 +633,26 @@ def get_cashflow_forecast(current_user: dict = Depends(get_current_user)):
     with database.get_connection() as conn:
         ensure_fixed_expenses_for_month(conn, cur_m, cur_y)
         with conn.cursor() as cursor:
-            # 1. Total sales in last 30 days
-            cursor.execute("""
+            # 1. Total sales in last 30 days (excluding internal self-funding / partner accounts)
+            excluded_raw = database.get_setting('mp_excluded_emails', '')
+            excluded_accounts = [e.strip().lower() for e in excluded_raw.split(',') if e.strip()]
+            meli_user_id = str(config.get_user_id() or '')
+
+            forecast_query = """
                 SELECT COALESCE(SUM(total_amount), 0) as total 
                 FROM orders_cache 
                 WHERE date_created::timestamp >= NOW() - INTERVAL '30 days'
                   AND LOWER(status) NOT IN ('cancelled', 'cancelado')
-            """)
+            """
+            forecast_params = []
+            if meli_user_id:
+                forecast_query += " AND (buyer_id::text != %s)"
+                forecast_params.append(meli_user_id)
+            if excluded_accounts:
+                forecast_query += " AND (LOWER(COALESCE(buyer_nickname, '')) NOT IN %s AND LOWER(COALESCE(buyer_name, '')) NOT IN %s)"
+                forecast_params.extend([tuple(excluded_accounts), tuple(excluded_accounts)])
+
+            cursor.execute(forecast_query, tuple(forecast_params))
             sales_30d = float(cursor.fetchone()['total'])
             avg_daily_sales = sales_30d / 30.0
             projected_monthly_sales = avg_daily_sales * 30.0

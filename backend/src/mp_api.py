@@ -24,6 +24,10 @@ def sync_mp_payments(date_from=None, limit=2000):
     meli_api.check_and_refresh_token()
     access_token = config.get_access_token()
     user_id_str = str(user_id or '')
+    excluded_raw = database.get_setting('mp_excluded_emails', '')
+    excluded_accounts = {e.strip().lower() for e in excluded_raw.split(',') if e.strip()}
+    if user_id_str:
+        excluded_accounts.add(user_id_str.lower())
 
     offset = 0
     limit_per_page = 50
@@ -95,14 +99,45 @@ def sync_mp_payments(date_from=None, limit=2000):
                     fee_desc = f"Comisión MP Pago #{payment_id} ({fee_type})"
                     database.save_auto_mp_expense(fee_date, fee_desc, fee_amount, cat, payment_id)
 
-                # CRITICAL FILTER: If merchant is NOT the collector OR is the payer, this is an EGRESO/GASTO (Pago de tarjeta, compra, egreso)
-                # Exception: Incoming CVU / bank deposits (operation_type == 'account_fund' or payment_method_id == 'cvu') have collector_id == payer_id == user_id_str
-                is_incoming_deposit = (operation_type in ['account_fund', 'bank_transfer'] or payment_method_id == 'cvu' or payment_type == 'bank_transfer') and (collector_id == user_id_str)
-                if collector_id != user_id_str or (payer_id == user_id_str and not is_incoming_deposit):
+                # Payer details for filtering
+                payer = p.get('payer') or {}
+                email = (payer.get('email') or '').strip()
+                email_lower = email.lower()
+                payer_id_val = str(payer.get('id') or payer_id or '').strip()
+                identification = payer.get('identification') or {}
+                doc_num = str(identification.get('number', '')).strip()
+
+                # CRITICAL FILTER 1: If merchant is NOT the collector, this is an EGRESO/GASTO
+                if collector_id != user_id_str:
                     with database.get_connection() as conn:
                         with conn.cursor() as cursor:
                             cursor.execute("DELETE FROM orders_cache WHERE order_id = %s", (payment_id,))
                     continue  # We skip saving these to Ventas because they are not income
+
+                # CRITICAL FILTER 2: Self-deposits / Fondeo de cuenta (Generic across any MP account)
+                # If collector is the payer, or merchant is paying themselves, or operation is account_fund
+                is_self_funding = (
+                    (collector_id and payer_id_val and collector_id == payer_id_val) or
+                    (payer_id_val and payer_id_val == user_id_str) or
+                    operation_type == 'account_fund'
+                )
+                if is_self_funding:
+                    with database.get_connection() as conn:
+                        with conn.cursor() as cursor:
+                            cursor.execute("DELETE FROM orders_cache WHERE order_id = %s", (payment_id,))
+                    continue  # We skip self-deposits/fondeo because they are not commercial sales
+
+                # CRITICAL FILTER 3: Excluded partner / own accounts configured for this business/tenant
+                is_excluded_account = (
+                    (email_lower and email_lower in excluded_accounts) or
+                    (doc_num and doc_num in excluded_accounts) or
+                    (payer_id_val and payer_id_val in excluded_accounts)
+                )
+                if is_excluded_account:
+                    with database.get_connection() as conn:
+                        with conn.cursor() as cursor:
+                            cursor.execute("DELETE FROM orders_cache WHERE order_id = %s", (payment_id,))
+                    continue  # Skip internal owner / partner transfers
 
 
                 # Check if this payment belongs to a Mercado Libre order
@@ -121,7 +156,7 @@ def sync_mp_payments(date_from=None, limit=2000):
 
                 # Determine platform subtype for standalone Mercado Pago transactions
                 source_platform = 'MERCADOPAGO'
-                if payment_type == 'bank_transfer' or payment_method_id in ['pix', 'cvu', 'account_money'] or operation_type in ['money_transfer', 'account_fund']:
+                if payment_type == 'bank_transfer' or payment_method_id in ['pix', 'cvu', 'account_money'] or operation_type in ['money_transfer']:
                     source_platform = 'MERCADOPAGO_TRANSFER'
                 elif 'pos' in operation_type or 'point' in operation_type or payment_type == 'ticket':
                     source_platform = 'MERCADOPAGO_QR'
@@ -184,21 +219,17 @@ def sync_mp_payments(date_from=None, limit=2000):
                     continue  # Do not insert duplicate sale record!
 
                 # Payer details
-                payer = p.get('payer') or {}
-                email = (payer.get('email') or '').strip()
                 buyer_id = payer.get('id') or (int(payment_id) if str(payment_id).isdigit() else 999000)
                 first_name = (payer.get('first_name') or '').strip()
                 last_name = (payer.get('last_name') or '').strip()
                 full_name = f"{first_name} {last_name}".strip()
                 if not full_name or full_name == "None None":
-                    if is_incoming_deposit:
+                    if payment_type == 'bank_transfer' or payment_method_id in ['pix', 'cvu'] or operation_type in ['money_transfer']:
                         full_name = "Transferencia Recibida (CVU/Banco)"
                     else:
                         full_name = email.split('@')[0] if (email and '@' in email) else f"Cliente MP #{payment_id}"
                 
-                identification = payer.get('identification') or {}
                 doc_type = identification.get('type', 'DNI')
-                doc_num = str(identification.get('number', ''))
 
                 # Extract items / inventory matching
                 additional_info = p.get('additional_info') or {}
@@ -332,7 +363,8 @@ def sync_mp_payments(date_from=None, limit=2000):
                             ext_ref = str(p.get('external_reference') or '')
 
                             # Skip internal money transfers, incoming deposits, bank/CVU transfers, and credit card bill payments from operational expenses
-                            if op_type in ['money_transfer', 'account_fund'] or pay_method == 'cvu' or pay_type == 'bank_transfer' or (user_id_str and collector_id == user_id_str) or 'ccpaymentprod' in ext_ref.lower() or 'tarjeta' in desc.lower() or 'tarjeta' in ext_ref.lower():
+                            collector_email = str(p.get('collector', {}).get('email') or '').strip().lower()
+                            if op_type in ['money_transfer', 'account_fund'] or pay_method == 'cvu' or pay_type == 'bank_transfer' or (user_id_str and collector_id == user_id_str) or 'ccpaymentprod' in ext_ref.lower() or 'tarjeta' in desc.lower() or 'tarjeta' in ext_ref.lower() or (collector_email and collector_email in excluded_accounts) or (collector_id and collector_id in excluded_accounts):
                                 continue
 
                             cat = 'Compras / Insumos MP'
