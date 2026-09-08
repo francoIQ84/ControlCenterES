@@ -1822,11 +1822,13 @@ export default function Settings() {
                   <div style={{fontSize: '0.85rem', color: 'var(--text-secondary)', display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '5px 12px', marginTop: 4}}>
                     <span>Cuenta / Alias:</span>
                     <strong style={{color: 'var(--text-primary)'}}>{status.nickname || 'Sin alias (ID: ' + status.user_id + ')'}</strong>
-                    {status.email && (
-                      <>
-                        <span>Email registrado:</span>
-                        <strong style={{color: 'var(--text-primary)'}}>{status.email}</strong>
-                      </>
+                    <span>Email registrado:</span>
+                    {status.email ? (
+                      <strong style={{color: 'var(--text-primary)'}}>{status.email}</strong>
+                    ) : (
+                      <span style={{color: 'var(--text-secondary)', fontStyle: 'italic'}}>
+                        No informado por Mercado Libre
+                      </span>
                     )}
                     <span>ID de Usuario MeLi:</span>
                     <span style={{fontFamily: 'monospace', color: 'var(--text-primary)'}}>{status.user_id}</span>
