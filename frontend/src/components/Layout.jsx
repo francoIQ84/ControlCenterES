@@ -457,7 +457,7 @@ export default function Layout() {
       {isChannelEnabled('meli') && meliStatus && (
         <div 
           onClick={handleAuthMeliClick}
-          title={meliStatus.is_authenticated ? `Cuenta vinculada: ${meliStatus.nickname || meliStatus.user_id}. Hacé clic para administrar en Configuración.` : "¡Hacé clic para vincular tu cuenta de Mercado Libre!"}
+          title={meliStatus.is_authenticated ? `Cuenta vinculada: ${meliStatus.nickname || meliStatus.user_id}. Hacé clic para administrar en Configuración.` : "¡Hacé clic para vincular tu cuenta de Mercado Libre / Mercado Pago!"}
           style={{
             display: 'inline-flex',
             alignItems: 'center',
@@ -484,9 +484,9 @@ export default function Layout() {
             boxShadow: meliStatus.is_authenticated ? '0 0 8px var(--accent-emerald)' : '0 0 8px var(--accent-red)'
           }}></span>
           {meliStatus.is_authenticated ? (
-            <span>Meli: {meliStatus.nickname || (meliStatus.user_id ? `ID ${meliStatus.user_id}` : 'Vinculado')} {meliStatus.demo_mode && '(Demo)'}</span>
+            <span>ML/MP: {meliStatus.nickname || (meliStatus.user_id ? `ID ${meliStatus.user_id}` : 'Vinculado')} {meliStatus.demo_mode && '(Demo)'}</span>
           ) : (
-            <span>🔗 Sin Vincular Meli</span>
+            <span>🔗 Sin Vincular ML/MP</span>
           )}
         </div>
       )}
