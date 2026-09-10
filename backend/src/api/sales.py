@@ -287,6 +287,125 @@ class InvoiceOptionsRequest(BaseModel):
     include_shipping: Optional[bool] = True
     shipping_cost: Optional[float] = None
 
+class BulkInvoiceRequest(BaseModel):
+    order_ids: List[int]
+    doc_type: Optional[str] = '99'
+    include_shipping: Optional[bool] = True
+
+@router.post("/bulk-invoice")
+def bulk_invoice_endpoint(req: BulkInvoiceRequest):
+    if not req.order_ids:
+        raise HTTPException(status_code=400, detail="Debe seleccionar al menos una venta para facturar.")
+        
+    results = []
+    from src.utils.afip_ws import create_invoice
+    
+    for order_id in req.order_ids:
+        try:
+            order = database.get_order_by_id(order_id)
+            if not order:
+                results.append({
+                    "order_id": order_id,
+                    "success": False,
+                    "error": "Pedido no encontrado"
+                })
+                continue
+                
+            # If already invoiced, report it without raising an exception to avoid breaking the batch
+            if order.get('invoice_generated') == 1 or order.get('afip_cae') or order.get('invoice_number'):
+                results.append({
+                    "order_id": order_id,
+                    "success": True,
+                    "already_invoiced": True,
+                    "invoice_number": order.get('invoice_number', 'Emitida previamente'),
+                    "cae": order.get('afip_cae', ''),
+                    "message": f"Ya contaba con comprobante emitido ({order.get('invoice_number', '')})"
+                })
+                continue
+                
+            # Prepare buyer as Consumidor Final
+            buyer = order.get('buyer', {})
+            if not isinstance(buyer, dict):
+                buyer = {}
+                
+            buyer_name = (order.get('buyer_name') or buyer.get('name') or buyer.get('nickname') or 'Consumidor Final').strip()
+            if not buyer_name or buyer_name == "None None":
+                buyer_name = 'Consumidor Final'
+                
+            buyer['document_type'] = ''
+            buyer['document_number'] = ''
+            buyer['name'] = buyer_name
+            buyer['address'] = buyer.get('address', '')
+            buyer['is_custom_billing'] = True
+            buyer['iva_condition'] = 'Consumidor Final'
+            buyer['taxpayer_type'] = 'Consumidor Final'
+            order['buyer'] = buyer
+            
+            # Shipping cost handling for Mercado Libre
+            if req.include_shipping and order.get('source_platform') == 'MERCADOLIBRE':
+                try:
+                    from src import meli_api
+                    ship_info = meli_api.fetch_order_shipping_cost(order_id)
+                    shipping_val = 0.0
+                    if isinstance(ship_info, dict):
+                        shipping_val = float(ship_info.get("buyer_shipping_cost", 0.0) or 0.0)
+                    else:
+                        shipping_val = float(ship_info or 0.0)
+                    
+                    if shipping_val > 0:
+                        items = list(order.get('items', []))
+                        has_shipping_item = any("Envío" in str(it.get("title", "")) or "Envio" in str(it.get("title", "")) for it in items)
+                        if not has_shipping_item:
+                            items.append({
+                                "title": "Servicio de Envío Mercado Libre",
+                                "quantity": 1,
+                                "unit_price": shipping_val,
+                                "amount": shipping_val
+                            })
+                            order['items'] = items
+                            order['total_amount'] = float(order.get('total_amount', 0)) + shipping_val
+                except Exception as ship_err:
+                    print(f"Error fetching shipping cost in bulk invoice for order {order_id}: {ship_err}")
+            
+            res = create_invoice(order)
+            if res.get("success"):
+                results.append({
+                    "order_id": order_id,
+                    "success": True,
+                    "invoice_number": res.get("invoice_number"),
+                    "cae": res.get("cae"),
+                    "cae_exp": res.get("cae_exp"),
+                    "meli_uploaded": res.get("meli_uploaded"),
+                    "meli_msg": res.get("meli_msg"),
+                    "buyer_name": buyer_name,
+                    "total_amount": order.get("total_amount")
+                })
+            else:
+                results.append({
+                    "order_id": order_id,
+                    "success": False,
+                    "error": res.get("error", "Error desconocido al emitir factura"),
+                    "buyer_name": buyer_name,
+                    "total_amount": order.get("total_amount")
+                })
+        except Exception as e:
+            results.append({
+                "order_id": order_id,
+                "success": False,
+                "error": str(e)
+            })
+            
+    success_count = sum(1 for r in results if r.get("success"))
+    error_count = sum(1 for r in results if not r.get("success"))
+    
+    return {
+        "success": error_count == 0,
+        "total": len(req.order_ids),
+        "success_count": success_count,
+        "error_count": error_count,
+        "results": results
+    }
+
 @router.get("/lookup-cuit/{cuit}")
 def lookup_cuit_endpoint(cuit: str):
     from src.utils.afip_ws import lookup_cuit

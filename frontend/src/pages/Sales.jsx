@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { ShoppingBag, Globe, Store, Check, Clock, Plus, Trash2, ShoppingCart, DollarSign, Link, MessageSquare, Send, ExternalLink, FileText, UserCheck, Search, X, Filter } from 'lucide-react'
+import { ShoppingBag, Globe, Store, Check, Clock, Plus, Trash2, ShoppingCart, DollarSign, Link, MessageSquare, Send, ExternalLink, FileText, UserCheck, Search, X, Filter, CheckSquare, Square, Layers, CheckCircle2, AlertCircle, Loader2 } from 'lucide-react'
 import { useTenant } from '../TenantContext'
 
 export default function Sales() {
@@ -7,6 +7,13 @@ export default function Sales() {
   const { isSimpleView, isChannelEnabled } = useTenant()
   const [loading, setLoading] = useState(true)
   const [sortConfig, setSortConfig] = useState({ key: 'date_created', direction: 'desc' })
+
+  // Bulk Selection & Invoicing State
+  const [selectedOrderIds, setSelectedOrderIds] = useState([])
+  const [showBulkModal, setShowBulkModal] = useState(false)
+  const [bulkProcessing, setBulkProcessing] = useState(false)
+  const [bulkResults, setBulkResults] = useState(null)
+  const [bulkIncludeShipping, setBulkIncludeShipping] = useState(true)
 
   // Search & Filter State
   const [searchQuery, setSearchQuery] = useState('')
@@ -353,6 +360,59 @@ export default function Sales() {
       } finally {
         setInvoicingStates(prev => ({ ...prev, [orderId]: false }))
       }
+    }
+  }
+
+  // Helper function to determine if order is invoiced
+  const isOrderInvoiced = (o) => !!(o.invoice_generated || o.afip_cae || o.invoice_number)
+
+  // Toggle selection of single order
+  const handleToggleSelectOrder = (orderId) => {
+    setSelectedOrderIds(prev => 
+      prev.includes(orderId) ? prev.filter(id => id !== orderId) : [...prev, orderId]
+    )
+  }
+
+  // Select or deselect all visible uninvoiced orders
+  const handleSelectAllUninvoiced = () => {
+    const uninvoicedVisible = sortedOrders.filter(o => !isOrderInvoiced(o))
+    const uninvoicedIds = uninvoicedVisible.map(o => o.order_id)
+    if (uninvoicedIds.length === 0) return
+
+    const allSelected = uninvoicedIds.every(id => selectedOrderIds.includes(id))
+    if (allSelected) {
+      setSelectedOrderIds(prev => prev.filter(id => !uninvoicedIds.includes(id)))
+    } else {
+      setSelectedOrderIds(prev => Array.from(new Set([...prev, ...uninvoicedIds])))
+    }
+  }
+
+  // Execute bulk invoicing endpoint
+  const handleExecuteBulkInvoice = async () => {
+    if (selectedOrderIds.length === 0) return
+    setBulkProcessing(true)
+    setBulkResults(null)
+    try {
+      const res = await fetch('/api/sales/bulk-invoice', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          order_ids: selectedOrderIds,
+          doc_type: '99',
+          include_shipping: bulkIncludeShipping
+        })
+      })
+      const data = await res.json()
+      if (res.ok) {
+        setBulkResults(data)
+        fetchOrders()
+      } else {
+        alert("Error al procesar facturación masiva: " + (data.detail || "Error desconocido"))
+      }
+    } catch (err) {
+      alert("Error de conexión: " + err.message)
+    } finally {
+      setBulkProcessing(false)
     }
   }
 
@@ -1124,17 +1184,131 @@ export default function Sales() {
           )}
           </div>
 
-        {/* Results counter badge */}
-        <div style={{ marginTop: 10, fontSize: '0.82rem', color: 'var(--text-secondary)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <span>
-            Mostrando <strong>{sortedOrders.length}</strong> de <strong>{orders.length}</strong> ventas
-            {(searchQuery || platformFilter !== 'ALL' || shippingFilter !== 'ALL') && (
-              <span style={{ marginLeft: 6, fontStyle: 'italic' }}>
-                (filtrado {searchQuery ? `por "${searchQuery}"` : ''})
+        {/* Bulk Action Banner */}
+        {selectedOrderIds.length > 0 && (() => {
+          const selectedList = orders.filter(o => selectedOrderIds.includes(o.order_id))
+          const selectedTotal = selectedList.reduce((sum, o) => sum + (Number(o.total_amount) || 0), 0)
+          return (
+            <div style={{
+              marginTop: 14,
+              padding: '12px 18px',
+              background: 'linear-gradient(90deg, rgba(16, 185, 129, 0.16) 0%, rgba(59, 130, 246, 0.12) 100%)',
+              border: '1px solid rgba(16, 185, 129, 0.35)',
+              borderRadius: 10,
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              flexWrap: 'wrap',
+              gap: 12
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <span style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  width: 32,
+                  height: 32,
+                  borderRadius: '50%',
+                  backgroundColor: '#10b981',
+                  color: '#ffffff',
+                  fontWeight: 700,
+                  fontSize: '0.85rem'
+                }}>
+                  {selectedOrderIds.length}
+                </span>
+                <div>
+                  <div style={{ fontWeight: 600, fontSize: '0.92rem', color: 'var(--text-primary)' }}>
+                    {selectedOrderIds.length} {selectedOrderIds.length === 1 ? 'venta seleccionada' : 'ventas seleccionadas'}
+                  </div>
+                  <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
+                    Monto total a facturar: <strong style={{ color: 'var(--accent-emerald)', fontSize: '0.85rem' }}>${selectedTotal.toLocaleString()}</strong>
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setBulkResults(null)
+                    setShowBulkModal(true)
+                  }}
+                  className="btn"
+                  style={{
+                    backgroundColor: '#10b981',
+                    color: '#ffffff',
+                    border: 'none',
+                    borderRadius: 8,
+                    padding: '8px 16px',
+                    fontSize: '0.85rem',
+                    fontWeight: 600,
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    cursor: 'pointer',
+                    boxShadow: '0 2px 8px rgba(16, 185, 129, 0.35)'
+                  }}
+                >
+                  <FileText size={16} /> Facturar Seleccionadas (Consumidor Final)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedOrderIds([])}
+                  className="btn"
+                  style={{
+                    backgroundColor: 'transparent',
+                    color: 'var(--text-secondary)',
+                    border: '1px solid var(--border-color)',
+                    borderRadius: 8,
+                    padding: '8px 12px',
+                    fontSize: '0.82rem',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Deseleccionar todas
+                </button>
+              </div>
+            </div>
+          )
+        })()}
+
+        {/* Results counter badge & Quick selector */}
+        {(() => {
+          const visibleUninvoiced = sortedOrders.filter(o => !isOrderInvoiced(o))
+          const areAllUninvoicedSelected = visibleUninvoiced.length > 0 && visibleUninvoiced.every(o => selectedOrderIds.includes(o.order_id))
+          return (
+            <div style={{ marginTop: 12, fontSize: '0.82rem', color: 'var(--text-secondary)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+              <span>
+                Mostrando <strong>{sortedOrders.length}</strong> de <strong>{orders.length}</strong> ventas
+                {(searchQuery || platformFilter !== 'ALL' || shippingFilter !== 'ALL') && (
+                  <span style={{ marginLeft: 6, fontStyle: 'italic' }}>
+                    (filtrado {searchQuery ? `por "${searchQuery}"` : ''})
+                  </span>
+                )}
               </span>
-            )}
-          </span>
-        </div>
+
+              {visibleUninvoiced.length > 0 && (
+                <button
+                  type="button"
+                  onClick={handleSelectAllUninvoiced}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    color: 'var(--accent-blue)',
+                    fontSize: '0.8rem',
+                    cursor: 'pointer',
+                    textDecoration: 'underline',
+                    padding: 0
+                  }}
+                >
+                  {areAllUninvoicedSelected
+                    ? `Deseleccionar las ${visibleUninvoiced.length} no facturadas`
+                    : `Seleccionar todas las no facturadas (${visibleUninvoiced.length})`}
+                </button>
+              )}
+            </div>
+          )
+        })()}
       </div>
 
       <div className="card">
@@ -1165,6 +1339,25 @@ export default function Sales() {
             <table className="mobile-cards data-table">
             <thead>
               <tr>
+                <th style={{ width: 44, textAlign: 'center', padding: '10px 8px' }}>
+                  {(() => {
+                    const visibleUninvoiced = sortedOrders.filter(o => !isOrderInvoiced(o))
+                    const allSelected = visibleUninvoiced.length > 0 && visibleUninvoiced.every(o => selectedOrderIds.includes(o.order_id))
+                    const countSelected = visibleUninvoiced.filter(o => selectedOrderIds.includes(o.order_id)).length
+                    return (
+                      <input
+                        type="checkbox"
+                        checked={allSelected}
+                        ref={el => {
+                          if (el) el.indeterminate = countSelected > 0 && !allSelected
+                        }}
+                        onChange={handleSelectAllUninvoiced}
+                        title={allSelected ? "Deseleccionar todas las no facturadas" : "Seleccionar todas las no facturadas visibles"}
+                        style={{ cursor: 'pointer', width: 16, height: 16 }}
+                      />
+                    )
+                  })()}
+                </th>
                 <th onClick={() => requestSort('date_created')} style={{cursor: 'pointer', userSelect: 'none'}}>Fecha{getSortIcon('date_created')}</th>
                 <th onClick={() => requestSort('order_id')} style={{cursor: 'pointer', userSelect: 'none'}}>Orden ID{getSortIcon('order_id')}</th>
                 <th onClick={() => requestSort('source_platform')} style={{cursor: 'pointer', userSelect: 'none'}}>Canal{getSortIcon('source_platform')}</th>
@@ -1179,8 +1372,45 @@ export default function Sales() {
             <tbody>
               {sortedOrders.map(o => {
                 const isNew = isNewOrder(o.date_created)
+                const invoiced = isOrderInvoiced(o)
+                const isSelected = selectedOrderIds.includes(o.order_id)
                 return (
-                  <tr key={o.order_id} style={{backgroundColor: isNew ? 'rgba(16, 185, 129, 0.06)' : 'var(--bg-card)'}}>
+                  <tr key={o.order_id} style={{
+                    backgroundColor: isSelected 
+                      ? 'rgba(16, 185, 129, 0.09)' 
+                      : isNew 
+                        ? 'rgba(16, 185, 129, 0.04)' 
+                        : 'var(--bg-card)'
+                  }}>
+                    <td data-label="Seleccionar" style={{ textAlign: 'center', width: 44, padding: '10px 8px' }}>
+                      {invoiced ? (
+                        <span 
+                          title={`Factura ya emitida (${o.invoice_number || 'con CAE'})`}
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            width: 20,
+                            height: 20,
+                            borderRadius: 4,
+                            backgroundColor: 'rgba(16, 185, 129, 0.15)',
+                            color: '#10b981',
+                            fontSize: '0.75rem',
+                            fontWeight: 700
+                          }}
+                        >
+                          ✓
+                        </span>
+                      ) : (
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => handleToggleSelectOrder(o.order_id)}
+                          style={{ cursor: 'pointer', width: 16, height: 16 }}
+                          title={`Seleccionar venta #${o.order_id}`}
+                        />
+                      )}
+                    </td>
                     <td data-label="Fecha">
                       <div style={{display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap'}}>
                         <span>{new Date(o.date_created).toLocaleString()}</span>
@@ -2398,6 +2628,393 @@ export default function Sales() {
           </div>
         </div>
       )}
+
+      {/* Bulk Invoicing Modal */}
+      {showBulkModal && (() => {
+        const selectedList = orders.filter(o => selectedOrderIds.includes(o.order_id))
+        const totalAmount = selectedList.reduce((sum, o) => sum + (Number(o.total_amount) || 0), 0)
+
+        return (
+          <div style={{
+            position: 'fixed',
+            inset: 0,
+            backgroundColor: 'rgba(0, 0, 0, 0.65)',
+            backdropFilter: 'blur(4px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 9999,
+            padding: 16
+          }}>
+            <div style={{
+              backgroundColor: 'var(--bg-card)',
+              border: '1px solid var(--border-color)',
+              borderRadius: 14,
+              width: '100%',
+              maxWidth: 720,
+              maxHeight: '90vh',
+              display: 'flex',
+              flexDirection: 'column',
+              boxShadow: '0 20px 40px rgba(0,0,0,0.4)',
+              overflow: 'hidden'
+            }}>
+              {/* Modal Header */}
+              <div style={{
+                padding: '16px 20px',
+                borderBottom: '1px solid var(--border-color)',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                backgroundColor: 'rgba(16, 185, 129, 0.08)'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <FileText size={22} style={{ color: '#10b981' }} />
+                  <div>
+                    <h3 style={{ margin: 0, fontSize: '1.1rem', color: 'var(--text-primary)' }}>
+                      Facturación Masiva (Consumidor Final)
+                    </h3>
+                    <p style={{ margin: '2px 0 0 0', fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
+                      Emisión por lote de comprobantes con datos individuales de cada venta
+                    </p>
+                  </div>
+                </div>
+                {!bulkProcessing && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowBulkModal(false)
+                      if (bulkResults) {
+                        setSelectedOrderIds([])
+                        setBulkResults(null)
+                      }
+                    }}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      color: 'var(--text-secondary)',
+                      cursor: 'pointer',
+                      padding: 4
+                    }}
+                  >
+                    <X size={20} />
+                  </button>
+                )}
+              </div>
+
+              {/* Modal Body */}
+              <div style={{ padding: 20, overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: 16 }}>
+                {bulkProcessing ? (
+                  /* Processing State */
+                  <div style={{ textAlign: 'center', padding: '40px 20px' }}>
+                    <Loader2 size={46} style={{ color: '#10b981', animation: 'spin 1.2s linear infinite', marginBottom: 16 }} />
+                    <h4 style={{ margin: '0 0 8px 0', color: 'var(--text-primary)' }}>Emitiendo comprobantes con AFIP...</h4>
+                    <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--text-secondary)', maxWidth: 460, marginInline: 'auto' }}>
+                      Procesando {selectedOrderIds.length} facturas de forma secuencial para garantizar la correlatividad oficial y adjuntar comprobantes en Mercado Libre. No cierres esta ventana.
+                    </p>
+                  </div>
+                ) : bulkResults ? (
+                  /* Completed Results State */
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                    <div style={{
+                      padding: '14px 16px',
+                      borderRadius: 10,
+                      backgroundColor: bulkResults.error_count === 0 ? 'rgba(16, 185, 129, 0.12)' : 'rgba(245, 158, 11, 0.12)',
+                      border: `1px solid ${bulkResults.error_count === 0 ? 'rgba(16, 185, 129, 0.3)' : 'rgba(245, 158, 11, 0.3)'}`,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 12
+                    }}>
+                      {bulkResults.error_count === 0 ? (
+                        <CheckCircle2 size={24} style={{ color: '#10b981', flexShrink: 0 }} />
+                      ) : (
+                        <AlertCircle size={24} style={{ color: '#f59e0b', flexShrink: 0 }} />
+                      )}
+                      <div>
+                        <div style={{ fontWeight: 600, fontSize: '0.95rem', color: 'var(--text-primary)' }}>
+                          {bulkResults.error_count === 0 
+                            ? `¡Facturación completada con éxito!` 
+                            : `Proceso finalizado con observaciones`}
+                        </div>
+                        <div style={{ fontSize: '0.82rem', color: 'var(--text-secondary)' }}>
+                          Emitidas correctamente: <strong style={{ color: '#10b981' }}>{bulkResults.success_count}</strong> de {bulkResults.total}
+                          {bulkResults.error_count > 0 && (
+                            <span style={{ marginLeft: 8, color: '#ef4444' }}>
+                              • Fallidas: <strong>{bulkResults.error_count}</strong>
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Results Table */}
+                    <div style={{ border: '1px solid var(--border-color)', borderRadius: 8, overflow: 'hidden' }}>
+                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem' }}>
+                        <thead>
+                          <tr style={{ backgroundColor: 'var(--bg-dark)', borderBottom: '1px solid var(--border-color)', textAlign: 'left' }}>
+                            <th style={{ padding: '8px 12px' }}>Orden ID</th>
+                            <th style={{ padding: '8px 12px' }}>Comprador</th>
+                            <th style={{ padding: '8px 12px' }}>Monto</th>
+                            <th style={{ padding: '8px 12px' }}>Comprobante / Estado</th>
+                            <th style={{ padding: '8px 12px', textAlign: 'center' }}>PDF</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {(bulkResults.results || []).map((r, idx) => (
+                            <tr key={r.order_id || idx} style={{ borderBottom: '1px solid var(--border-color)' }}>
+                              <td style={{ padding: '8px 12px', fontFamily: 'monospace' }}>#{r.order_id}</td>
+                              <td style={{ padding: '8px 12px' }}>{r.buyer_name || 'Consumidor Final'}</td>
+                              <td style={{ padding: '8px 12px', fontWeight: 600 }}>
+                                {r.total_amount ? `$${Number(r.total_amount).toLocaleString()}` : '-'}
+                              </td>
+                              <td style={{ padding: '8px 12px' }}>
+                                {r.success ? (
+                                  <div>
+                                    <span style={{
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      gap: 4,
+                                      padding: '2px 6px',
+                                      borderRadius: 4,
+                                      backgroundColor: 'rgba(16, 185, 129, 0.15)',
+                                      color: '#10b981',
+                                      fontWeight: 600,
+                                      fontSize: '0.75rem'
+                                    }}>
+                                      ✓ {r.invoice_number || 'Emitida'}
+                                    </span>
+                                    {r.meli_uploaded && (
+                                      <span style={{ marginLeft: 6, fontSize: '0.7rem', color: '#b39200', fontWeight: 600 }}>
+                                        📎 ML ✓
+                                      </span>
+                                    )}
+                                  </div>
+                                ) : (
+                                  <span style={{
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: 4,
+                                    padding: '2px 6px',
+                                    borderRadius: 4,
+                                    backgroundColor: 'rgba(239, 68, 68, 0.15)',
+                                    color: '#ef4444',
+                                    fontSize: '0.72rem'
+                                  }}>
+                                    ✕ {r.error || 'Error'}
+                                  </span>
+                                )}
+                              </td>
+                              <td style={{ padding: '8px 12px', textAlign: 'center' }}>
+                                {r.success ? (
+                                  <a
+                                    href={`/api/sales/${r.order_id}/invoice/pdf?token=${localStorage.getItem('adminToken')}`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    style={{
+                                      fontSize: '0.75rem',
+                                      color: 'var(--accent-blue)',
+                                      fontWeight: 600,
+                                      textDecoration: 'none',
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      gap: 3
+                                    }}
+                                  >
+                                    <ExternalLink size={12} /> Ver
+                                  </a>
+                                ) : (
+                                  <span style={{ color: 'var(--text-secondary)', fontSize: '0.75rem' }}>-</span>
+                                )}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                ) : (
+                  /* Confirmation State */
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                    {/* Information Box */}
+                    <div style={{
+                      padding: '12px 16px',
+                      backgroundColor: 'rgba(59, 130, 246, 0.08)',
+                      border: '1px solid rgba(59, 130, 246, 0.25)',
+                      borderRadius: 8,
+                      fontSize: '0.85rem',
+                      color: 'var(--text-primary)',
+                      lineHeight: 1.5
+                    }}>
+                      💡 Se emitirá una <strong>Factura como Consumidor Final</strong> para cada venta seleccionada. Cada factura tomará los artículos, cantidades, precios y nombre del cliente registrados en esa venta.
+                    </div>
+
+                    {/* Summary Metrics */}
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                      <div style={{
+                        padding: '14px 16px',
+                        backgroundColor: 'var(--bg-dark)',
+                        borderRadius: 8,
+                        border: '1px solid var(--border-color)'
+                      }}>
+                        <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>Cantidad de ventas a facturar</div>
+                        <div style={{ fontSize: '1.4rem', fontWeight: 700, color: 'var(--text-primary)', marginTop: 4 }}>
+                          {selectedOrderIds.length}
+                        </div>
+                      </div>
+
+                      <div style={{
+                        padding: '14px 16px',
+                        backgroundColor: 'var(--bg-dark)',
+                        borderRadius: 8,
+                        border: '1px solid var(--border-color)'
+                      }}>
+                        <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>Monto total acumulado</div>
+                        <div style={{ fontSize: '1.4rem', fontWeight: 700, color: 'var(--accent-emerald)', marginTop: 4 }}>
+                          ${totalAmount.toLocaleString()}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Shipping option */}
+                    <label style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 8,
+                      fontSize: '0.85rem',
+                      cursor: 'pointer',
+                      color: 'var(--text-primary)',
+                      padding: '4px 0'
+                    }}>
+                      <input
+                        type="checkbox"
+                        checked={bulkIncludeShipping}
+                        onChange={e => setBulkIncludeShipping(e.target.checked)}
+                        style={{ cursor: 'pointer', width: 16, height: 16 }}
+                      />
+                      Incluir costo de envío en ventas de Mercado Libre cuando el comprador lo haya abonado
+                    </label>
+
+                    {/* Selected Orders Preview */}
+                    <div>
+                      <div style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 8 }}>
+                        Detalle de pedidos seleccionados:
+                      </div>
+                      <div style={{
+                        maxHeight: 180,
+                        overflowY: 'auto',
+                        border: '1px solid var(--border-color)',
+                        borderRadius: 8
+                      }}>
+                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem' }}>
+                          <tbody>
+                            {selectedList.map(o => (
+                              <tr key={o.order_id} style={{ borderBottom: '1px solid var(--border-color)' }}>
+                                <td style={{ padding: '6px 12px', fontFamily: 'monospace' }}>#{o.order_id}</td>
+                                <td style={{ padding: '6px 12px' }}>{o.buyer?.nickname || o.buyer?.name || 'Cliente'}</td>
+                                <td style={{ padding: '6px 12px', color: 'var(--text-secondary)' }}>
+                                  {(o.items || []).length} {o.items?.length === 1 ? 'ítem' : 'ítems'}
+                                </td>
+                                <td style={{ padding: '6px 12px', fontWeight: 600, textAlign: 'right' }}>
+                                  ${Number(o.total_amount).toLocaleString()}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Modal Footer */}
+              <div style={{
+                padding: '14px 20px',
+                borderTop: '1px solid var(--border-color)',
+                display: 'flex',
+                justifyContent: 'flex-end',
+                gap: 10,
+                backgroundColor: 'var(--bg-dark)'
+              }}>
+                {bulkResults ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowBulkModal(false)
+                      setSelectedOrderIds([])
+                      setBulkResults(null)
+                    }}
+                    className="btn"
+                    style={{
+                      backgroundColor: 'var(--accent-blue)',
+                      color: '#ffffff',
+                      border: 'none',
+                      borderRadius: 8,
+                      padding: '8px 18px',
+                      fontWeight: 600,
+                      fontSize: '0.85rem',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    Listo, cerrar y actualizar
+                  </button>
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => setShowBulkModal(false)}
+                      disabled={bulkProcessing}
+                      className="btn"
+                      style={{
+                        backgroundColor: 'transparent',
+                        color: 'var(--text-secondary)',
+                        border: '1px solid var(--border-color)',
+                        borderRadius: 8,
+                        padding: '8px 16px',
+                        fontSize: '0.85rem',
+                        cursor: bulkProcessing ? 'not-allowed' : 'pointer'
+                      }}
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleExecuteBulkInvoice}
+                      disabled={bulkProcessing || selectedOrderIds.length === 0}
+                      className="btn"
+                      style={{
+                        backgroundColor: '#10b981',
+                        color: '#ffffff',
+                        border: 'none',
+                        borderRadius: 8,
+                        padding: '8px 18px',
+                        fontWeight: 600,
+                        fontSize: '0.85rem',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 8,
+                        cursor: (bulkProcessing || selectedOrderIds.length === 0) ? 'not-allowed' : 'pointer',
+                        boxShadow: '0 2px 8px rgba(16, 185, 129, 0.35)'
+                      }}
+                    >
+                      {bulkProcessing ? (
+                        <>
+                          <Loader2 size={16} style={{ animation: 'spin 1s linear infinite' }} />
+                          Procesando facturas...
+                        </>
+                      ) : (
+                        <>
+                          <Check size={16} />
+                          Confirmar y Facturar ({selectedOrderIds.length})
+                        </>
+                      )}
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+        )
+      })()}
     </div>
   )
 }
