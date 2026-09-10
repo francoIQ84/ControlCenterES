@@ -390,6 +390,27 @@ export default function Sales() {
     }
   }
 
+  const handleRegenerateInvoice = async (orderId) => {
+    if (!window.confirm(`¿Regenerar el PDF de la factura para la venta #${orderId} y re-adjuntarla en Mercado Libre?`)) return
+    setInvoicingStates(prev => ({ ...prev, [orderId]: true }))
+    try {
+      const res = await fetch(`/api/sales/${orderId}/invoice/regenerate`, { method: 'POST' })
+      const data = await res.json()
+      if (res.ok && data.success) {
+        let msg = `✅ PDF regenerado correctamente (${data.invoice_number})`
+        if (data.meli_uploaded) msg += '\n📎 Re-adjuntada en Mercado Libre'
+        else if (data.meli_msg) msg += `\n⚠️ ML: ${data.meli_msg}`
+        alert(msg)
+      } else {
+        alert('Error al regenerar: ' + (data.detail || data.error || 'Error desconocido'))
+      }
+    } catch (err) {
+      alert('Error de conexión: ' + err.message)
+    } finally {
+      setInvoicingStates(prev => ({ ...prev, [orderId]: false }))
+    }
+  }
+
   const fetchInventory = () => {
     fetch('/api/inventory/')
       .then(res => res.json())
@@ -1338,6 +1359,24 @@ export default function Sales() {
                             {o.invoice_number}
                           </small>
                         )}
+                        <button 
+                          onClick={() => handleRegenerateInvoice(o.order_id)}
+                          disabled={invoicingStates[o.order_id]}
+                          className="btn" 
+                          title="Regenerar PDF de la factura y re-adjuntar en Mercado Libre"
+                          style={{
+                            padding: '2px 6px',
+                            fontSize: '0.6rem',
+                            backgroundColor: 'transparent',
+                            color: 'var(--text-secondary)',
+                            border: '1px solid var(--border-color)',
+                            borderRadius: '3px',
+                            cursor: invoicingStates[o.order_id] ? 'not-allowed' : 'pointer',
+                            opacity: invoicingStates[o.order_id] ? 0.5 : 0.7
+                          }}
+                        >
+                          {invoicingStates[o.order_id] ? '⏳...' : '🔄 Regenerar PDF'}
+                        </button>
                       </div>
                     ) : (
                       <div style={{display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'center'}}>

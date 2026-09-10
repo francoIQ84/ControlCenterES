@@ -1301,6 +1301,66 @@ def download_meli_invoice(order_id):
     return None
 
 
+def delete_meli_invoice(order_id):
+    """
+    Elimina la factura fiscal adjunta en Mercado Libre para una venta (o pack).
+    Necesario para poder re-adjuntar una factura corregida.
+    Retorna (success: bool, message: str).
+    """
+    if is_demo_mode():
+        return True, "Factura eliminada (modo demo)"
+
+    ids_to_try = [order_id]
+    try:
+        order_res = api_request("GET", f"/orders/{order_id}")
+        if order_res and order_res.status_code == 200:
+            pack_id = order_res.json().get('pack_id')
+            if pack_id and pack_id not in ids_to_try:
+                ids_to_try.append(pack_id)
+    except Exception:
+        pass
+
+    deleted = False
+    for target_id in ids_to_try:
+        try:
+            # Try billing integration endpoint
+            path = f"/billing/integration/group/{target_id}/documents"
+            res = api_request("GET", path)
+            if res and res.status_code == 200:
+                data = res.json()
+                documents = data.get('fiscal_documents') or data.get('documents') or []
+                for doc in documents:
+                    file_id = doc.get('file_id') or doc.get('id')
+                    if file_id:
+                        del_res = api_request("DELETE", f"{path}/{file_id}")
+                        if del_res and del_res.status_code in (200, 204):
+                            deleted = True
+
+            # Try packs endpoint
+            res2 = api_request("GET", f"/packs/{target_id}/fiscal_documents")
+            if res2 and res2.status_code == 200:
+                docs_data = res2.json()
+                fiscal_docs = []
+                if isinstance(docs_data, dict):
+                    fiscal_docs = docs_data.get("fiscal_documents", [])
+                elif isinstance(docs_data, list):
+                    fiscal_docs = docs_data
+
+                for doc in fiscal_docs:
+                    doc_id = doc.get('id') or doc.get('file_id')
+                    if doc_id:
+                        del_res = api_request("DELETE", f"/packs/{target_id}/fiscal_documents/{doc_id}")
+                        if del_res and del_res.status_code in (200, 204):
+                            deleted = True
+        except Exception as e:
+            print(f"Error eliminando factura de ML para target_id={target_id}: {e}")
+
+    if deleted:
+        return True, "Factura anterior eliminada de Mercado Libre"
+    else:
+        return False, "No se pudo eliminar la factura anterior de Mercado Libre (puede que la API no lo permita)"
+
+
 def upload_invoice_to_meli(order_id, pdf_path):
     """
     Sube la factura PDF generada a Mercado Libre como documento fiscal adjunto.

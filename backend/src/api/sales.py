@@ -463,6 +463,78 @@ def get_meli_invoice_pdf_endpoint(order_id: int):
         
     return FileResponse(filepath, media_type="application/pdf", filename=f"meli_factura_{order_id}.pdf")
 
+@router.post("/{order_id}/invoice/regenerate")
+def regenerate_invoice_endpoint(order_id: int):
+    """
+    Regenera el PDF de la factura con el desglose correcto de ítems y envío,
+    y opcionalmente re-adjunta en Mercado Libre.
+    No modifica los datos de AFIP (CAE, número de comprobante).
+    """
+    order = database.get_order_by_id(order_id)
+    if not order:
+        raise HTTPException(status_code=404, detail="Pedido no encontrado")
+    
+    if not order.get('invoice_generated') and not order.get('afip_cae') and not order.get('invoice_number'):
+        raise HTTPException(status_code=400, detail="Este pedido no tiene factura generada para regenerar")
+
+    # Reconstruct shipping item if it's a ML order
+    if order.get('source_platform') == 'MERCADOLIBRE':
+        try:
+            ship_info = meli_api.fetch_order_shipping_cost(order_id)
+            shipping_val = 0.0
+            if isinstance(ship_info, dict):
+                shipping_val = ship_info.get("buyer_shipping_cost", 0.0)
+            else:
+                shipping_val = float(ship_info or 0.0)
+
+            if shipping_val and shipping_val > 0:
+                items = list(order.get('items', []))
+                # Check if shipping is already in items
+                has_shipping_item = any(
+                    "Envío" in str(it.get("title", "")) or "Envio" in str(it.get("title", ""))
+                    for it in items
+                )
+                if not has_shipping_item:
+                    items.append({
+                        "title": "Servicio de Envío Mercado Libre",
+                        "quantity": 1,
+                        "unit_price": shipping_val,
+                        "amount": shipping_val
+                    })
+                    order['items'] = items
+                    order['total_amount'] = float(order.get('total_amount', 0)) + float(shipping_val)
+        except Exception as e:
+            print(f"Error fetching shipping for regeneration of order {order_id}: {e}")
+
+    # Delete old PDF
+    from src.utils.invoice_gen import generate_invoice_pdf, PDF_DIR
+    filename = f"factura_{order_id}.pdf"
+    filepath = os.path.join(PDF_DIR, filename)
+    if os.path.exists(filepath):
+        os.remove(filepath)
+
+    # Regenerate PDF with corrected data
+    pdf_path = generate_invoice_pdf(order)
+
+    result = {
+        "success": True,
+        "message": "PDF de factura regenerado correctamente con el desglose corregido",
+        "invoice_number": order.get('invoice_number')
+    }
+
+    # Re-upload to Mercado Libre if it's a ML order
+    if order.get('source_platform') == 'MERCADOLIBRE':
+        # First try to delete the old invoice from ML
+        del_ok, del_msg = meli_api.delete_meli_invoice(order_id)
+        result['meli_delete'] = del_msg
+
+        # Then upload the corrected one
+        upload_ok, upload_msg = meli_api.upload_invoice_to_meli(order_id, pdf_path)
+        result['meli_uploaded'] = upload_ok
+        result['meli_msg'] = upload_msg
+
+    return result
+
 class MessageManualRequest(BaseModel):
     message_type: str  # 'purchase' | 'shipping' | 'pickup' | 'invoice'
     custom_text: Optional[str] = None
