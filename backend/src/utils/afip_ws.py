@@ -1,4 +1,6 @@
 import os
+import json
+import time
 import base64
 import random
 import requests
@@ -20,6 +22,149 @@ def get_session():
     s = requests.Session()
     s.mount('https://', ArcaSSLAdapter())
     return s
+
+# --- WSAA Ticket de Acceso (TA) Multi-Tier Persistent Cache ---
+_WSAA_MEMORY_CACHE = {}
+
+def _get_cache_file_path(clean_cuit: str, service: str, env: str) -> str:
+    base_dir = "backend/data/afip" if os.path.exists("backend/data") else "data/afip"
+    os.makedirs(base_dir, exist_ok=True)
+    return os.path.join(base_dir, f"ta_cache_{clean_cuit}_{service}_{env}.json")
+
+def _parse_expiration_time(exp_str: str) -> datetime:
+    if not exp_str:
+        return datetime.now() + timedelta(hours=10)
+    try:
+        return datetime.fromisoformat(exp_str.strip())
+    except Exception:
+        pass
+    try:
+        clean = exp_str.strip()
+        if "." in clean:
+            base, rest = clean.split(".", 1)
+            tz = ""
+            if "-" in rest:
+                tz = "-" + rest.split("-", 1)[1]
+            elif "+" in rest:
+                tz = "+" + rest.split("+", 1)[1]
+            return datetime.fromisoformat(f"{base}{tz}")
+    except Exception:
+        pass
+    return datetime.now() + timedelta(hours=10)
+
+def _is_token_valid(exp_dt: datetime, margin_seconds: int = 300) -> bool:
+    """
+    Checks if token is still valid with a safety margin (default 5 minutes).
+    Uses POSIX UTC timestamps for safe cross-timezone comparison.
+    """
+    if not exp_dt:
+        return False
+    try:
+        exp_ts = exp_dt.timestamp()
+        now_ts = datetime.now().timestamp()
+        return (exp_ts - now_ts) > margin_seconds
+    except Exception:
+        return False
+
+def _load_cached_wsaa_token(clean_cuit: str, service: str, env: str, min_margin: int = 300):
+    cache_key = f"{clean_cuit}_{service}_{env}"
+    
+    # 1. Check in-memory cache
+    if cache_key in _WSAA_MEMORY_CACHE:
+        entry = _WSAA_MEMORY_CACHE[cache_key]
+        if _is_token_valid(entry.get('exp_dt'), margin_seconds=min_margin):
+            return entry['token'], entry['sign']
+
+    # 2. Check local disk JSON file
+    cache_file = _get_cache_file_path(clean_cuit, service, env)
+    if os.path.exists(cache_file):
+        try:
+            with open(cache_file, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            exp_dt = _parse_expiration_time(data.get('expiration_time', ''))
+            if _is_token_valid(exp_dt, margin_seconds=min_margin):
+                token, sign = data['token'], data['sign']
+                _WSAA_MEMORY_CACHE[cache_key] = {'token': token, 'sign': sign, 'exp_dt': exp_dt}
+                return token, sign
+        except Exception as e:
+            print(f"DEBUG: Error reading AFIP token file cache: {e}")
+
+    # 3. Check database settings cache
+    try:
+        db_val = database.get_setting(f"afip_ta_{cache_key}")
+        if db_val:
+            data = json.loads(db_val)
+            exp_dt = _parse_expiration_time(data.get('expiration_time', ''))
+            if _is_token_valid(exp_dt, margin_seconds=min_margin):
+                token, sign = data['token'], data['sign']
+                _WSAA_MEMORY_CACHE[cache_key] = {'token': token, 'sign': sign, 'exp_dt': exp_dt}
+                # Sync back to disk cache file if missing
+                try:
+                    with open(cache_file, 'w', encoding='utf-8') as f:
+                        json.dump(data, f)
+                except Exception:
+                    pass
+                return token, sign
+    except Exception as e:
+        print(f"DEBUG: Error reading AFIP token DB cache: {e}")
+
+    return None
+
+def _save_cached_wsaa_token(clean_cuit: str, service: str, env: str, token: str, sign: str, exp_dt: datetime):
+    cache_key = f"{clean_cuit}_{service}_{env}"
+    exp_str = exp_dt.isoformat()
+    
+    # 1. Update in-memory cache
+    _WSAA_MEMORY_CACHE[cache_key] = {
+        'token': token,
+        'sign': sign,
+        'exp_dt': exp_dt
+    }
+    
+    cache_data = {
+        'token': token,
+        'sign': sign,
+        'expiration_time': exp_str,
+        'expiration_timestamp': exp_dt.timestamp(),
+        'service': service,
+        'env': env,
+        'cuit': clean_cuit,
+        'cached_at': datetime.now().isoformat()
+    }
+    
+    # 2. Update local disk JSON file
+    try:
+        cache_file = _get_cache_file_path(clean_cuit, service, env)
+        with open(cache_file, 'w', encoding='utf-8') as f:
+            json.dump(cache_data, f, indent=2)
+    except Exception as e:
+        print(f"DEBUG: Error saving AFIP token file cache: {e}")
+        
+    # 3. Update database settings
+    try:
+        database.set_setting(f"afip_ta_{cache_key}", json.dumps(cache_data))
+    except Exception as e:
+        print(f"DEBUG: Error saving AFIP token DB cache: {e}")
+
+def invalidate_wsaa_cache(cuit: str, service: str = "wsfe", env: str = "produccion"):
+    """
+    Invalidates the cached WSAA token in memory, disk, and database.
+    """
+    clean_cuit = cuit.replace("-", "").strip()
+    cache_key = f"{clean_cuit}_{service}_{env}"
+    _WSAA_MEMORY_CACHE.pop(cache_key, None)
+    
+    cache_file = _get_cache_file_path(clean_cuit, service, env)
+    if os.path.exists(cache_file):
+        try:
+            os.remove(cache_file)
+        except Exception:
+            pass
+            
+    try:
+        database.delete_setting(f"afip_ta_{cache_key}")
+    except Exception:
+        pass
 
 def generate_csr_and_key(cuit: str, company_name: str):
     """
@@ -68,11 +213,21 @@ def generate_csr_and_key(cuit: str, company_name: str):
         
     return csr_pem.decode('utf-8'), key_pem.decode('utf-8')
 
-def get_wsaa_token(cuit: str, cert_path: str, key_path: str, env: str, service: str = "wsfe"):
+def get_wsaa_token(cuit: str, cert_path: str, key_path: str, env: str, service: str = "wsfe", force_refresh: bool = False):
     """
     Authenticates with AFIP WSAA and returns a tuple (token, sign).
+    Reuses cached Ticket de Acceso (TA) across memory, disk, and database
+    to strictly comply with AFIP regulations and prevent duplicate authentication errors.
     """
-    # 1. Create TRA XML
+    clean_cuit = cuit.replace("-", "").strip()
+    
+    # 1. Return cached ticket if valid and not forcing refresh
+    if not force_refresh:
+        cached = _load_cached_wsaa_token(clean_cuit, service, env, min_margin=300)
+        if cached:
+            return cached
+
+    # 2. Build TRA XML (Ticket de Requerimiento de Acceso)
     now = datetime.now()
     gen_time = (now - timedelta(minutes=2)).strftime("%Y-%m-%dT%H:%M:%S")
     exp_time = (now + timedelta(hours=10)).strftime("%Y-%m-%dT%H:%M:%S")
@@ -88,7 +243,7 @@ def get_wsaa_token(cuit: str, cert_path: str, key_path: str, env: str, service: 
   <service>{service}</service>
 </loginTicketRequest>"""
 
-    # 2. Sign TRA XML with PKCS#7 using private key & cert
+    # 3. Sign TRA XML with PKCS#7 using private key & cert
     with open(key_path, "rb") as f:
         key_data = f.read()
     with open(cert_path, "rb") as f:
@@ -109,7 +264,7 @@ def get_wsaa_token(cuit: str, cert_path: str, key_path: str, env: str, service: 
     
     cms_b64 = base64.b64encode(signature).decode('utf-8')
     
-    # 3. Post SOAP Envelope to WSAA
+    # 4. Post SOAP Envelope to WSAA
     wsaa_url = "https://wsaahomo.afip.gov.ar/ws/services/LoginCms" if env == "homologacion" else "https://wsaa.afip.gov.ar/ws/services/LoginCms"
     
     soap_request = f"""<?xml version="1.0" encoding="utf-8"?>
@@ -130,17 +285,24 @@ def get_wsaa_token(cuit: str, cert_path: str, key_path: str, env: str, service: 
     res = get_session().post(wsaa_url, data=soap_request, headers=headers, timeout=30.0)
     if res.status_code != 200:
         # Extract SOAP Fault details from AFIP's response
+        faultstring = None
         try:
             err_root = ET.fromstring(res.text)
-            faultstring = None
             for item in err_root.iter():
                 if item.tag.endswith("faultstring"):
                     faultstring = item.text
                     break
-            if faultstring:
-                raise Exception(f"WSAA AFIP: {faultstring}")
         except ET.ParseError:
             pass
+
+        if faultstring:
+            # If AFIP rejects because a valid TA already exists on their server:
+            if "ya posee un TA valido" in faultstring or "alreadyAuthenticated" in faultstring:
+                # Check if we have an unexpired ticket on disk or DB even with 0 margin
+                fallback = _load_cached_wsaa_token(clean_cuit, service, env, min_margin=0)
+                if fallback:
+                    return fallback
+            raise Exception(f"WSAA AFIP: {faultstring}")
         raise Exception(f"Error de conexión con WSAA (HTTP {res.status_code})")
         
     root = ET.fromstring(res.text)
@@ -156,6 +318,13 @@ def get_wsaa_token(cuit: str, cert_path: str, key_path: str, env: str, service: 
     inner_root = ET.fromstring(return_val)
     token = inner_root.find(".//token").text
     sign = inner_root.find(".//sign").text
+    exp_node = inner_root.find(".//expirationTime")
+    exp_str = exp_node.text if exp_node is not None else ""
+    exp_dt = _parse_expiration_time(exp_str)
+    
+    # Save to multi-tier persistent cache
+    _save_cached_wsaa_token(clean_cuit, service, env, token, sign, exp_dt)
+    
     return token, sign
 
 def call_wsfe(action: str, body_content: str, env: str):
@@ -477,24 +646,55 @@ def create_invoice(order: dict):
         if cbte_tipo == 1 and doc_tipo != 80:
             actual_cbte_tipo = 6  # Issue Factura B if buyer is not a CUIT
 
-        # Obtain next invoice number
-        last_num = get_last_invoice_number(token, sign, cuit, pto_vta, actual_cbte_tipo, env)
+        # Obtain next invoice number with auto-healing for token expiration
+        try:
+            last_num = get_last_invoice_number(token, sign, cuit, pto_vta, actual_cbte_tipo, env)
+        except Exception as auth_err:
+            err_text = str(auth_err).lower()
+            if any(k in err_text for k in ["ticket de acceso", "token", "sign", "1000", "no coincide", "autenticacion"]):
+                invalidate_wsaa_cache(cuit, "wsfe", env)
+                token, sign = get_wsaa_token(cuit, cert_path, key_path, env, force_refresh=True)
+                last_num = get_last_invoice_number(token, sign, cuit, pto_vta, actual_cbte_tipo, env)
+            else:
+                raise
+
         new_num = last_num + 1
         
         # Request CAE from WSFE
-        cae, cae_exp = request_cae(
-            token=token,
-            sign=sign,
-            cuit=cuit,
-            pto_vta=pto_vta,
-            cbte_tipo=actual_cbte_tipo,
-            invoice_number=new_num,
-            doc_tipo=doc_tipo,
-            doc_nro=doc_nro,
-            amount=order['total_amount'],
-            env=env,
-            concept=concept
-        )
+        try:
+            cae, cae_exp = request_cae(
+                token=token,
+                sign=sign,
+                cuit=cuit,
+                pto_vta=pto_vta,
+                cbte_tipo=actual_cbte_tipo,
+                invoice_number=new_num,
+                doc_tipo=doc_tipo,
+                doc_nro=doc_nro,
+                amount=order['total_amount'],
+                env=env,
+                concept=concept
+            )
+        except Exception as cae_err:
+            err_text = str(cae_err).lower()
+            if any(k in err_text for k in ["ticket de acceso", "token", "sign", "1000", "no coincide", "autenticacion"]):
+                invalidate_wsaa_cache(cuit, "wsfe", env)
+                token, sign = get_wsaa_token(cuit, cert_path, key_path, env, force_refresh=True)
+                cae, cae_exp = request_cae(
+                    token=token,
+                    sign=sign,
+                    cuit=cuit,
+                    pto_vta=pto_vta,
+                    cbte_tipo=actual_cbte_tipo,
+                    invoice_number=new_num,
+                    doc_tipo=doc_tipo,
+                    doc_nro=doc_nro,
+                    amount=order['total_amount'],
+                    env=env,
+                    concept=concept
+                )
+            else:
+                raise
         
         formatted_invoice_number = f"{pto_vta:04d}-{new_num:08d}"
         database.save_order_afip_details(order['order_id'], formatted_invoice_number, cae, cae_exp)

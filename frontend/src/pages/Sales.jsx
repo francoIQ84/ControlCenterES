@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { ShoppingBag, Globe, Store, Check, Clock, Plus, Trash2, ShoppingCart, DollarSign, Link, MessageSquare, Send, ExternalLink, FileText, UserCheck, Search, X, Filter, CheckSquare, Square, Layers, CheckCircle2, AlertCircle, Loader2 } from 'lucide-react'
+import { ShoppingBag, Globe, Store, Check, Clock, Plus, Trash2, ShoppingCart, DollarSign, Link, MessageSquare, Send, ExternalLink, FileText, UserCheck, Search, X, Filter, CheckSquare, Square, Layers, CheckCircle2, AlertCircle, Loader2, RefreshCw } from 'lucide-react'
 import { useTenant } from '../TenantContext'
 
 export default function Sales() {
@@ -388,8 +388,11 @@ export default function Sales() {
   }
 
   // Execute bulk invoicing endpoint
-  const handleExecuteBulkInvoice = async () => {
-    if (selectedOrderIds.length === 0) return
+  const handleExecuteBulkInvoice = async (targetOrderIds = null) => {
+    const idsToProcess = Array.isArray(targetOrderIds) && targetOrderIds.length > 0 
+      ? targetOrderIds 
+      : selectedOrderIds
+    if (!idsToProcess || idsToProcess.length === 0) return
     setBulkProcessing(true)
     setBulkResults(null)
     try {
@@ -397,7 +400,7 @@ export default function Sales() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          order_ids: selectedOrderIds,
+          order_ids: idsToProcess,
           doc_type: '99',
           include_shipping: bulkIncludeShipping
         })
@@ -405,6 +408,11 @@ export default function Sales() {
       const data = await res.json()
       if (res.ok) {
         setBulkResults(data)
+        if (data.failed_order_ids && data.failed_order_ids.length > 0) {
+          setSelectedOrderIds(data.failed_order_ids)
+        } else {
+          setSelectedOrderIds([])
+        }
         fetchOrders()
       } else {
         alert("Error al procesar facturación masiva: " + (data.detail || "Error desconocido"))
@@ -2936,27 +2944,56 @@ export default function Sales() {
                 backgroundColor: 'var(--bg-dark)'
               }}>
                 {bulkResults ? (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowBulkModal(false)
-                      setSelectedOrderIds([])
-                      setBulkResults(null)
-                    }}
-                    className="btn"
-                    style={{
-                      backgroundColor: 'var(--accent-blue)',
-                      color: '#ffffff',
-                      border: 'none',
-                      borderRadius: 8,
-                      padding: '8px 18px',
-                      fontWeight: 600,
-                      fontSize: '0.85rem',
-                      cursor: 'pointer'
-                    }}
-                  >
-                    Listo, cerrar y actualizar
-                  </button>
+                  <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                    {bulkResults.error_count > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const failedIds = bulkResults.failed_order_ids || (bulkResults.results || []).filter(r => !r.success).map(r => r.order_id)
+                          handleExecuteBulkInvoice(failedIds)
+                        }}
+                        disabled={bulkProcessing}
+                        className="btn"
+                        style={{
+                          backgroundColor: '#f59e0b',
+                          color: '#ffffff',
+                          border: 'none',
+                          borderRadius: 8,
+                          padding: '8px 18px',
+                          fontWeight: 600,
+                          fontSize: '0.85rem',
+                          cursor: bulkProcessing ? 'not-allowed' : 'pointer',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: 6,
+                          boxShadow: '0 2px 8px rgba(245, 158, 11, 0.35)'
+                        }}
+                      >
+                        <RefreshCw size={15} /> Reintentar fallidas ({bulkResults.error_count})
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowBulkModal(false)
+                        setSelectedOrderIds([])
+                        setBulkResults(null)
+                      }}
+                      className="btn"
+                      style={{
+                        backgroundColor: 'var(--accent-blue)',
+                        color: '#ffffff',
+                        border: 'none',
+                        borderRadius: 8,
+                        padding: '8px 18px',
+                        fontWeight: 600,
+                        fontSize: '0.85rem',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      Listo, cerrar y actualizar
+                    </button>
+                  </div>
                 ) : (
                   <>
                     <button

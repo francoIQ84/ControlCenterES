@@ -388,6 +388,9 @@ def bulk_invoice_endpoint(req: BulkInvoiceRequest):
                     "buyer_name": buyer_name,
                     "total_amount": order.get("total_amount")
                 })
+                
+            # Gentle pacing between AFIP WSFE / Mercado Libre uploads
+            time.sleep(0.3)
         except Exception as e:
             results.append({
                 "order_id": order_id,
@@ -397,12 +400,14 @@ def bulk_invoice_endpoint(req: BulkInvoiceRequest):
             
     success_count = sum(1 for r in results if r.get("success"))
     error_count = sum(1 for r in results if not r.get("success"))
+    failed_order_ids = [r["order_id"] for r in results if not r.get("success")]
     
     return {
         "success": error_count == 0,
         "total": len(req.order_ids),
         "success_count": success_count,
         "error_count": error_count,
+        "failed_order_ids": failed_order_ids,
         "results": results
     }
 
