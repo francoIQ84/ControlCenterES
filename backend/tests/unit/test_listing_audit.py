@@ -1,10 +1,17 @@
 """Auditoría de calidad de publicaciones de Mercado Libre.
 
 El parseo es la única pieza acoplada al formato de ML, así que se testea
-aparte con respuestas de ejemplo. La estructura usada acá (score, level,
-calculated_at, buckets con status PENDING/COMPLETED) sale de la documentación
-de /item/{id}/performance; falta confirmarla contra una respuesta real de la
-cuenta y reemplazar el fixture por esa captura.
+aparte con respuestas de ejemplo.
+
+Confirmado contra la API real: la ruta es /item/{id}/performance en SINGULAR
+(el plural devuelve "resource not found") y el viejo /items/{id}/health no
+aplica a productos, responde "Items with buying mode 'buy_it_now' are not
+allowed".
+
+Lo que NO se pudo confirmar todavía: la forma del cuerpo. La cuenta devuelve
+403 en ese recurso, así que PERFORMANCE_OK sigue siendo el ejemplo de la
+documentación. Cuando se resuelva el permiso hay que reemplazarlo por una
+captura real y verificar que los tests sigan pasando.
 """
 import sys
 import types
@@ -165,6 +172,29 @@ class AuditListingsTest(unittest.TestCase):
             ['MLA_A', ' MLA_A ', '', None, 'MLA_B'],
             lambda ml_id: (PERFORMANCE_OK, None))
         self.assertEqual(fetch.call_count, 2)
+
+    def test_un_403_corta_la_auditoria_en_seco(self):
+        """Un problema de permisos es de la cuenta: repetirlo 400 veces no aporta."""
+        resultados, guardados, fetch = self._audit(
+            ['MLA_A', 'MLA_B', 'MLA_C'],
+            lambda ml_id: (None, 'HTTP 403: forbidden'))
+
+        self.assertEqual(fetch.call_count, 1)
+        self.assertEqual(guardados, [])
+        estados = [r['status'] for r in resultados]
+        self.assertEqual(estados, ['error', 'skipped', 'skipped'])
+
+    def test_un_404_no_corta_la_auditoria(self):
+        """Una publicacion que no existe es un problema de esa publicacion, no de la cuenta."""
+        def fetch(ml_id):
+            if ml_id == 'MLA_B':
+                return None, 'HTTP 404: not found'
+            return PERFORMANCE_OK, None
+
+        resultados, guardados, f = self._audit(['MLA_A', 'MLA_B', 'MLA_C'], fetch)
+        self.assertEqual(f.call_count, 3)
+        self.assertEqual(guardados, ['MLA_A', 'MLA_C'])
+        self.assertEqual([r['status'] for r in resultados], ['ok', 'error', 'ok'])
 
     def test_sin_seleccion_no_hace_nada(self):
         """Nunca opera sobre "todo el catalogo" por su cuenta."""

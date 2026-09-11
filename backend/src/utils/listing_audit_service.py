@@ -105,6 +105,17 @@ def _demo_payload(ml_id: str) -> dict:
     }
 
 
+def _es_error_de_permisos(error) -> bool:
+    """Un 401/403 no es transitorio: lo devuelve la cuenta, no la publicación.
+
+    Sirve para cortar la auditoría en seco en vez de repetir el mismo error una
+    vez por publicación. El formato del texto lo produce fetch_performance en
+    este mismo módulo, así que la comparación es sobre algo que controlamos.
+    """
+    texto = str(error or '')
+    return 'HTTP 401' in texto or 'HTTP 403' in texto
+
+
 def fetch_performance(ml_id: str):
     """Trae el diagnóstico de una publicación. Devuelve (payload, error)."""
     if meli_api.is_demo_mode():
@@ -169,6 +180,17 @@ def audit_listings(ml_ids, force_refresh: bool = False,
         payload, error = fetch_performance(ml_id)
         if error:
             resultados.append({"ml_id": ml_id, "status": "error", "error": error})
+
+            # Un problema de permisos se repetiría idéntico en cada publicación:
+            # cortamos para no gastar cientos de llamadas en el mismo error.
+            if _es_error_de_permisos(error):
+                for restante in ids[indice:]:
+                    resultados.append({
+                        "ml_id": restante,
+                        "status": "skipped",
+                        "error": "Auditoría interrumpida por un problema de permisos de la cuenta",
+                    })
+                break
         else:
             datos = parse_performance(payload)
             datos['source'] = SOURCE
