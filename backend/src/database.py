@@ -3554,3 +3554,80 @@ def get_meli_questions_stats():
 
 
 
+
+
+# =============================================================================
+# OPTIMIZADOR DE PUBLICACIONES — calidad (migración 011)
+# =============================================================================
+
+def save_listing_health(ml_id: str, health: dict):
+    """Guarda el diagnóstico de calidad de una publicación (upsert por publicación).
+
+    `health` es lo que devuelve listing_audit_service.parse_performance() más el
+    payload crudo: se guarda el JSON completo para poder reparsear sin volver a
+    consultarle a Mercado Libre si cambia el formato.
+    """
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute("""
+                INSERT INTO listing_health
+                    (ml_id, health_score, health_level, pending_goals, goals_json,
+                     attributes_json, category_id, source, calculated_at, fetched_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
+                ON CONFLICT (tenant_id, ml_id) DO UPDATE SET
+                    health_score    = EXCLUDED.health_score,
+                    health_level    = EXCLUDED.health_level,
+                    pending_goals   = EXCLUDED.pending_goals,
+                    goals_json      = EXCLUDED.goals_json,
+                    attributes_json = COALESCE(NULLIF(EXCLUDED.attributes_json, ''),
+                                               listing_health.attributes_json),
+                    category_id     = COALESCE(EXCLUDED.category_id, listing_health.category_id),
+                    source          = EXCLUDED.source,
+                    calculated_at   = EXCLUDED.calculated_at,
+                    fetched_at      = CURRENT_TIMESTAMP
+            """, (
+                ml_id,
+                health.get('score'),
+                health.get('level') or '',
+                int(health.get('pending_goals') or 0),
+                health.get('goals_json') or '[]',
+                health.get('attributes_json') or '',
+                health.get('category_id'),
+                health.get('source') or '',
+                health.get('calculated_at') or '',
+            ))
+
+
+def get_listing_health(ml_ids: list = None) -> list:
+    """Devuelve el diagnóstico cacheado. Sin ml_ids, todo el catálogo auditado."""
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            if ml_ids:
+                marcadores = ','.join(['%s'] * len(ml_ids))
+                cursor.execute(f"""
+                    SELECT ml_id, health_score, health_level, pending_goals,
+                           goals_json, category_id, source, calculated_at, fetched_at
+                    FROM listing_health WHERE ml_id IN ({marcadores})
+                """, list(ml_ids))
+            else:
+                cursor.execute("""
+                    SELECT ml_id, health_score, health_level, pending_goals,
+                           goals_json, category_id, source, calculated_at, fetched_at
+                    FROM listing_health
+                """)
+            return [dict(r) for r in cursor.fetchall()]
+
+
+def get_listing_health_ages(ml_ids: list) -> dict:
+    """Edad en horas del diagnóstico de cada publicación, para no re-consultar de más."""
+    if not ml_ids:
+        return {}
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            marcadores = ','.join(['%s'] * len(ml_ids))
+            cursor.execute(f"""
+                SELECT ml_id,
+                       EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - fetched_at)) / 3600.0 AS horas
+                FROM listing_health WHERE ml_id IN ({marcadores})
+            """, list(ml_ids))
+            return {r['ml_id']: float(r['horas'] or 0) for r in cursor.fetchall()}

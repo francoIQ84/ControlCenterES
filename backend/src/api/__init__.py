@@ -20,6 +20,7 @@ from .marketing import router as marketing_router
 from .diffusion import router as diffusion_router
 from .meli_questions import router as meli_questions_router
 from .tiendanube import router as tiendanube_router
+from .listing_optimizer import router as listing_optimizer_router
 
 api_router = APIRouter()
 
@@ -35,6 +36,7 @@ api_router.include_router(dashboard_router, prefix="/dashboard", tags=["dashboar
 api_router.include_router(settings_router, prefix="/settings", tags=["settings"], dependencies=[Depends(verify_session)])
 api_router.include_router(media_router, prefix="/media", tags=["media"], dependencies=[Depends(verify_session), Depends(require_permission("media"))])
 api_router.include_router(categories_router, prefix="/categories", tags=["categories"], dependencies=[Depends(verify_session), Depends(require_permission("inventory"))])
+api_router.include_router(listing_optimizer_router, prefix="/listing-optimizer", tags=["listing-optimizer"], dependencies=[Depends(verify_session), Depends(require_permission("inventory"))])
 api_router.include_router(expenses_router, prefix="/expenses", tags=["expenses"], dependencies=[Depends(verify_session), Depends(require_permission("expenses"))])
 # Multi-tenancy: alta de inquilinos y credenciales de integraciones
 api_router.include_router(tenants_router, prefix="/tenants", tags=["tenants"], dependencies=[Depends(verify_session)])
