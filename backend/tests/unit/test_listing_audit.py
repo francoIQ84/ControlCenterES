@@ -1,18 +1,21 @@
 """Auditoría de calidad de publicaciones de Mercado Libre.
 
-El parseo es la única pieza acoplada al formato de ML, así que se testea
-aparte con respuestas de ejemplo.
+Confirmado contra la API real con la cuenta EXPERIENCIASUSTENTABLE:
 
-Confirmado contra la API real: la ruta es /item/{id}/performance en SINGULAR
-(el plural devuelve "resource not found") y el viejo /items/{id}/health no
-aplica a productos, responde "Items with buying mode 'buy_it_now' are not
-allowed".
+  * La ruta oficial es /item/{id}/performance en SINGULAR: el plural devuelve
+    "resource not found".
+  * El viejo /items/{id}/health no aplica a productos, responde "Items with
+    buying mode 'buy_it_now' are not allowed". Nunca fue el endpoint para esto.
+  * /performance devuelve 403 en esta cuenta pese a tener token fresco y la
+    aplicación scopes amplios. Por eso la estrategia por defecto es la local.
+  * /items/{id} y /categories/{id}/attributes responden 200, que es sobre lo
+    que se apoya la auditoría local.
 
-Lo que NO se pudo confirmar todavía: la forma del cuerpo. La cuenta devuelve
-403 en ese recurso, así que PERFORMANCE_OK sigue siendo el ejemplo de la
-documentación. Cuando se resuelva el permiso hay que reemplazarlo por una
-captura real y verificar que los tests sigan pasando.
+PERFORMANCE_OK sigue siendo el ejemplo de la documentación, no una captura
+real: cuando se habilite el recurso hay que reemplazarlo por una respuesta de
+verdad y verificar que los tests sigan pasando.
 """
+import json
 import sys
 import types
 import unittest
@@ -58,7 +61,6 @@ class ParsePerformanceTest(unittest.TestCase):
             datos['pending_codes'], ['FICHA_TECNICA', 'DESCRIPCION', 'ENVIO_GRATIS'])
 
     def test_guarda_los_buckets_crudos_para_poder_reparsear(self):
-        import json
         datos = svc.parse_performance(PERFORMANCE_OK)
         self.assertEqual(json.loads(datos['goals_json']), PERFORMANCE_OK['buckets'])
 
@@ -86,7 +88,8 @@ class FetchPerformanceTest(unittest.TestCase):
         """/item/{id}/performance, no /items/: el plural no existe para este recurso."""
         class Resp:
             status_code = 200
-            def json(self): return PERFORMANCE_OK
+            def json(self):
+                return PERFORMANCE_OK
 
         with patch.object(svc.meli_api, 'is_demo_mode', return_value=False), \
              patch.object(svc.meli_api, 'api_request', return_value=Resp()) as req:
@@ -100,7 +103,8 @@ class FetchPerformanceTest(unittest.TestCase):
         class Resp:
             status_code = 404
             text = 'Item not found'
-            def json(self): return {}
+            def json(self):
+                return {}
 
         with patch.object(svc.meli_api, 'is_demo_mode', return_value=False), \
              patch.object(svc.meli_api, 'api_request', return_value=Resp()):
@@ -110,8 +114,115 @@ class FetchPerformanceTest(unittest.TestCase):
         self.assertIn('404', error)
 
 
+class LocalAuditTest(unittest.TestCase):
+    """Objetivos derivados por nosotros, sin el endpoint oficial de calidad."""
+
+    CATALOGO = [
+        {"id": "BRAND", "tags": {"required": None}},
+        {"id": "MODEL", "tags": {"required": None}},
+        {"id": "GTIN", "tags": {"catalog_required": None}},
+        {"id": "UNITS_PER_PACK", "tags": {"conditional_required": None}},
+        {"id": "VALUE_ADDED_TAX", "tags": {"conditional_required": None}},
+        {"id": "IMPORT_DUTY", "tags": {"conditional_required": None}},
+        {"id": "COLOR", "tags": {}},
+    ]
+
+    def _item(self, **cambios):
+        base = {
+            "id": "MLA1",
+            "title": "Piedra Difusora Chica Por 2 Unidades. Aireadores.",
+            "category_id": "MLA32248",
+            "attributes": [
+                {"id": "BRAND", "value_name": "Generica"},
+                {"id": "MODEL", "value_name": "Chica"},
+            ],
+            "pictures": [{"id": "1"}, {"id": "2"}, {"id": "3"}],
+            "_description": "x" * 500,
+        }
+        base.update(cambios)
+        return base
+
+    def _auditar(self, item, catalogo=None):
+        datos = svc.compute_local_audit(
+            item, self.CATALOGO if catalogo is None else catalogo)
+        return datos, datos['pending_codes']
+
+    def _detalle_ficha(self, datos):
+        return json.loads(datos['goals_json'])[0]['detail']
+
+    def test_publicacion_completa_no_tiene_objetivos_pendientes(self):
+        item = self._item(attributes=[
+            {"id": "BRAND", "value_name": "Generica"},
+            {"id": "MODEL", "value_name": "Chica"},
+            {"id": "GTIN", "value_name": "779000"},
+            {"id": "UNITS_PER_PACK", "value_name": "2"},
+        ])
+        datos, pendientes = self._auditar(item)
+        self.assertEqual(pendientes, [])
+        self.assertEqual(datos['pending_goals'], 0)
+
+    def test_detecta_ficha_tecnica_incompleta(self):
+        datos, pendientes = self._auditar(self._item())
+        self.assertIn('FICHA_TECNICA', pendientes)
+        detalle = self._detalle_ficha(datos)
+        self.assertEqual(detalle['faltan_condicionales'], ['GTIN', 'UNITS_PER_PACK'])
+        self.assertEqual(detalle['cargados'], 2)
+        self.assertEqual(detalle['total_catalogo'], 7)
+
+    def test_los_atributos_fiscales_no_cuentan_como_objetivo(self):
+        """VALUE_ADDED_TAX e IMPORT_DUTY faltan en casi toda publicacion local."""
+        item = self._item(attributes=[
+            {"id": "BRAND", "value_name": "Generica"},
+            {"id": "MODEL", "value_name": "Chica"},
+            {"id": "GTIN", "value_name": "779000"},
+            {"id": "UNITS_PER_PACK", "value_name": "2"},
+        ])
+        datos, pendientes = self._auditar(item)
+        self.assertNotIn('FICHA_TECNICA', pendientes)
+        detalle = self._detalle_ficha(datos)
+        self.assertEqual(sorted(detalle['faltan_fiscales']),
+                         ['IMPORT_DUTY', 'VALUE_ADDED_TAX'])
+
+    def test_detecta_pocas_fotos(self):
+        """El caso real encontrado: una publicacion activa con una sola foto."""
+        _datos, pendientes = self._auditar(self._item(pictures=[{"id": "1"}]))
+        self.assertIn('FOTOS', pendientes)
+
+    def test_detecta_descripcion_corta_o_ausente(self):
+        _datos, pendientes = self._auditar(self._item(_description=''))
+        self.assertIn('DESCRIPCION', pendientes)
+
+    def test_un_atributo_con_valor_vacio_cuenta_como_no_cargado(self):
+        item = self._item(attributes=[
+            {"id": "BRAND", "value_name": ""},
+            {"id": "MODEL", "value_name": None, "value_id": None},
+        ])
+        datos, _pendientes = self._auditar(item)
+        detalle = self._detalle_ficha(datos)
+        self.assertEqual(sorted(detalle['faltan_requeridos']), ['BRAND', 'MODEL'])
+
+    def test_no_inventa_un_puntaje(self):
+        """Un 0-100 propio se confundiria con el de ML y no coincidiria con el."""
+        datos, _pendientes = self._auditar(self._item())
+        self.assertIsNone(datos['score'])
+        self.assertEqual(datos['level'], 'LOCAL')
+
+    def test_sin_catalogo_igual_audita_lo_demas(self):
+        """Si falla /categories, fotos, titulo y descripcion se siguen evaluando."""
+        _datos, pendientes = self._auditar(self._item(pictures=[]), catalogo=[])
+        self.assertIn('FOTOS', pendientes)
+        self.assertNotIn('FICHA_TECNICA', pendientes)
+
+    def test_no_rompe_con_entradas_invalidas(self):
+        for item, catalogo in ((None, None), ({}, []), ("no es dict", "no es lista")):
+            datos = svc.compute_local_audit(item, catalogo)
+            self.assertIsInstance(datos['pending_goals'], int)
+
+
 class AuditListingsTest(unittest.TestCase):
     def _audit(self, ids, fetch_side_effect, ages=None, **kwargs):
+        """Ejercita la orquestacion sobre la estrategia oficial."""
+        kwargs.setdefault('strategy', 'performance')
         guardados = []
         with patch.object(svc.database, 'get_listing_health_ages', return_value=ages or {}), \
              patch.object(svc.database, 'save_listing_health',
@@ -121,6 +232,20 @@ class AuditListingsTest(unittest.TestCase):
              patch.object(svc, 'update_progress'):
             resultados = svc.audit_listings(ids, **kwargs)
         return resultados, guardados, fetch
+
+    def test_la_estrategia_por_defecto_es_la_local(self):
+        """El endpoint oficial devuelve 403 en esta cuenta: no se usa por defecto."""
+        with patch.object(svc.database, 'get_listing_health_ages', return_value={}), \
+             patch.object(svc.database, 'save_listing_health'), \
+             patch.object(svc, '_fetch_local',
+                          return_value=({'item': {}, 'catalogo': []}, None)) as local, \
+             patch.object(svc, 'fetch_performance') as oficial, \
+             patch.object(svc, 'PAUSE_BETWEEN_CALLS', 0), \
+             patch.object(svc, 'update_progress'):
+            svc.audit_listings(['MLA1'])
+
+        local.assert_called_once()
+        oficial.assert_not_called()
 
     def test_una_sola_publicacion_hace_una_sola_llamada(self):
         """El requisito: probar la herramienta con una publicacion es una lista de uno."""
@@ -139,14 +264,14 @@ class AuditListingsTest(unittest.TestCase):
                 return None, 'HTTP 500: boom'
             return PERFORMANCE_OK, None
 
-        resultados, guardados, _ = self._audit(['MLA_A', 'MLA_ROTA', 'MLA_B'], fetch)
+        resultados, guardados, _fetch = self._audit(['MLA_A', 'MLA_ROTA', 'MLA_B'], fetch)
 
         estados = {r['ml_id']: r['status'] for r in resultados}
         self.assertEqual(estados, {'MLA_A': 'ok', 'MLA_ROTA': 'error', 'MLA_B': 'ok'})
         self.assertEqual(guardados, ['MLA_A', 'MLA_B'])
 
     def test_no_reconsulta_lo_que_esta_fresco(self):
-        resultados, guardados, fetch = self._audit(
+        resultados, _guardados, fetch = self._audit(
             ['MLA_FRESCA', 'MLA_VIEJA'],
             lambda ml_id: (PERFORMANCE_OK, None),
             ages={'MLA_FRESCA': 1.0, 'MLA_VIEJA': 48.0},
@@ -181,11 +306,11 @@ class AuditListingsTest(unittest.TestCase):
 
         self.assertEqual(fetch.call_count, 1)
         self.assertEqual(guardados, [])
-        estados = [r['status'] for r in resultados]
-        self.assertEqual(estados, ['error', 'skipped', 'skipped'])
+        self.assertEqual([r['status'] for r in resultados],
+                         ['error', 'skipped', 'skipped'])
 
     def test_un_404_no_corta_la_auditoria(self):
-        """Una publicacion que no existe es un problema de esa publicacion, no de la cuenta."""
+        """Una publicacion inexistente es un problema de ella, no de la cuenta."""
         def fetch(ml_id):
             if ml_id == 'MLA_B':
                 return None, 'HTTP 404: not found'
@@ -198,7 +323,8 @@ class AuditListingsTest(unittest.TestCase):
 
     def test_sin_seleccion_no_hace_nada(self):
         """Nunca opera sobre "todo el catalogo" por su cuenta."""
-        _resultados, _guardados, fetch = self._audit([], lambda ml_id: (PERFORMANCE_OK, None))
+        _resultados, _guardados, fetch = self._audit(
+            [], lambda ml_id: (PERFORMANCE_OK, None))
         self.assertEqual(fetch.call_count, 0)
 
 

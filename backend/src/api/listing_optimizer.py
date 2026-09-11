@@ -25,6 +25,10 @@ MAX_IDS_POR_LLAMADA = 200
 class AuditRequest(BaseModel):
     ml_ids: list[str] = Field(..., min_length=1)
     force_refresh: bool = False
+    # 'local' calcula los objetivos a partir de /items y /categories.
+    # 'performance' usa el dato oficial de Mercado Libre, que hoy devuelve 403
+    # para esta cuenta; queda expuesto para probar si lo habilitan.
+    strategy: str = 'local'
 
 
 @router.post("/audit")
@@ -40,11 +44,19 @@ def audit_listings(payload: AuditRequest):
                    f"Se recibieron {len(payload.ml_ids)}."
         )
 
+    if payload.strategy not in ('local', 'performance'):
+        raise HTTPException(
+            status_code=400,
+            detail="strategy debe ser 'local' o 'performance'")
+
     resultados = listing_audit_service.audit_listings(
-        payload.ml_ids, force_refresh=payload.force_refresh)
+        payload.ml_ids,
+        force_refresh=payload.force_refresh,
+        strategy=payload.strategy)
 
     return {
         "success": True,
+        "strategy": payload.strategy,
         "total": len(resultados),
         "auditadas": sum(1 for r in resultados if r['status'] == 'ok'),
         "en_cache": sum(1 for r in resultados if r['status'] == 'cached'),

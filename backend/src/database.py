@@ -3631,3 +3631,21 @@ def get_listing_health_ages(ml_ids: list) -> dict:
                 FROM listing_health WHERE ml_id IN ({marcadores})
             """, list(ml_ids))
             return {r['ml_id']: float(r['horas'] or 0) for r in cursor.fetchall()}
+
+
+def get_product_description(ml_id: str) -> str:
+    """Descripción de la publicación según nuestro cache.
+
+    Prefiere la de Mercado Libre; si el producto usa una descripción propia de
+    la tienda web, cae a esa. Sirve para auditar largo sin pedirle a ML un
+    recurso aparte por publicación.
+    """
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute(
+                "SELECT description_meli, description FROM products_cache WHERE ml_id = %s",
+                (ml_id,))
+            fila = cursor.fetchone()
+            if not fila:
+                return ''
+            return (fila['description_meli'] or fila['description'] or '')
