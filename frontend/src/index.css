@@ -694,6 +694,27 @@ input:focus, select:focus {
     border-bottom: 1px dashed var(--border-color) !important;
   }
 
+  /* 4b. Calidad de la publicacion: fila propia debajo del estado.
+     Sin esto la celda cae fuera de la grilla de 3 columnas y queda sin rotulo. */
+  .data-table tr.compact-tr td.cell-quality {
+    grid-column: 1 / -1 !important;
+    display: flex !important;
+    align-items: center !important;
+    gap: 8px !important;
+    text-align: left !important;
+    padding-top: 6px !important;
+    padding-bottom: 6px !important;
+  }
+
+  .data-table tr.compact-tr td.cell-quality::before {
+    content: "CALIDAD" !important;
+    display: block !important;
+    font-size: 0.66rem !important;
+    font-weight: 700 !important;
+    color: var(--text-secondary) !important;
+    margin-bottom: 0 !important;
+  }
+
   /* 5. P. EFECTIVO - HERO CARD IN MOBILE (Local Fisico) */
   .data-table tr.compact-tr td.cell-price-cash {
     grid-column: 1 / -1 !important;

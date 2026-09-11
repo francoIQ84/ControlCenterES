@@ -1,11 +1,15 @@
 import React, { useState, useEffect, useRef } from 'react'
-import { Package, CloudOff, Cloud, RefreshCw, Save, QrCode, Camera, ExternalLink, Eye, EyeOff, Store, Search, X } from 'lucide-react'
+import { Package, CloudOff, Cloud, RefreshCw, Save, QrCode, Camera, ExternalLink, Eye, EyeOff, Store, Search, X, Gauge } from 'lucide-react'
 import { Html5QrcodeScanner } from 'html5-qrcode'
 import MediaBrowser from '../components/MediaBrowser'
 import { useTenant } from '../TenantContext'
 
 export default function Inventory() {
   const [products, setProducts] = useState([])
+  // Calidad de publicaciones: mapa ml_id -> diagnostico, y el detalle abierto
+  const [listingHealth, setListingHealth] = useState({})
+  const [auditing, setAuditing] = useState(false)
+  const [qualityDetail, setQualityDetail] = useState(null)
   const { isSimpleView, isChannelEnabled } = useTenant()
   const [loading, setLoading] = useState(true)
   const [query, setQuery] = useState("")
@@ -485,10 +489,64 @@ export default function Inventory() {
       .catch(err => console.error(err))
   }
 
+  const fetchListingHealth = () => {
+    fetch('/api/listing-optimizer/health')
+      .then(res => res.ok ? res.json() : { items: [] })
+      .then(data => {
+        const mapa = {}
+        ;(data.items || []).forEach(item => { mapa[item.ml_id] = item })
+        setListingHealth(mapa)
+      })
+      .catch(() => { /* sin diagnostico la columna muestra un guion */ })
+  }
+
   useEffect(() => {
     fetchProducts()
     fetchCategories()
   }, [query, hiddenFilter, outOfStockDays])
+
+  useEffect(() => {
+    fetchListingHealth()
+  }, [])
+
+  /**
+   * Audita la calidad de las publicaciones seleccionadas.
+   *
+   * Siempre sobre la seleccion explicita: con una sola tildada audita esa sola.
+   * No modifica nada en Mercado Libre, solo consulta y guarda el diagnostico.
+   */
+  const handleAuditSelected = async () => {
+    if (selectedIds.length === 0) return
+    setAuditing(true)
+    try {
+      const res = await fetch('/api/listing-optimizer/audit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ml_ids: selectedIds, force_refresh: true })
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        alert('No se pudo auditar: ' + (data.detail || 'error desconocido'))
+        return
+      }
+
+      fetchListingHealth()
+
+      const conError = (data.resultados || []).filter(r => r.status === 'error')
+      if (conError.length > 0) {
+        alert(
+          'Auditadas ' + data.auditadas + ' de ' + data.total + '.' +
+          String.fromCharCode(10) + String.fromCharCode(10) +
+          'Con error (' + conError.length + '):' + String.fromCharCode(10) +
+          conError.slice(0, 5).map(r => r.ml_id + ': ' + r.error).join(String.fromCharCode(10))
+        )
+      }
+    } catch (e) {
+      alert('Error de conexion al auditar: ' + e.message)
+    } finally {
+      setAuditing(false)
+    }
+  }
 
   const handleUpdate = async (ml_id, qty, price, cost, cost_meli, price_web, images, description, is_web_active, category_id, sync_meli, min_stock, featured_order = 0, use_meli_description = 1, description_meli = "", cash_discount_pct = 0) => {
     try {
@@ -676,6 +734,11 @@ export default function Inventory() {
           const draftQtyB = drafts[b.ml_id]?.qty
           aVal = draftQtyA !== undefined ? draftQtyA : (a.available_quantity || 0)
           bVal = draftQtyB !== undefined ? draftQtyB : (b.available_quantity || 0)
+        } else if (sortConfig.key === 'quality') {
+          // Las no auditadas valen -1 para que queden al final y no se mezclen
+          // con las que si tienen diagnostico.
+          aVal = listingHealth[a.ml_id] ? (listingHealth[a.ml_id].pending_goals || 0) : -1
+          bVal = listingHealth[b.ml_id] ? (listingHealth[b.ml_id].pending_goals || 0) : -1
         } else if (sortConfig.key === 'is_web_active') {
           const draftWebA = drafts[a.ml_id]?.is_web_active
           const draftWebB = drafts[b.ml_id]?.is_web_active
@@ -689,7 +752,7 @@ export default function Inventory() {
       })
     }
     return sortableItems
-  }, [products, drafts, categoryFilter, stockFilter, sortConfig])
+  }, [products, drafts, categoryFilter, stockFilter, sortConfig, listingHealth])
 
   const handleToggleSelectProduct = (ml_id) => {
     setSelectedIds(prev => 
@@ -1606,6 +1669,30 @@ export default function Inventory() {
           </div>
           
           <div style={{display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center'}}>
+            <button
+              type="button"
+              className="btn"
+              style={{
+                padding: '5px 10px',
+                fontSize: '0.78rem',
+                backgroundColor: 'rgba(139, 92, 246, 0.15)',
+                color: '#8b5cf6',
+                border: '1px solid rgba(139, 92, 246, 0.35)',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 4,
+                cursor: auditing ? 'wait' : 'pointer',
+                opacity: auditing ? 0.6 : 1
+              }}
+              onClick={handleAuditSelected}
+              disabled={auditing}
+              title="Revisa ficha tecnica, fotos, titulo y descripcion de las publicaciones seleccionadas. No modifica nada."
+            >
+              <Gauge size={14} className={auditing ? 'animate-spin' : ''} />
+              {auditing ? 'Auditando...' : 'Auditar calidad'}
+            </button>
+            <div style={{width: 1, height: 20, backgroundColor: 'var(--border-color)', margin: '0 4px'}} />
+
             {modifiedCount > 0 && (
               <>
                 <button 
@@ -1804,6 +1891,7 @@ export default function Inventory() {
                       <th style={{width: 45}}>IMG</th>
                       <th onClick={() => requestSort('title')} style={{cursor: 'pointer', userSelect: 'none', minWidth: 220}}>Detalle{getSortIcon('title')}</th>
                       <th onClick={() => requestSort('status')} style={{cursor: 'pointer', userSelect: 'none', width: 95}} title="Ordenar por Estado de Mercado Libre">Estado ML{getSortIcon('status')}</th>
+                      <th onClick={() => requestSort('quality')} style={{cursor: 'pointer', userSelect: 'none', width: 85, textAlign: 'center'}} title="Objetivos de calidad pendientes. Ordenar dos veces para ver las peores primero.">Calidad{getSortIcon('quality')}</th>
                       <th onClick={() => requestSort('stock')} style={{cursor: 'pointer', userSelect: 'none', width: 60}} title="Ordenar por Stock">Stock{getSortIcon('stock')}</th>
                       <th style={{width: 75}}>P. ML</th>
                       <th style={{width: 75}}>C. Base</th>
@@ -1847,6 +1935,8 @@ export default function Inventory() {
                       viewMode={viewMode}
                       isSelected={selectedIds.includes(p.ml_id)}
                       onToggleSelect={handleToggleSelectProduct}
+                      health={listingHealth[p.ml_id]}
+                      onOpenQuality={(prod, salud) => setQualityDetail({ producto: prod, salud })}
                       onOpenQrModal={(prod) => {
                         setSelectedProductForQr(prod)
                         setShowQrPrintModal(true)
@@ -1860,6 +1950,14 @@ export default function Inventory() {
           )
         )}
       </div>
+
+      {qualityDetail && (
+        <QualityDetailModal
+          producto={qualityDetail.producto}
+          salud={qualityDetail.salud}
+          onClose={() => setQualityDetail(null)}
+        />
+      )}
 
       {galleryOpen && (
         <div style={{
@@ -2887,7 +2985,63 @@ function ProductReadingRow({ p, isChannelEnabled, onPreviewImage }) {
   )
 }
 
-function ProductRow({ p, onSave, onOpenGallery, onDraftChange, categories, categoryCounts, viewMode, onOpenQrModal, onToggleHide, isSelected, onToggleSelect }) {
+/**
+ * Insignia de calidad de una publicacion.
+ *
+ * Muestra objetivos pendientes, no un puntaje: el diagnostico local es una
+ * aproximacion a los criterios de Mercado Libre y un 0-100 propio se
+ * confundiria con el del panel de ML, que no tiene por que coincidir.
+ */
+const ETIQUETAS_OBJETIVO = {
+  FICHA_TECNICA: 'Ficha tecnica',
+  FOTOS: 'Fotos',
+  TITULO: 'Titulo',
+  DESCRIPCION: 'Descripcion',
+}
+
+function QualityBadge({ health, onClick }) {
+  if (!health) {
+    return (
+      <span
+        style={{fontSize: '0.75rem', color: 'var(--text-secondary)'}}
+        title="Sin auditar. Selecciona la publicacion y usa 'Auditar calidad'."
+      >
+        --
+      </span>
+    )
+  }
+
+  const pendientes = health.pending_goals || 0
+  const color = pendientes === 0 ? '#10b981' : pendientes <= 2 ? '#d97706' : '#ef4444'
+  const fondo = pendientes === 0
+    ? 'rgba(16, 185, 129, 0.15)'
+    : pendientes <= 2 ? 'rgba(245, 158, 11, 0.15)' : 'rgba(239, 68, 68, 0.15)'
+
+  const resumen = (health.goals || [])
+    .filter(o => o.status === 'PENDING')
+    .map(o => ETIQUETAS_OBJETIVO[o.id] || o.id)
+    .join(', ')
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="dashboard-pill"
+      style={{
+        backgroundColor: fondo,
+        color: color,
+        border: 'none',
+        fontWeight: 700,
+        cursor: 'pointer'
+      }}
+      title={pendientes === 0 ? 'Sin objetivos pendientes' : 'Pendiente: ' + resumen}
+    >
+      {pendientes === 0 ? 'OK' : pendientes + ' pend.'}
+    </button>
+  )
+}
+
+function ProductRow({ p, onSave, onOpenGallery, onDraftChange, categories, categoryCounts, viewMode, onOpenQrModal, onToggleHide, isSelected, onToggleSelect, health, onOpenQuality }) {
   const { isChannelEnabled } = useTenant()
   const [qty, setQty] = useState(p.available_quantity)
   const [price, setPrice] = useState(p.price)
@@ -3186,6 +3340,9 @@ function ProductRow({ p, onSave, onOpenGallery, onDraftChange, categories, categ
             }}>
               {p.status === 'active' ? 'Activa' : p.status === 'paused' ? 'Pausada' : p.status === 'under_review' ? 'En Revisión' : p.status === 'local' ? 'Local' : p.status}
             </span>
+          </td>
+          <td data-label="Calidad" className="cell-quality" style={{padding: '5px 8px', textAlign: 'center'}}>
+            <QualityBadge health={health} onClick={() => onOpenQuality && onOpenQuality(p, health)} />
           </td>
           <td data-label="Stock" className="cell-stock" style={{padding: '5px 8px'}}>
             <input type="number" value={qty} onChange={e => setQty(e.target.value)} style={{width: 55, padding: '3px 5px', fontSize: '0.8rem', border: '1px solid var(--border-color)', borderRadius: 4, backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)'}}/>
@@ -3531,6 +3688,9 @@ function ProductRow({ p, onSave, onOpenGallery, onDraftChange, categories, categ
               <span style={{color: 'var(--text-secondary)', fontSize: '0.8rem', fontWeight: 600}}><CloudOff size={14}/> {p.status}</span>
             )
           }
+          <div style={{marginTop: 4}}>
+            <QualityBadge health={health} onClick={() => onOpenQuality && onOpenQuality(p, health)} />
+          </div>
         </td>
         <td data-label="Stock y Precios" style={{
           backgroundColor: (p.available_quantity <= (p.min_stock || 3) && p.status === 'active') ? 'rgba(245, 158, 11, 0.05)' : 'transparent'
@@ -4134,3 +4294,129 @@ function QRScannerModal({ onClose, onStockUpdated }) {
   )
 }
 
+/**
+ * Detalle de los objetivos de calidad de una publicacion.
+ *
+ * Deja explicito de donde sale el diagnostico: cuando es local, es un calculo
+ * nuestro y no el puntaje oficial de Mercado Libre.
+ */
+function QualityDetailModal({ producto, salud, onClose }) {
+  const objetivos = (salud && salud.goals) || []
+
+  const describir = (objetivo) => {
+    const d = objetivo.detail || {}
+    if (objetivo.id === 'FICHA_TECNICA') {
+      return (
+        <div>
+          <div>{d.cargados} de {d.total_catalogo} atributos cargados</div>
+          {(d.faltan_requeridos || []).length > 0 && (
+            <div style={{color: '#ef4444', marginTop: 3}}>
+              Faltan obligatorios: {d.faltan_requeridos.join(', ')}
+            </div>
+          )}
+          {(d.faltan_condicionales || []).length > 0 && (
+            <div style={{color: '#d97706', marginTop: 3}}>
+              Faltan recomendados: {d.faltan_condicionales.join(', ')}
+            </div>
+          )}
+          {(d.faltan_fiscales || []).length > 0 && (
+            <div style={{color: 'var(--text-secondary)', marginTop: 3, fontSize: '0.75rem'}}>
+              Fiscales sin cargar ({d.faltan_fiscales.join(', ')}): no son datos del
+              producto y faltan en casi toda publicacion local, no se cuentan como objetivo.
+            </div>
+          )}
+        </div>
+      )
+    }
+    if (objetivo.id === 'FOTOS') {
+      return <div>{d.cantidad} foto{d.cantidad === 1 ? '' : 's'}, se recomiendan {d.recomendadas} o mas</div>
+    }
+    if (objetivo.id === 'TITULO') {
+      return <div>{d.caracteres} caracteres (minimo sugerido {d.minimo_sugerido})</div>
+    }
+    if (objetivo.id === 'DESCRIPCION') {
+      return <div>{d.caracteres} caracteres (minimo sugerido {d.minimo_sugerido})</div>
+    }
+    return <div style={{fontSize: '0.75rem', color: 'var(--text-secondary)'}}>{JSON.stringify(d)}</div>
+  }
+
+  return (
+    <div
+      style={{
+        position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+        backgroundColor: 'rgba(0,0,0,0.65)', display: 'flex',
+        alignItems: 'center', justifyContent: 'center', zIndex: 1200, padding: 12
+      }}
+      onClick={onClose}
+    >
+      <div
+        className="card"
+        style={{width: 560, maxWidth: '100%', maxHeight: '85vh', overflowY: 'auto'}}
+        onClick={e => e.stopPropagation()}
+      >
+        <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10}}>
+          <div style={{minWidth: 0}}>
+            <h3 style={{margin: 0, fontSize: '1rem'}}>Calidad de la publicacion</h3>
+            <div style={{fontSize: '0.85rem', color: 'var(--text-primary)', marginTop: 4}}>
+              {producto.title}
+            </div>
+            <div style={{fontSize: '0.72rem', color: 'var(--text-secondary)', fontFamily: 'monospace'}}>
+              {producto.ml_id}
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            style={{background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: '1.1rem'}}
+          >
+            X
+          </button>
+        </div>
+
+        {!salud ? (
+          <p style={{fontSize: '0.85rem', color: 'var(--text-secondary)', marginTop: 16}}>
+            Esta publicacion todavia no fue auditada. Selecciónala en la lista y usa
+            el boton "Auditar calidad".
+          </p>
+        ) : (
+          <>
+            <div style={{
+              marginTop: 14, marginBottom: 12, padding: '8px 10px', borderRadius: 8,
+              backgroundColor: 'var(--bg-hover)', fontSize: '0.75rem', color: 'var(--text-secondary)'
+            }}>
+              {salud.source === 'local'
+                ? 'Diagnostico propio, calculado a partir de la ficha tecnica de la categoria y el contenido de la publicacion. Es una aproximacion: puede no coincidir con el puntaje que muestra el panel de Mercado Libre.'
+                : 'Diagnostico oficial de Mercado Libre.'}
+              {salud.fetched_at ? ' Actualizado: ' + String(salud.fetched_at).slice(0, 16) : ''}
+            </div>
+
+            {objetivos.map(objetivo => (
+              <div
+                key={objetivo.id}
+                style={{
+                  display: 'flex', gap: 10, alignItems: 'flex-start',
+                  padding: '10px 0', borderTop: '1px solid var(--border-color)'
+                }}
+              >
+                <span style={{
+                  fontSize: '0.7rem', fontWeight: 700, padding: '2px 8px', borderRadius: 10,
+                  flexShrink: 0, minWidth: 76, textAlign: 'center',
+                  backgroundColor: objetivo.status === 'PENDING' ? 'rgba(239, 68, 68, 0.15)' : 'rgba(16, 185, 129, 0.15)',
+                  color: objetivo.status === 'PENDING' ? '#ef4444' : '#10b981'
+                }}>
+                  {objetivo.status === 'PENDING' ? 'PENDIENTE' : 'OK'}
+                </span>
+                <div style={{minWidth: 0, fontSize: '0.82rem'}}>
+                  <div style={{fontWeight: 600, marginBottom: 2}}>
+                    {ETIQUETAS_OBJETIVO[objetivo.id] || objetivo.id}
+                  </div>
+                  {describir(objetivo)}
+                </div>
+              </div>
+            ))}
+          </>
+        )}
+      </div>
+    </div>
+  )
+}
