@@ -215,8 +215,9 @@ class AplicarTest(unittest.TestCase):
              patch.object(aplicar.database, 'save_listing_revision', return_value=99) as revision, \
              patch.object(aplicar, '_leer_item',
                           return_value=(item or {'title': 'Piedra Difusora', 'category_id': 'MLA1'}, None)), \
-             patch.object(aplicar, '_escribir', side_effect=fake_escribir):
+             patch.object(aplicar, '_escribir', side_effect=fake_escribir),              patch.object(aplicar, '_sincronizar_cache_local') as sincronizar:
             resultados = aplicar.apply_suggestions([s['id'] for s in sugerencias], dry_run=dry_run)
+        self.ultima_sincronizacion = sincronizar
         return resultados, escrituras, actualizar, revision
 
     def test_dry_run_no_escribe_nunca(self):
@@ -275,8 +276,46 @@ class AplicarTest(unittest.TestCase):
         revision.assert_not_called()
         self.assertEqual(actualizar.call_args[1]['status'], 'failed')
 
+    def test_al_aplicar_se_refresca_el_cache_local(self):
+        """La descripcion se audita desde products_cache: si no se refresca,
+        el objetivo sigue figurando pendiente aunque el cambio ya este en ML."""
+        self._aplicar([self.SUGERENCIA], dry_run=False)
+        self.ultima_sincronizacion.assert_called_once()
+        self.assertEqual(self.ultima_sincronizacion.call_args[0][1], 'title')
+
+    def test_una_simulacion_no_toca_el_cache(self):
+        self._aplicar([self.SUGERENCIA], dry_run=True)
+        self.ultima_sincronizacion.assert_not_called()
+
     def test_sin_seleccion_no_hace_nada(self):
         self.assertEqual(aplicar.apply_suggestions([], dry_run=False), [])
+
+
+class SincronizarCacheTest(unittest.TestCase):
+    """El cache local tiene que quedar igual a lo que quedo en Mercado Libre."""
+
+    def test_la_descripcion_va_a_products_cache(self):
+        with patch.object(aplicar.database, 'update_product_description_meli') as guardar:
+            aplicar._sincronizar_cache_local('MLA1', 'description', 'texto nuevo')
+        guardar.assert_called_once_with('MLA1', 'texto nuevo')
+
+    def test_el_titulo_tambien(self):
+        with patch.object(aplicar.database, 'update_product_title') as guardar:
+            aplicar._sincronizar_cache_local('MLA1', 'title', 'Titulo nuevo')
+        guardar.assert_called_once_with('MLA1', 'Titulo nuevo')
+
+    def test_los_atributos_no_se_cachean_localmente(self):
+        """Se leen de /items en vivo, no hay nada que refrescar."""
+        with patch.object(aplicar.database, 'update_product_description_meli') as d,              patch.object(aplicar.database, 'update_product_title') as t:
+            aplicar._sincronizar_cache_local('MLA1', 'attributes', {'BRAND': 'X'})
+        d.assert_not_called()
+        t.assert_not_called()
+
+    def test_un_fallo_de_cache_no_convierte_el_cambio_en_error(self):
+        """El cambio ya esta en Mercado Libre: no se puede deshacer por esto."""
+        with patch.object(aplicar.database, 'update_product_description_meli',
+                          side_effect=RuntimeError('base caida')):
+            aplicar._sincronizar_cache_local('MLA1', 'description', 'texto')
 
 
 class RollbackTest(unittest.TestCase):

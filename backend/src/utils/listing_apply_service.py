@@ -104,6 +104,26 @@ def _escribir(ml_id: str, field: str, valor):
     return True, None
 
 
+def _sincronizar_cache_local(ml_id: str, field: str, valor):
+    """Deja el cache local igual a lo que quedo en Mercado Libre.
+
+    Sin esto la auditoria vuelve a leer la descripcion vieja de products_cache
+    y sigue marcando el objetivo como pendiente aunque el cambio ya este
+    aplicado. El titulo y los atributos se leen de /items en vivo, pero la
+    descripcion sale del cache porque /items no la devuelve.
+    """
+    try:
+        if field == 'description':
+            database.update_product_description_meli(ml_id, valor)
+        elif field == 'title':
+            database.update_product_title(ml_id, valor)
+    except Exception:
+        # El cambio ya esta aplicado en Mercado Libre. Que no se haya podido
+        # refrescar el cache se corrige en la proxima sincronizacion: no
+        # convierte un cambio exitoso en un error.
+        pass
+
+
 def _valor_propuesto(sugerencia):
     """El valor guardado como texto vuelve a su forma nativa según el campo."""
     crudo = sugerencia.get('proposed_value')
@@ -202,6 +222,8 @@ def apply_suggestions(suggestion_ids, dry_run: bool = True) -> list:
             resultados.append(dict(base, status="error", error=error))
             continue
 
+        _sincronizar_cache_local(ml_id, field, valor)
+
         aplicado = valor if field != 'attributes' else json.dumps(valor, ensure_ascii=False)
         revision_id = database.save_listing_revision(
             ml_id, field, anterior or '', aplicado, suggestion_id)
@@ -255,6 +277,7 @@ def rollback_revisions(revision_ids) -> list:
             resultados.append(dict(base, status="error", error=error))
             continue
 
+        _sincronizar_cache_local(revision['ml_id'], revision['field'], valor)
         database.mark_revision_reverted(revision_id)
         resultados.append(dict(base, status="reverted"))
 

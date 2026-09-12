@@ -3776,3 +3776,13 @@ def mark_revision_reverted(revision_id: int) -> bool:
                 "UPDATE listing_revisions SET reverted_at = CURRENT_TIMESTAMP "
                 "WHERE id = %s AND reverted_at IS NULL", (revision_id,))
             return cursor.rowcount > 0
+
+
+def update_product_title(ml_id: str, title: str):
+    """Actualiza el título cacheado tras aplicarlo en Mercado Libre."""
+    now = datetime.now().isoformat()
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute(
+                "UPDATE products_cache SET title = %s, last_modified = %s WHERE ml_id = %s",
+                (title, now, ml_id))

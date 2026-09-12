@@ -4460,6 +4460,23 @@ function QualityDetailModal({ producto, salud, onClose, onApplied }) {
     }
   }
 
+  const reauditar = async () => {
+    setTrabajando(true)
+    try {
+      await fetch('/api/listing-optimizer/audit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ml_ids: [mlId], force_refresh: true })
+      })
+      if (onApplied) onApplied()
+      onClose()
+    } catch (e) {
+      alert('No se pudo reauditar: ' + e.message)
+    } finally {
+      setTrabajando(false)
+    }
+  }
+
   const revertir = async (revisionId) => {
     if (!confirm('Restaurar el valor anterior de este campo en Mercado Libre?')) return
     setTrabajando(true)
@@ -4575,6 +4592,22 @@ function QualityDetailModal({ producto, salud, onClose, onApplied }) {
                 ? 'Diagnostico propio, calculado a partir de la ficha tecnica de la categoria y el contenido de la publicacion. Es una aproximacion: puede no coincidir con el puntaje que muestra el panel de Mercado Libre.'
                 : 'Diagnostico oficial de Mercado Libre.'}
               {salud.fetched_at ? ' Actualizado: ' + String(salud.fetched_at).slice(0, 16) : ''}
+              <div style={{marginTop: 8}}>
+                <button
+                  type="button"
+                  className="dashboard-pill"
+                  onClick={reauditar}
+                  disabled={trabajando}
+                  style={{
+                    backgroundColor: 'var(--bg-card)', color: 'var(--accent-blue)',
+                    border: '1px solid var(--border-color)', fontWeight: 600,
+                    cursor: trabajando ? 'wait' : 'pointer'
+                  }}
+                  title="Vuelve a consultarle a Mercado Libre el estado de esta publicacion"
+                >
+                  {trabajando ? 'Actualizando...' : 'Volver a revisar'}
+                </button>
+              </div>
             </div>
 
             {objetivos.map(objetivo => (
