@@ -268,7 +268,7 @@ class AplicarTest(unittest.TestCase):
     def _aplicar(self, sugerencias, dry_run, item=None, escribir_ok=True, escribir_error=None):
         escrituras = []
 
-        def fake_escribir(ml_id, field, valor):
+        def fake_escribir(ml_id, field, valor, ids_actuales=None):
             escrituras.append((ml_id, field, valor))
             return escribir_ok, escribir_error
 
@@ -392,7 +392,7 @@ class RollbackTest(unittest.TestCase):
         with patch.object(aplicar.database, 'get_listing_revisions', return_value=[self.REVISION]), \
              patch.object(aplicar.database, 'mark_revision_reverted', return_value=True), \
              patch.object(aplicar, '_escribir',
-                          side_effect=lambda *a: (escrituras.append(a), (True, None))[1]):
+                          side_effect=lambda *a, **k: (escrituras.append(a), (True, None))[1]):
             resultados = aplicar.rollback_revisions([5])
 
         self.assertEqual(resultados[0]['status'], 'reverted')

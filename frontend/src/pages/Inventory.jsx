@@ -4315,6 +4315,7 @@ const ETIQUETAS_CAMPO = {
   title: 'Titulo',
   description: 'Descripcion',
   attributes: 'Ficha tecnica',
+  pictures: 'Imagenes',
 }
 
 function DiffValor({ etiqueta, valor, color }) {
@@ -4349,6 +4350,7 @@ function QualityDetailModal({ producto, salud, onClose, onApplied }) {
   const [aiConfig, setAiConfig] = React.useState(null)
   const [mostrarAjustesIa, setMostrarAjustesIa] = React.useState(false)
   const [claveAnthropic, setClaveAnthropic] = React.useState('')
+  const [generandoImg, setGenerandoImg] = React.useState(false)
 
   const cargarBorradores = React.useCallback(() => {
     fetch('/api/listing-optimizer/suggestions?ml_ids=' + encodeURIComponent(mlId))
@@ -4433,7 +4435,46 @@ function QualityDetailModal({ producto, salud, onClose, onApplied }) {
     }
   }
 
+  const generarImagenes = async () => {
+    const confirmado = confirm(
+      'Se van a generar imagenes A PARTIR de la foto real de esta publicacion.' +
+      String.fromCharCode(10) + String.fromCharCode(10) +
+      'No se sube nada todavia: las vas a poder ver antes de decidir.' +
+      String.fromCharCode(10) +
+      'Generar imagenes consume credito del proveedor configurado. Continuar?')
+    if (!confirmado) return
+
+    setGenerandoImg(true)
+    setSimulacion(null)
+    try {
+      const res = await fetch('/api/listing-optimizer/suggest-images', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ml_ids: [mlId] })
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        alert('No se pudieron generar imagenes: ' + (data.detail || 'error'))
+        return
+      }
+      const detalle = (data.resultados || [])[0] || {}
+      if (!detalle.ok) {
+        alert('No se generaron imagenes.' + String.fromCharCode(10) +
+              String.fromCharCode(10) + (detalle.error || ''))
+      } else if ((detalle.errores || []).length) {
+        alert('Algunas variantes fallaron:' + String.fromCharCode(10) +
+              detalle.errores.join(String.fromCharCode(10)))
+      }
+      cargarBorradores()
+    } catch (e) {
+      alert('Error de conexion: ' + e.message)
+    } finally {
+      setGenerandoImg(false)
+    }
+  }
+
   const guardarEdiciones = async () => {
+    // Las imagenes no se editan como texto: solo se aceptan o se descartan.
     const pendientes = Object.keys(ediciones)
     for (const id of pendientes) {
       await fetch('/api/listing-optimizer/suggestions/' + id, {
@@ -4683,6 +4724,20 @@ function QualityDetailModal({ producto, salud, onClose, onApplied }) {
                 <button
                   type="button"
                   className="dashboard-pill"
+                  onClick={generarImagenes}
+                  disabled={generandoImg || trabajando}
+                  style={{
+                    backgroundColor: 'rgba(6, 182, 212, 0.15)', color: '#06b6d4',
+                    border: '1px solid rgba(6, 182, 212, 0.35)', fontWeight: 700,
+                    cursor: generandoImg ? 'wait' : 'pointer', marginRight: 6
+                  }}
+                  title="Genera imagenes secundarias a partir de la foto real de esta publicacion"
+                >
+                  {generandoImg ? 'Generando...' : 'Generar imagenes'}
+                </button>
+                <button
+                  type="button"
+                  className="dashboard-pill"
                   onClick={generar}
                   disabled={generando || trabajando}
                   style={{
@@ -4828,6 +4883,47 @@ function QualityDetailModal({ producto, salud, onClose, onApplied }) {
                       )}
                     </label>
 
+                    {sug.field === 'pictures' ? (
+                      <div>
+                        <div style={{fontSize: '0.66rem', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: 4}}>
+                          YA PUBLICADAS (la portada no se toca)
+                        </div>
+                        <div style={{display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10}}>
+                          {(() => {
+                            let actuales = []
+                            try { actuales = JSON.parse(sug.current_value || '[]') } catch (e) { actuales = [] }
+                            return actuales.map((u, i) => (
+                              <img key={i} src={u} alt={'foto ' + (i + 1)}
+                                   style={{width: 64, height: 64, objectFit: 'cover', borderRadius: 6,
+                                           border: i === 0 ? '2px solid var(--accent-blue)' : '1px solid var(--border-color)'}} />
+                            ))
+                          })()}
+                        </div>
+                        <div style={{fontSize: '0.66rem', fontWeight: 700, color: '#10b981', marginBottom: 4}}>
+                          GENERADAS A PARTIR DE LA PRIMERA (se agregan al final)
+                        </div>
+                        <div style={{display: 'flex', gap: 8, flexWrap: 'wrap'}}>
+                          {(() => {
+                            let nuevas = []
+                            try { nuevas = JSON.parse(sug.proposed_value || '[]') } catch (e) { nuevas = [] }
+                            return nuevas.map((n, i) => (
+                              <div key={i} style={{textAlign: 'center'}}>
+                                <img src={n.url} alt={n.estilo}
+                                     style={{width: 110, height: 110, objectFit: 'cover', borderRadius: 8,
+                                             border: '1px solid var(--border-color)'}} />
+                                <div style={{fontSize: '0.66rem', color: 'var(--text-secondary)', marginTop: 2}}>
+                                  {n.estilo}
+                                </div>
+                              </div>
+                            ))
+                          })()}
+                        </div>
+                        <div style={{fontSize: '0.7rem', color: 'var(--text-secondary)', marginTop: 8}}>
+                          Miralas en tamaño real antes de aplicar: si alguna no representa
+                          fielmente el producto, descartá la propuesta y volvé a generar.
+                        </div>
+                      </div>
+                    ) : (
                     <div style={{display: 'flex', gap: 10, flexWrap: 'wrap'}}>
                       <DiffValor etiqueta="ANTES" valor={sug.current_value} color="var(--text-secondary)" />
                       <div style={{flex: '1 1 220px', minWidth: 0}}>
@@ -4847,6 +4943,7 @@ function QualityDetailModal({ producto, salud, onClose, onApplied }) {
                         />
                       </div>
                     </div>
+                    )}
 
                     {simulado && (
                       <div style={{

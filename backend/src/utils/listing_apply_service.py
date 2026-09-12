@@ -14,9 +14,11 @@ Es el único módulo del optimizador que ESCRIBE. Por eso:
     "éxito" global que esconda tres errores.
 """
 import json
+import os
 
 from src import database, meli_api
 from src.utils.listing_ai_service import validate_listing_change
+from src.utils import listing_image_service
 
 # La descripción se actualiza por un recurso aparte del resto del ítem.
 RUTA_DESCRIPCION = "/items/{ml_id}/description"
@@ -65,6 +67,10 @@ def read_current_value(ml_id: str, field: str, item=None):
     if field == 'title':
         return str(item.get('title') or ''), None
 
+    if field == 'pictures':
+        ids = [p.get('id') for p in (item.get('pictures') or []) if p.get('id')]
+        return json.dumps(ids, ensure_ascii=False), None
+
     if field == 'attributes':
         actuales = {
             a.get('id'): a.get('value_name')
@@ -76,8 +82,42 @@ def read_current_value(ml_id: str, field: str, item=None):
     return None, f"Campo no soportado: {field}"
 
 
-def _escribir(ml_id: str, field: str, valor):
+def _escribir_imagenes(ml_id: str, rutas, ids_actuales):
+    """Sube las imagenes nuevas y las agrega a las que ya tiene la publicacion.
+
+    La foto de portada es la primera de la lista y no se toca: las generadas
+    van al final, como secundarias, que es donde Mercado Libre las admite.
+    """
+    nuevos = []
+    for entrada in rutas:
+        ruta = entrada.get('ruta') if isinstance(entrada, dict) else entrada
+        picture_id, error = listing_image_service.upload_to_meli(ruta)
+        if error:
+            return False, f"{ruta}: {error}"
+        nuevos.append(picture_id)
+
+    if not nuevos:
+        return False, "No habia imagenes para subir"
+
+    lista = [{"id": i} for i in (ids_actuales or [])] + [{"id": i} for i in nuevos]
+    try:
+        r = meli_api.api_request("PUT", RUTA_ITEM.format(ml_id=ml_id),
+                                 json_data={"pictures": lista})
+    except ConnectionError as e:
+        return False, str(e)
+
+    if r is None:
+        return False, "Sin respuesta de Mercado Libre"
+    if r.status_code not in (200, 201):
+        return False, f"HTTP {r.status_code}: {' '.join((r.text or '')[:220].split())}"
+    return True, None
+
+
+def _escribir(ml_id: str, field: str, valor, ids_actuales=None):
     """Manda el cambio a Mercado Libre. Devuelve (ok, error)."""
+    if field == 'pictures':
+        return _escribir_imagenes(ml_id, valor, ids_actuales)
+
     if field == 'description':
         try:
             r = meli_api.api_request(
@@ -196,7 +236,23 @@ def apply_suggestions(suggestion_ids, dry_run: bool = True) -> list:
                 catalogo = cache_catalogos[categoria]
 
         # Revalidación: entre que se genero el borrador y ahora, alguien pudo editarlo.
-        valor, es_valido, motivo = validate_listing_change(field, valor, catalogo)
+        if field == 'pictures':
+            rutas, motivo = listing_image_service.parse_proposed(
+                sugerencia.get('proposed_value'))
+            es_valido = rutas is not None and len(rutas) > 0
+            if es_valido:
+                faltantes = [
+                    (e.get('ruta') if isinstance(e, dict) else e) for e in rutas
+                    if not os.path.isfile(e.get('ruta') if isinstance(e, dict) else e)
+                ]
+                if faltantes:
+                    es_valido = False
+                    motivo = "Ya no estan los archivos generados: " + ", ".join(faltantes[:3])
+            elif not motivo:
+                motivo = "El borrador no tiene imagenes"
+            valor = rutas
+        else:
+            valor, es_valido, motivo = validate_listing_change(field, valor, catalogo)
         if not es_valido:
             database.update_listing_suggestion(
                 suggestion_id, status='failed', reject_reason=motivo)
@@ -212,10 +268,18 @@ def apply_suggestions(suggestion_ids, dry_run: bool = True) -> list:
         if dry_run:
             resultados.append(dict(
                 base, status="dry_run", previous_value=anterior,
-                proposed_value=valor if field != 'attributes' else json.dumps(valor, ensure_ascii=False)))
+                proposed_value=(json.dumps(valor, ensure_ascii=False)
+                                if field in ('attributes', 'pictures') else valor)))
             continue
 
-        ok, error = _escribir(ml_id, field, valor)
+        ids_actuales = None
+        if field == 'pictures':
+            try:
+                ids_actuales = json.loads(anterior or '[]')
+            except ValueError:
+                ids_actuales = []
+
+        ok, error = _escribir(ml_id, field, valor, ids_actuales)
         if not ok:
             database.update_listing_suggestion(
                 suggestion_id, status='failed', reject_reason=error)
@@ -224,7 +288,8 @@ def apply_suggestions(suggestion_ids, dry_run: bool = True) -> list:
 
         _sincronizar_cache_local(ml_id, field, valor)
 
-        aplicado = valor if field != 'attributes' else json.dumps(valor, ensure_ascii=False)
+        aplicado = (json.dumps(valor, ensure_ascii=False)
+                    if field in ('attributes', 'pictures') else valor)
         revision_id = database.save_listing_revision(
             ml_id, field, anterior or '', aplicado, suggestion_id)
         database.update_listing_suggestion(
@@ -261,6 +326,28 @@ def rollback_revisions(revision_ids) -> list:
             continue
 
         valor = revision['previous_value']
+        if revision['field'] == 'pictures':
+            try:
+                ids = json.loads(valor or '[]')
+            except ValueError:
+                resultados.append(dict(base, status="error",
+                                       error="La lista de imagenes anterior no es JSON valido"))
+                continue
+            try:
+                r = meli_api.api_request(
+                    "PUT", RUTA_ITEM.format(ml_id=revision['ml_id']),
+                    json_data={"pictures": [{"id": i} for i in ids]})
+            except ConnectionError as e:
+                resultados.append(dict(base, status="error", error=str(e)))
+                continue
+            if r is None or r.status_code not in (200, 201):
+                detalle = "sin respuesta" if r is None else f"HTTP {r.status_code}"
+                resultados.append(dict(base, status="error", error=detalle))
+                continue
+            database.mark_revision_reverted(revision_id)
+            resultados.append(dict(base, status="reverted"))
+            continue
+
         if revision['field'] == 'attributes':
             try:
                 valor = json.loads(valor or '{}')

@@ -15,7 +15,8 @@ from typing import Optional
 import json
 
 from src import database
-from src.utils import listing_audit_service, listing_ai_service, listing_apply_service
+from src.utils import (listing_audit_service, listing_ai_service,
+                       listing_apply_service, listing_image_service)
 
 router = APIRouter()
 
@@ -274,3 +275,87 @@ def set_ai_config(payload: AiConfigRequest):
 
     database.set_setting('ai_provider', payload.provider)
     return {"success": True, **listing_ai_service.get_ai_config()}
+
+
+# =============================================================================
+# IMAGENES — variantes derivadas de la foto real, para revisar antes de subir
+# =============================================================================
+
+class ImageSuggestRequest(BaseModel):
+    ml_ids: list[str] = Field(..., min_length=1)
+    estilos: Optional[list[str]] = None
+
+
+class ImageConfigRequest(BaseModel):
+    provider: Optional[str] = None
+    image_model: Optional[str] = None
+
+
+@router.get("/image-config")
+def get_image_config():
+    return listing_image_service.get_image_config()
+
+
+@router.put("/image-config")
+def set_image_config(payload: ImageConfigRequest):
+    if payload.provider:
+        if payload.provider not in listing_image_service.PROVEEDORES_IMAGEN:
+            raise HTTPException(status_code=400,
+                                detail="Proveedor de imagenes no soportado")
+        database.set_setting('image_provider', payload.provider)
+
+    if payload.image_model:
+        validos = [m['id'] for m in listing_image_service.MODELOS_IMAGEN]
+        if payload.image_model not in validos:
+            raise HTTPException(status_code=400,
+                                detail="Modelo no soportado. Validos: " + ", ".join(validos))
+        database.set_setting('image_model', payload.image_model)
+
+    return {"success": True, **listing_image_service.get_image_config()}
+
+
+@router.post("/suggest-images")
+def suggest_images(payload: ImageSuggestRequest):
+    """Genera variantes a partir de la foto real. No sube nada a Mercado Libre."""
+    if len(payload.ml_ids) > 20:
+        raise HTTPException(
+            status_code=400,
+            detail="Maximo 20 publicaciones por vez: generar imagenes es costoso")
+
+    resultados = []
+    for ml_id in payload.ml_ids:
+        item, error = listing_apply_service._leer_item(ml_id)
+        if error:
+            resultados.append({"ml_id": ml_id, "ok": False, "error": error})
+            continue
+
+        salida = listing_image_service.generate_variants(ml_id, item, payload.estilos)
+        if not salida.get('ok'):
+            resultados.append({"ml_id": ml_id, "ok": False, "error": salida.get('error')})
+            continue
+
+        # Regenerar reemplaza la propuesta anterior, igual que en los textos.
+        database.delete_pending_suggestions(ml_id, 'pictures')
+
+        rutas = [{"ruta": g['ruta'], "url": g['url'], "estilo": g['estilo']}
+                 for g in salida['generadas']]
+        suggestion_id = database.save_listing_suggestion(
+            ml_id=ml_id, field='pictures', goal_code='FOTOS',
+            current_value=json.dumps(
+                [p.get('secure_url') for p in (item.get('pictures') or [])],
+                ensure_ascii=False),
+            proposed_value=json.dumps(rutas, ensure_ascii=False),
+            status='draft', model_used=salida.get('modelo'))
+
+        resultados.append({
+            "ml_id": ml_id, "ok": True, "suggestion_id": suggestion_id,
+            "generadas": rutas, "errores": salida.get('errores') or [],
+            "origen": salida.get('origen'),
+        })
+
+    return {
+        "success": True,
+        "total": len(resultados),
+        "con_imagenes": sum(1 for r in resultados if r.get('ok')),
+        "resultados": resultados,
+    }
