@@ -364,7 +364,7 @@ def _contexto_producto(item: dict) -> str:
 
 
 def suggest_attributes(item: dict, catalogo: list, faltantes: list,
-                       valores_propios: dict = None):
+                       valores_propios: dict = None, alternativas: dict = None):
     """Propone valores para los atributos faltantes. Devuelve (dict, modelo, error).
 
     `valores_propios` son los valores que el vendedor ya usa para esos mismos
@@ -397,6 +397,25 @@ def suggest_attributes(item: dict, catalogo: list, faltantes: list,
                         + ", ".join(f"{v} (x{n})" for v, n in usados))
         lineas.append(detalle)
 
+    # Los atributos "de declaracion" no describen el producto: declaran por que
+    # un dato no esta. Sin esta aclaracion el modelo los trata como un dato a
+    # deducir, no puede deducirlos, y devuelve null para siempre.
+    bloque_declaracion = ""
+    if alternativas:
+        destinos = sorted(set(alternativas.values()))
+        if 'EMPTY_GTIN_REASON' in destinos:
+            bloque_declaracion = """
+
+ATRIBUTOS DE DECLARACION (caso especial):
+EMPTY_GTIN_REASON no es una caracteristica del producto: es la razon por la que
+la publicacion no informa codigo de barras. Mercado Libre acepta el GTIN O esta
+razon, cualquiera de los dos cumple el objetivo.
+Completalo SIEMPRE que el GTIN no aparezca en la informacion de arriba, eligiendo:
+  - "El producto es un kit o un pack" si el titulo indica pack, kit o varias unidades
+  - "El producto es una pieza artesanal" si se trata de algo hecho a mano
+  - "El producto no tiene codigo registrado" en cualquier otro caso
+Elegir esta razon NO es inventar un dato: es declarar que el dato no esta."""
+
     prompt = f"""Sos un especialista en fichas tecnicas de Mercado Libre Argentina.
 
 {_contexto_producto(item)}
@@ -412,7 +431,7 @@ Un dato tecnico inventado es peor que un atributo vacio.
 Nunca inventes codigos de barras, GTIN, EAN, numeros de parte ni modelos que no
 aparezcan textualmente en la informacion de arriba.
 
-Si el atributo tiene valores admitidos, elegi exactamente uno de esa lista.
+Si el atributo tiene valores admitidos, elegi exactamente uno de esa lista.{bloque_declaracion}
 
 Cuando se indica lo que el vendedor ya usa en la categoria, tomalo como
 referencia de vocabulario y formato, NO como respuesta. Que lo use en otros
@@ -558,7 +577,8 @@ def generate_suggestions(ml_ids, targets=None) -> list:
                 valores_propios = listing_audit_service.fetch_own_category_values(
                     item.get('category_id'), exclude_ml_id=ml_id)
                 propuesta, modelo, error_ia = suggest_attributes(
-                    item, catalogo, faltantes, valores_propios)
+                    item, catalogo, faltantes, valores_propios,
+                    alternativas=detalle_ficha.get('alternativas'))
                 if error_ia:
                     generados.append({"field": field, "status": "error", "error": error_ia})
                     continue
