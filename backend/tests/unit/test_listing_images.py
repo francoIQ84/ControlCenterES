@@ -92,6 +92,51 @@ class GeneracionTest(unittest.TestCase):
             self.assertIn('logos', minusculas, estilo)
 
 
+class ProveedorImagenTest(unittest.TestCase):
+    def _config(self, valores):
+        return patch.object(img.database, 'get_setting',
+                            side_effect=lambda k, d=None: valores.get(k, d))
+
+    def test_el_modelo_siempre_corresponde_al_proveedor_activo(self):
+        """Con Gemini activo no se puede mandar el id de un modelo de OpenAI."""
+        with self._config({'image_provider': 'gemini_image', 'image_model': 'gpt-image-2'}):
+            config = img.get_image_config()
+        self.assertEqual(config['provider'], 'gemini_image')
+        self.assertTrue(config['image_model'].startswith('gemini'))
+
+    def test_solo_ofrece_los_modelos_del_proveedor_elegido(self):
+        with self._config({'image_provider': 'openai_image'}):
+            config = img.get_image_config()
+        self.assertTrue(all(m['proveedor'] == 'openai_image' for m in config['modelos']))
+
+    def test_el_despachador_respeta_el_proveedor(self):
+        with patch.object(img, '_generar_con_openai', return_value=(b'x', 'm', None)) as oa,              patch.object(img, '_generar_con_gemini') as ge:
+            img._generar('openai_image', b'foto', 'instruccion')
+        oa.assert_called_once()
+        ge.assert_not_called()
+
+    def test_usa_el_endpoint_de_edicion_y_no_el_de_generacion(self):
+        """La foto real tiene que viajar como entrada: eso solo lo hace /edits."""
+        class Resp:
+            status_code = 200
+            def json(self):
+                import base64 as b
+                return {"data": [{"b64_json": b.b64encode(b'png').decode()}]}
+
+        with self._config({'openai_api_key': 'sk-x', 'image_provider': 'openai_image'}),              patch.object(img.requests, 'post', return_value=Resp()) as post:
+            datos, _modelo, error = img._generar_con_openai(b'foto-real', 'instruccion')
+
+        self.assertIsNone(error)
+        self.assertEqual(datos, b'png')
+        self.assertIn('/images/edits', post.call_args[0][0])
+        self.assertEqual(post.call_args[1]['files']['image'][1], b'foto-real')
+
+    def test_sin_clave_de_openai_avisa(self):
+        with self._config({}):
+            _d, _m, error = img._generar_con_openai(b'x', 'y')
+        self.assertIn('clave', error.lower())
+
+
 class AplicarImagenesTest(unittest.TestCase):
     def test_conserva_las_fotos_existentes_y_agrega_al_final(self):
         """La portada es la primera y no se toca: las generadas van despues."""

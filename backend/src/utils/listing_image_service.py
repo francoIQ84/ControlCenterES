@@ -56,34 +56,52 @@ ESTILOS = {
 
 # --- Proveedores ------------------------------------------------------------
 #
-# Hoy solo hay uno que sirva: Gemini con facturación activa. El nivel gratuito
-# de Google no incluye cuota de imágenes (devuelve 429 "check your plan and
-# billing"), y Pollinations, el fallback gratuito que usaba el generador de
-# videos, empezó a responder 403. Se deja la estructura de proveedores para
-# enchufar otro cuando aparezca, pero no se ofrece uno gratuito que no funcione.
-PROVEEDOR_IMAGEN_POR_DEFECTO = 'gemini_image'
+# No existe hoy un proveedor 100% gratuito que sirva: el nivel gratuito de
+# Google no incluye cuota de imágenes (429 "check your plan and billing") y
+# Pollinations, el fallback sin clave del generador de videos, pasó a responder
+# 403. Lo más cercano a gratis es OpenAI, cuyas cuentas nuevas de API traen
+# crédito inicial sin cargar tarjeta, y por eso es el proveedor por defecto.
+# El editor con IA que Mercado Libre ofrece en su panel no está expuesto como
+# API: se probaron sus rutas plausibles y todas devuelven 404.
+PROVEEDOR_IMAGEN_POR_DEFECTO = 'openai_image'
 
 PROVEEDORES_IMAGEN = {
+    'openai_image': {
+        'nombre': 'OpenAI (edición de imagen)',
+        'costo': 'credito inicial gratis',
+        'clave_setting': 'openai_api_key',
+        'detalle': 'Las cuentas nuevas de la API reciben USD 5 de crédito sin '
+                   'cargar tarjeta. En calidad baja alcanza para cientos de '
+                   'imágenes, asi que se puede probar sin gastar.',
+        'imagen_a_imagen': True,
+    },
     'gemini_image': {
         'nombre': 'Google Gemini (imagen)',
         'costo': 'pago',
         'clave_setting': 'gemini_api_key',
         'detalle': 'Usa la misma clave de Gemini que ya tenés, pero las imágenes '
                    'requieren facturación activa en Google: el nivel gratuito no '
-                   'incluye cuota de imágenes.',
+                   'incluye cuota de imágenes (devuelve 429).',
         'imagen_a_imagen': True,
     },
 }
 
 MODELOS_IMAGEN = [
+    {'id': 'gpt-image-2', 'nombre': 'OpenAI GPT Image 2', 'proveedor': 'openai_image',
+     'nota': 'Calidad baja: la opción más barata por imagen'},
     {'id': 'gemini-2.5-flash-image', 'nombre': 'Gemini 2.5 Flash Image',
-     'nota': 'El más económico'},
+     'proveedor': 'gemini_image', 'nota': 'El más económico de Google'},
     {'id': 'gemini-3.1-flash-image', 'nombre': 'Gemini 3.1 Flash Image',
-     'nota': 'Equilibrado'},
+     'proveedor': 'gemini_image', 'nota': 'Equilibrado'},
     {'id': 'gemini-3-pro-image', 'nombre': 'Gemini 3 Pro Image',
-     'nota': 'El de mayor calidad'},
+     'proveedor': 'gemini_image', 'nota': 'El de mayor calidad'},
 ]
-MODELO_IMAGEN_POR_DEFECTO = 'gemini-2.5-flash-image'
+MODELO_IMAGEN_POR_DEFECTO = 'gpt-image-2'
+
+# Calidad de OpenAI. 'low' es la que hace que el credito inicial rinda: para
+# una imagen secundaria de publicacion alcanza de sobra.
+CALIDAD_OPENAI = 'low'
+TAMANIO_OPENAI = '1024x1024'
 
 
 def get_image_config() -> dict:
@@ -98,12 +116,17 @@ def get_image_config() -> dict:
         clave = (database.get_setting(datos['clave_setting'], '') or '').strip()
         disponibles[codigo] = dict(datos, configurado=bool(clave))
 
+    modelos_del_proveedor = [m for m in MODELOS_IMAGEN if m['proveedor'] == proveedor]
+    modelo = (database.get_setting('image_model', '') or '').strip()
+    if modelo not in [m['id'] for m in modelos_del_proveedor]:
+        modelo = modelos_del_proveedor[0]['id'] if modelos_del_proveedor else MODELO_IMAGEN_POR_DEFECTO
+
     return {
         'provider': proveedor,
-        'image_model': ((database.get_setting('image_model', '') or '').strip()
-                        or MODELO_IMAGEN_POR_DEFECTO),
+        'image_model': modelo,
         'proveedores': disponibles,
-        'modelos': MODELOS_IMAGEN,
+        'modelos': modelos_del_proveedor,
+        'todos_los_modelos': MODELOS_IMAGEN,
         'estilos': sorted(ESTILOS.keys()),
     }
 
@@ -123,8 +146,9 @@ def _generar_con_gemini(bytes_origen: bytes, instruccion: str):
     if not clave:
         return None, None, "No hay una clave de Gemini configurada"
 
-    modelo = ((database.get_setting('image_model', '') or '').strip()
-              or MODELO_IMAGEN_POR_DEFECTO)
+    # get_image_config normaliza el modelo al proveedor activo: leer el setting
+    # directo podria mandarle a Google el id de un modelo de OpenAI.
+    modelo = get_image_config()['image_model']
 
     payload = {
         "contents": [{"parts": [
@@ -170,6 +194,60 @@ def _generar_con_gemini(bytes_origen: bytes, instruccion: str):
     return None, modelo, f"{modelo}: el modelo respondió sin imagen"
 
 
+def _generar_con_openai(bytes_origen: bytes, instruccion: str):
+    """Edición de imagen sobre la foto real. Devuelve (bytes_png, modelo, error).
+
+    Se usa /v1/images/edits y no /v1/images/generations: el primero recibe la
+    foto publicada como entrada, que es la única forma de que el producto de la
+    variante siga siendo el producto real.
+    """
+    clave = (database.get_setting('openai_api_key', '') or '').strip()
+    if not clave:
+        return None, None, "No hay una clave de OpenAI configurada"
+
+    modelo = get_image_config()['image_model']
+
+    try:
+        res = requests.post(
+            "https://api.openai.com/v1/images/edits",
+            headers={"Authorization": f"Bearer {clave}"},
+            files={"image": ("origen.jpg", bytes_origen, "image/jpeg")},
+            data={"model": modelo, "prompt": instruccion,
+                  "size": TAMANIO_OPENAI, "quality": CALIDAD_OPENAI, "n": 1},
+            timeout=180)
+    except Exception as e:
+        return None, modelo, f"{modelo}: {str(e)[:140]}"
+
+    if res.status_code == 401:
+        return None, modelo, f"{modelo}: la clave de OpenAI es invalida o fue revocada"
+    if res.status_code == 429:
+        return None, modelo, (
+            f"{modelo}: sin credito o limite alcanzado. Revisá el saldo de la "
+            f"cuenta de OpenAI.")
+    if res.status_code != 200:
+        return None, modelo, f"{modelo}: HTTP {res.status_code} {' '.join((res.text or '')[:170].split())}"
+
+    try:
+        datos = (res.json().get('data') or [{}])[0].get('b64_json')
+    except Exception:
+        return None, modelo, f"{modelo}: respuesta ilegible"
+
+    if not datos:
+        return None, modelo, f"{modelo}: la respuesta no trajo imagen"
+
+    try:
+        return base64.b64decode(datos), modelo, None
+    except Exception:
+        return None, modelo, f"{modelo}: la imagen devuelta no se pudo decodificar"
+
+
+def _generar(proveedor: str, bytes_origen: bytes, instruccion: str):
+    """Despacha al proveedor de imágenes configurado."""
+    if proveedor == 'openai_image':
+        return _generar_con_openai(bytes_origen, instruccion)
+    return _generar_con_gemini(bytes_origen, instruccion)
+
+
 def generate_variants(ml_id: str, item: dict, estilos=None) -> dict:
     """Genera variantes a partir de la foto de portada. Devuelve un dict resultado.
 
@@ -187,7 +265,7 @@ def generate_variants(ml_id: str, item: dict, estilos=None) -> dict:
         return {'ok': False, 'error': error}
 
     config = get_image_config()
-    if config['provider'] != 'gemini_image':
+    if config['provider'] not in PROVEEDORES_IMAGEN:
         return {'ok': False, 'error': f"Proveedor de imágenes no soportado: {config['provider']}"}
 
     elegidos = [e for e in (estilos or ['contexto', 'detalle']) if e in ESTILOS]
@@ -198,7 +276,7 @@ def generate_variants(ml_id: str, item: dict, estilos=None) -> dict:
     generadas, errores, modelo_usado = [], [], None
 
     for estilo in elegidos:
-        datos, modelo, error = _generar_con_gemini(bytes_origen, ESTILOS[estilo])
+        datos, modelo, error = _generar(config['provider'], bytes_origen, ESTILOS[estilo])
         modelo_usado = modelo or modelo_usado
         if error:
             errores.append(f"{estilo}: {error}")

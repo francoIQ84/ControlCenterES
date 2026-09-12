@@ -4351,6 +4351,8 @@ function QualityDetailModal({ producto, salud, onClose, onApplied }) {
   const [mostrarAjustesIa, setMostrarAjustesIa] = React.useState(false)
   const [claveAnthropic, setClaveAnthropic] = React.useState('')
   const [generandoImg, setGenerandoImg] = React.useState(false)
+  const [imgConfig, setImgConfig] = React.useState(null)
+  const [claveOpenai, setClaveOpenai] = React.useState('')
 
   const cargarBorradores = React.useCallback(() => {
     fetch('/api/listing-optimizer/suggestions?ml_ids=' + encodeURIComponent(mlId))
@@ -4371,7 +4373,35 @@ function QualityDetailModal({ producto, salud, onClose, onApplied }) {
   }, [])
 
   React.useEffect(() => { cargarBorradores() }, [cargarBorradores])
+  const cargarImgConfig = React.useCallback(() => {
+    fetch('/api/listing-optimizer/image-config')
+      .then(r => r.ok ? r.json() : null)
+      .then(d => d && setImgConfig(d))
+      .catch(() => {})
+  }, [])
+
   React.useEffect(() => { cargarAiConfig() }, [cargarAiConfig])
+  React.useEffect(() => { cargarImgConfig() }, [cargarImgConfig])
+
+  const guardarImgConfig = async (cambios) => {
+    const cuerpo = {}
+    if (cambios.provider !== undefined) cuerpo.provider = cambios.provider
+    if (cambios.image_model !== undefined) cuerpo.image_model = cambios.image_model
+    if (claveOpenai.trim()) cuerpo.openai_api_key = claveOpenai.trim()
+
+    const res = await fetch('/api/listing-optimizer/image-config', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(cuerpo)
+    })
+    const data = await res.json()
+    if (!res.ok) {
+      alert('No se pudo guardar: ' + (data.detail || 'error'))
+      return
+    }
+    setClaveOpenai('')
+    setImgConfig(data)
+  }
 
   const guardarAiConfig = async (cambios) => {
     const cuerpo = {
@@ -4801,6 +4831,69 @@ function QualityDetailModal({ producto, salud, onClose, onApplied }) {
                           </span>
                         </label>
                       ))}
+
+                      {imgConfig && (
+                        <div style={{marginTop: 10, paddingTop: 10, borderTop: '1px solid var(--border-color)'}}>
+                          <div style={{fontWeight: 700, marginBottom: 6}}>Motor de imagenes</div>
+                          {Object.entries(imgConfig.proveedores).map(([codigo, datos]) => (
+                            <label key={codigo} style={{display: 'flex', gap: 8, alignItems: 'flex-start', cursor: 'pointer', marginBottom: 6}}>
+                              <input
+                                type="radio"
+                                name="proveedor-img"
+                                checked={imgConfig.provider === codigo}
+                                onChange={() => guardarImgConfig({ provider: codigo })}
+                                style={{marginTop: 3, width: 14, height: 14, minHeight: 'auto', cursor: 'pointer'}}
+                              />
+                              <span>
+                                <b>{datos.nombre}</b> ({datos.costo})
+                                {!datos.configurado && (
+                                  <span style={{color: '#d97706'}}> — sin clave configurada</span>
+                                )}
+                                <div style={{color: 'var(--text-secondary)', marginTop: 2}}>{datos.detalle}</div>
+                              </span>
+                            </label>
+                          ))}
+
+                          <select
+                            value={imgConfig.image_model}
+                            onChange={e => guardarImgConfig({ image_model: e.target.value })}
+                            style={{width: '100%', padding: '5px 8px', fontSize: '0.75rem', borderRadius: 6,
+                                    border: '1px solid var(--border-color)', marginTop: 4,
+                                    backgroundColor: 'var(--bg-dark)', color: 'var(--text-primary)'}}
+                          >
+                            {imgConfig.modelos.map(m => (
+                              <option key={m.id} value={m.id}>{m.nombre} — {m.nota}</option>
+                            ))}
+                          </select>
+
+                          {imgConfig.provider === 'openai_image' && (
+                            <div style={{display: 'flex', gap: 6, marginTop: 6}}>
+                              <input
+                                type="password"
+                                value={claveOpenai}
+                                onChange={e => setClaveOpenai(e.target.value)}
+                                placeholder={imgConfig.proveedores.openai_image.configurado
+                                  ? 'Clave guardada (escribi una nueva para reemplazarla)'
+                                  : 'Pegar clave de OpenAI (sk-...)'}
+                                style={{flex: 1, padding: '5px 8px', fontSize: '0.75rem', borderRadius: 6,
+                                        border: '1px solid var(--border-color)',
+                                        backgroundColor: 'var(--bg-dark)', color: 'var(--text-primary)',
+                                        minHeight: 'auto'}}
+                              />
+                              <button
+                                type="button"
+                                className="dashboard-pill"
+                                onClick={() => guardarImgConfig({})}
+                                disabled={!claveOpenai.trim()}
+                                style={{backgroundColor: 'var(--accent-blue)', color: '#fff',
+                                        border: 'none', fontWeight: 600}}
+                              >
+                                Guardar
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      )}
 
                       {aiConfig.provider === 'anthropic' && (
                         <div style={{display: 'flex', flexDirection: 'column', gap: 6, marginTop: 4}}>

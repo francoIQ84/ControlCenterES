@@ -289,6 +289,7 @@ class ImageSuggestRequest(BaseModel):
 class ImageConfigRequest(BaseModel):
     provider: Optional[str] = None
     image_model: Optional[str] = None
+    openai_api_key: Optional[str] = None
 
 
 @router.get("/image-config")
@@ -310,6 +311,11 @@ def set_image_config(payload: ImageConfigRequest):
             raise HTTPException(status_code=400,
                                 detail="Modelo no soportado. Validos: " + ", ".join(validos))
         database.set_setting('image_model', payload.image_model)
+
+    # La clave solo se escribe si vino con contenido: la interfaz nunca la
+    # devuelve, asi que un campo vacio significa "no la cambies".
+    if payload.openai_api_key and payload.openai_api_key.strip():
+        database.set_setting('openai_api_key', payload.openai_api_key.strip())
 
     return {"success": True, **listing_image_service.get_image_config()}
 
