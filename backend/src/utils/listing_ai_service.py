@@ -162,7 +162,7 @@ def validate_listing_change(field: str, value, catalogo=None):
 # LLAMADA AL MODELO
 # =============================================================================
 
-def _llamar_gemini(prompt: str, max_tokens: int = 1024, json_mode: bool = False):
+def _llamar_gemini(prompt: str, max_tokens: int = 4096, json_mode: bool = False):
     """Devuelve (texto, modelo_usado, error). Reusa la cascada de modelos.
 
     Con json_mode se le pide al modelo que responda JSON a nivel de API en vez
@@ -189,11 +189,24 @@ def _llamar_gemini(prompt: str, max_tokens: int = 1024, json_mode: bool = False)
         url = (f"https://generativelanguage.googleapis.com/v1beta/models/"
                f"{modelo}:generateContent?key={clave}")
         try:
-            res = requests.post(url, headers=headers, json=payload, timeout=25)
+            res = requests.post(url, headers=headers, json=payload, timeout=40)
             if res.status_code == 200:
                 candidatos = res.json().get('candidates', [])
-                if candidatos and candidatos[0].get('content', {}).get('parts'):
-                    texto = candidatos[0]['content']['parts'][0].get('text', '').strip()
+                if candidatos:
+                    candidato = candidatos[0]
+                    razon = str(candidato.get('finishReason') or '').upper()
+
+                    # Una respuesta cortada a la mitad no sirve: un JSON
+                    # truncado no parsea y una descripcion cortada no se puede
+                    # publicar. Se avisa con el motivo real en vez de dejar que
+                    # falle mas adelante como "no devolvio un JSON".
+                    if razon == 'MAX_TOKENS':
+                        ultimo_error = (
+                            f"{modelo}: la respuesta se corto por limite de tokens")
+                        continue
+
+                    partes = candidato.get('content', {}).get('parts') or []
+                    texto = partes[0].get('text', '').strip() if partes else ''
                     if texto:
                         return texto, modelo, None
             else:
@@ -284,7 +297,7 @@ Si el atributo tiene valores admitidos, elegi exactamente uno de esa lista.
 Respondé SOLO un objeto JSON, sin explicaciones ni markdown, con esta forma:
 {{"ATRIBUTO_ID": "valor" o null}}"""
 
-    texto, modelo, error = _llamar_gemini(prompt, max_tokens=800, json_mode=True)
+    texto, modelo, error = _llamar_gemini(prompt, max_tokens=4096, json_mode=True)
     if error:
         return None, None, error
 
@@ -320,7 +333,7 @@ REGLAS:
 
 Respondé SOLO el titulo, en una linea, sin comillas ni explicaciones."""
 
-    texto, modelo, error = _llamar_gemini(prompt, max_tokens=120)
+    texto, modelo, error = _llamar_gemini(prompt, max_tokens=2048)
     if error:
         return None, None, error
     return " ".join(str(texto or '').split()), modelo, None
@@ -346,7 +359,7 @@ REGLAS:
 
 Respondé SOLO la descripcion."""
 
-    texto, modelo, error = _llamar_gemini(prompt, max_tokens=1400)
+    texto, modelo, error = _llamar_gemini(prompt, max_tokens=8192)
     if error:
         return None, None, error
     return str(texto or '').strip(), modelo, None

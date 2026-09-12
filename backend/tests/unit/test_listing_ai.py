@@ -174,6 +174,22 @@ class GeneracionTest(unittest.TestCase):
             ia.suggest_attributes(self.ITEM, CATALOGO, ['UNITS_PER_PACK'])
         self.assertTrue(llamar.call_args[1]['json_mode'])
 
+    def test_avisa_cuando_la_respuesta_se_corta_por_limite_de_tokens(self):
+        """Un JSON truncado no parsea: el motivo real tiene que llegar al usuario."""
+        class Resp:
+            status_code = 200
+            def json(self):
+                return {"candidates": [{
+                    "finishReason": "MAX_TOKENS",
+                    "content": {"parts": [{"text": '{"UNITS_PER_PACK": "1", "GTI'}]},
+                }]}
+
+        with patch.object(ia.database, 'get_setting', return_value='clave'),              patch.object(ia.requests, 'post', return_value=Resp()):
+            texto, _modelo, error = ia._llamar_gemini('hola')
+
+        self.assertIsNone(texto)
+        self.assertIn('limite de tokens', error)
+
     def test_sin_clave_de_gemini_no_falla_silenciosamente(self):
         with patch.object(ia.database, 'get_setting', return_value=''):
             _t, _m, error = ia._llamar_gemini('hola')
