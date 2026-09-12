@@ -5,8 +5,9 @@ una selección explícita de publicaciones, nunca sobre "el catálogo". Probar
 con una sola publicación es mandar una lista de un elemento; no hay un modo de
 prueba que después se comporte distinto.
 
-Por ahora solo auditoría, que es de lectura. Los endpoints que escriben en
-Mercado Libre llegan en una etapa posterior y van a tener dry-run por defecto.
+El unico endpoint que escribe en Mercado Libre es /apply, y tiene dry_run en
+True por defecto: para modificar de verdad hay que pedirlo explicitamente.
+/audit, /suggest y la edicion de borradores no tocan nada en ML.
 """
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
@@ -14,7 +15,7 @@ from typing import Optional
 import json
 
 from src import database
-from src.utils import listing_audit_service
+from src.utils import listing_audit_service, listing_ai_service, listing_apply_service
 
 router = APIRouter()
 
@@ -82,3 +83,154 @@ def get_health(ml_ids: Optional[str] = Query(None, description="IDs separados po
             fila['fetched_at'] = str(fila['fetched_at'])
 
     return {"total": len(filas), "items": filas}
+
+
+# =============================================================================
+# SUGERENCIAS — generacion y edicion de borradores. No escriben en Mercado Libre.
+# =============================================================================
+
+class SuggestRequest(BaseModel):
+    ml_ids: list[str] = Field(..., min_length=1)
+    # Sin targets se generan los objetivos que la auditoria marco pendientes.
+    targets: Optional[list[str]] = None
+
+
+class SuggestionEditRequest(BaseModel):
+    proposed_value: str
+
+
+@router.post("/suggest")
+def suggest(payload: SuggestRequest):
+    """Genera borradores de mejora para la seleccion. No modifica nada en ML."""
+    if len(payload.ml_ids) > MAX_IDS_POR_LLAMADA:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Máximo {MAX_IDS_POR_LLAMADA} publicaciones por vez")
+
+    if payload.targets:
+        invalidos = [t for t in payload.targets if t not in listing_ai_service.CAMPOS_VALIDOS]
+        if invalidos:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Campos no soportados: {', '.join(invalidos)}")
+
+    resultados = listing_ai_service.generate_suggestions(payload.ml_ids, payload.targets)
+    generadas = sum(
+        1 for r in resultados for s in r.get('sugerencias', [])
+        if s.get('status') == 'draft')
+
+    return {"success": True, "total": len(resultados),
+            "borradores": generadas, "resultados": resultados}
+
+
+@router.get("/suggestions")
+def list_suggestions(ml_ids: Optional[str] = Query(None, description="IDs separados por coma"),
+                     status: Optional[str] = Query(None, description="Estados separados por coma")):
+    ids = [i.strip() for i in ml_ids.split(',') if i.strip()] if ml_ids else None
+    estados = [e.strip() for e in status.split(',') if e.strip()] if status else None
+    filas = database.get_listing_suggestions(ml_ids=ids, statuses=estados)
+    for fila in filas:
+        for campo in ('created_at', 'applied_at'):
+            if fila.get(campo):
+                fila[campo] = str(fila[campo])
+    return {"total": len(filas), "items": filas}
+
+
+@router.put("/suggestions/{suggestion_id}")
+def edit_suggestion(suggestion_id: int, payload: SuggestionEditRequest):
+    """Edicion manual de un borrador antes de aplicarlo."""
+    existentes = database.get_listing_suggestions(suggestion_ids=[suggestion_id])
+    if not existentes:
+        raise HTTPException(status_code=404, detail="El borrador no existe")
+
+    sugerencia = existentes[0]
+    valor = payload.proposed_value
+    if sugerencia['field'] == 'attributes':
+        try:
+            valor_validable = json.loads(valor or '{}')
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Los atributos deben ser un JSON válido")
+    else:
+        valor_validable = valor
+
+    # Se valida al editar para avisar en el momento, pero se guarda igual: la
+    # validacion definitiva corre al aplicar.
+    _saneado, es_valido, motivo = listing_ai_service.validate_listing_change(
+        sugerencia['field'], valor_validable)
+
+    database.update_listing_suggestion(
+        suggestion_id, proposed_value=valor,
+        status='edited' if es_valido else 'failed',
+        reject_reason=None if es_valido else motivo)
+
+    return {"success": True, "valido": es_valido, "motivo": motivo}
+
+
+@router.delete("/suggestions/{suggestion_id}")
+def discard_suggestion(suggestion_id: int):
+    if not database.delete_listing_suggestion(suggestion_id):
+        raise HTTPException(status_code=404, detail="El borrador no existe")
+    return {"success": True}
+
+
+# =============================================================================
+# APLICACION — los unicos endpoints que escriben en Mercado Libre
+# =============================================================================
+
+class ApplyRequest(BaseModel):
+    suggestion_ids: list[int] = Field(..., min_length=1)
+    # Por defecto simula: devuelve el diff y no toca nada. Para modificar de
+    # verdad hay que mandar dry_run=false explicitamente.
+    dry_run: bool = True
+
+
+class RollbackRequest(BaseModel):
+    revision_ids: list[int] = Field(..., min_length=1)
+
+
+@router.post("/apply")
+def apply(payload: ApplyRequest):
+    """Aplica borradores. Con dry_run (el default) solo devuelve el diff."""
+    if len(payload.suggestion_ids) > MAX_IDS_POR_LLAMADA:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Máximo {MAX_IDS_POR_LLAMADA} cambios por vez")
+
+    resultados = listing_apply_service.apply_suggestions(
+        payload.suggestion_ids, dry_run=payload.dry_run)
+
+    return {
+        "success": True,
+        "dry_run": payload.dry_run,
+        "total": len(resultados),
+        "aplicados": sum(1 for r in resultados if r['status'] == 'applied'),
+        "simulados": sum(1 for r in resultados if r['status'] == 'dry_run'),
+        "rechazados": sum(1 for r in resultados if r['status'] == 'rejected'),
+        "con_error": sum(1 for r in resultados if r['status'] == 'error'),
+        "resultados": resultados,
+    }
+
+
+@router.get("/revisions")
+def list_revisions(ml_ids: Optional[str] = Query(None, description="IDs separados por coma"),
+                   only_active: bool = Query(False, description="Excluir los ya revertidos")):
+    ids = [i.strip() for i in ml_ids.split(',') if i.strip()] if ml_ids else None
+    filas = database.get_listing_revisions(ml_ids=ids, only_active=only_active)
+    for fila in filas:
+        for campo in ('applied_at', 'reverted_at'):
+            if fila.get(campo):
+                fila[campo] = str(fila[campo])
+    return {"total": len(filas), "items": filas}
+
+
+@router.post("/rollback")
+def rollback(payload: RollbackRequest):
+    """Restaura en Mercado Libre el valor anterior de los cambios indicados."""
+    resultados = listing_apply_service.rollback_revisions(payload.revision_ids)
+    return {
+        "success": True,
+        "total": len(resultados),
+        "revertidos": sum(1 for r in resultados if r['status'] == 'reverted'),
+        "con_error": sum(1 for r in resultados if r['status'] == 'error'),
+        "resultados": resultados,
+    }

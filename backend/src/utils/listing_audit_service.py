@@ -275,6 +275,15 @@ def _fetch_local(ml_id: str, cache_categorias: dict):
     return {'item': item, 'catalogo': catalogo}, None
 
 
+def fetch_listing_context(ml_id: str, cache_categorias: dict = None):
+    """Publicación + catálogo de atributos de su categoría. Devuelve (datos, error).
+
+    Lo usa el generador de sugerencias para no duplicar la logica de traida ni
+    el cacheo de catalogos por categoria.
+    """
+    return _fetch_local(ml_id, cache_categorias if cache_categorias is not None else {})
+
+
 # =============================================================================
 # ORQUESTACIÓN
 # =============================================================================

@@ -3649,3 +3649,130 @@ def get_product_description(ml_id: str) -> str:
             if not fila:
                 return ''
             return (fila['description_meli'] or fila['description'] or '')
+
+
+def save_listing_suggestion(ml_id: str, field: str, goal_code: str,
+                            current_value: str, proposed_value: str,
+                            status: str = 'draft', model_used: str = None,
+                            reject_reason: str = None) -> int:
+    """Guarda un borrador de mejora y devuelve su id.
+
+    Los que no pasan la validación se guardan igual con status 'failed' y el
+    motivo: que quede visible que se intentó y por qué no salió es más útil
+    que borrarlos en silencio.
+    """
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute("""
+                INSERT INTO listing_suggestions
+                    (ml_id, field, goal_code, current_value, proposed_value,
+                     status, model_used, reject_reason)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                RETURNING id
+            """, (ml_id, field, goal_code, current_value, proposed_value,
+                  status, model_used, reject_reason))
+            return cursor.fetchone()['id']
+
+
+def get_listing_suggestions(ml_ids: list = None, statuses: list = None,
+                            suggestion_ids: list = None) -> list:
+    """Borradores filtrados por publicación, estado o id."""
+    condiciones, parametros = [], []
+    if ml_ids:
+        condiciones.append("ml_id IN (%s)" % ','.join(['%s'] * len(ml_ids)))
+        parametros.extend(ml_ids)
+    if statuses:
+        condiciones.append("status IN (%s)" % ','.join(['%s'] * len(statuses)))
+        parametros.extend(statuses)
+    if suggestion_ids:
+        condiciones.append("id IN (%s)" % ','.join(['%s'] * len(suggestion_ids)))
+        parametros.extend(suggestion_ids)
+
+    where = (" WHERE " + " AND ".join(condiciones)) if condiciones else ""
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute(
+                "SELECT * FROM listing_suggestions" + where + " ORDER BY ml_id, field, id",
+                parametros)
+            return [dict(r) for r in cursor.fetchall()]
+
+
+def update_listing_suggestion(suggestion_id: int, proposed_value: str = None,
+                              status: str = None, reject_reason: str = None,
+                              mark_applied: bool = False) -> bool:
+    """Edita un borrador. Devuelve si existía."""
+    campos, parametros = [], []
+    if proposed_value is not None:
+        campos.append("proposed_value = %s")
+        parametros.append(proposed_value)
+    if status is not None:
+        campos.append("status = %s")
+        parametros.append(status)
+    if reject_reason is not None:
+        campos.append("reject_reason = %s")
+        parametros.append(reject_reason)
+    if mark_applied:
+        campos.append("applied_at = CURRENT_TIMESTAMP")
+
+    if not campos:
+        return False
+
+    parametros.append(suggestion_id)
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute(
+                "UPDATE listing_suggestions SET " + ", ".join(campos) + " WHERE id = %s",
+                parametros)
+            return cursor.rowcount > 0
+
+
+def delete_listing_suggestion(suggestion_id: int) -> bool:
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute("DELETE FROM listing_suggestions WHERE id = %s", (suggestion_id,))
+            return cursor.rowcount > 0
+
+
+def save_listing_revision(ml_id: str, field: str, previous_value: str,
+                          applied_value: str, suggestion_id: int = None) -> int:
+    """Registra un cambio aplicado, con el valor anterior leído de Mercado Libre."""
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute("""
+                INSERT INTO listing_revisions
+                    (ml_id, field, previous_value, applied_value, suggestion_id)
+                VALUES (%s, %s, %s, %s, %s)
+                RETURNING id
+            """, (ml_id, field, previous_value, applied_value, suggestion_id))
+            return cursor.fetchone()['id']
+
+
+def get_listing_revisions(ml_ids: list = None, revision_ids: list = None,
+                          only_active: bool = False) -> list:
+    """Historial de cambios aplicados. only_active deja fuera los ya revertidos."""
+    condiciones, parametros = [], []
+    if ml_ids:
+        condiciones.append("ml_id IN (%s)" % ','.join(['%s'] * len(ml_ids)))
+        parametros.extend(ml_ids)
+    if revision_ids:
+        condiciones.append("id IN (%s)" % ','.join(['%s'] * len(revision_ids)))
+        parametros.extend(revision_ids)
+    if only_active:
+        condiciones.append("reverted_at IS NULL")
+
+    where = (" WHERE " + " AND ".join(condiciones)) if condiciones else ""
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute(
+                "SELECT * FROM listing_revisions" + where + " ORDER BY applied_at DESC",
+                parametros)
+            return [dict(r) for r in cursor.fetchall()]
+
+
+def mark_revision_reverted(revision_id: int) -> bool:
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute(
+                "UPDATE listing_revisions SET reverted_at = CURRENT_TIMESTAMP "
+                "WHERE id = %s AND reverted_at IS NULL", (revision_id,))
+            return cursor.rowcount > 0

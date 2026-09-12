@@ -1956,6 +1956,15 @@ export default function Inventory() {
           producto={qualityDetail.producto}
           salud={qualityDetail.salud}
           onClose={() => setQualityDetail(null)}
+          onApplied={() => {
+            // Tras aplicar, el diagnostico viejo quedo obsoleto: se reaudita
+            // esa publicacion para que la insignia refleje lo que quedo.
+            fetch('/api/listing-optimizer/audit', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ ml_ids: [qualityDetail.producto.ml_id], force_refresh: true })
+            }).then(() => fetchListingHealth()).catch(() => {})
+          }}
         />
       )}
 
@@ -4295,13 +4304,180 @@ function QRScannerModal({ onClose, onStockUpdated }) {
 }
 
 /**
- * Detalle de los objetivos de calidad de una publicacion.
+ * Detalle de calidad de una publicacion: objetivos pendientes, borradores de
+ * mejora generados con IA, y el historial de lo aplicado.
  *
- * Deja explicito de donde sale el diagnostico: cuando es local, es un calculo
- * nuestro y no el puntaje oficial de Mercado Libre.
+ * El flujo es deliberadamente de tres pasos y ninguno se saltea solo:
+ * generar borradores (no toca Mercado Libre) -> simular (devuelve el diff sin
+ * escribir) -> aplicar (el unico que modifica la publicacion, con confirmacion).
  */
-function QualityDetailModal({ producto, salud, onClose }) {
+const ETIQUETAS_CAMPO = {
+  title: 'Titulo',
+  description: 'Descripcion',
+  attributes: 'Ficha tecnica',
+}
+
+function DiffValor({ etiqueta, valor, color }) {
+  return (
+    <div style={{flex: '1 1 220px', minWidth: 0}}>
+      <div style={{fontSize: '0.66rem', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: 3}}>
+        {etiqueta}
+      </div>
+      <div style={{
+        fontSize: '0.78rem', color: color || 'var(--text-primary)',
+        backgroundColor: 'var(--bg-dark)', border: '1px solid var(--border-color)',
+        borderRadius: 6, padding: '6px 8px', maxHeight: 120, overflowY: 'auto',
+        whiteSpace: 'pre-wrap', wordBreak: 'break-word'
+      }}>
+        {valor || <span style={{color: 'var(--text-secondary)', fontStyle: 'italic'}}>(vacio)</span>}
+      </div>
+    </div>
+  )
+}
+
+function QualityDetailModal({ producto, salud, onClose, onApplied }) {
   const objetivos = (salud && salud.goals) || []
+  const mlId = producto.ml_id
+
+  const [sugerencias, setSugerencias] = React.useState([])
+  const [revisiones, setRevisiones] = React.useState([])
+  const [seleccionadas, setSeleccionadas] = React.useState([])
+  const [ediciones, setEdiciones] = React.useState({})
+  const [generando, setGenerando] = React.useState(false)
+  const [trabajando, setTrabajando] = React.useState(false)
+  const [simulacion, setSimulacion] = React.useState(null)
+
+  const cargarBorradores = React.useCallback(() => {
+    fetch('/api/listing-optimizer/suggestions?ml_ids=' + encodeURIComponent(mlId))
+      .then(r => r.ok ? r.json() : { items: [] })
+      .then(d => setSugerencias(d.items || []))
+      .catch(() => {})
+    fetch('/api/listing-optimizer/revisions?ml_ids=' + encodeURIComponent(mlId) + '&only_active=true')
+      .then(r => r.ok ? r.json() : { items: [] })
+      .then(d => setRevisiones(d.items || []))
+      .catch(() => {})
+  }, [mlId])
+
+  React.useEffect(() => { cargarBorradores() }, [cargarBorradores])
+
+  const valorDe = (sug) => (
+    ediciones[sug.id] !== undefined ? ediciones[sug.id] : sug.proposed_value
+  )
+
+  const alternarSeleccion = (id) => {
+    setSeleccionadas(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id])
+  }
+
+  const generar = async () => {
+    setGenerando(true)
+    setSimulacion(null)
+    try {
+      const res = await fetch('/api/listing-optimizer/suggest', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ml_ids: [mlId] })
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        alert('No se pudieron generar sugerencias: ' + (data.detail || 'error desconocido'))
+        return
+      }
+      const detalle = (data.resultados || [])[0] || {}
+      const sinDatos = (detalle.sugerencias || []).filter(s => s.status === 'sin_datos')
+      const errores = (detalle.sugerencias || []).filter(s => s.status === 'error')
+      if (data.borradores === 0) {
+        const motivos = [...sinDatos, ...errores].map(s => s.error).filter(Boolean)
+        alert('No se genero ningun borrador.' + String.fromCharCode(10) + String.fromCharCode(10) +
+              (motivos.join(String.fromCharCode(10)) || 'No hay objetivos de contenido pendientes.'))
+      }
+      cargarBorradores()
+    } catch (e) {
+      alert('Error de conexion: ' + e.message)
+    } finally {
+      setGenerando(false)
+    }
+  }
+
+  const guardarEdiciones = async () => {
+    const pendientes = Object.keys(ediciones)
+    for (const id of pendientes) {
+      await fetch('/api/listing-optimizer/suggestions/' + id, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ proposed_value: ediciones[id] })
+      }).catch(() => {})
+    }
+    setEdiciones({})
+  }
+
+  const ejecutar = async (dryRun) => {
+    if (seleccionadas.length === 0) {
+      alert('Marca al menos un cambio para ' + (dryRun ? 'simular' : 'aplicar'))
+      return
+    }
+    if (!dryRun) {
+      const confirmado = confirm(
+        'Vas a modificar ' + seleccionadas.length + ' campo(s) de esta publicacion ' +
+        'EN MERCADO LIBRE.' + String.fromCharCode(10) + String.fromCharCode(10) +
+        'Se guarda el valor anterior para poder revertirlo. Continuar?')
+      if (!confirmado) return
+    }
+
+    setTrabajando(true)
+    try {
+      await guardarEdiciones()
+      const res = await fetch('/api/listing-optimizer/apply', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ suggestion_ids: seleccionadas, dry_run: dryRun })
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        alert('Error: ' + (data.detail || 'error desconocido'))
+        return
+      }
+
+      if (dryRun) {
+        setSimulacion(data.resultados || [])
+      } else {
+        setSimulacion(null)
+        setSeleccionadas([])
+        const fallidos = (data.resultados || []).filter(
+          r => r.status === 'error' || r.status === 'rejected')
+        alert('Aplicados: ' + data.aplicados + ' de ' + data.total +
+              (fallidos.length
+                ? String.fromCharCode(10) + String.fromCharCode(10) + 'No se aplicaron:' +
+                  String.fromCharCode(10) +
+                  fallidos.map(f => ETIQUETAS_CAMPO[f.field] + ': ' + f.error).join(String.fromCharCode(10))
+                : ''))
+        if (onApplied) onApplied()
+      }
+      cargarBorradores()
+    } catch (e) {
+      alert('Error de conexion: ' + e.message)
+    } finally {
+      setTrabajando(false)
+    }
+  }
+
+  const revertir = async (revisionId) => {
+    if (!confirm('Restaurar el valor anterior de este campo en Mercado Libre?')) return
+    setTrabajando(true)
+    try {
+      const res = await fetch('/api/listing-optimizer/rollback', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ revision_ids: [revisionId] })
+      })
+      const data = await res.json()
+      const fallidos = (data.resultados || []).filter(r => r.status === 'error')
+      if (fallidos.length) alert('No se pudo revertir: ' + fallidos[0].error)
+      cargarBorradores()
+      if (onApplied) onApplied()
+    } finally {
+      setTrabajando(false)
+    }
+  }
 
   const describir = (objetivo) => {
     const d = objetivo.detail || {}
@@ -4329,16 +4505,27 @@ function QualityDetailModal({ producto, salud, onClose }) {
       )
     }
     if (objetivo.id === 'FOTOS') {
-      return <div>{d.cantidad} foto{d.cantidad === 1 ? '' : 's'}, se recomiendan {d.recomendadas} o mas</div>
+      return (
+        <div>
+          {d.cantidad} foto{d.cantidad === 1 ? '' : 's'}, se recomiendan {d.recomendadas} o mas.
+          {d.cantidad < d.recomendadas && (
+            <div style={{color: 'var(--text-secondary)', fontSize: '0.75rem', marginTop: 3}}>
+              Las fotos se suben desde Mercado Libre: no se generan con IA porque
+              tienen que ser del producto real.
+            </div>
+          )}
+        </div>
+      )
     }
-    if (objetivo.id === 'TITULO') {
-      return <div>{d.caracteres} caracteres (minimo sugerido {d.minimo_sugerido})</div>
-    }
-    if (objetivo.id === 'DESCRIPCION') {
+    if (objetivo.id === 'TITULO' || objetivo.id === 'DESCRIPCION') {
       return <div>{d.caracteres} caracteres (minimo sugerido {d.minimo_sugerido})</div>
     }
     return <div style={{fontSize: '0.75rem', color: 'var(--text-secondary)'}}>{JSON.stringify(d)}</div>
   }
+
+  const borradores = sugerencias.filter(s => s.status === 'draft' || s.status === 'edited')
+  const fallidos = sugerencias.filter(s => s.status === 'failed')
+  const resultadoSimulado = (id) => (simulacion || []).find(r => r.suggestion_id === id)
 
   return (
     <div
@@ -4351,7 +4538,7 @@ function QualityDetailModal({ producto, salud, onClose }) {
     >
       <div
         className="card"
-        style={{width: 560, maxWidth: '100%', maxHeight: '85vh', overflowY: 'auto'}}
+        style={{width: 640, maxWidth: '100%', maxHeight: '88vh', overflowY: 'auto'}}
         onClick={e => e.stopPropagation()}
       >
         <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10}}>
@@ -4361,7 +4548,7 @@ function QualityDetailModal({ producto, salud, onClose }) {
               {producto.title}
             </div>
             <div style={{fontSize: '0.72rem', color: 'var(--text-secondary)', fontFamily: 'monospace'}}>
-              {producto.ml_id}
+              {mlId}
             </div>
           </div>
           <button
@@ -4414,6 +4601,171 @@ function QualityDetailModal({ producto, salud, onClose }) {
                 </div>
               </div>
             ))}
+
+            {/* ---------------- Borradores de mejora ---------------- */}
+            <div style={{
+              marginTop: 18, paddingTop: 14, borderTop: '2px solid var(--border-color)'
+            }}>
+              <div style={{
+                display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                gap: 10, flexWrap: 'wrap', marginBottom: 10
+              }}>
+                <h4 style={{margin: 0, fontSize: '0.9rem'}}>Mejoras propuestas</h4>
+                <button
+                  type="button"
+                  className="dashboard-pill"
+                  onClick={generar}
+                  disabled={generando || trabajando}
+                  style={{
+                    backgroundColor: 'rgba(139, 92, 246, 0.15)', color: '#8b5cf6',
+                    border: '1px solid rgba(139, 92, 246, 0.35)', fontWeight: 700,
+                    cursor: generando ? 'wait' : 'pointer'
+                  }}
+                >
+                  {generando ? 'Generando...' : 'Generar con IA'}
+                </button>
+              </div>
+
+              {borradores.length === 0 && fallidos.length === 0 && (
+                <p style={{fontSize: '0.78rem', color: 'var(--text-secondary)', margin: 0}}>
+                  Sin borradores. "Generar con IA" propone titulo, descripcion y ficha
+                  tecnica para los objetivos pendientes. No modifica nada todavia.
+                </p>
+              )}
+
+              {borradores.map(sug => {
+                const simulado = resultadoSimulado(sug.id)
+                return (
+                  <div
+                    key={sug.id}
+                    style={{
+                      border: '1px solid ' + (seleccionadas.includes(sug.id) ? 'var(--accent-blue)' : 'var(--border-color)'),
+                      borderRadius: 8, padding: 10, marginBottom: 10,
+                      backgroundColor: 'var(--bg-card)'
+                    }}
+                  >
+                    <label style={{display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', marginBottom: 8}}>
+                      <input
+                        type="checkbox"
+                        checked={seleccionadas.includes(sug.id)}
+                        onChange={() => alternarSeleccion(sug.id)}
+                        style={{cursor: 'pointer', width: 16, height: 16, minHeight: 'auto'}}
+                      />
+                      <span style={{fontWeight: 700, fontSize: '0.85rem'}}>
+                        {ETIQUETAS_CAMPO[sug.field] || sug.field}
+                      </span>
+                      {sug.model_used && (
+                        <span style={{fontSize: '0.66rem', color: 'var(--text-secondary)'}}>
+                          {sug.model_used}
+                        </span>
+                      )}
+                    </label>
+
+                    <div style={{display: 'flex', gap: 10, flexWrap: 'wrap'}}>
+                      <DiffValor etiqueta="ANTES" valor={sug.current_value} color="var(--text-secondary)" />
+                      <div style={{flex: '1 1 220px', minWidth: 0}}>
+                        <div style={{fontSize: '0.66rem', fontWeight: 700, color: '#10b981', marginBottom: 3}}>
+                          DESPUES (editable)
+                        </div>
+                        <textarea
+                          value={valorDe(sug)}
+                          onChange={e => setEdiciones(prev => ({...prev, [sug.id]: e.target.value}))}
+                          rows={sug.field === 'description' ? 6 : 3}
+                          style={{
+                            width: '100%', fontSize: '0.78rem', padding: '6px 8px',
+                            borderRadius: 6, border: '1px solid var(--border-color)',
+                            backgroundColor: 'var(--bg-dark)', color: 'var(--text-primary)',
+                            resize: 'vertical', minHeight: 'auto'
+                          }}
+                        />
+                      </div>
+                    </div>
+
+                    {simulado && (
+                      <div style={{
+                        marginTop: 8, fontSize: '0.75rem',
+                        color: simulado.status === 'dry_run' ? '#10b981' : '#ef4444'
+                      }}>
+                        {simulado.status === 'dry_run'
+                          ? 'Simulacion OK: el cambio se puede aplicar.'
+                          : 'No se puede aplicar: ' + (simulado.error || '')}
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+
+              {fallidos.map(sug => (
+                <div key={sug.id} style={{
+                  border: '1px solid rgba(239, 68, 68, 0.35)', borderRadius: 8,
+                  padding: '8px 10px', marginBottom: 8, fontSize: '0.78rem'
+                }}>
+                  <b>{ETIQUETAS_CAMPO[sug.field] || sug.field}</b>
+                  <span style={{color: '#ef4444'}}> — rechazado: {sug.reject_reason}</span>
+                </div>
+              ))}
+
+              {borradores.length > 0 && (
+                <div style={{display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 4}}>
+                  <button
+                    type="button"
+                    className="dashboard-pill"
+                    onClick={() => ejecutar(true)}
+                    disabled={trabajando}
+                    style={{
+                      backgroundColor: 'var(--bg-dark)', color: 'var(--text-primary)',
+                      border: '1px solid var(--border-color)', fontWeight: 600
+                    }}
+                  >
+                    Simular ({seleccionadas.length})
+                  </button>
+                  <button
+                    type="button"
+                    className="dashboard-pill"
+                    onClick={() => ejecutar(false)}
+                    disabled={trabajando}
+                    style={{
+                      backgroundColor: '#10b981', color: '#fff', border: 'none', fontWeight: 700
+                    }}
+                  >
+                    {trabajando ? 'Trabajando...' : 'Aplicar en Mercado Libre (' + seleccionadas.length + ')'}
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* ---------------- Historial reversible ---------------- */}
+            {revisiones.length > 0 && (
+              <div style={{marginTop: 18, paddingTop: 14, borderTop: '2px solid var(--border-color)'}}>
+                <h4 style={{margin: '0 0 8px 0', fontSize: '0.9rem'}}>Cambios aplicados</h4>
+                {revisiones.map(rev => (
+                  <div key={rev.id} style={{
+                    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                    gap: 10, padding: '8px 0', borderTop: '1px solid var(--border-color)',
+                    fontSize: '0.78rem', flexWrap: 'wrap'
+                  }}>
+                    <div style={{minWidth: 0}}>
+                      <b>{ETIQUETAS_CAMPO[rev.field] || rev.field}</b>
+                      <span style={{color: 'var(--text-secondary)'}}>
+                        {' '}— {String(rev.applied_at || '').slice(0, 16)}
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      className="dashboard-pill"
+                      onClick={() => revertir(rev.id)}
+                      disabled={trabajando}
+                      style={{
+                        backgroundColor: 'rgba(239, 68, 68, 0.15)', color: '#ef4444',
+                        border: '1px solid rgba(239, 68, 68, 0.3)', fontWeight: 600
+                      }}
+                    >
+                      Revertir
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
           </>
         )}
       </div>
