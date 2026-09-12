@@ -167,6 +167,13 @@ class GeneracionTest(unittest.TestCase):
         self.assertIsNone(propuesta)
         self.assertIn('JSON', error)
 
+    def test_los_atributos_se_piden_en_modo_json(self):
+        """Pedirlo solo por prompt devolvia prosa cada tanto y se perdia la sugerencia."""
+        with patch.object(ia, '_llamar_gemini',
+                          return_value=('{"UNITS_PER_PACK": "2"}', 'modelo-x', None)) as llamar:
+            ia.suggest_attributes(self.ITEM, CATALOGO, ['UNITS_PER_PACK'])
+        self.assertTrue(llamar.call_args[1]['json_mode'])
+
     def test_sin_clave_de_gemini_no_falla_silenciosamente(self):
         with patch.object(ia.database, 'get_setting', return_value=''):
             _t, _m, error = ia._llamar_gemini('hola')

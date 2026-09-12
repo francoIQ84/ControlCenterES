@@ -162,15 +162,25 @@ def validate_listing_change(field: str, value, catalogo=None):
 # LLAMADA AL MODELO
 # =============================================================================
 
-def _llamar_gemini(prompt: str, max_tokens: int = 1024):
-    """Devuelve (texto, modelo_usado, error). Reusa la cascada de modelos."""
+def _llamar_gemini(prompt: str, max_tokens: int = 1024, json_mode: bool = False):
+    """Devuelve (texto, modelo_usado, error). Reusa la cascada de modelos.
+
+    Con json_mode se le pide al modelo que responda JSON a nivel de API en vez
+    de confiar en que respete la instruccion del prompt. Probando contra la
+    cuenta real, pedirlo solo por prompt devolvia prosa cada tanto y la
+    sugerencia de atributos se perdia.
+    """
     clave = database.get_setting("gemini_api_key", "").strip()
     if not clave:
         return None, None, "No hay una clave de Gemini configurada en Ajustes"
 
+    generacion = {"temperature": 0.2, "maxOutputTokens": max_tokens}
+    if json_mode:
+        generacion["responseMimeType"] = "application/json"
+
     payload = {
         "contents": [{"parts": [{"text": prompt}]}],
-        "generationConfig": {"temperature": 0.2, "maxOutputTokens": max_tokens},
+        "generationConfig": generacion,
     }
     headers = {"Content-Type": "application/json"}
     ultimo_error = "No se pudo contactar a ningún modelo"
@@ -274,7 +284,7 @@ Si el atributo tiene valores admitidos, elegi exactamente uno de esa lista.
 Respondé SOLO un objeto JSON, sin explicaciones ni markdown, con esta forma:
 {{"ATRIBUTO_ID": "valor" o null}}"""
 
-    texto, modelo, error = _llamar_gemini(prompt, max_tokens=800)
+    texto, modelo, error = _llamar_gemini(prompt, max_tokens=800, json_mode=True)
     if error:
         return None, None, error
 
