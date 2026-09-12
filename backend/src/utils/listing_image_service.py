@@ -169,12 +169,13 @@ def _generar_con_gemini(bytes_origen: bytes, instruccion: str):
         return None, modelo, f"{modelo}: {str(e)[:140]}"
 
     if res.status_code == 429:
+        detalle, _codigo = _error_de_openai(res)
         return None, modelo, (
-            f"{modelo}: sin cuota de imágenes. El nivel gratuito de Google no "
-            f"incluye generación de imágenes; hay que activar facturación en "
-            f"la cuenta de Google asociada a la clave.")
+            "El nivel gratuito de Google no incluye generación de imágenes: hay "
+            "que activar facturación en la cuenta asociada a la clave. " + detalle)
     if res.status_code != 200:
-        return None, modelo, f"{modelo}: HTTP {res.status_code} {' '.join((res.text or '')[:160].split())}"
+        detalle, _codigo = _error_de_openai(res)
+        return None, modelo, f"{modelo}: {detalle}"
 
     try:
         candidatos = res.json().get('candidates') or []
@@ -192,6 +193,19 @@ def _generar_con_gemini(bytes_origen: bytes, instruccion: str):
                 return None, modelo, f"{modelo}: la imagen devuelta no se pudo decodificar"
 
     return None, modelo, f"{modelo}: el modelo respondió sin imagen"
+
+
+def _error_de_openai(res):
+    """Saca (mensaje, codigo) del cuerpo de error de OpenAI."""
+    try:
+        error = (res.json() or {}).get('error') or {}
+        mensaje = str(error.get('message') or '').strip()
+        codigo = str(error.get('code') or error.get('type') or '').strip()
+        if mensaje:
+            return mensaje, codigo
+    except Exception:
+        pass
+    return f"HTTP {res.status_code}: {' '.join((res.text or '')[:170].split())}", ''
 
 
 def _generar_con_openai(bytes_origen: bytes, instruccion: str):
@@ -218,14 +232,21 @@ def _generar_con_openai(bytes_origen: bytes, instruccion: str):
     except Exception as e:
         return None, modelo, f"{modelo}: {str(e)[:140]}"
 
-    if res.status_code == 401:
-        return None, modelo, f"{modelo}: la clave de OpenAI es invalida o fue revocada"
-    if res.status_code == 429:
-        return None, modelo, (
-            f"{modelo}: sin credito o limite alcanzado. Revisá el saldo de la "
-            f"cuenta de OpenAI.")
     if res.status_code != 200:
-        return None, modelo, f"{modelo}: HTTP {res.status_code} {' '.join((res.text or '')[:170].split())}"
+        # El mensaje de OpenAI es mas preciso que cualquier parafraseo: distingue
+        # "sin credito" de "limite de velocidad", y suele traer el link exacto
+        # para resolverlo. Se muestra tal cual, con una traduccion corta adelante
+        # solo cuando el codigo es inequivoco.
+        detalle, codigo = _error_de_openai(res)
+        prefijos = {
+            'insufficient_quota': 'La cuenta de OpenAI no tiene credito.',
+            'credit_balance_exhausted': 'La cuenta de OpenAI no tiene credito.',
+            'rate_limit_exceeded': 'Limite de velocidad de OpenAI: esperá unos segundos.',
+            'invalid_api_key': 'La clave de OpenAI es invalida o fue revocada.',
+            'model_not_found': 'La cuenta no tiene acceso a ese modelo de imagen.',
+        }
+        prefijo = prefijos.get(codigo, '')
+        return None, modelo, (prefijo + ' ' + detalle).strip() or f"{modelo}: HTTP {res.status_code}"
 
     try:
         datos = (res.json().get('data') or [{}])[0].get('b64_json')

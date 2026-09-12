@@ -92,6 +92,63 @@ class GeneracionTest(unittest.TestCase):
             self.assertIn('logos', minusculas, estilo)
 
 
+class MensajesDeErrorTest(unittest.TestCase):
+    """El mensaje del proveedor es mas util que cualquier parafraseo propio."""
+
+    def _clave(self, valores):
+        return patch.object(img.database, 'get_setting',
+                            side_effect=lambda k, d=None: valores.get(k, d))
+
+    def _resp(self, cuerpo, estado=429):
+        class Resp:
+            status_code = estado
+            text = ''
+
+            def json(self):
+                return cuerpo
+        return Resp()
+
+    def test_muestra_el_mensaje_real_y_el_link(self):
+        cuerpo = {"error": {
+            "message": ("You have no credits remaining. Add credits at "
+                        "https://platform.openai.com/settings/organization/billing/."),
+            "code": "credit_balance_exhausted"}}
+        with self._clave({'openai_api_key': 'sk-x'}), \
+             patch.object(img.requests, 'post', return_value=self._resp(cuerpo)):
+            _d, _m, error = img._generar_con_openai(b'x', 'y')
+
+        self.assertIn('no tiene credito', error)
+        self.assertIn('platform.openai.com', error)
+
+    def test_distingue_limite_de_velocidad_de_falta_de_credito(self):
+        cuerpo = {"error": {"message": "Rate limit reached",
+                            "code": "rate_limit_exceeded"}}
+        with self._clave({'openai_api_key': 'sk-x'}), \
+             patch.object(img.requests, 'post', return_value=self._resp(cuerpo)):
+            _d, _m, error = img._generar_con_openai(b'x', 'y')
+
+        self.assertIn('velocidad', error)
+        self.assertNotIn('no tiene credito', error)
+
+    def test_una_clave_invalida_se_reporta_como_tal(self):
+        cuerpo = {"error": {"message": "Incorrect API key provided",
+                            "code": "invalid_api_key"}}
+        with self._clave({'openai_api_key': 'sk-x'}), \
+             patch.object(img.requests, 'post', return_value=self._resp(cuerpo, 401)):
+            _d, _m, error = img._generar_con_openai(b'x', 'y')
+
+        self.assertIn('invalida', error)
+
+    def test_un_codigo_desconocido_igual_muestra_el_mensaje(self):
+        cuerpo = {"error": {"message": "Something unusual happened",
+                            "code": "algo_nuevo"}}
+        with self._clave({'openai_api_key': 'sk-x'}), \
+             patch.object(img.requests, 'post', return_value=self._resp(cuerpo, 500)):
+            _d, _m, error = img._generar_con_openai(b'x', 'y')
+
+        self.assertIn('Something unusual happened', error)
+
+
 class ProveedorImagenTest(unittest.TestCase):
     def _config(self, valores):
         return patch.object(img.database, 'get_setting',
