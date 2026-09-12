@@ -229,6 +229,35 @@ class ProveedorTest(unittest.TestCase):
         self.assertIn('clave', error.lower())
 
 
+class RegenerarTest(unittest.TestCase):
+    """Regenerar reemplaza la propuesta anterior, no la apila."""
+
+    def test_borra_los_borradores_previos_del_mismo_campo(self):
+        contexto = {'item': {'id': 'MLA1', 'title': 'x' * 40, 'category_id': 'C'}, 'catalogo': []}
+        with patch('src.utils.listing_audit_service.fetch_listing_context',
+                   return_value=(contexto, None)),              patch('src.utils.listing_audit_service.compute_local_audit',
+                   return_value={'pending_codes': ['DESCRIPCION'],
+                                 'goals_json': '[{"id": "FICHA_TECNICA", "detail": {}}]'}),              patch.object(ia, 'suggest_description',
+                          return_value=('d' * 300, 'modelo-x', None)),              patch.object(ia.database, 'save_listing_suggestion', return_value=1),              patch.object(ia.database, 'delete_pending_suggestions') as borrar:
+            ia.generate_suggestions(['MLA1'])
+
+        borrar.assert_called_once_with('MLA1', 'description')
+
+    def test_si_solo_faltan_fotos_explica_por_que_no_hay_borrador(self):
+        """Decir "no hay objetivos pendientes" seria enganoso: si los hay."""
+        contexto = {'item': {'id': 'MLA1', 'title': 'x' * 40, 'category_id': 'C'}, 'catalogo': []}
+        with patch('src.utils.listing_audit_service.fetch_listing_context',
+                   return_value=(contexto, None)),              patch('src.utils.listing_audit_service.compute_local_audit',
+                   return_value={'pending_codes': ['FOTOS'],
+                                 'goals_json': '[{"id": "FICHA_TECNICA", "detail": {}}]'}):
+            resultados = ia.generate_suggestions(['MLA1'])
+
+        sugerencias = resultados[0]['sugerencias']
+        self.assertEqual(len(sugerencias), 1)
+        self.assertEqual(sugerencias[0]['status'], 'manual')
+        self.assertIn('producto real', sugerencias[0]['error'])
+
+
 class AplicarTest(unittest.TestCase):
     SUGERENCIA = {
         'id': 7, 'ml_id': 'MLA1', 'field': 'title', 'status': 'draft',

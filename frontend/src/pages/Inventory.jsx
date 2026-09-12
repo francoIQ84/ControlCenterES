@@ -4416,12 +4416,14 @@ function QualityDetailModal({ producto, salud, onClose, onApplied }) {
         return
       }
       const detalle = (data.resultados || [])[0] || {}
-      const sinDatos = (detalle.sugerencias || []).filter(s => s.status === 'sin_datos')
-      const errores = (detalle.sugerencias || []).filter(s => s.status === 'error')
+      const aclaraciones = (detalle.sugerencias || [])
+        .filter(s => ['sin_datos', 'error', 'manual'].includes(s.status))
+        .map(s => s.error)
+        .filter(Boolean)
       if (data.borradores === 0) {
-        const motivos = [...sinDatos, ...errores].map(s => s.error).filter(Boolean)
         alert('No se genero ningun borrador.' + String.fromCharCode(10) + String.fromCharCode(10) +
-              (motivos.join(String.fromCharCode(10)) || 'No hay objetivos de contenido pendientes.'))
+              (aclaraciones.join(String.fromCharCode(10) + String.fromCharCode(10)) ||
+               'No hay objetivos de contenido pendientes.'))
       }
       cargarBorradores()
     } catch (e) {
@@ -4560,8 +4562,9 @@ function QualityDetailModal({ producto, salud, onClose, onApplied }) {
           {d.cantidad} foto{d.cantidad === 1 ? '' : 's'}, se recomiendan {d.recomendadas} o mas.
           {d.cantidad < d.recomendadas && (
             <div style={{color: 'var(--text-secondary)', fontSize: '0.75rem', marginTop: 3}}>
-              Las fotos se suben desde Mercado Libre: no se generan con IA porque
-              tienen que ser del producto real.
+              Las fotos tienen que ser del producto real, asi que no se generan con
+              IA. Subi 2 o 3 mas desde Mercado Libre, donde ademas tenes su editor
+              con IA para estandarizar el fondo y el encuadre de las que ya tengas.
             </div>
           )}
         </div>

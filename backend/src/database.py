@@ -3786,3 +3786,19 @@ def update_product_title(ml_id: str, title: str):
             cursor.execute(
                 "UPDATE products_cache SET title = %s, last_modified = %s WHERE ml_id = %s",
                 (title, now, ml_id))
+
+
+def delete_pending_suggestions(ml_id: str, field: str) -> int:
+    """Descarta los borradores sin aplicar de ese campo y devuelve cuantos borro.
+
+    Se llama antes de guardar uno nuevo: regenerar tiene que reemplazar la
+    propuesta anterior, no acumularla. Los ya aplicados no se tocan, porque son
+    historial y su revision depende de ellos.
+    """
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute(
+                "DELETE FROM listing_suggestions "
+                "WHERE ml_id = %s AND field = %s AND status <> 'applied'",
+                (ml_id, field))
+            return cursor.rowcount

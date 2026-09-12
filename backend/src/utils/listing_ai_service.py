@@ -552,6 +552,11 @@ def generate_suggestions(ml_ids, targets=None) -> list:
         detalle_ficha = next(
             (o['detail'] for o in objetivos if o['id'] == 'FICHA_TECNICA'), {})
 
+        # Las fotos no se generan con IA: tienen que ser del producto real. Si es
+        # lo unico que falta, hay que decirlo con todas las letras en vez de
+        # devolver "no hay objetivos pendientes", que es enganoso.
+        solo_faltan_fotos = pendientes and pendientes.issubset({'FOTOS'})
+
         a_generar = targets or [
             {'FICHA_TECNICA': 'attributes', 'TITULO': 'title',
              'DESCRIPCION': 'description'}[codigo]
@@ -622,6 +627,10 @@ def generate_suggestions(ml_ids, targets=None) -> list:
             texto_propuesto = (json.dumps(saneado, ensure_ascii=False)
                                if field == 'attributes' else str(saneado))
 
+            # Regenerar reemplaza la propuesta anterior de ese campo. Sin esto
+            # cada clic en "Generar con IA" apilaba otra ficha tecnica igual.
+            database.delete_pending_suggestions(ml_id, field)
+
             suggestion_id = database.save_listing_suggestion(
                 ml_id=ml_id, field=field, goal_code=goal_code,
                 current_value=valor_actual, proposed_value=texto_propuesto,
@@ -633,6 +642,15 @@ def generate_suggestions(ml_ids, targets=None) -> list:
                 "status": "draft" if es_valido else "failed",
                 "error": None if es_valido else motivo,
                 "model_used": modelo,
+            })
+
+        if not generados and solo_faltan_fotos:
+            generados.append({
+                "field": "pictures", "status": "manual",
+                "error": "El unico objetivo pendiente son las fotos, y esas tienen "
+                         "que ser del producto real: no se generan con IA. Sacá 2 o 3 "
+                         "fotos mas y subilas desde Mercado Libre, donde ademas "
+                         "tenes su editor con IA para estandarizar el fondo.",
             })
 
         resultados.append({"ml_id": ml_id, "status": "ok", "sugerencias": generados})
