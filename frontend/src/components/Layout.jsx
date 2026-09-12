@@ -457,7 +457,7 @@ export default function Layout() {
       {isChannelEnabled('meli') && meliStatus && (
         <div 
           onClick={handleAuthMeliClick}
-          title={meliStatus.is_authenticated ? `Cuenta vinculada: ${meliStatus.nickname || meliStatus.user_id}. Hacé clic para administrar en Configuración.` : "¡Hacé clic para vincular tu cuenta de Mercado Libre / Mercado Pago!"}
+          title={meliStatus.is_authenticated ? `Cuenta vinculada: ${meliStatus.nickname || meliStatus.user_id}${meliStatus.email ? ` (${meliStatus.email})` : ''}. Hacé clic para administrar en Configuración.` : "¡Hacé clic para vincular tu cuenta de Mercado Libre / Mercado Pago!"}
           style={{
             display: 'inline-flex',
             alignItems: 'center',

@@ -37,3 +37,6 @@ test_*.py
 find_*.py
 calc_*.py
 check_*.py
+
+# ...pero la suite de tests del backend si se versiona
+!backend/tests/**/test_*.py
