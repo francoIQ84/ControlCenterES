@@ -64,15 +64,22 @@ def _to_float(value):
         return None
 
 
-def _es_error_de_permisos(error) -> bool:
-    """Un 401/403 no es transitorio: lo devuelve la cuenta, no la publicación.
+def _es_error_de_cuenta(error, strategy: str) -> bool:
+    """Si el error es de la cuenta y se repetiría idéntico en cada publicación.
 
-    Sirve para cortar la auditoría en seco en vez de repetir el mismo error una
-    vez por publicación. El formato del texto lo produce este mismo módulo, así
-    que la comparación es sobre algo que controlamos.
+    Un 401 siempre lo es: el token no sirve para nada. Un 403 depende de qué se
+    estaba pidiendo. En la estrategia oficial el 403 viene del recurso de
+    calidad, que la cuenta entera no puede consultar, y cortar ahorra cientos
+    de llamadas inútiles. En la estrategia local el 403 lo devuelve UNA
+    publicación puntual —está pasa, restringida o moderada— y cortar por eso
+    dejaría sin auditar todo el resto del catálogo. Eso fue exactamente lo que
+    pasó al auditar las 99 activas: una sola dio 403 y las otras 93 quedaron sin
+    revisar.
     """
     texto = str(error or '')
-    return 'HTTP 401' in texto or 'HTTP 403' in texto
+    if 'HTTP 401' in texto:
+        return True
+    return strategy == 'performance' and 'HTTP 403' in texto
 
 
 def _get_json(path):
@@ -266,14 +273,20 @@ def compute_local_audit(item, category_attributes) -> dict:
     }
 
 
-def _fetch_local(ml_id: str, cache_categorias: dict):
+def _fetch_local(ml_id: str, cache_categorias: dict, item_precargado=None):
     """Trae lo necesario para la auditoría local. Devuelve (datos, error).
 
+    `item_precargado` es la publicación ya traída por el multiget; si no viene,
+    se pide sola.
+
     El catálogo de atributos se cachea por categoría durante la corrida: un
-    catálogo de 94 publicaciones suele repartirse en pocas decenas de
+    catálogo de 99 publicaciones suele repartirse en pocas decenas de
     categorías, y pedirlo una vez por publicación sería desperdicio puro.
     """
-    item, error = _get_json("/items/" + ml_id)
+    if item_precargado is not None:
+        item, error = item_precargado, None
+    else:
+        item, error = _get_json("/items/" + ml_id)
     if error:
         return None, error
 
@@ -295,6 +308,48 @@ def _fetch_local(ml_id: str, cache_categorias: dict):
     item['_description'] = database.get_product_description(ml_id) or ''
 
     return {'item': item, 'catalogo': catalogo}, None
+
+
+# Mercado Libre admite pedir varias publicaciones en una sola llamada. Auditar
+# 99 de a una eran 99 llamadas; de a 20 son 5.
+TAMANIO_LOTE = 20
+
+
+def fetch_items_bulk(ml_ids) -> dict:
+    """Trae varias publicaciones por lote. Devuelve {ml_id: (item, error)}.
+
+    El multiget responde 200 aunque alguna publicación falle: cada entrada trae
+    su propio `code`, así que el error de una no contamina a las demás.
+    """
+    resultado = {}
+    ids = list(ml_ids or [])
+
+    for inicio in range(0, len(ids), TAMANIO_LOTE):
+        lote = ids[inicio:inicio + TAMANIO_LOTE]
+        cuerpo, error = _get_json(
+            "/items?ids=" + ",".join(lote) +
+            "&attributes=id,title,category_id,attributes,pictures,status")
+
+        if error or not isinstance(cuerpo, list):
+            # Si el lote entero falla, cada publicación queda con ese error y se
+            # resuelve una por una más adelante si hace falta.
+            for ml_id in lote:
+                resultado[ml_id] = (None, error or "Respuesta inesperada del multiget")
+            continue
+
+        for entrada in cuerpo:
+            entrada = entrada or {}
+            ml_id = entrada.get('id') or (entrada.get('body') or {}).get('id')
+            codigo = entrada.get('code')
+            if codigo == 200 and entrada.get('body'):
+                resultado[ml_id] = (entrada['body'], None)
+            else:
+                resultado[ml_id] = (None, f"HTTP {codigo}: la publicación no se pudo leer")
+
+        for ml_id in lote:
+            resultado.setdefault(ml_id, (None, "Mercado Libre no devolvió esta publicación"))
+
+    return resultado
 
 
 def fetch_listing_context(ml_id: str, cache_categorias: dict = None):
@@ -387,6 +442,17 @@ def audit_listings(ml_ids, force_refresh: bool = False,
     resultados = []
     total = len(ids)
 
+    # Las que hay que consultar de verdad se traen por lote antes del bucle.
+    precargadas = {}
+    if strategy != 'performance':
+        pendientes = [i for i in ids
+                      if force_refresh or frescura.get(i) is None
+                      or frescura.get(i) >= max_age_hours]
+        if pendientes:
+            update_progress(status="auditing_listings", progress=5,
+                            message=f"Trayendo {len(pendientes)} publicaciones de Mercado Libre...")
+            precargadas = fetch_items_bulk(pendientes)
+
     for indice, ml_id in enumerate(ids, start=1):
         update_progress(
             status="auditing_listings",
@@ -404,16 +470,21 @@ def audit_listings(ml_ids, force_refresh: bool = False,
             payload, error = fetch_performance(ml_id)
             datos = parse_performance(payload) if not error else None
         else:
-            crudo, error = _fetch_local(ml_id, cache_categorias)
+            item_previo, error_previo = precargadas.get(ml_id, (None, None))
+            if error_previo:
+                crudo, error = None, error_previo
+            else:
+                crudo, error = _fetch_local(ml_id, cache_categorias, item_previo)
             datos = compute_local_audit(crudo['item'], crudo['catalogo']) if not error else None
 
         if error:
             resultados.append({"ml_id": ml_id, "status": "error", "error": error})
-            if _es_error_de_permisos(error):
+            if _es_error_de_cuenta(error, strategy):
                 for restante in ids[indice:]:
                     resultados.append({
                         "ml_id": restante, "status": "skipped",
-                        "error": "Auditoría interrumpida por un problema de permisos de la cuenta",
+                        "error": "Auditoría interrumpida: la cuenta no puede consultar "
+                                 "ese recurso, el error se repetiría en todas",
                     })
                 break
         else:
@@ -427,7 +498,9 @@ def audit_listings(ml_ids, force_refresh: bool = False,
                 "pending_codes": datos['pending_codes'],
             })
 
-        if indice < total:
+        # Con el multiget la estrategia local casi no hace llamadas por
+        # publicación: la pausa solo tiene sentido en la oficial.
+        if indice < total and strategy == 'performance':
             time.sleep(PAUSE_BETWEEN_CALLS)
 
     update_progress(status="idle", progress=100, message="Auditoría finalizada")

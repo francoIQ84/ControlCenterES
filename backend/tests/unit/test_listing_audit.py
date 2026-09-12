@@ -237,6 +237,7 @@ class AuditListingsTest(unittest.TestCase):
         """El endpoint oficial devuelve 403 en esta cuenta: no se usa por defecto."""
         with patch.object(svc.database, 'get_listing_health_ages', return_value={}), \
              patch.object(svc.database, 'save_listing_health'), \
+             patch.object(svc, 'fetch_items_bulk', return_value={'MLA1': ({}, None)}), \
              patch.object(svc, '_fetch_local',
                           return_value=({'item': {}, 'catalogo': []}, None)) as local, \
              patch.object(svc, 'fetch_performance') as oficial, \
@@ -246,6 +247,78 @@ class AuditListingsTest(unittest.TestCase):
 
         local.assert_called_once()
         oficial.assert_not_called()
+
+    def test_un_403_de_una_publicacion_no_frena_el_catalogo(self):
+        """Una publicacion restringida es problema de ella, no de la cuenta.
+
+        Pasó de verdad auditando las 99 activas: una dio 403 y las otras 93
+        quedaron sin revisar.
+        """
+        traidas = {
+            'MLA_A': ({}, None),
+            'MLA_MALA': (None, 'HTTP 403: Access to the requested resource is forbidden'),
+            'MLA_B': ({}, None),
+        }
+        guardados = []
+        with patch.object(svc.database, 'get_listing_health_ages', return_value={}), \
+             patch.object(svc.database, 'save_listing_health',
+                          side_effect=lambda m, h: guardados.append(m)), \
+             patch.object(svc, 'fetch_items_bulk', return_value=traidas), \
+             patch.object(svc, '_fetch_local',
+                          return_value=({'item': {}, 'catalogo': []}, None)), \
+             patch.object(svc, 'PAUSE_BETWEEN_CALLS', 0), \
+             patch.object(svc, 'update_progress'):
+            resultados = svc.audit_listings(['MLA_A', 'MLA_MALA', 'MLA_B'])
+
+        estados = {r['ml_id']: r['status'] for r in resultados}
+        self.assertEqual(estados, {'MLA_A': 'ok', 'MLA_MALA': 'error', 'MLA_B': 'ok'})
+        self.assertEqual(guardados, ['MLA_A', 'MLA_B'])
+
+    def test_un_401_si_frena_todo(self):
+        """Sin token valido no hay nada que auditar en ninguna."""
+        traidas = {
+            'MLA_A': (None, 'HTTP 401: unauthorized'),
+            'MLA_B': ({}, None),
+        }
+        with patch.object(svc.database, 'get_listing_health_ages', return_value={}), \
+             patch.object(svc.database, 'save_listing_health'), \
+             patch.object(svc, 'fetch_items_bulk', return_value=traidas), \
+             patch.object(svc, '_fetch_local',
+                          return_value=({'item': {}, 'catalogo': []}, None)), \
+             patch.object(svc, 'PAUSE_BETWEEN_CALLS', 0), \
+             patch.object(svc, 'update_progress'):
+            resultados = svc.audit_listings(['MLA_A', 'MLA_B'])
+
+        self.assertEqual([r['status'] for r in resultados], ['error', 'skipped'])
+
+    def test_las_publicaciones_se_traen_por_lote(self):
+        """99 de a una eran 99 llamadas; de a 20 son 5."""
+        llamadas = []
+
+        def fake_get(ruta):
+            llamadas.append(ruta)
+            ids = ruta.split('ids=')[1].split('&')[0].split(',')
+            return [{'id': i, 'code': 200, 'body': {'id': i}} for i in ids], None
+
+        with patch.object(svc, '_get_json', side_effect=fake_get):
+            traidas = svc.fetch_items_bulk(['MLA%d' % n for n in range(45)])
+
+        self.assertEqual(len(llamadas), 3)   # 20 + 20 + 5
+        self.assertEqual(len(traidas), 45)
+        self.assertTrue(all(e is None for _item, e in traidas.values()))
+
+    def test_el_multiget_reporta_el_fallo_de_una_sin_tumbar_el_lote(self):
+        def fake_get(ruta):
+            return [
+                {'id': 'MLA_A', 'code': 200, 'body': {'id': 'MLA_A'}},
+                {'id': 'MLA_MALA', 'code': 403},
+            ], None
+
+        with patch.object(svc, '_get_json', side_effect=fake_get):
+            traidas = svc.fetch_items_bulk(['MLA_A', 'MLA_MALA'])
+
+        self.assertIsNone(traidas['MLA_A'][1])
+        self.assertIn('403', traidas['MLA_MALA'][1])
 
     def test_una_sola_publicacion_hace_una_sola_llamada(self):
         """El requisito: probar la herramienta con una publicacion es una lista de uno."""
