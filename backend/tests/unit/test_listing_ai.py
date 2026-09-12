@@ -196,6 +196,39 @@ class GeneracionTest(unittest.TestCase):
         self.assertIn('clave', error.lower())
 
 
+class ProveedorTest(unittest.TestCase):
+    """La eleccion de proveedor: gratuito por defecto, pago opcional."""
+
+    def _config(self, valores):
+        return patch.object(ia.database, 'get_setting',
+                            side_effect=lambda k, d=None: valores.get(k, d))
+
+    def test_por_defecto_usa_el_gratuito(self):
+        with self._config({}):
+            self.assertEqual(ia.get_ai_config()['provider'], 'gemini')
+
+    def test_un_proveedor_desconocido_cae_al_gratuito(self):
+        with self._config({'ai_provider': 'inventado'}):
+            self.assertEqual(ia.get_ai_config()['provider'], 'gemini')
+
+    def test_informa_si_cada_proveedor_tiene_credencial(self):
+        with self._config({'gemini_api_key': 'abc'}):
+            proveedores = ia.get_ai_config()['proveedores']
+        self.assertTrue(proveedores['gemini']['configurado'])
+        self.assertFalse(proveedores['anthropic']['configurado'])
+
+    def test_el_despachador_respeta_el_proveedor_elegido(self):
+        with self._config({'ai_provider': 'anthropic'}),              patch.object(ia, '_llamar_anthropic', return_value=('ok', 'm', None)) as pago,              patch.object(ia, '_llamar_gemini') as gratis:
+            ia._llamar_modelo('hola')
+        pago.assert_called_once()
+        gratis.assert_not_called()
+
+    def test_sin_clave_de_anthropic_avisa_en_vez_de_fallar(self):
+        with self._config({'ai_provider': 'anthropic'}):
+            _t, _m, error = ia._llamar_anthropic('hola', 1024)
+        self.assertIn('clave', error.lower())
+
+
 class AplicarTest(unittest.TestCase):
     SUGERENCIA = {
         'id': 7, 'ml_id': 'MLA1', 'field': 'title', 'status': 'draft',

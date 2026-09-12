@@ -234,3 +234,43 @@ def rollback(payload: RollbackRequest):
         "con_error": sum(1 for r in resultados if r['status'] == 'error'),
         "resultados": resultados,
     }
+
+
+# =============================================================================
+# CONFIGURACION DE IA — que proveedor usar, gratuito o pago
+# =============================================================================
+
+class AiConfigRequest(BaseModel):
+    provider: str
+    anthropic_model: Optional[str] = None
+    anthropic_api_key: Optional[str] = None
+
+
+@router.get("/ai-config")
+def get_ai_config():
+    """Proveedor activo, cuales estan configurados y los modelos pagos elegibles."""
+    return listing_ai_service.get_ai_config()
+
+
+@router.put("/ai-config")
+def set_ai_config(payload: AiConfigRequest):
+    if payload.provider not in listing_ai_service.PROVEEDORES:
+        raise HTTPException(
+            status_code=400,
+            detail="Proveedor no soportado: " + payload.provider)
+
+    if payload.anthropic_model:
+        validos = [m['id'] for m in listing_ai_service.MODELOS_ANTHROPIC]
+        if payload.anthropic_model not in validos:
+            raise HTTPException(
+                status_code=400,
+                detail="Modelo no soportado. Validos: " + ", ".join(validos))
+        database.set_setting('anthropic_model', payload.anthropic_model)
+
+    # La clave solo se escribe si vino con contenido: la interfaz nunca la
+    # devuelve, asi que un campo vacio significa "no la cambies".
+    if payload.anthropic_api_key and payload.anthropic_api_key.strip():
+        database.set_setting('anthropic_api_key', payload.anthropic_api_key.strip())
+
+    database.set_setting('ai_provider', payload.provider)
+    return {"success": True, **listing_ai_service.get_ai_config()}

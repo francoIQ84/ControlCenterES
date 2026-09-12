@@ -26,7 +26,7 @@ los criterios se recalcula sobre lo guardado sin volver a consultar.
 import json
 import time
 
-from src import database, meli_api
+from src import config, database, meli_api
 from src.progress import update_progress
 
 PERFORMANCE_PATH = "/item/{ml_id}/performance"
@@ -49,6 +49,12 @@ MIN_CARACTERES_TITULO = 25
 # prácticamente toda publicación local. Se informan aparte para que no ensucien
 # la cuenta de objetivos reales.
 ATRIBUTOS_FISCALES = {'VALUE_ADDED_TAX', 'IMPORT_DUTY'}
+
+# Mercado Libre acepta dos formas de cumplir el mismo objetivo: el codigo de
+# barras, o la razon por la que el producto no tiene. Sin esto el GTIN figuraba
+# pendiente para siempre en productos que no tienen codigo, y la IA no podia
+# hacer nada porque un GTIN no se deduce ni se inventa.
+ATRIBUTOS_ALTERNATIVOS = {'GTIN': 'EMPTY_GTIN_REASON'}
 
 
 def _to_float(value):
@@ -194,13 +200,28 @@ def compute_local_audit(item, category_attributes) -> dict:
         if tiene_tag(a, 'catalog_required') or tiene_tag(a, 'conditional_required')
     ]
 
+    ids_catalogo = {a.get('id') for a in catalogo if isinstance(a, dict)}
+
     faltan_requeridos = [a['id'] for a in requeridos if a.get('id') not in cargados]
     faltan_condicionales, faltan_fiscales = [], []
+    alternativas = {}
     for attr in condicionales:
         codigo = attr.get('id')
         if codigo in cargados:
             continue
-        (faltan_fiscales if codigo in ATRIBUTOS_FISCALES else faltan_condicionales).append(codigo)
+
+        # Si el objetivo ya esta cubierto por su alternativa, no esta pendiente.
+        alternativo = ATRIBUTOS_ALTERNATIVOS.get(codigo)
+        if alternativo and alternativo in cargados:
+            continue
+
+        if codigo in ATRIBUTOS_FISCALES:
+            faltan_fiscales.append(codigo)
+            continue
+
+        faltan_condicionales.append(codigo)
+        if alternativo and alternativo in ids_catalogo:
+            alternativas[codigo] = alternativo
 
     ficha_pendiente = bool(faltan_requeridos or faltan_condicionales)
 
@@ -216,6 +237,7 @@ def compute_local_audit(item, category_attributes) -> dict:
             'faltan_requeridos': faltan_requeridos,
             'faltan_condicionales': faltan_condicionales,
             'faltan_fiscales': faltan_fiscales,
+            'alternativas': alternativas,
         }),
         _objetivo('FOTOS', fotos < MIN_FOTOS_RECOMENDADAS, {
             'cantidad': fotos,
@@ -282,6 +304,57 @@ def fetch_listing_context(ml_id: str, cache_categorias: dict = None):
     el cacheo de catalogos por categoria.
     """
     return _fetch_local(ml_id, cache_categorias if cache_categorias is not None else {})
+
+
+def fetch_own_category_values(category_id: str, exclude_ml_id: str = None,
+                             limit: int = 20) -> dict:
+    """Valores que el propio vendedor ya usa para cada atributo de la categoría.
+
+    Es la alternativa viable a "mirar publicaciones similares": la busqueda
+    publica del marketplace (/sites/MLA/search) devuelve 403 para esta cuenta,
+    pero el catalogo propio si se puede leer. Ademas es mejor fuente: son
+    productos reales del vendedor, con su vocabulario y sus marcas, no los de
+    un competidor.
+
+    Devuelve {attr_id: [(valor, veces), ...]} ordenado por frecuencia.
+    """
+    if not category_id:
+        return {}
+
+    user_id = config.get_user_id()
+    if not user_id:
+        return {}
+
+    busqueda, error = _get_json(
+        f"/users/{user_id}/items/search?category={category_id}&limit={limit}")
+    if error or not isinstance(busqueda, dict):
+        return {}
+
+    ids = [i for i in (busqueda.get('results') or []) if i != exclude_ml_id]
+    if not ids:
+        return {}
+
+    lote, error = _get_json(
+        "/items?ids=" + ",".join(ids[:20]) + "&attributes=id,attributes")
+    if error or not isinstance(lote, list):
+        return {}
+
+    conteo = {}
+    for envoltorio in lote:
+        cuerpo = (envoltorio or {}).get('body') or {}
+        for attr in (cuerpo.get('attributes') or []):
+            if not isinstance(attr, dict):
+                continue
+            valor = attr.get('value_name')
+            if not valor:
+                continue
+            por_valor = conteo.setdefault(attr.get('id'), {})
+            por_valor[str(valor)] = por_valor.get(str(valor), 0) + 1
+
+    return {
+        attr_id: sorted(valores.items(), key=lambda x: -x[1])[:5]
+        for attr_id, valores in conteo.items()
+    }
 
 
 # =============================================================================

@@ -4346,6 +4346,9 @@ function QualityDetailModal({ producto, salud, onClose, onApplied }) {
   const [generando, setGenerando] = React.useState(false)
   const [trabajando, setTrabajando] = React.useState(false)
   const [simulacion, setSimulacion] = React.useState(null)
+  const [aiConfig, setAiConfig] = React.useState(null)
+  const [mostrarAjustesIa, setMostrarAjustesIa] = React.useState(false)
+  const [claveAnthropic, setClaveAnthropic] = React.useState('')
 
   const cargarBorradores = React.useCallback(() => {
     fetch('/api/listing-optimizer/suggestions?ml_ids=' + encodeURIComponent(mlId))
@@ -4358,7 +4361,37 @@ function QualityDetailModal({ producto, salud, onClose, onApplied }) {
       .catch(() => {})
   }, [mlId])
 
+  const cargarAiConfig = React.useCallback(() => {
+    fetch('/api/listing-optimizer/ai-config')
+      .then(r => r.ok ? r.json() : null)
+      .then(d => d && setAiConfig(d))
+      .catch(() => {})
+  }, [])
+
   React.useEffect(() => { cargarBorradores() }, [cargarBorradores])
+  React.useEffect(() => { cargarAiConfig() }, [cargarAiConfig])
+
+  const guardarAiConfig = async (cambios) => {
+    const cuerpo = {
+      provider: cambios.provider !== undefined ? cambios.provider : aiConfig.provider,
+      anthropic_model: cambios.anthropic_model !== undefined
+        ? cambios.anthropic_model : aiConfig.anthropic_model,
+    }
+    if (claveAnthropic.trim()) cuerpo.anthropic_api_key = claveAnthropic.trim()
+
+    const res = await fetch('/api/listing-optimizer/ai-config', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(cuerpo)
+    })
+    const data = await res.json()
+    if (!res.ok) {
+      alert('No se pudo guardar: ' + (data.detail || 'error'))
+      return
+    }
+    setClaveAnthropic('')
+    setAiConfig(data)
+  }
 
   const valorDe = (sug) => (
     ediciones[sug.id] !== undefined ? ediciones[sug.id] : sug.proposed_value
@@ -4658,6 +4691,104 @@ function QualityDetailModal({ producto, salud, onClose, onApplied }) {
                   {generando ? 'Generando...' : 'Generar con IA'}
                 </button>
               </div>
+
+              {aiConfig && (
+                <div style={{
+                  marginBottom: 10, padding: '8px 10px', borderRadius: 8,
+                  backgroundColor: 'var(--bg-hover)', fontSize: '0.75rem'
+                }}>
+                  <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap'}}>
+                    <span style={{color: 'var(--text-secondary)'}}>
+                      Motor de IA:{' '}
+                      <b style={{color: 'var(--text-primary)'}}>
+                        {(aiConfig.proveedores[aiConfig.provider] || {}).nombre}
+                      </b>
+                      {' '}
+                      <span style={{
+                        padding: '1px 6px', borderRadius: 8, fontWeight: 700,
+                        backgroundColor: aiConfig.provider === 'gemini' ? 'rgba(16,185,129,0.15)' : 'rgba(245,158,11,0.15)',
+                        color: aiConfig.provider === 'gemini' ? '#10b981' : '#d97706'
+                      }}>
+                        {(aiConfig.proveedores[aiConfig.provider] || {}).costo}
+                      </span>
+                    </span>
+                    <button
+                      type="button"
+                      className="dashboard-pill"
+                      onClick={() => setMostrarAjustesIa(v => !v)}
+                      style={{backgroundColor: 'var(--bg-card)', color: 'var(--text-secondary)',
+                              border: '1px solid var(--border-color)'}}
+                    >
+                      {mostrarAjustesIa ? 'Cerrar' : 'Cambiar'}
+                    </button>
+                  </div>
+
+                  {mostrarAjustesIa && (
+                    <div style={{marginTop: 10, display: 'flex', flexDirection: 'column', gap: 8}}>
+                      {Object.entries(aiConfig.proveedores).map(([codigo, datos]) => (
+                        <label key={codigo} style={{display: 'flex', gap: 8, alignItems: 'flex-start', cursor: 'pointer'}}>
+                          <input
+                            type="radio"
+                            name="proveedor-ia"
+                            checked={aiConfig.provider === codigo}
+                            onChange={() => guardarAiConfig({ provider: codigo })}
+                            style={{marginTop: 3, width: 14, height: 14, minHeight: 'auto', cursor: 'pointer'}}
+                          />
+                          <span>
+                            <b>{datos.nombre}</b> ({datos.costo})
+                            {!datos.configurado && (
+                              <span style={{color: '#d97706'}}> — sin clave configurada</span>
+                            )}
+                            <div style={{color: 'var(--text-secondary)', marginTop: 2}}>{datos.detalle}</div>
+                          </span>
+                        </label>
+                      ))}
+
+                      {aiConfig.provider === 'anthropic' && (
+                        <div style={{display: 'flex', flexDirection: 'column', gap: 6, marginTop: 4}}>
+                          <select
+                            value={aiConfig.anthropic_model}
+                            onChange={e => guardarAiConfig({ anthropic_model: e.target.value })}
+                            style={{padding: '5px 8px', fontSize: '0.75rem', borderRadius: 6,
+                                    border: '1px solid var(--border-color)',
+                                    backgroundColor: 'var(--bg-dark)', color: 'var(--text-primary)'}}
+                          >
+                            {aiConfig.modelos_anthropic.map(m => (
+                              <option key={m.id} value={m.id}>
+                                {m.nombre} — {m.precio} ({m.nota})
+                              </option>
+                            ))}
+                          </select>
+                          <div style={{display: 'flex', gap: 6}}>
+                            <input
+                              type="password"
+                              value={claveAnthropic}
+                              onChange={e => setClaveAnthropic(e.target.value)}
+                              placeholder={aiConfig.proveedores.anthropic.configurado
+                                ? 'Clave guardada (escribi una nueva para reemplazarla)'
+                                : 'Pegar clave de Anthropic'}
+                              style={{flex: 1, padding: '5px 8px', fontSize: '0.75rem', borderRadius: 6,
+                                      border: '1px solid var(--border-color)',
+                                      backgroundColor: 'var(--bg-dark)', color: 'var(--text-primary)',
+                                      minHeight: 'auto'}}
+                            />
+                            <button
+                              type="button"
+                              className="dashboard-pill"
+                              onClick={() => guardarAiConfig({})}
+                              disabled={!claveAnthropic.trim()}
+                              style={{backgroundColor: 'var(--accent-blue)', color: '#fff',
+                                      border: 'none', fontWeight: 600}}
+                            >
+                              Guardar
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
 
               {borradores.length === 0 && fallidos.length === 0 && (
                 <p style={{fontSize: '0.78rem', color: 'var(--text-secondary)', margin: 0}}>

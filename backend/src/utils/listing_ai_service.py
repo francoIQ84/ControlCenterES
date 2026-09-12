@@ -159,6 +159,112 @@ def validate_listing_change(field: str, value, catalogo=None):
 
 
 # =============================================================================
+# PROVEEDORES DE IA — uno gratuito por defecto, uno pago opcional
+# =============================================================================
+#
+# El default es Gemini porque tiene nivel gratuito y ya estaba configurado para
+# responder preguntas y generar videos: el optimizador no obliga a gastar nada.
+# Anthropic queda disponible para quien quiera pagar por mayor calidad, con el
+# modelo elegible.
+PROVEEDOR_POR_DEFECTO = 'gemini'
+
+PROVEEDORES = {
+    'gemini': {
+        'nombre': 'Google Gemini',
+        'costo': 'gratuito',
+        'clave_setting': 'gemini_api_key',
+        'detalle': 'Nivel gratuito generoso. Es el que ya usa el sistema para '
+                   'responder preguntas de Mercado Libre y generar videos.',
+    },
+    'anthropic': {
+        'nombre': 'Anthropic Claude',
+        'costo': 'pago',
+        'clave_setting': 'anthropic_api_key',
+        'detalle': 'Requiere una clave propia con credito. Se cobra por uso.',
+    },
+}
+
+# Precios por millon de tokens (entrada / salida) al 2026-06. Se muestran en la
+# interfaz para que la eleccion sea informada; no se usan para calcular nada.
+MODELOS_ANTHROPIC = [
+    {'id': 'claude-opus-5', 'nombre': 'Claude Opus 5',
+     'precio': 'USD 5 / 25 por millon de tokens', 'nota': 'El mas capaz'},
+    {'id': 'claude-sonnet-5', 'nombre': 'Claude Sonnet 5',
+     'precio': 'USD 2 / 10 por millon de tokens', 'nota': 'Equilibrado'},
+    {'id': 'claude-haiku-4-5', 'nombre': 'Claude Haiku 4.5',
+     'precio': 'USD 1 / 5 por millon de tokens', 'nota': 'El mas barato'},
+]
+MODELO_ANTHROPIC_POR_DEFECTO = 'claude-opus-5'
+
+
+def get_ai_config() -> dict:
+    """Proveedor configurado y si tiene credencial cargada."""
+    proveedor = (database.get_setting('ai_provider', '') or '').strip() or PROVEEDOR_POR_DEFECTO
+    if proveedor not in PROVEEDORES:
+        proveedor = PROVEEDOR_POR_DEFECTO
+
+    disponibles = {}
+    for codigo, datos in PROVEEDORES.items():
+        clave = (database.get_setting(datos['clave_setting'], '') or '').strip()
+        disponibles[codigo] = dict(datos, configurado=bool(clave))
+
+    return {
+        'provider': proveedor,
+        'anthropic_model': (database.get_setting('anthropic_model', '') or '').strip()
+                           or MODELO_ANTHROPIC_POR_DEFECTO,
+        'proveedores': disponibles,
+        'modelos_anthropic': MODELOS_ANTHROPIC,
+    }
+
+
+def _llamar_anthropic(prompt: str, max_tokens: int):
+    """Devuelve (texto, modelo, error) usando el SDK oficial de Anthropic."""
+    clave = (database.get_setting('anthropic_api_key', '') or '').strip()
+    if not clave:
+        return None, None, "No hay una clave de Anthropic configurada"
+
+    try:
+        import anthropic
+    except ModuleNotFoundError:
+        return None, None, ("Falta instalar el paquete 'anthropic' en el servidor "
+                            "(pip install anthropic)")
+
+    modelo = ((database.get_setting('anthropic_model', '') or '').strip()
+              or MODELO_ANTHROPIC_POR_DEFECTO)
+    cliente = anthropic.Anthropic(api_key=clave)
+
+    try:
+        # Sin parametro `thinking`: Opus 5 y Sonnet 5 razonan igual por defecto y
+        # Haiku 4.5 no lo admite en esa forma, asi que omitirlo funciona con los
+        # tres modelos elegibles.
+        respuesta = cliente.messages.create(
+            model=modelo,
+            max_tokens=max(int(max_tokens or 0), 4096),
+            messages=[{"role": "user", "content": prompt}],
+        )
+    except Exception as e:
+        return None, None, f"{modelo}: {str(e)[:180]}"
+
+    if respuesta.stop_reason == 'refusal':
+        return None, None, f"{modelo}: el modelo declino responder"
+    if respuesta.stop_reason == 'max_tokens':
+        return None, None, f"{modelo}: la respuesta se corto por limite de tokens"
+
+    texto = "".join(b.text for b in respuesta.content if b.type == 'text').strip()
+    if not texto:
+        return None, None, f"{modelo}: respuesta vacia"
+    return texto, modelo, None
+
+
+def _llamar_modelo(prompt: str, max_tokens: int = 4096, json_mode: bool = False):
+    """Despacha al proveedor configurado. Devuelve (texto, modelo, error)."""
+    proveedor = get_ai_config()['provider']
+    if proveedor == 'anthropic':
+        return _llamar_anthropic(prompt, max_tokens)
+    return _llamar_gemini(prompt, max_tokens=max_tokens, json_mode=json_mode)
+
+
+# =============================================================================
 # LLAMADA AL MODELO
 # =============================================================================
 
@@ -257,12 +363,22 @@ def _contexto_producto(item: dict) -> str:
     )
 
 
-def suggest_attributes(item: dict, catalogo: list, faltantes: list):
-    """Propone valores para los atributos faltantes. Devuelve (dict, modelo, error)."""
+def suggest_attributes(item: dict, catalogo: list, faltantes: list,
+                       valores_propios: dict = None):
+    """Propone valores para los atributos faltantes. Devuelve (dict, modelo, error).
+
+    `valores_propios` son los valores que el vendedor ya usa para esos mismos
+    atributos en otras publicaciones de la categoria. No se copian
+    automaticamente: se le pasan al modelo como referencia del vocabulario real
+    del negocio, y sigue valiendo la regla de no inventar. Que el vendedor use
+    "Generica" como marca en otros productos no prueba que ESTE producto sea de
+    esa marca.
+    """
     if not faltantes:
         return {}, None, None
 
     por_id = {a['id']: a for a in (catalogo or []) if isinstance(a, dict) and a.get('id')}
+    propios = valores_propios or {}
 
     lineas = []
     for attr_id in faltantes:
@@ -275,6 +391,10 @@ def suggest_attributes(item: dict, catalogo: list, faltantes: list):
         detalle = f"  - {attr_id} ({nombre})"
         if permitidos:
             detalle += f" | valores admitidos: {', '.join(permitidos)}"
+        usados = propios.get(attr_id) or []
+        if usados:
+            detalle += (" | lo que este vendedor ya usa en la categoria: "
+                        + ", ".join(f"{v} (x{n})" for v, n in usados))
         lineas.append(detalle)
 
     prompt = f"""Sos un especialista en fichas tecnicas de Mercado Libre Argentina.
@@ -294,10 +414,15 @@ aparezcan textualmente en la informacion de arriba.
 
 Si el atributo tiene valores admitidos, elegi exactamente uno de esa lista.
 
+Cuando se indica lo que el vendedor ya usa en la categoria, tomalo como
+referencia de vocabulario y formato, NO como respuesta. Que lo use en otros
+productos no prueba que ESTE lo tenga: usalo solo si ademas se deduce de la
+informacion de esta publicacion.
+
 Respondé SOLO un objeto JSON, sin explicaciones ni markdown, con esta forma:
 {{"ATRIBUTO_ID": "valor" o null}}"""
 
-    texto, modelo, error = _llamar_gemini(prompt, max_tokens=4096, json_mode=True)
+    texto, modelo, error = _llamar_modelo(prompt, max_tokens=4096, json_mode=True)
     if error:
         return None, None, error
 
@@ -333,7 +458,7 @@ REGLAS:
 
 Respondé SOLO el titulo, en una linea, sin comillas ni explicaciones."""
 
-    texto, modelo, error = _llamar_gemini(prompt, max_tokens=2048)
+    texto, modelo, error = _llamar_modelo(prompt, max_tokens=2048)
     if error:
         return None, None, error
     return " ".join(str(texto or '').split()), modelo, None
@@ -359,7 +484,7 @@ REGLAS:
 
 Respondé SOLO la descripcion."""
 
-    texto, modelo, error = _llamar_gemini(prompt, max_tokens=8192)
+    texto, modelo, error = _llamar_modelo(prompt, max_tokens=8192)
     if error:
         return None, None, error
     return str(texto or '').strip(), modelo, None
@@ -420,9 +545,20 @@ def generate_suggestions(ml_ids, targets=None) -> list:
             if field == 'attributes':
                 faltantes = (detalle_ficha.get('faltan_requeridos') or []) + \
                             (detalle_ficha.get('faltan_condicionales') or [])
+                # Un GTIN no se deduce ni se inventa, pero Mercado Libre acepta
+                # declarar por que el producto no tiene codigo. Se le ofrece esa
+                # alternativa al modelo junto al atributo original.
+                for alternativo in (detalle_ficha.get('alternativas') or {}).values():
+                    if alternativo not in faltantes:
+                        faltantes.append(alternativo)
+
                 if not faltantes:
                     continue
-                propuesta, modelo, error_ia = suggest_attributes(item, catalogo, faltantes)
+
+                valores_propios = listing_audit_service.fetch_own_category_values(
+                    item.get('category_id'), exclude_ml_id=ml_id)
+                propuesta, modelo, error_ia = suggest_attributes(
+                    item, catalogo, faltantes, valores_propios)
                 if error_ia:
                     generados.append({"field": field, "status": "error", "error": error_ia})
                     continue
