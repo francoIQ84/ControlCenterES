@@ -526,7 +526,7 @@ def _build_invoice_page(order, copy_type, usable_w):
     for idx, item in enumerate(items):
         qty = item.get('quantity', 1)
         title = item.get('title', 'Producto')
-        unit_price = item.get('unit_price', 0) or (order.get('total_amount', 0) / qty if qty else 0)
+        unit_price = item.get('unit_price') or item.get('price') or item.get('amount') or (order.get('total_amount', 0) / qty if qty else 0)
         subtotal = unit_price * qty
         item_id = str(item.get('id', idx + 1))[:8]
 
