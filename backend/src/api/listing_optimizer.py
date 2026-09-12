@@ -9,7 +9,7 @@ El unico endpoint que escribe en Mercado Libre es /apply, y tiene dry_run en
 True por defecto: para modificar de verdad hay que pedirlo explicitamente.
 /audit, /suggest y la edicion de borradores no tocan nada en ML.
 """
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Query
 from pydantic import BaseModel, Field
 from typing import Optional
 import json
@@ -365,3 +365,45 @@ def suggest_images(payload: ImageSuggestRequest):
         "con_imagenes": sum(1 for r in resultados if r.get('ok')),
         "resultados": resultados,
     }
+
+
+# =============================================================================
+# RESOLVER CALIDAD EN LOTE — genera para varias publicaciones a la vez
+# =============================================================================
+
+class ResolveBulkRequest(BaseModel):
+    ml_ids: list[str] = Field(..., min_length=1)
+    # Las imagenes se cobran por unidad, asi que no van salvo que se pidan.
+    incluir_imagenes: bool = False
+
+
+@router.post("/resolve-bulk")
+def resolve_bulk(payload: ResolveBulkRequest, background_tasks: BackgroundTasks):
+    """Arranca la generacion en segundo plano y vuelve enseguida.
+
+    Generar para veinte publicaciones son decenas de llamadas al modelo: hacerlo
+    dentro de la peticion la cortaria por timeout.
+    """
+    if len(payload.ml_ids) > MAX_IDS_POR_LLAMADA:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Máximo {MAX_IDS_POR_LLAMADA} publicaciones por vez")
+
+    estado = listing_ai_service.get_bulk_progress()
+    if estado.get('status') == 'running':
+        raise HTTPException(
+            status_code=409,
+            detail=f"Ya hay una generación en curso ({estado.get('current')} de "
+                   f"{estado.get('total')}). Esperá a que termine.")
+
+    background_tasks.add_task(
+        listing_ai_service.generate_suggestions_bulk,
+        payload.ml_ids, payload.incluir_imagenes)
+
+    return {"success": True, "total": len(payload.ml_ids),
+            "message": "Generación iniciada en segundo plano"}
+
+
+@router.get("/resolve-progress")
+def resolve_progress():
+    return listing_ai_service.get_bulk_progress()

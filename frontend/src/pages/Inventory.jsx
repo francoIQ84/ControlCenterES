@@ -10,6 +10,8 @@ export default function Inventory() {
   const [listingHealth, setListingHealth] = useState({})
   const [auditing, setAuditing] = useState(false)
   const [qualityDetail, setQualityDetail] = useState(null)
+  const [resolviendo, setResolviendo] = useState(null)   // progreso de la generacion en lote
+  const [revisionLote, setRevisionLote] = useState(null) // ml_ids a revisar cuando termina
   const { isSimpleView, isChannelEnabled } = useTenant()
   const [loading, setLoading] = useState(true)
   const [query, setQuery] = useState("")
@@ -515,6 +517,81 @@ export default function Inventory() {
    * Siempre sobre la seleccion explicita: con una sola tildada audita esa sola.
    * No modifica nada en Mercado Libre, solo consulta y guarda el diagnostico.
    */
+  /**
+   * Genera propuestas de mejora para todas las publicaciones seleccionadas.
+   *
+   * Corre en segundo plano porque veinte publicaciones son decenas de llamadas
+   * al modelo: dentro de la peticion se cortaria por timeout. Acá se sigue el
+   * progreso y al terminar se abre la revision en lote.
+   */
+  const handleResolveSelected = async () => {
+    if (selectedIds.length === 0) return
+
+    const confirmado = confirm(
+      'Se van a generar propuestas de mejora para ' + selectedIds.length +
+      ' publicacion(es): ficha tecnica, titulo y descripcion segun lo que le falte a cada una.' +
+      String.fromCharCode(10) + String.fromCharCode(10) +
+      'No se modifica nada en Mercado Libre: vas a poder revisar todo antes de aplicar.')
+    if (!confirmado) return
+
+    const conImagenes = confirm(
+      'Incluir tambien imagenes generadas a partir de la foto real?' +
+      String.fromCharCode(10) + String.fromCharCode(10) +
+      'Las imagenes CONSUMEN CREDITO del proveedor configurado, una por variante.' +
+      String.fromCharCode(10) +
+      'Aceptar = con imagenes.  Cancelar = solo texto (gratis con Gemini).')
+
+    try {
+      const res = await fetch('/api/listing-optimizer/resolve-bulk', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ml_ids: selectedIds, incluir_imagenes: conImagenes })
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        alert('No se pudo iniciar: ' + (data.detail || 'error'))
+        return
+      }
+      const idsEnCurso = [...selectedIds]
+      setResolviendo({ current: 0, total: selectedIds.length, message: 'Empezando...' })
+      seguirProgresoResolucion(idsEnCurso)
+    } catch (e) {
+      alert('Error de conexion: ' + e.message)
+    }
+  }
+
+  const seguirProgresoResolucion = (idsEnCurso) => {
+    const reloj = setInterval(async () => {
+      try {
+        const res = await fetch('/api/listing-optimizer/resolve-progress')
+        const p = await res.json()
+        setResolviendo(p)
+
+        if (p.status === 'completed' || p.status === 'failed') {
+          clearInterval(reloj)
+          setResolviendo(null)
+          fetchListingHealth()
+
+          if (p.status === 'failed') {
+            alert('La generacion fallo: ' + (p.message || ''))
+            return
+          }
+          if (!p.borradores) {
+            alert('No se genero ninguna propuesta.' + String.fromCharCode(10) +
+                  String.fromCharCode(10) + ((p.errores || []).join(String.fromCharCode(10)) ||
+                  'Las publicaciones seleccionadas no tienen objetivos de contenido pendientes.'))
+            return
+          }
+          setRevisionLote({ mlIds: p.ml_ids && p.ml_ids.length ? p.ml_ids : idsEnCurso,
+                            errores: p.errores || [] })
+        }
+      } catch (e) {
+        clearInterval(reloj)
+        setResolviendo(null)
+      }
+    }, 2000)
+  }
+
   const handleAuditSelected = async () => {
     if (selectedIds.length === 0) return
     setAuditing(true)
@@ -1691,6 +1768,30 @@ export default function Inventory() {
               <Gauge size={14} className={auditing ? 'animate-spin' : ''} />
               {auditing ? 'Auditando...' : 'Auditar calidad'}
             </button>
+            <button
+              type="button"
+              className="btn"
+              style={{
+                padding: '5px 10px',
+                fontSize: '0.78rem',
+                backgroundColor: 'rgba(16, 185, 129, 0.15)',
+                color: '#10b981',
+                border: '1px solid rgba(16, 185, 129, 0.35)',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 4,
+                cursor: resolviendo ? 'wait' : 'pointer',
+                opacity: resolviendo ? 0.6 : 1
+              }}
+              onClick={handleResolveSelected}
+              disabled={!!resolviendo}
+              title="Genera propuestas con IA para todas las seleccionadas. No modifica nada hasta que las revises."
+            >
+              <Gauge size={14} className={resolviendo ? 'animate-spin' : ''} />
+              {resolviendo
+                ? 'Resolviendo ' + (resolviendo.current || 0) + '/' + (resolviendo.total || 0) + '...'
+                : 'Resolver calidad'}
+            </button>
             <div style={{width: 1, height: 20, backgroundColor: 'var(--border-color)', margin: '0 4px'}} />
 
             {modifiedCount > 0 && (
@@ -1950,6 +2051,21 @@ export default function Inventory() {
           )
         )}
       </div>
+
+      {revisionLote && (
+        <BulkReviewModal
+          mlIds={revisionLote.mlIds}
+          errores={revisionLote.errores}
+          onClose={() => setRevisionLote(null)}
+          onApplied={() => {
+            fetch('/api/listing-optimizer/audit', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ ml_ids: revisionLote.mlIds, force_refresh: true })
+            }).then(() => fetchListingHealth()).catch(() => {})
+          }}
+        />
+      )}
 
       {qualityDetail && (
         <QualityDetailModal
@@ -5123,6 +5239,266 @@ function QualityDetailModal({ producto, salud, onClose, onApplied }) {
                 ))}
               </div>
             )}
+          </>
+        )}
+      </div>
+    </div>
+  )
+}
+
+
+/**
+ * Revision en lote de las propuestas generadas para varias publicaciones.
+ *
+ * Mismo principio que el modal individual: nada se escribe en Mercado Libre
+ * hasta que alguien tilda y aplica. La diferencia es la escala, asi que hay
+ * seleccionar todo, y el resultado se informa por publicacion y por campo en
+ * vez de con un unico "listo".
+ */
+function BulkReviewModal({ mlIds, errores, onClose, onApplied }) {
+  const [sugerencias, setSugerencias] = React.useState([])
+  const [seleccionadas, setSeleccionadas] = React.useState([])
+  const [cargando, setCargando] = React.useState(true)
+  const [trabajando, setTrabajando] = React.useState(false)
+  const [resultado, setResultado] = React.useState(null)
+
+  const cargar = React.useCallback(() => {
+    setCargando(true)
+    fetch('/api/listing-optimizer/suggestions?ml_ids=' +
+          encodeURIComponent((mlIds || []).join(',')) + '&status=draft,edited')
+      .then(r => r.ok ? r.json() : { items: [] })
+      .then(d => {
+        const items = d.items || []
+        setSugerencias(items)
+        // Todo viene tildado: lo normal es aceptar y descartar la excepcion.
+        setSeleccionadas(items.map(s => s.id))
+      })
+      .catch(() => {})
+      .finally(() => setCargando(false))
+  }, [mlIds])
+
+  React.useEffect(() => { cargar() }, [cargar])
+
+  const alternar = (id) => {
+    setSeleccionadas(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id])
+  }
+
+  const ejecutar = async (dryRun) => {
+    if (seleccionadas.length === 0) {
+      alert('No hay nada tildado')
+      return
+    }
+    if (!dryRun) {
+      const confirmado = confirm(
+        'Vas a aplicar ' + seleccionadas.length + ' cambio(s) EN MERCADO LIBRE, ' +
+        'sobre ' + porPublicacion.length + ' publicacion(es).' +
+        String.fromCharCode(10) + String.fromCharCode(10) +
+        'De cada uno se guarda el valor anterior para poder revertirlo. Continuar?')
+      if (!confirmado) return
+    }
+
+    setTrabajando(true)
+    try {
+      const res = await fetch('/api/listing-optimizer/apply', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ suggestion_ids: seleccionadas, dry_run: dryRun })
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        alert('Error: ' + (data.detail || 'error'))
+        return
+      }
+      setResultado(data)
+      if (!dryRun) {
+        cargar()
+        if (onApplied) onApplied()
+      }
+    } catch (e) {
+      alert('Error de conexion: ' + e.message)
+    } finally {
+      setTrabajando(false)
+    }
+  }
+
+  const agrupadas = {}
+  sugerencias.forEach(s => {
+    if (!agrupadas[s.ml_id]) agrupadas[s.ml_id] = []
+    agrupadas[s.ml_id].push(s)
+  })
+  const porPublicacion = Object.keys(agrupadas)
+
+  const resumenDe = (sug) => {
+    if (sug.field === 'pictures') {
+      try { return JSON.parse(sug.proposed_value || '[]').length + ' imagen(es) generadas' }
+      catch (e) { return 'imagenes' }
+    }
+    return (sug.proposed_value || '').replace(/[\r\n]+/g, ' ').slice(0, 150)
+  }
+
+  const estadoDe = (id) => {
+    if (!resultado) return null
+    return (resultado.resultados || []).find(r => r.suggestion_id === id)
+  }
+
+  return (
+    <div
+      style={{
+        position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+        backgroundColor: 'rgba(0,0,0,0.65)', display: 'flex',
+        alignItems: 'center', justifyContent: 'center', zIndex: 1250, padding: 12
+      }}
+      onClick={onClose}
+    >
+      <div
+        className="card"
+        style={{width: 820, maxWidth: '100%', maxHeight: '88vh', overflowY: 'auto'}}
+        onClick={e => e.stopPropagation()}
+      >
+        <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10}}>
+          <div>
+            <h3 style={{margin: 0, fontSize: '1rem'}}>Revisar mejoras propuestas</h3>
+            <div style={{fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: 4}}>
+              {sugerencias.length} propuesta(s) en {porPublicacion.length} publicacion(es).
+              Nada se aplico todavia.
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            style={{background: 'none', border: 'none', color: 'var(--text-secondary)',
+                    cursor: 'pointer', fontSize: '1.1rem'}}
+          >
+            X
+          </button>
+        </div>
+
+        {(errores || []).length > 0 && (
+          <div style={{
+            marginTop: 12, padding: '8px 10px', borderRadius: 8, fontSize: '0.75rem',
+            backgroundColor: 'rgba(245, 158, 11, 0.12)', color: 'var(--text-secondary)',
+            border: '1px solid rgba(245, 158, 11, 0.3)'
+          }}>
+            <b>Algunas no se pudieron resolver ({errores.length}):</b>
+            <div style={{marginTop: 4, maxHeight: 90, overflowY: 'auto'}}>
+              {errores.map((e, i) => <div key={i}>{e}</div>)}
+            </div>
+          </div>
+        )}
+
+        {cargando ? (
+          <p style={{fontSize: '0.85rem', color: 'var(--text-secondary)', marginTop: 16}}>
+            Cargando propuestas...
+          </p>
+        ) : sugerencias.length === 0 ? (
+          <p style={{fontSize: '0.85rem', color: 'var(--text-secondary)', marginTop: 16}}>
+            No quedan propuestas pendientes de revision.
+          </p>
+        ) : (
+          <>
+            <div style={{display: 'flex', gap: 8, margin: '12px 0', flexWrap: 'wrap'}}>
+              <button
+                type="button"
+                className="dashboard-pill"
+                onClick={() => setSeleccionadas(sugerencias.map(s => s.id))}
+                style={{backgroundColor: 'var(--bg-dark)', border: '1px solid var(--border-color)',
+                        color: 'var(--text-primary)'}}
+              >
+                Tildar todo
+              </button>
+              <button
+                type="button"
+                className="dashboard-pill"
+                onClick={() => setSeleccionadas([])}
+                style={{backgroundColor: 'var(--bg-dark)', border: '1px solid var(--border-color)',
+                        color: 'var(--text-secondary)'}}
+              >
+                Destildar todo
+              </button>
+              <span style={{fontSize: '0.78rem', color: 'var(--text-secondary)', alignSelf: 'center'}}>
+                {seleccionadas.length} tildada(s)
+              </span>
+            </div>
+
+            {porPublicacion.map(mlId => (
+              <div key={mlId} style={{
+                border: '1px solid var(--border-color)', borderRadius: 8,
+                padding: 10, marginBottom: 10
+              }}>
+                <div style={{fontSize: '0.72rem', fontFamily: 'monospace',
+                             color: 'var(--text-secondary)', marginBottom: 6}}>
+                  {mlId}
+                </div>
+                {agrupadas[mlId].map(sug => {
+                  const estado = estadoDe(sug.id)
+                  return (
+                    <div key={sug.id} style={{
+                      display: 'flex', gap: 8, alignItems: 'flex-start',
+                      padding: '6px 0', borderTop: '1px solid var(--border-color)'
+                    }}>
+                      <input
+                        type="checkbox"
+                        checked={seleccionadas.includes(sug.id)}
+                        onChange={() => alternar(sug.id)}
+                        style={{marginTop: 3, width: 15, height: 15, minHeight: 'auto', cursor: 'pointer'}}
+                      />
+                      <div style={{minWidth: 0, flex: 1}}>
+                        <div style={{fontSize: '0.8rem', fontWeight: 700}}>
+                          {ETIQUETAS_CAMPO[sug.field] || sug.field}
+                          {estado && (
+                            <span style={{
+                              marginLeft: 8, fontSize: '0.7rem', fontWeight: 600,
+                              color: (estado.status === 'applied' || estado.status === 'dry_run')
+                                ? '#10b981' : '#ef4444'
+                            }}>
+                              {estado.status === 'applied' ? 'aplicado'
+                                : estado.status === 'dry_run' ? 'simulacion OK'
+                                : (estado.error || estado.status)}
+                            </span>
+                          )}
+                        </div>
+                        <div style={{fontSize: '0.76rem', color: 'var(--text-secondary)',
+                                     wordBreak: 'break-word'}}>
+                          {resumenDe(sug)}
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            ))}
+
+            <div style={{
+              display: 'flex', gap: 8, flexWrap: 'wrap', position: 'sticky', bottom: 0,
+              backgroundColor: 'var(--bg-card)', paddingTop: 10
+            }}>
+              <button
+                type="button"
+                className="dashboard-pill"
+                onClick={() => ejecutar(true)}
+                disabled={trabajando}
+                style={{backgroundColor: 'var(--bg-dark)', color: 'var(--text-primary)',
+                        border: '1px solid var(--border-color)', fontWeight: 600}}
+              >
+                Simular ({seleccionadas.length})
+              </button>
+              <button
+                type="button"
+                className="dashboard-pill"
+                onClick={() => ejecutar(false)}
+                disabled={trabajando}
+                style={{backgroundColor: '#10b981', color: '#fff', border: 'none', fontWeight: 700}}
+              >
+                {trabajando ? 'Trabajando...' : 'Aplicar en Mercado Libre (' + seleccionadas.length + ')'}
+              </button>
+              {resultado && !resultado.dry_run && (
+                <span style={{fontSize: '0.78rem', alignSelf: 'center', color: 'var(--text-secondary)'}}>
+                  Aplicados {resultado.aplicados} de {resultado.total}
+                  {resultado.con_error ? ' - con error: ' + resultado.con_error : ''}
+                  {resultado.rechazados ? ' - rechazados: ' + resultado.rechazados : ''}
+                </span>
+              )}
+            </div>
           </>
         )}
       </div>

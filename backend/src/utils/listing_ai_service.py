@@ -510,6 +510,95 @@ Respondé SOLO la descripcion."""
 
 
 # =============================================================================
+# PROGRESO DE LA GENERACIÓN EN LOTE
+# =============================================================================
+#
+# Estado propio y no el de src.progress: ese lo usa la sincronización de
+# Mercado Libre y el inventario lo consulta para su barra. Compartirlo haría
+# que una generación pisara el progreso de un sync en curso.
+import threading
+
+_lock_progreso = threading.Lock()
+_progreso = {
+    'status': 'idle',        # idle | running | completed | failed
+    'current': 0,
+    'total': 0,
+    'message': '',
+    'ml_ids': [],            # sobre qué publicaciones corrió, para la revisión
+    'borradores': 0,
+    'errores': [],
+}
+
+
+def get_bulk_progress() -> dict:
+    with _lock_progreso:
+        return dict(_progreso)
+
+
+def _set_progreso(**campos):
+    with _lock_progreso:
+        _progreso.update(campos)
+
+
+def generate_suggestions_bulk(ml_ids, incluir_imagenes: bool = False):
+    """Genera propuestas para varias publicaciones, informando progreso.
+
+    Pensada para correr en segundo plano: generar para veinte publicaciones son
+    decenas de llamadas al modelo y la petición HTTP se cortaría por timeout.
+    """
+    from src.utils import listing_image_service
+    from src.utils import listing_apply_service
+
+    ids = [str(m).strip() for m in (ml_ids or []) if str(m or '').strip()]
+    _set_progreso(status='running', current=0, total=len(ids), borradores=0,
+                  errores=[], ml_ids=ids, message='Empezando...')
+
+    borradores, errores = 0, []
+    try:
+        for indice, ml_id in enumerate(ids, start=1):
+            _set_progreso(current=indice,
+                          message=f"Generando propuestas ({indice} de {len(ids)})...")
+
+            for resultado in generate_suggestions([ml_id]):
+                if resultado['status'] != 'ok':
+                    errores.append(f"{ml_id}: {resultado.get('error')}")
+                    continue
+                for sugerencia in resultado.get('sugerencias', []):
+                    if sugerencia.get('status') == 'draft':
+                        borradores += 1
+                    elif sugerencia.get('error'):
+                        errores.append(f"{ml_id} ({sugerencia['field']}): {sugerencia['error']}")
+
+            if incluir_imagenes:
+                item, error = listing_apply_service._leer_item(ml_id)
+                if error:
+                    errores.append(f"{ml_id} (imagenes): {error}")
+                else:
+                    salida = listing_image_service.generate_variants(ml_id, item)
+                    if salida.get('ok'):
+                        database.delete_pending_suggestions(ml_id, 'pictures')
+                        rutas = [{"ruta": g['ruta'], "url": g['url'], "estilo": g['estilo']}
+                                 for g in salida['generadas']]
+                        database.save_listing_suggestion(
+                            ml_id=ml_id, field='pictures', goal_code='FOTOS',
+                            current_value=json.dumps(
+                                [p.get('secure_url') for p in (item.get('pictures') or [])],
+                                ensure_ascii=False),
+                            proposed_value=json.dumps(rutas, ensure_ascii=False),
+                            status='draft', model_used=salida.get('modelo'))
+                        borradores += 1
+                    else:
+                        errores.append(f"{ml_id} (imagenes): {salida.get('error')}")
+
+            _set_progreso(borradores=borradores, errores=errores[:20])
+
+        _set_progreso(status='completed', borradores=borradores, errores=errores[:20],
+                      message=f"Listo: {borradores} propuestas generadas")
+    except Exception as e:
+        _set_progreso(status='failed', message=str(e)[:200], errores=errores[:20])
+
+
+# =============================================================================
 # ORQUESTACIÓN — de los objetivos pendientes a borradores guardados
 # =============================================================================
 
