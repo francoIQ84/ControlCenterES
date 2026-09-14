@@ -1,11 +1,17 @@
 import React, { useState, useEffect, useRef } from 'react'
-import { Package, CloudOff, Cloud, RefreshCw, Save, QrCode, Camera, ExternalLink, Eye, EyeOff, Store, Search, X } from 'lucide-react'
+import { Package, CloudOff, Cloud, RefreshCw, Save, QrCode, Camera, ExternalLink, Eye, EyeOff, Store, Search, X, Gauge } from 'lucide-react'
 import { Html5QrcodeScanner } from 'html5-qrcode'
 import MediaBrowser from '../components/MediaBrowser'
 import { useTenant } from '../TenantContext'
 
 export default function Inventory() {
   const [products, setProducts] = useState([])
+  // Calidad de publicaciones: mapa ml_id -> diagnostico, y el detalle abierto
+  const [listingHealth, setListingHealth] = useState({})
+  const [auditing, setAuditing] = useState(false)
+  const [qualityDetail, setQualityDetail] = useState(null)
+  const [resolviendo, setResolviendo] = useState(null)   // progreso de la generacion en lote
+  const [revisionLote, setRevisionLote] = useState(null) // ml_ids a revisar cuando termina
   const { isSimpleView, isChannelEnabled } = useTenant()
   const [loading, setLoading] = useState(true)
   const [query, setQuery] = useState("")
@@ -485,10 +491,139 @@ export default function Inventory() {
       .catch(err => console.error(err))
   }
 
+  const fetchListingHealth = () => {
+    fetch('/api/listing-optimizer/health')
+      .then(res => res.ok ? res.json() : { items: [] })
+      .then(data => {
+        const mapa = {}
+        ;(data.items || []).forEach(item => { mapa[item.ml_id] = item })
+        setListingHealth(mapa)
+      })
+      .catch(() => { /* sin diagnostico la columna muestra un guion */ })
+  }
+
   useEffect(() => {
     fetchProducts()
     fetchCategories()
   }, [query, hiddenFilter, outOfStockDays])
+
+  useEffect(() => {
+    fetchListingHealth()
+  }, [])
+
+  /**
+   * Audita la calidad de las publicaciones seleccionadas.
+   *
+   * Siempre sobre la seleccion explicita: con una sola tildada audita esa sola.
+   * No modifica nada en Mercado Libre, solo consulta y guarda el diagnostico.
+   */
+  /**
+   * Genera propuestas de mejora para todas las publicaciones seleccionadas.
+   *
+   * Corre en segundo plano porque veinte publicaciones son decenas de llamadas
+   * al modelo: dentro de la peticion se cortaria por timeout. Acá se sigue el
+   * progreso y al terminar se abre la revision en lote.
+   */
+  const handleResolveSelected = async () => {
+    if (selectedIds.length === 0) return
+
+    const confirmado = confirm(
+      'Se van a generar propuestas de mejora para ' + selectedIds.length +
+      ' publicacion(es): ficha tecnica, titulo y descripcion segun lo que le falte a cada una.' +
+      String.fromCharCode(10) + String.fromCharCode(10) +
+      'No se modifica nada en Mercado Libre: vas a poder revisar todo antes de aplicar.')
+    if (!confirmado) return
+
+    const conImagenes = confirm(
+      'Incluir tambien imagenes generadas a partir de la foto real?' +
+      String.fromCharCode(10) + String.fromCharCode(10) +
+      'Las imagenes CONSUMEN CREDITO del proveedor configurado, una por variante.' +
+      String.fromCharCode(10) +
+      'Aceptar = con imagenes.  Cancelar = solo texto (gratis con Gemini).')
+
+    try {
+      const res = await fetch('/api/listing-optimizer/resolve-bulk', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ml_ids: selectedIds, incluir_imagenes: conImagenes })
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        alert('No se pudo iniciar: ' + (data.detail || 'error'))
+        return
+      }
+      const idsEnCurso = [...selectedIds]
+      setResolviendo({ current: 0, total: selectedIds.length, message: 'Empezando...' })
+      seguirProgresoResolucion(idsEnCurso)
+    } catch (e) {
+      alert('Error de conexion: ' + e.message)
+    }
+  }
+
+  const seguirProgresoResolucion = (idsEnCurso) => {
+    const reloj = setInterval(async () => {
+      try {
+        const res = await fetch('/api/listing-optimizer/resolve-progress')
+        const p = await res.json()
+        setResolviendo(p)
+
+        if (p.status === 'completed' || p.status === 'failed') {
+          clearInterval(reloj)
+          setResolviendo(null)
+          fetchListingHealth()
+
+          if (p.status === 'failed') {
+            alert('La generacion fallo: ' + (p.message || ''))
+            return
+          }
+          if (!p.borradores) {
+            alert('No se genero ninguna propuesta.' + String.fromCharCode(10) +
+                  String.fromCharCode(10) + ((p.errores || []).join(String.fromCharCode(10)) ||
+                  'Las publicaciones seleccionadas no tienen objetivos de contenido pendientes.'))
+            return
+          }
+          setRevisionLote({ mlIds: p.ml_ids && p.ml_ids.length ? p.ml_ids : idsEnCurso,
+                            errores: p.errores || [] })
+        }
+      } catch (e) {
+        clearInterval(reloj)
+        setResolviendo(null)
+      }
+    }, 2000)
+  }
+
+  const handleAuditSelected = async () => {
+    if (selectedIds.length === 0) return
+    setAuditing(true)
+    try {
+      const res = await fetch('/api/listing-optimizer/audit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ml_ids: selectedIds, force_refresh: true })
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        alert('No se pudo auditar: ' + (data.detail || 'error desconocido'))
+        return
+      }
+
+      fetchListingHealth()
+
+      const conError = (data.resultados || []).filter(r => r.status === 'error')
+      if (conError.length > 0) {
+        alert(
+          'Auditadas ' + data.auditadas + ' de ' + data.total + '.' +
+          String.fromCharCode(10) + String.fromCharCode(10) +
+          'Con error (' + conError.length + '):' + String.fromCharCode(10) +
+          conError.slice(0, 5).map(r => r.ml_id + ': ' + r.error).join(String.fromCharCode(10))
+        )
+      }
+    } catch (e) {
+      alert('Error de conexion al auditar: ' + e.message)
+    } finally {
+      setAuditing(false)
+    }
+  }
 
   const handleUpdate = async (ml_id, qty, price, cost, cost_meli, price_web, images, description, is_web_active, category_id, sync_meli, min_stock, featured_order = 0, use_meli_description = 1, description_meli = "", cash_discount_pct = 0) => {
     try {
@@ -676,6 +811,11 @@ export default function Inventory() {
           const draftQtyB = drafts[b.ml_id]?.qty
           aVal = draftQtyA !== undefined ? draftQtyA : (a.available_quantity || 0)
           bVal = draftQtyB !== undefined ? draftQtyB : (b.available_quantity || 0)
+        } else if (sortConfig.key === 'quality') {
+          // Las no auditadas valen -1 para que queden al final y no se mezclen
+          // con las que si tienen diagnostico.
+          aVal = listingHealth[a.ml_id] ? (listingHealth[a.ml_id].pending_goals || 0) : -1
+          bVal = listingHealth[b.ml_id] ? (listingHealth[b.ml_id].pending_goals || 0) : -1
         } else if (sortConfig.key === 'is_web_active') {
           const draftWebA = drafts[a.ml_id]?.is_web_active
           const draftWebB = drafts[b.ml_id]?.is_web_active
@@ -689,7 +829,7 @@ export default function Inventory() {
       })
     }
     return sortableItems
-  }, [products, drafts, categoryFilter, stockFilter, sortConfig])
+  }, [products, drafts, categoryFilter, stockFilter, sortConfig, listingHealth])
 
   const handleToggleSelectProduct = (ml_id) => {
     setSelectedIds(prev => 
@@ -1606,6 +1746,54 @@ export default function Inventory() {
           </div>
           
           <div style={{display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center'}}>
+            <button
+              type="button"
+              className="btn"
+              style={{
+                padding: '5px 10px',
+                fontSize: '0.78rem',
+                backgroundColor: 'rgba(139, 92, 246, 0.15)',
+                color: '#8b5cf6',
+                border: '1px solid rgba(139, 92, 246, 0.35)',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 4,
+                cursor: auditing ? 'wait' : 'pointer',
+                opacity: auditing ? 0.6 : 1
+              }}
+              onClick={handleAuditSelected}
+              disabled={auditing}
+              title="Revisa ficha tecnica, fotos, titulo y descripcion de las publicaciones seleccionadas. No modifica nada."
+            >
+              <Gauge size={14} className={auditing ? 'animate-spin' : ''} />
+              {auditing ? 'Auditando...' : 'Auditar calidad'}
+            </button>
+            <button
+              type="button"
+              className="btn"
+              style={{
+                padding: '5px 10px',
+                fontSize: '0.78rem',
+                backgroundColor: 'rgba(16, 185, 129, 0.15)',
+                color: '#10b981',
+                border: '1px solid rgba(16, 185, 129, 0.35)',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 4,
+                cursor: resolviendo ? 'wait' : 'pointer',
+                opacity: resolviendo ? 0.6 : 1
+              }}
+              onClick={handleResolveSelected}
+              disabled={!!resolviendo}
+              title="Genera propuestas con IA para todas las seleccionadas. No modifica nada hasta que las revises."
+            >
+              <Gauge size={14} className={resolviendo ? 'animate-spin' : ''} />
+              {resolviendo
+                ? 'Resolviendo ' + (resolviendo.current || 0) + '/' + (resolviendo.total || 0) + '...'
+                : 'Resolver calidad'}
+            </button>
+            <div style={{width: 1, height: 20, backgroundColor: 'var(--border-color)', margin: '0 4px'}} />
+
             {modifiedCount > 0 && (
               <>
                 <button 
@@ -1804,6 +1992,7 @@ export default function Inventory() {
                       <th style={{width: 45}}>IMG</th>
                       <th onClick={() => requestSort('title')} style={{cursor: 'pointer', userSelect: 'none', minWidth: 220}}>Detalle{getSortIcon('title')}</th>
                       <th onClick={() => requestSort('status')} style={{cursor: 'pointer', userSelect: 'none', width: 95}} title="Ordenar por Estado de Mercado Libre">Estado ML{getSortIcon('status')}</th>
+                      <th onClick={() => requestSort('quality')} style={{cursor: 'pointer', userSelect: 'none', width: 85, textAlign: 'center'}} title="Objetivos de calidad pendientes. Ordenar dos veces para ver las peores primero.">Calidad{getSortIcon('quality')}</th>
                       <th onClick={() => requestSort('stock')} style={{cursor: 'pointer', userSelect: 'none', width: 60}} title="Ordenar por Stock">Stock{getSortIcon('stock')}</th>
                       <th style={{width: 75}}>P. ML</th>
                       <th style={{width: 75}}>C. Base</th>
@@ -1847,6 +2036,8 @@ export default function Inventory() {
                       viewMode={viewMode}
                       isSelected={selectedIds.includes(p.ml_id)}
                       onToggleSelect={handleToggleSelectProduct}
+                      health={listingHealth[p.ml_id]}
+                      onOpenQuality={(prod, salud) => setQualityDetail({ producto: prod, salud })}
                       onOpenQrModal={(prod) => {
                         setSelectedProductForQr(prod)
                         setShowQrPrintModal(true)
@@ -1860,6 +2051,38 @@ export default function Inventory() {
           )
         )}
       </div>
+
+      {revisionLote && (
+        <BulkReviewModal
+          mlIds={revisionLote.mlIds}
+          errores={revisionLote.errores}
+          onClose={() => setRevisionLote(null)}
+          onApplied={() => {
+            fetch('/api/listing-optimizer/audit', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ ml_ids: revisionLote.mlIds, force_refresh: true })
+            }).then(() => fetchListingHealth()).catch(() => {})
+          }}
+        />
+      )}
+
+      {qualityDetail && (
+        <QualityDetailModal
+          producto={qualityDetail.producto}
+          salud={qualityDetail.salud}
+          onClose={() => setQualityDetail(null)}
+          onApplied={() => {
+            // Tras aplicar, el diagnostico viejo quedo obsoleto: se reaudita
+            // esa publicacion para que la insignia refleje lo que quedo.
+            fetch('/api/listing-optimizer/audit', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ ml_ids: [qualityDetail.producto.ml_id], force_refresh: true })
+            }).then(() => fetchListingHealth()).catch(() => {})
+          }}
+        />
+      )}
 
       {galleryOpen && (
         <div style={{
@@ -2887,7 +3110,63 @@ function ProductReadingRow({ p, isChannelEnabled, onPreviewImage }) {
   )
 }
 
-function ProductRow({ p, onSave, onOpenGallery, onDraftChange, categories, categoryCounts, viewMode, onOpenQrModal, onToggleHide, isSelected, onToggleSelect }) {
+/**
+ * Insignia de calidad de una publicacion.
+ *
+ * Muestra objetivos pendientes, no un puntaje: el diagnostico local es una
+ * aproximacion a los criterios de Mercado Libre y un 0-100 propio se
+ * confundiria con el del panel de ML, que no tiene por que coincidir.
+ */
+const ETIQUETAS_OBJETIVO = {
+  FICHA_TECNICA: 'Ficha tecnica',
+  FOTOS: 'Fotos',
+  TITULO: 'Titulo',
+  DESCRIPCION: 'Descripcion',
+}
+
+function QualityBadge({ health, onClick }) {
+  if (!health) {
+    return (
+      <span
+        style={{fontSize: '0.75rem', color: 'var(--text-secondary)'}}
+        title="Sin auditar. Selecciona la publicacion y usa 'Auditar calidad'."
+      >
+        --
+      </span>
+    )
+  }
+
+  const pendientes = health.pending_goals || 0
+  const color = pendientes === 0 ? '#10b981' : pendientes <= 2 ? '#d97706' : '#ef4444'
+  const fondo = pendientes === 0
+    ? 'rgba(16, 185, 129, 0.15)'
+    : pendientes <= 2 ? 'rgba(245, 158, 11, 0.15)' : 'rgba(239, 68, 68, 0.15)'
+
+  const resumen = (health.goals || [])
+    .filter(o => o.status === 'PENDING')
+    .map(o => ETIQUETAS_OBJETIVO[o.id] || o.id)
+    .join(', ')
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="dashboard-pill"
+      style={{
+        backgroundColor: fondo,
+        color: color,
+        border: 'none',
+        fontWeight: 700,
+        cursor: 'pointer'
+      }}
+      title={pendientes === 0 ? 'Sin objetivos pendientes' : 'Pendiente: ' + resumen}
+    >
+      {pendientes === 0 ? 'OK' : pendientes + ' pend.'}
+    </button>
+  )
+}
+
+function ProductRow({ p, onSave, onOpenGallery, onDraftChange, categories, categoryCounts, viewMode, onOpenQrModal, onToggleHide, isSelected, onToggleSelect, health, onOpenQuality }) {
   const { isChannelEnabled } = useTenant()
   const [qty, setQty] = useState(p.available_quantity)
   const [price, setPrice] = useState(p.price)
@@ -3186,6 +3465,9 @@ function ProductRow({ p, onSave, onOpenGallery, onDraftChange, categories, categ
             }}>
               {p.status === 'active' ? 'Activa' : p.status === 'paused' ? 'Pausada' : p.status === 'under_review' ? 'En Revisión' : p.status === 'local' ? 'Local' : p.status}
             </span>
+          </td>
+          <td data-label="Calidad" className="cell-quality" style={{padding: '5px 8px', textAlign: 'center'}}>
+            <QualityBadge health={health} onClick={() => onOpenQuality && onOpenQuality(p, health)} />
           </td>
           <td data-label="Stock" className="cell-stock" style={{padding: '5px 8px'}}>
             <input type="number" value={qty} onChange={e => setQty(e.target.value)} style={{width: 55, padding: '3px 5px', fontSize: '0.8rem', border: '1px solid var(--border-color)', borderRadius: 4, backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)'}}/>
@@ -3531,6 +3813,9 @@ function ProductRow({ p, onSave, onOpenGallery, onDraftChange, categories, categ
               <span style={{color: 'var(--text-secondary)', fontSize: '0.8rem', fontWeight: 600}}><CloudOff size={14}/> {p.status}</span>
             )
           }
+          <div style={{marginTop: 4}}>
+            <QualityBadge health={health} onClick={() => onOpenQuality && onOpenQuality(p, health)} />
+          </div>
         </td>
         <td data-label="Stock y Precios" style={{
           backgroundColor: (p.available_quantity <= (p.min_stock || 3) && p.status === 'active') ? 'rgba(245, 158, 11, 0.05)' : 'transparent'
@@ -4134,3 +4419,1089 @@ function QRScannerModal({ onClose, onStockUpdated }) {
   )
 }
 
+/**
+ * Detalle de calidad de una publicacion: objetivos pendientes, borradores de
+ * mejora generados con IA, y el historial de lo aplicado.
+ *
+ * El flujo es deliberadamente de tres pasos y ninguno se saltea solo:
+ * generar borradores (no toca Mercado Libre) -> simular (devuelve el diff sin
+ * escribir) -> aplicar (el unico que modifica la publicacion, con confirmacion).
+ */
+const ETIQUETAS_CAMPO = {
+  title: 'Titulo',
+  description: 'Descripcion',
+  attributes: 'Ficha tecnica',
+  pictures: 'Imagenes',
+}
+
+function DiffValor({ etiqueta, valor, color }) {
+  return (
+    <div style={{flex: '1 1 220px', minWidth: 0}}>
+      <div style={{fontSize: '0.66rem', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: 3}}>
+        {etiqueta}
+      </div>
+      <div style={{
+        fontSize: '0.78rem', color: color || 'var(--text-primary)',
+        backgroundColor: 'var(--bg-dark)', border: '1px solid var(--border-color)',
+        borderRadius: 6, padding: '6px 8px', maxHeight: 120, overflowY: 'auto',
+        whiteSpace: 'pre-wrap', wordBreak: 'break-word'
+      }}>
+        {valor || <span style={{color: 'var(--text-secondary)', fontStyle: 'italic'}}>(vacio)</span>}
+      </div>
+    </div>
+  )
+}
+
+function QualityDetailModal({ producto, salud, onClose, onApplied }) {
+  const objetivos = (salud && salud.goals) || []
+  const mlId = producto.ml_id
+
+  const [sugerencias, setSugerencias] = React.useState([])
+  const [revisiones, setRevisiones] = React.useState([])
+  const [seleccionadas, setSeleccionadas] = React.useState([])
+  const [ediciones, setEdiciones] = React.useState({})
+  const [generando, setGenerando] = React.useState(false)
+  const [trabajando, setTrabajando] = React.useState(false)
+  const [simulacion, setSimulacion] = React.useState(null)
+  const [aiConfig, setAiConfig] = React.useState(null)
+  const [mostrarAjustesIa, setMostrarAjustesIa] = React.useState(false)
+  const [claveAnthropic, setClaveAnthropic] = React.useState('')
+  const [generandoImg, setGenerandoImg] = React.useState(false)
+  const [imgConfig, setImgConfig] = React.useState(null)
+  const [claveOpenai, setClaveOpenai] = React.useState('')
+
+  const cargarBorradores = React.useCallback(() => {
+    fetch('/api/listing-optimizer/suggestions?ml_ids=' + encodeURIComponent(mlId))
+      .then(r => r.ok ? r.json() : { items: [] })
+      .then(d => setSugerencias(d.items || []))
+      .catch(() => {})
+    fetch('/api/listing-optimizer/revisions?ml_ids=' + encodeURIComponent(mlId) + '&only_active=true')
+      .then(r => r.ok ? r.json() : { items: [] })
+      .then(d => setRevisiones(d.items || []))
+      .catch(() => {})
+  }, [mlId])
+
+  const cargarAiConfig = React.useCallback(() => {
+    fetch('/api/listing-optimizer/ai-config')
+      .then(r => r.ok ? r.json() : null)
+      .then(d => d && setAiConfig(d))
+      .catch(() => {})
+  }, [])
+
+  React.useEffect(() => { cargarBorradores() }, [cargarBorradores])
+  const cargarImgConfig = React.useCallback(() => {
+    fetch('/api/listing-optimizer/image-config')
+      .then(r => r.ok ? r.json() : null)
+      .then(d => d && setImgConfig(d))
+      .catch(() => {})
+  }, [])
+
+  React.useEffect(() => { cargarAiConfig() }, [cargarAiConfig])
+  React.useEffect(() => { cargarImgConfig() }, [cargarImgConfig])
+
+  const guardarImgConfig = async (cambios) => {
+    const cuerpo = {}
+    if (cambios.provider !== undefined) cuerpo.provider = cambios.provider
+    if (cambios.image_model !== undefined) cuerpo.image_model = cambios.image_model
+    if (claveOpenai.trim()) cuerpo.openai_api_key = claveOpenai.trim()
+
+    const res = await fetch('/api/listing-optimizer/image-config', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(cuerpo)
+    })
+    const data = await res.json()
+    if (!res.ok) {
+      alert('No se pudo guardar: ' + (data.detail || 'error'))
+      return
+    }
+    setClaveOpenai('')
+    setImgConfig(data)
+  }
+
+  const guardarAiConfig = async (cambios) => {
+    const cuerpo = {
+      provider: cambios.provider !== undefined ? cambios.provider : aiConfig.provider,
+      anthropic_model: cambios.anthropic_model !== undefined
+        ? cambios.anthropic_model : aiConfig.anthropic_model,
+    }
+    if (claveAnthropic.trim()) cuerpo.anthropic_api_key = claveAnthropic.trim()
+
+    const res = await fetch('/api/listing-optimizer/ai-config', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(cuerpo)
+    })
+    const data = await res.json()
+    if (!res.ok) {
+      alert('No se pudo guardar: ' + (data.detail || 'error'))
+      return
+    }
+    setClaveAnthropic('')
+    setAiConfig(data)
+  }
+
+  const valorDe = (sug) => (
+    ediciones[sug.id] !== undefined ? ediciones[sug.id] : sug.proposed_value
+  )
+
+  const alternarSeleccion = (id) => {
+    setSeleccionadas(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id])
+  }
+
+  const generar = async () => {
+    setGenerando(true)
+    setSimulacion(null)
+    try {
+      const res = await fetch('/api/listing-optimizer/suggest', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ml_ids: [mlId] })
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        alert('No se pudieron generar sugerencias: ' + (data.detail || 'error desconocido'))
+        return
+      }
+      const detalle = (data.resultados || [])[0] || {}
+      const aclaraciones = (detalle.sugerencias || [])
+        .filter(s => ['sin_datos', 'error', 'manual'].includes(s.status))
+        .map(s => s.error)
+        .filter(Boolean)
+      if (data.borradores === 0) {
+        alert('No se genero ningun borrador.' + String.fromCharCode(10) + String.fromCharCode(10) +
+              (aclaraciones.join(String.fromCharCode(10) + String.fromCharCode(10)) ||
+               'No hay objetivos de contenido pendientes.'))
+      }
+      cargarBorradores()
+    } catch (e) {
+      alert('Error de conexion: ' + e.message)
+    } finally {
+      setGenerando(false)
+    }
+  }
+
+  const generarImagenes = async () => {
+    const confirmado = confirm(
+      'Se van a generar imagenes A PARTIR de la foto real de esta publicacion.' +
+      String.fromCharCode(10) + String.fromCharCode(10) +
+      'No se sube nada todavia: las vas a poder ver antes de decidir.' +
+      String.fromCharCode(10) +
+      'Generar imagenes consume credito del proveedor configurado. Continuar?')
+    if (!confirmado) return
+
+    setGenerandoImg(true)
+    setSimulacion(null)
+    try {
+      const res = await fetch('/api/listing-optimizer/suggest-images', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ml_ids: [mlId] })
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        alert('No se pudieron generar imagenes: ' + (data.detail || 'error'))
+        return
+      }
+      const detalle = (data.resultados || [])[0] || {}
+      if (!detalle.ok) {
+        alert('No se generaron imagenes.' + String.fromCharCode(10) +
+              String.fromCharCode(10) + (detalle.error || ''))
+      } else if ((detalle.errores || []).length) {
+        alert('Algunas variantes fallaron:' + String.fromCharCode(10) +
+              detalle.errores.join(String.fromCharCode(10)))
+      }
+      cargarBorradores()
+    } catch (e) {
+      alert('Error de conexion: ' + e.message)
+    } finally {
+      setGenerandoImg(false)
+    }
+  }
+
+  const guardarEdiciones = async () => {
+    // Las imagenes no se editan como texto: solo se aceptan o se descartan.
+    const pendientes = Object.keys(ediciones)
+    for (const id of pendientes) {
+      await fetch('/api/listing-optimizer/suggestions/' + id, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ proposed_value: ediciones[id] })
+      }).catch(() => {})
+    }
+    setEdiciones({})
+  }
+
+  const ejecutar = async (dryRun) => {
+    if (seleccionadas.length === 0) {
+      alert('Marca al menos un cambio para ' + (dryRun ? 'simular' : 'aplicar'))
+      return
+    }
+    if (!dryRun) {
+      const confirmado = confirm(
+        'Vas a modificar ' + seleccionadas.length + ' campo(s) de esta publicacion ' +
+        'EN MERCADO LIBRE.' + String.fromCharCode(10) + String.fromCharCode(10) +
+        'Se guarda el valor anterior para poder revertirlo. Continuar?')
+      if (!confirmado) return
+    }
+
+    setTrabajando(true)
+    try {
+      await guardarEdiciones()
+      const res = await fetch('/api/listing-optimizer/apply', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ suggestion_ids: seleccionadas, dry_run: dryRun })
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        alert('Error: ' + (data.detail || 'error desconocido'))
+        return
+      }
+
+      if (dryRun) {
+        setSimulacion(data.resultados || [])
+      } else {
+        setSimulacion(null)
+        setSeleccionadas([])
+        const fallidos = (data.resultados || []).filter(
+          r => r.status === 'error' || r.status === 'rejected')
+        alert('Aplicados: ' + data.aplicados + ' de ' + data.total +
+              (fallidos.length
+                ? String.fromCharCode(10) + String.fromCharCode(10) + 'No se aplicaron:' +
+                  String.fromCharCode(10) +
+                  fallidos.map(f => ETIQUETAS_CAMPO[f.field] + ': ' + f.error).join(String.fromCharCode(10))
+                : ''))
+        if (onApplied) onApplied()
+      }
+      cargarBorradores()
+    } catch (e) {
+      alert('Error de conexion: ' + e.message)
+    } finally {
+      setTrabajando(false)
+    }
+  }
+
+  const reauditar = async () => {
+    setTrabajando(true)
+    try {
+      await fetch('/api/listing-optimizer/audit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ml_ids: [mlId], force_refresh: true })
+      })
+      if (onApplied) onApplied()
+      onClose()
+    } catch (e) {
+      alert('No se pudo reauditar: ' + e.message)
+    } finally {
+      setTrabajando(false)
+    }
+  }
+
+  const revertir = async (revisionId) => {
+    if (!confirm('Restaurar el valor anterior de este campo en Mercado Libre?')) return
+    setTrabajando(true)
+    try {
+      const res = await fetch('/api/listing-optimizer/rollback', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ revision_ids: [revisionId] })
+      })
+      const data = await res.json()
+      const fallidos = (data.resultados || []).filter(r => r.status === 'error')
+      if (fallidos.length) alert('No se pudo revertir: ' + fallidos[0].error)
+      cargarBorradores()
+      if (onApplied) onApplied()
+    } finally {
+      setTrabajando(false)
+    }
+  }
+
+  const describir = (objetivo) => {
+    const d = objetivo.detail || {}
+    if (objetivo.id === 'FICHA_TECNICA') {
+      return (
+        <div>
+          <div>{d.cargados} de {d.total_catalogo} atributos cargados</div>
+          {(d.faltan_requeridos || []).length > 0 && (
+            <div style={{color: '#ef4444', marginTop: 3}}>
+              Faltan obligatorios: {d.faltan_requeridos.join(', ')}
+            </div>
+          )}
+          {(d.faltan_condicionales || []).length > 0 && (
+            <div style={{color: '#d97706', marginTop: 3}}>
+              Faltan recomendados: {d.faltan_condicionales.join(', ')}
+            </div>
+          )}
+          {(d.faltan_fiscales || []).length > 0 && (
+            <div style={{color: 'var(--text-secondary)', marginTop: 3, fontSize: '0.75rem'}}>
+              Fiscales sin cargar ({d.faltan_fiscales.join(', ')}): no son datos del
+              producto y faltan en casi toda publicacion local, no se cuentan como objetivo.
+            </div>
+          )}
+        </div>
+      )
+    }
+    if (objetivo.id === 'FOTOS') {
+      return (
+        <div>
+          {d.cantidad} foto{d.cantidad === 1 ? '' : 's'}, se recomiendan {d.recomendadas} o mas.
+          {d.cantidad < d.recomendadas && (
+            <div style={{color: 'var(--text-secondary)', fontSize: '0.75rem', marginTop: 3}}>
+              Las fotos tienen que ser del producto real, asi que no se generan con
+              IA. Subi 2 o 3 mas desde Mercado Libre, donde ademas tenes su editor
+              con IA para estandarizar el fondo y el encuadre de las que ya tengas.
+            </div>
+          )}
+        </div>
+      )
+    }
+    if (objetivo.id === 'TITULO' || objetivo.id === 'DESCRIPCION') {
+      return <div>{d.caracteres} caracteres (minimo sugerido {d.minimo_sugerido})</div>
+    }
+    return <div style={{fontSize: '0.75rem', color: 'var(--text-secondary)'}}>{JSON.stringify(d)}</div>
+  }
+
+  const borradores = sugerencias.filter(s => s.status === 'draft' || s.status === 'edited')
+  const fallidos = sugerencias.filter(s => s.status === 'failed')
+  const resultadoSimulado = (id) => (simulacion || []).find(r => r.suggestion_id === id)
+
+  return (
+    <div
+      style={{
+        position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+        backgroundColor: 'rgba(0,0,0,0.65)', display: 'flex',
+        alignItems: 'center', justifyContent: 'center', zIndex: 1200, padding: 12
+      }}
+      onClick={onClose}
+    >
+      <div
+        className="card"
+        style={{width: 640, maxWidth: '100%', maxHeight: '88vh', overflowY: 'auto'}}
+        onClick={e => e.stopPropagation()}
+      >
+        <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10}}>
+          <div style={{minWidth: 0}}>
+            <h3 style={{margin: 0, fontSize: '1rem'}}>Calidad de la publicacion</h3>
+            <div style={{fontSize: '0.85rem', color: 'var(--text-primary)', marginTop: 4}}>
+              {producto.title}
+            </div>
+            <div style={{fontSize: '0.72rem', color: 'var(--text-secondary)', fontFamily: 'monospace'}}>
+              {mlId}
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            style={{background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: '1.1rem'}}
+          >
+            X
+          </button>
+        </div>
+
+        {!salud ? (
+          <p style={{fontSize: '0.85rem', color: 'var(--text-secondary)', marginTop: 16}}>
+            Esta publicacion todavia no fue auditada. Selecciónala en la lista y usa
+            el boton "Auditar calidad".
+          </p>
+        ) : (
+          <>
+            <div style={{
+              marginTop: 14, marginBottom: 12, padding: '8px 10px', borderRadius: 8,
+              backgroundColor: 'var(--bg-hover)', fontSize: '0.75rem', color: 'var(--text-secondary)'
+            }}>
+              {salud.source === 'local'
+                ? 'Diagnostico propio, calculado a partir de la ficha tecnica de la categoria y el contenido de la publicacion. Es una aproximacion: puede no coincidir con el puntaje que muestra el panel de Mercado Libre.'
+                : 'Diagnostico oficial de Mercado Libre.'}
+              {salud.fetched_at ? ' Actualizado: ' + String(salud.fetched_at).slice(0, 16) : ''}
+              <div style={{marginTop: 8}}>
+                <button
+                  type="button"
+                  className="dashboard-pill"
+                  onClick={reauditar}
+                  disabled={trabajando}
+                  style={{
+                    backgroundColor: 'var(--bg-card)', color: 'var(--accent-blue)',
+                    border: '1px solid var(--border-color)', fontWeight: 600,
+                    cursor: trabajando ? 'wait' : 'pointer'
+                  }}
+                  title="Vuelve a consultarle a Mercado Libre el estado de esta publicacion"
+                >
+                  {trabajando ? 'Actualizando...' : 'Volver a revisar'}
+                </button>
+              </div>
+            </div>
+
+            {objetivos.map(objetivo => (
+              <div
+                key={objetivo.id}
+                style={{
+                  display: 'flex', gap: 10, alignItems: 'flex-start',
+                  padding: '10px 0', borderTop: '1px solid var(--border-color)'
+                }}
+              >
+                <span style={{
+                  fontSize: '0.7rem', fontWeight: 700, padding: '2px 8px', borderRadius: 10,
+                  flexShrink: 0, minWidth: 76, textAlign: 'center',
+                  backgroundColor: objetivo.status === 'PENDING' ? 'rgba(239, 68, 68, 0.15)' : 'rgba(16, 185, 129, 0.15)',
+                  color: objetivo.status === 'PENDING' ? '#ef4444' : '#10b981'
+                }}>
+                  {objetivo.status === 'PENDING' ? 'PENDIENTE' : 'OK'}
+                </span>
+                <div style={{minWidth: 0, fontSize: '0.82rem'}}>
+                  <div style={{fontWeight: 600, marginBottom: 2}}>
+                    {ETIQUETAS_OBJETIVO[objetivo.id] || objetivo.id}
+                  </div>
+                  {describir(objetivo)}
+                </div>
+              </div>
+            ))}
+
+            {/* ---------------- Borradores de mejora ---------------- */}
+            <div style={{
+              marginTop: 18, paddingTop: 14, borderTop: '2px solid var(--border-color)'
+            }}>
+              <div style={{
+                display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                gap: 10, flexWrap: 'wrap', marginBottom: 10
+              }}>
+                <h4 style={{margin: 0, fontSize: '0.9rem'}}>Mejoras propuestas</h4>
+                <button
+                  type="button"
+                  className="dashboard-pill"
+                  onClick={generarImagenes}
+                  disabled={generandoImg || trabajando}
+                  style={{
+                    backgroundColor: 'rgba(6, 182, 212, 0.15)', color: '#06b6d4',
+                    border: '1px solid rgba(6, 182, 212, 0.35)', fontWeight: 700,
+                    cursor: generandoImg ? 'wait' : 'pointer', marginRight: 6
+                  }}
+                  title="Genera imagenes secundarias a partir de la foto real de esta publicacion"
+                >
+                  {generandoImg ? 'Generando...' : 'Generar imagenes'}
+                </button>
+                <button
+                  type="button"
+                  className="dashboard-pill"
+                  onClick={generar}
+                  disabled={generando || trabajando}
+                  style={{
+                    backgroundColor: 'rgba(139, 92, 246, 0.15)', color: '#8b5cf6',
+                    border: '1px solid rgba(139, 92, 246, 0.35)', fontWeight: 700,
+                    cursor: generando ? 'wait' : 'pointer'
+                  }}
+                >
+                  {generando ? 'Generando...' : 'Generar con IA'}
+                </button>
+              </div>
+
+              {aiConfig && (
+                <div style={{
+                  marginBottom: 10, padding: '8px 10px', borderRadius: 8,
+                  backgroundColor: 'var(--bg-hover)', fontSize: '0.75rem'
+                }}>
+                  <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap'}}>
+                    <span style={{color: 'var(--text-secondary)'}}>
+                      Motor de IA:{' '}
+                      <b style={{color: 'var(--text-primary)'}}>
+                        {(aiConfig.proveedores[aiConfig.provider] || {}).nombre}
+                      </b>
+                      {' '}
+                      <span style={{
+                        padding: '1px 6px', borderRadius: 8, fontWeight: 700,
+                        backgroundColor: aiConfig.provider === 'gemini' ? 'rgba(16,185,129,0.15)' : 'rgba(245,158,11,0.15)',
+                        color: aiConfig.provider === 'gemini' ? '#10b981' : '#d97706'
+                      }}>
+                        {(aiConfig.proveedores[aiConfig.provider] || {}).costo}
+                      </span>
+                    </span>
+                    <button
+                      type="button"
+                      className="dashboard-pill"
+                      onClick={() => setMostrarAjustesIa(v => !v)}
+                      style={{backgroundColor: 'var(--bg-card)', color: 'var(--text-secondary)',
+                              border: '1px solid var(--border-color)'}}
+                    >
+                      {mostrarAjustesIa ? 'Cerrar' : 'Cambiar'}
+                    </button>
+                  </div>
+
+                  {mostrarAjustesIa && (
+                    <div style={{marginTop: 10, display: 'flex', flexDirection: 'column', gap: 8}}>
+                      {Object.entries(aiConfig.proveedores).map(([codigo, datos]) => (
+                        <label key={codigo} style={{display: 'flex', gap: 8, alignItems: 'flex-start', cursor: 'pointer'}}>
+                          <input
+                            type="radio"
+                            name="proveedor-ia"
+                            checked={aiConfig.provider === codigo}
+                            onChange={() => guardarAiConfig({ provider: codigo })}
+                            style={{marginTop: 3, width: 14, height: 14, minHeight: 'auto', cursor: 'pointer'}}
+                          />
+                          <span>
+                            <b>{datos.nombre}</b> ({datos.costo})
+                            {!datos.configurado && (
+                              <span style={{color: '#d97706'}}> — sin clave configurada</span>
+                            )}
+                            <div style={{color: 'var(--text-secondary)', marginTop: 2}}>{datos.detalle}</div>
+                          </span>
+                        </label>
+                      ))}
+
+                      {imgConfig && (
+                        <div style={{marginTop: 10, paddingTop: 10, borderTop: '1px solid var(--border-color)'}}>
+                          <div style={{fontWeight: 700, marginBottom: 6}}>Motor de imagenes</div>
+                          {Object.entries(imgConfig.proveedores).map(([codigo, datos]) => (
+                            <label key={codigo} style={{display: 'flex', gap: 8, alignItems: 'flex-start', cursor: 'pointer', marginBottom: 6}}>
+                              <input
+                                type="radio"
+                                name="proveedor-img"
+                                checked={imgConfig.provider === codigo}
+                                onChange={() => guardarImgConfig({ provider: codigo })}
+                                style={{marginTop: 3, width: 14, height: 14, minHeight: 'auto', cursor: 'pointer'}}
+                              />
+                              <span>
+                                <b>{datos.nombre}</b> ({datos.costo})
+                                {!datos.configurado && (
+                                  <span style={{color: '#d97706'}}> — sin clave configurada</span>
+                                )}
+                                <div style={{color: 'var(--text-secondary)', marginTop: 2}}>{datos.detalle}</div>
+                              </span>
+                            </label>
+                          ))}
+
+                          <select
+                            value={imgConfig.image_model}
+                            onChange={e => guardarImgConfig({ image_model: e.target.value })}
+                            style={{width: '100%', padding: '5px 8px', fontSize: '0.75rem', borderRadius: 6,
+                                    border: '1px solid var(--border-color)', marginTop: 4,
+                                    backgroundColor: 'var(--bg-dark)', color: 'var(--text-primary)'}}
+                          >
+                            {imgConfig.modelos.map(m => (
+                              <option key={m.id} value={m.id}>{m.nombre} — {m.nota}</option>
+                            ))}
+                          </select>
+
+                          {imgConfig.provider === 'openai_image' && (
+                            <div style={{display: 'flex', gap: 6, marginTop: 6}}>
+                              <input
+                                type="password"
+                                value={claveOpenai}
+                                onChange={e => setClaveOpenai(e.target.value)}
+                                placeholder={imgConfig.proveedores.openai_image.configurado
+                                  ? 'Clave guardada (escribi una nueva para reemplazarla)'
+                                  : 'Pegar clave de OpenAI (sk-...)'}
+                                style={{flex: 1, padding: '5px 8px', fontSize: '0.75rem', borderRadius: 6,
+                                        border: '1px solid var(--border-color)',
+                                        backgroundColor: 'var(--bg-dark)', color: 'var(--text-primary)',
+                                        minHeight: 'auto'}}
+                              />
+                              <button
+                                type="button"
+                                className="dashboard-pill"
+                                onClick={() => guardarImgConfig({})}
+                                disabled={!claveOpenai.trim()}
+                                style={{backgroundColor: 'var(--accent-blue)', color: '#fff',
+                                        border: 'none', fontWeight: 600}}
+                              >
+                                Guardar
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {aiConfig.provider === 'anthropic' && (
+                        <div style={{display: 'flex', flexDirection: 'column', gap: 6, marginTop: 4}}>
+                          <select
+                            value={aiConfig.anthropic_model}
+                            onChange={e => guardarAiConfig({ anthropic_model: e.target.value })}
+                            style={{padding: '5px 8px', fontSize: '0.75rem', borderRadius: 6,
+                                    border: '1px solid var(--border-color)',
+                                    backgroundColor: 'var(--bg-dark)', color: 'var(--text-primary)'}}
+                          >
+                            {aiConfig.modelos_anthropic.map(m => (
+                              <option key={m.id} value={m.id}>
+                                {m.nombre} — {m.precio} ({m.nota})
+                              </option>
+                            ))}
+                          </select>
+                          <div style={{display: 'flex', gap: 6}}>
+                            <input
+                              type="password"
+                              value={claveAnthropic}
+                              onChange={e => setClaveAnthropic(e.target.value)}
+                              placeholder={aiConfig.proveedores.anthropic.configurado
+                                ? 'Clave guardada (escribi una nueva para reemplazarla)'
+                                : 'Pegar clave de Anthropic'}
+                              style={{flex: 1, padding: '5px 8px', fontSize: '0.75rem', borderRadius: 6,
+                                      border: '1px solid var(--border-color)',
+                                      backgroundColor: 'var(--bg-dark)', color: 'var(--text-primary)',
+                                      minHeight: 'auto'}}
+                            />
+                            <button
+                              type="button"
+                              className="dashboard-pill"
+                              onClick={() => guardarAiConfig({})}
+                              disabled={!claveAnthropic.trim()}
+                              style={{backgroundColor: 'var(--accent-blue)', color: '#fff',
+                                      border: 'none', fontWeight: 600}}
+                            >
+                              Guardar
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {borradores.length === 0 && fallidos.length === 0 && (
+                <p style={{fontSize: '0.78rem', color: 'var(--text-secondary)', margin: 0}}>
+                  Sin borradores. "Generar con IA" propone titulo, descripcion y ficha
+                  tecnica para los objetivos pendientes. No modifica nada todavia.
+                </p>
+              )}
+
+              {borradores.map(sug => {
+                const simulado = resultadoSimulado(sug.id)
+                return (
+                  <div
+                    key={sug.id}
+                    style={{
+                      border: '1px solid ' + (seleccionadas.includes(sug.id) ? 'var(--accent-blue)' : 'var(--border-color)'),
+                      borderRadius: 8, padding: 10, marginBottom: 10,
+                      backgroundColor: 'var(--bg-card)'
+                    }}
+                  >
+                    <label style={{display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', marginBottom: 8}}>
+                      <input
+                        type="checkbox"
+                        checked={seleccionadas.includes(sug.id)}
+                        onChange={() => alternarSeleccion(sug.id)}
+                        style={{cursor: 'pointer', width: 16, height: 16, minHeight: 'auto'}}
+                      />
+                      <span style={{fontWeight: 700, fontSize: '0.85rem'}}>
+                        {ETIQUETAS_CAMPO[sug.field] || sug.field}
+                      </span>
+                      {sug.model_used && (
+                        <span style={{fontSize: '0.66rem', color: 'var(--text-secondary)'}}>
+                          {sug.model_used}
+                        </span>
+                      )}
+                    </label>
+
+                    {sug.field === 'pictures' ? (
+                      <div>
+                        <div style={{fontSize: '0.66rem', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: 4}}>
+                          YA PUBLICADAS (la portada no se toca)
+                        </div>
+                        <div style={{display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10}}>
+                          {(() => {
+                            let actuales = []
+                            try { actuales = JSON.parse(sug.current_value || '[]') } catch (e) { actuales = [] }
+                            return actuales.map((u, i) => (
+                              <img key={i} src={u} alt={'foto ' + (i + 1)}
+                                   style={{width: 64, height: 64, objectFit: 'cover', borderRadius: 6,
+                                           border: i === 0 ? '2px solid var(--accent-blue)' : '1px solid var(--border-color)'}} />
+                            ))
+                          })()}
+                        </div>
+                        <div style={{fontSize: '0.66rem', fontWeight: 700, color: '#10b981', marginBottom: 4}}>
+                          GENERADAS A PARTIR DE LA PRIMERA (se agregan al final)
+                        </div>
+                        <div style={{display: 'flex', gap: 8, flexWrap: 'wrap'}}>
+                          {(() => {
+                            let nuevas = []
+                            try { nuevas = JSON.parse(sug.proposed_value || '[]') } catch (e) { nuevas = [] }
+                            return nuevas.map((n, i) => (
+                              <div key={i} style={{textAlign: 'center'}}>
+                                <img src={n.url} alt={n.estilo}
+                                     style={{width: 110, height: 110, objectFit: 'cover', borderRadius: 8,
+                                             border: '1px solid var(--border-color)'}} />
+                                <div style={{fontSize: '0.66rem', color: 'var(--text-secondary)', marginTop: 2}}>
+                                  {n.estilo}
+                                </div>
+                              </div>
+                            ))
+                          })()}
+                        </div>
+                        <div style={{fontSize: '0.7rem', color: 'var(--text-secondary)', marginTop: 8}}>
+                          Miralas en tamaño real antes de aplicar: si alguna no representa
+                          fielmente el producto, descartá la propuesta y volvé a generar.
+                        </div>
+                      </div>
+                    ) : (
+                    <div style={{display: 'flex', gap: 10, flexWrap: 'wrap'}}>
+                      <DiffValor etiqueta="ANTES" valor={sug.current_value} color="var(--text-secondary)" />
+                      <div style={{flex: '1 1 220px', minWidth: 0}}>
+                        <div style={{fontSize: '0.66rem', fontWeight: 700, color: '#10b981', marginBottom: 3}}>
+                          DESPUES (editable)
+                        </div>
+                        <textarea
+                          value={valorDe(sug)}
+                          onChange={e => setEdiciones(prev => ({...prev, [sug.id]: e.target.value}))}
+                          rows={sug.field === 'description' ? 6 : 3}
+                          style={{
+                            width: '100%', fontSize: '0.78rem', padding: '6px 8px',
+                            borderRadius: 6, border: '1px solid var(--border-color)',
+                            backgroundColor: 'var(--bg-dark)', color: 'var(--text-primary)',
+                            resize: 'vertical', minHeight: 'auto'
+                          }}
+                        />
+                      </div>
+                    </div>
+                    )}
+
+                    {simulado && (
+                      <div style={{
+                        marginTop: 8, fontSize: '0.75rem',
+                        color: simulado.status === 'dry_run' ? '#10b981' : '#ef4444'
+                      }}>
+                        {simulado.status === 'dry_run'
+                          ? 'Simulacion OK: el cambio se puede aplicar.'
+                          : 'No se puede aplicar: ' + (simulado.error || '')}
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+
+              {fallidos.map(sug => (
+                <div key={sug.id} style={{
+                  border: '1px solid rgba(239, 68, 68, 0.35)', borderRadius: 8,
+                  padding: '8px 10px', marginBottom: 8, fontSize: '0.78rem'
+                }}>
+                  <b>{ETIQUETAS_CAMPO[sug.field] || sug.field}</b>
+                  <span style={{color: '#ef4444'}}> — rechazado: {sug.reject_reason}</span>
+                </div>
+              ))}
+
+              {borradores.length > 0 && (
+                <div style={{display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 4}}>
+                  <button
+                    type="button"
+                    className="dashboard-pill"
+                    onClick={() => ejecutar(true)}
+                    disabled={trabajando}
+                    style={{
+                      backgroundColor: 'var(--bg-dark)', color: 'var(--text-primary)',
+                      border: '1px solid var(--border-color)', fontWeight: 600
+                    }}
+                  >
+                    Simular ({seleccionadas.length})
+                  </button>
+                  <button
+                    type="button"
+                    className="dashboard-pill"
+                    onClick={() => ejecutar(false)}
+                    disabled={trabajando}
+                    style={{
+                      backgroundColor: '#10b981', color: '#fff', border: 'none', fontWeight: 700
+                    }}
+                  >
+                    {trabajando ? 'Trabajando...' : 'Aplicar en Mercado Libre (' + seleccionadas.length + ')'}
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* ---------------- Historial reversible ---------------- */}
+            {revisiones.length > 0 && (
+              <div style={{marginTop: 18, paddingTop: 14, borderTop: '2px solid var(--border-color)'}}>
+                <h4 style={{margin: '0 0 8px 0', fontSize: '0.9rem'}}>Cambios aplicados</h4>
+                {revisiones.map(rev => (
+                  <div key={rev.id} style={{
+                    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                    gap: 10, padding: '8px 0', borderTop: '1px solid var(--border-color)',
+                    fontSize: '0.78rem', flexWrap: 'wrap'
+                  }}>
+                    <div style={{minWidth: 0}}>
+                      <b>{ETIQUETAS_CAMPO[rev.field] || rev.field}</b>
+                      <span style={{color: 'var(--text-secondary)'}}>
+                        {' '}— {String(rev.applied_at || '').slice(0, 16)}
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      className="dashboard-pill"
+                      onClick={() => revertir(rev.id)}
+                      disabled={trabajando}
+                      style={{
+                        backgroundColor: 'rgba(239, 68, 68, 0.15)', color: '#ef4444',
+                        border: '1px solid rgba(239, 68, 68, 0.3)', fontWeight: 600
+                      }}
+                    >
+                      Revertir
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  )
+}
+
+
+/**
+ * Revision en lote de las propuestas generadas para varias publicaciones.
+ *
+ * Mismo principio que el modal individual: nada se escribe en Mercado Libre
+ * hasta que alguien tilda y aplica. La diferencia es la escala, asi que hay
+ * seleccionar todo, y el resultado se informa por publicacion y por campo en
+ * vez de con un unico "listo".
+ */
+function BulkReviewModal({ mlIds, errores, onClose, onApplied }) {
+  const [sugerencias, setSugerencias] = React.useState([])
+  const [seleccionadas, setSeleccionadas] = React.useState([])
+  const [cargando, setCargando] = React.useState(true)
+  const [trabajando, setTrabajando] = React.useState(false)
+  const [resultado, setResultado] = React.useState(null)
+
+  const cargar = React.useCallback(() => {
+    setCargando(true)
+    fetch('/api/listing-optimizer/suggestions?ml_ids=' +
+          encodeURIComponent((mlIds || []).join(',')) + '&status=draft,edited')
+      .then(r => r.ok ? r.json() : { items: [] })
+      .then(d => {
+        const items = d.items || []
+        setSugerencias(items)
+        // Todo viene tildado: lo normal es aceptar y descartar la excepcion.
+        setSeleccionadas(items.map(s => s.id))
+      })
+      .catch(() => {})
+      .finally(() => setCargando(false))
+  }, [mlIds])
+
+  React.useEffect(() => { cargar() }, [cargar])
+
+  const alternar = (id) => {
+    setSeleccionadas(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id])
+  }
+
+  const ejecutar = async (dryRun) => {
+    if (seleccionadas.length === 0) {
+      alert('No hay nada tildado')
+      return
+    }
+    if (!dryRun) {
+      const confirmado = confirm(
+        'Vas a aplicar ' + seleccionadas.length + ' cambio(s) EN MERCADO LIBRE, ' +
+        'sobre ' + porPublicacion.length + ' publicacion(es).' +
+        String.fromCharCode(10) + String.fromCharCode(10) +
+        'De cada uno se guarda el valor anterior para poder revertirlo. Continuar?')
+      if (!confirmado) return
+    }
+
+    setTrabajando(true)
+    try {
+      const res = await fetch('/api/listing-optimizer/apply', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ suggestion_ids: seleccionadas, dry_run: dryRun })
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        alert('Error: ' + (data.detail || 'error'))
+        return
+      }
+      setResultado(data)
+      if (!dryRun) {
+        cargar()
+        if (onApplied) onApplied()
+      }
+    } catch (e) {
+      alert('Error de conexion: ' + e.message)
+    } finally {
+      setTrabajando(false)
+    }
+  }
+
+  const agrupadas = {}
+  sugerencias.forEach(s => {
+    if (!agrupadas[s.ml_id]) agrupadas[s.ml_id] = []
+    agrupadas[s.ml_id].push(s)
+  })
+  const porPublicacion = Object.keys(agrupadas)
+
+  const resumenDe = (sug) => {
+    if (sug.field === 'pictures') {
+      try { return JSON.parse(sug.proposed_value || '[]').length + ' imagen(es) generadas' }
+      catch (e) { return 'imagenes' }
+    }
+    return (sug.proposed_value || '').replace(/[\r\n]+/g, ' ').slice(0, 150)
+  }
+
+  const estadoDe = (id) => {
+    if (!resultado) return null
+    return (resultado.resultados || []).find(r => r.suggestion_id === id)
+  }
+
+  return (
+    <div
+      style={{
+        position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+        backgroundColor: 'rgba(0,0,0,0.65)', display: 'flex',
+        alignItems: 'center', justifyContent: 'center', zIndex: 1250, padding: 12
+      }}
+      onClick={onClose}
+    >
+      <div
+        className="card"
+        style={{width: 820, maxWidth: '100%', maxHeight: '88vh', overflowY: 'auto'}}
+        onClick={e => e.stopPropagation()}
+      >
+        <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10}}>
+          <div>
+            <h3 style={{margin: 0, fontSize: '1rem'}}>Revisar mejoras propuestas</h3>
+            <div style={{fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: 4}}>
+              {sugerencias.length} propuesta(s) en {porPublicacion.length} publicacion(es).
+              Nada se aplico todavia.
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            style={{background: 'none', border: 'none', color: 'var(--text-secondary)',
+                    cursor: 'pointer', fontSize: '1.1rem'}}
+          >
+            X
+          </button>
+        </div>
+
+        {(errores || []).length > 0 && (
+          <div style={{
+            marginTop: 12, padding: '8px 10px', borderRadius: 8, fontSize: '0.75rem',
+            backgroundColor: 'rgba(245, 158, 11, 0.12)', color: 'var(--text-secondary)',
+            border: '1px solid rgba(245, 158, 11, 0.3)'
+          }}>
+            <b>Algunas no se pudieron resolver ({errores.length}):</b>
+            <div style={{marginTop: 4, maxHeight: 90, overflowY: 'auto'}}>
+              {errores.map((e, i) => <div key={i}>{e}</div>)}
+            </div>
+          </div>
+        )}
+
+        {cargando ? (
+          <p style={{fontSize: '0.85rem', color: 'var(--text-secondary)', marginTop: 16}}>
+            Cargando propuestas...
+          </p>
+        ) : sugerencias.length === 0 ? (
+          <p style={{fontSize: '0.85rem', color: 'var(--text-secondary)', marginTop: 16}}>
+            No quedan propuestas pendientes de revision.
+          </p>
+        ) : (
+          <>
+            <div style={{display: 'flex', gap: 8, margin: '12px 0', flexWrap: 'wrap'}}>
+              <button
+                type="button"
+                className="dashboard-pill"
+                onClick={() => setSeleccionadas(sugerencias.map(s => s.id))}
+                style={{backgroundColor: 'var(--bg-dark)', border: '1px solid var(--border-color)',
+                        color: 'var(--text-primary)'}}
+              >
+                Tildar todo
+              </button>
+              <button
+                type="button"
+                className="dashboard-pill"
+                onClick={() => setSeleccionadas([])}
+                style={{backgroundColor: 'var(--bg-dark)', border: '1px solid var(--border-color)',
+                        color: 'var(--text-secondary)'}}
+              >
+                Destildar todo
+              </button>
+              <span style={{fontSize: '0.78rem', color: 'var(--text-secondary)', alignSelf: 'center'}}>
+                {seleccionadas.length} tildada(s)
+              </span>
+            </div>
+
+            {porPublicacion.map(mlId => (
+              <div key={mlId} style={{
+                border: '1px solid var(--border-color)', borderRadius: 8,
+                padding: 10, marginBottom: 10
+              }}>
+                <div style={{fontSize: '0.72rem', fontFamily: 'monospace',
+                             color: 'var(--text-secondary)', marginBottom: 6}}>
+                  {mlId}
+                </div>
+                {agrupadas[mlId].map(sug => {
+                  const estado = estadoDe(sug.id)
+                  return (
+                    <div key={sug.id} style={{
+                      display: 'flex', gap: 8, alignItems: 'flex-start',
+                      padding: '6px 0', borderTop: '1px solid var(--border-color)'
+                    }}>
+                      <input
+                        type="checkbox"
+                        checked={seleccionadas.includes(sug.id)}
+                        onChange={() => alternar(sug.id)}
+                        style={{marginTop: 3, width: 15, height: 15, minHeight: 'auto', cursor: 'pointer'}}
+                      />
+                      <div style={{minWidth: 0, flex: 1}}>
+                        <div style={{fontSize: '0.8rem', fontWeight: 700}}>
+                          {ETIQUETAS_CAMPO[sug.field] || sug.field}
+                          {estado && (
+                            <span style={{
+                              marginLeft: 8, fontSize: '0.7rem', fontWeight: 600,
+                              color: (estado.status === 'applied' || estado.status === 'dry_run')
+                                ? '#10b981' : '#ef4444'
+                            }}>
+                              {estado.status === 'applied' ? 'aplicado'
+                                : estado.status === 'dry_run' ? 'simulacion OK'
+                                : (estado.error || estado.status)}
+                            </span>
+                          )}
+                        </div>
+                        <div style={{fontSize: '0.76rem', color: 'var(--text-secondary)',
+                                     wordBreak: 'break-word'}}>
+                          {resumenDe(sug)}
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            ))}
+
+            <div style={{
+              display: 'flex', gap: 8, flexWrap: 'wrap', position: 'sticky', bottom: 0,
+              backgroundColor: 'var(--bg-card)', paddingTop: 10
+            }}>
+              <button
+                type="button"
+                className="dashboard-pill"
+                onClick={() => ejecutar(true)}
+                disabled={trabajando}
+                style={{backgroundColor: 'var(--bg-dark)', color: 'var(--text-primary)',
+                        border: '1px solid var(--border-color)', fontWeight: 600}}
+              >
+                Simular ({seleccionadas.length})
+              </button>
+              <button
+                type="button"
+                className="dashboard-pill"
+                onClick={() => ejecutar(false)}
+                disabled={trabajando}
+                style={{backgroundColor: '#10b981', color: '#fff', border: 'none', fontWeight: 700}}
+              >
+                {trabajando ? 'Trabajando...' : 'Aplicar en Mercado Libre (' + seleccionadas.length + ')'}
+              </button>
+              {resultado && !resultado.dry_run && (
+                <span style={{fontSize: '0.78rem', alignSelf: 'center', color: 'var(--text-secondary)'}}>
+                  Aplicados {resultado.aplicados} de {resultado.total}
+                  {resultado.con_error ? ' - con error: ' + resultado.con_error : ''}
+                  {resultado.rechazados ? ' - rechazados: ' + resultado.rechazados : ''}
+                </span>
+              )}
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  )
+}

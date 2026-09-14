@@ -7,13 +7,40 @@ import {
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
 import { useTenant } from '../TenantContext'
 
+// Punto de corte unico para el modo celular del panel. Se resuelve de forma
+// sincrona en el primer render para que las secciones ya nazcan plegadas en el
+// telefono y no se vea el parpadeo de abrir/cerrar.
+const MOBILE_BREAKPOINT = 768
+const isMobileViewport = () =>
+  typeof window !== 'undefined' && window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT}px)`).matches
+
+function useIsMobile() {
+  const [isMobile, setIsMobile] = useState(isMobileViewport)
+
+  useEffect(() => {
+    const mq = window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT}px)`)
+    const onChange = (e) => setIsMobile(e.matches)
+    setIsMobile(mq.matches)
+    if (mq.addEventListener) mq.addEventListener('change', onChange)
+    else mq.addListener(onChange)
+    return () => {
+      if (mq.removeEventListener) mq.removeEventListener('change', onChange)
+      else mq.removeListener(onChange)
+    }
+  }, [])
+
+  return isMobile
+}
+
 export default function Dashboard() {
   const [stats, setStats] = useState(null)
   const [orders, setOrders] = useState([])
   const [period, setPeriod] = useState('total')
   const [startDate, setStartDate] = useState('')
   const [endDate, setEndDate] = useState('')
+  const [showAllKpis, setShowAllKpis] = useState(false)
   const { isSimpleView } = useTenant()
+  const isMobile = useIsMobile()
 
   useEffect(() => {
     let url = `/api/dashboard/metrics?period=${period}`
@@ -63,15 +90,84 @@ export default function Dashboard() {
   })
   const chartData = Object.keys(salesByDate).sort().map(d => ({ date: d, amount: salesByDate[d] }))
 
+  // Los KPI se declaran como datos: en celular mostramos solo los 4 primeros y
+  // el resto queda detras de un boton, para que el resumen entre en una pantalla.
+  const kpis = [
+    {
+      key: 'revenue',
+      title: 'Facturación',
+      icon: DollarSign,
+      color: 'var(--accent-blue)',
+      value: `$${Math.round(stats.total_revenue || 0).toLocaleString()}`,
+      subtitle: 'Órdenes aprobadas pagadas'
+    },
+    {
+      key: 'profit',
+      title: 'Ganancia Neta Est.',
+      icon: TrendingUp,
+      color: 'var(--accent-emerald)',
+      value: `$${Math.round(stats.total_profit || 0).toLocaleString()}`,
+      subtitle: `Margen Promedio: ${stats.profit_margin?.toFixed(1) || 0}%`
+    },
+    {
+      key: 'sales',
+      title: 'Órdenes',
+      icon: ShoppingBag,
+      color: 'var(--accent-purple)',
+      value: `${stats.total_sales || 0}`,
+      subtitle: 'Ventas finalizadas'
+    },
+    {
+      key: 'low_stock',
+      title: 'Alertas de Stock',
+      icon: AlertTriangle,
+      color: 'var(--accent-red)',
+      value: `${stats.low_stock_count || 0}`,
+      valueColor: stats.low_stock_count > 0 ? 'var(--accent-red)' : undefined,
+      subtitle: 'Productos en stock crítico'
+    },
+    {
+      key: 'expenses',
+      title: 'Gastos Totales',
+      icon: TrendingDown,
+      color: 'var(--accent-red)',
+      value: `$${Math.round(stats.expenses_total || 0).toLocaleString()}`,
+      subtitle: `Fijos: $${Math.round(stats.expenses_fixed || 0).toLocaleString()} | Var: $${Math.round(stats.expenses_variable || 0).toLocaleString()}`
+    },
+    {
+      key: 'visits_meli',
+      title: 'Visitas Mercado Libre',
+      icon: Eye,
+      color: 'var(--accent-amber)',
+      value: (stats.total_visits_meli || 0).toLocaleString(),
+      subtitle: 'Total acumulado en Meli'
+    },
+    {
+      key: 'visits_web',
+      title: 'Visitas Tienda Web',
+      icon: Globe,
+      color: 'var(--accent-cyan)',
+      value: (stats.total_visits_web || 0).toLocaleString(),
+      subtitle: 'Total de visualizaciones web'
+    }
+  ]
+
+  const PRIMARY_KPI_COUNT = 4
+  const hiddenKpiCount = kpis.length - PRIMARY_KPI_COUNT
+  const visibleKpis = (isMobile && !showAllKpis) ? kpis.slice(0, PRIMARY_KPI_COUNT) : kpis
+
   return (
     <div style={{ maxWidth: 1400, margin: '0 auto' }}>
       {/* Header & Period Selector */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '12px' }}>
         <div>
           <h1 className="page-title" style={{ margin: 0 }}>Panel de Control</h1>
-          <p className="page-subtitle" style={{ margin: '4px 0 0 0', fontSize: '0.85rem' }}>
-            Analiza el rendimiento de tus ventas en Mercado Libre, ganancias y estadísticas de visitas.
-          </p>
+          {/* En celular el subtitulo solo roba altura util: se muestra en desktop */}
+          {!isMobile && (
+            <p className="page-subtitle" style={{ margin: '4px 0 0 0', fontSize: '0.85rem' }}>
+              Analiza el rendimiento de tus ventas en Mercado Libre, ganancias y estadísticas de visitas.
+            </p>
+          )}
         </div>
         
         {/* Period Selector Group */}
@@ -159,8 +255,31 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* Early Warning Banner */}
-      {stats && (stats.low_stock_count > 0) && (
+      {/* Early Warning Banner: en celular es una sola linea tocable */}
+      {stats && (stats.low_stock_count > 0) && isMobile && (
+        <a
+          href="/inventory"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            backgroundColor: 'rgba(239, 68, 68, 0.12)',
+            border: '1px solid rgba(239, 68, 68, 0.3)',
+            borderRadius: '10px',
+            padding: '8px 10px',
+            marginBottom: '12px',
+            textDecoration: 'none'
+          }}
+        >
+          <AlertTriangle size={16} style={{ color: 'var(--accent-red)', flexShrink: 0 }} />
+          <span style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-primary)', flex: 1, minWidth: 0 }}>
+            <strong style={{ color: 'var(--accent-red)' }}>{stats.low_stock_count}</strong> producto(s) en stock crítico
+          </span>
+          <span style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--accent-red)', flexShrink: 0 }}>Ver ➔</span>
+        </a>
+      )}
+
+      {stats && (stats.low_stock_count > 0) && !isMobile && (
         <div style={{
           backgroundColor: 'rgba(239, 68, 68, 0.12)',
           border: '1px solid rgba(239, 68, 68, 0.3)',
@@ -195,44 +314,42 @@ export default function Dashboard() {
 
       {/* KPI Grid */}
       <div className="responsive-kpi-grid">
-        <div className="card kpi-card" style={{ borderLeft: '4px solid var(--accent-blue)' }}>
-          <div className="kpi-title">Facturación Total <DollarSign size={16} color="var(--accent-blue)" /></div>
-          <div className="kpi-value">${Math.round(stats.total_revenue || 0).toLocaleString()}</div>
-          <div className="kpi-subtitle">Órdenes aprobadas pagadas</div>
-        </div>
-        <div className="card kpi-card" style={{ borderLeft: '4px solid var(--accent-emerald)' }}>
-          <div className="kpi-title">Ganancia Neta Est. <TrendingUp size={16} color="var(--accent-emerald)" /></div>
-          <div className="kpi-value">${Math.round(stats.total_profit || 0).toLocaleString()}</div>
-          <div className="kpi-subtitle">Margen Promedio: {stats.profit_margin?.toFixed(1) || 0}%</div>
-        </div>
-        <div className="card kpi-card" style={{ borderLeft: '4px solid var(--accent-purple)' }}>
-          <div className="kpi-title">Órdenes concretadas <ShoppingBag size={16} color="var(--accent-purple)" /></div>
-          <div className="kpi-value">{stats.total_sales || 0}</div>
-          <div className="kpi-subtitle">Ventas finalizadas</div>
-        </div>
-        <div className="card kpi-card" style={{ borderLeft: '4px solid var(--accent-red)' }}>
-          <div className="kpi-title">Alertas de Stock <AlertTriangle size={16} color="var(--accent-red)" /></div>
-          <div className="kpi-value" style={{ color: stats.low_stock_count > 0 ? 'var(--accent-red)' : 'inherit' }}>
-            {stats.low_stock_count || 0}
-          </div>
-          <div className="kpi-subtitle">Productos en stock crítico/alerta</div>
-        </div>
-        <div className="card kpi-card" style={{ borderLeft: '4px solid var(--accent-red)' }}>
-          <div className="kpi-title">Gastos Totales <TrendingDown size={16} color="var(--accent-red)" /></div>
-          <div className="kpi-value">${Math.round(stats.expenses_total || 0).toLocaleString()}</div>
-          <div className="kpi-subtitle">Fijos: ${Math.round(stats.expenses_fixed || 0).toLocaleString()} | Var: ${Math.round(stats.expenses_variable || 0).toLocaleString()}</div>
-        </div>
-        <div className="card kpi-card" style={{ borderLeft: '4px solid var(--accent-amber)' }}>
-          <div className="kpi-title">Visitas Mercado Libre <Eye size={16} color="var(--accent-amber)" /></div>
-          <div className="kpi-value">{(stats.total_visits_meli || 0).toLocaleString()}</div>
-          <div className="kpi-subtitle">Total acumulado en Meli</div>
-        </div>
-        <div className="card kpi-card" style={{ borderLeft: '4px solid var(--accent-cyan)' }}>
-          <div className="kpi-title">Visitas Tienda Web <Globe size={16} color="var(--accent-cyan)" /></div>
-          <div className="kpi-value">{(stats.total_visits_web || 0).toLocaleString()}</div>
-          <div className="kpi-subtitle">Total de visualizaciones web</div>
-        </div>
+        {visibleKpis.map(kpi => {
+          const Icon = kpi.icon
+          return (
+            <div key={kpi.key} className="card kpi-card" style={{ borderLeft: `4px solid ${kpi.color}` }}>
+              <div className="kpi-title">
+                <span className="kpi-title-text">{kpi.title}</span>
+                <Icon size={16} color={kpi.color} />
+              </div>
+              <div className="kpi-value" style={kpi.valueColor ? { color: kpi.valueColor } : undefined}>
+                {kpi.value}
+              </div>
+              <div className="kpi-subtitle" title={kpi.subtitle}>{kpi.subtitle}</div>
+            </div>
+          )
+        })}
       </div>
+
+      {/* En celular el resto de los KPI queda detras de un boton */}
+      {isMobile && hiddenKpiCount > 0 && (
+        <div style={{ display: 'flex', justifyContent: 'center', marginTop: '-6px', marginBottom: '14px' }}>
+          <button
+            type="button"
+            className="dashboard-pill"
+            onClick={() => setShowAllKpis(v => !v)}
+            style={{
+              backgroundColor: 'var(--bg-card)',
+              border: '1px solid var(--border-color)',
+              color: 'var(--accent-blue)',
+              cursor: 'pointer',
+              fontWeight: 600
+            }}
+          >
+            {showAllKpis ? 'Ver menos métricas' : `+${hiddenKpiCount} métricas más`}
+          </button>
+        </div>
+      )}
 
       {!isSimpleView && (
         <>
@@ -269,20 +386,52 @@ function DashboardCollapsibleCard({
   badgeColor = 'var(--text-secondary)',
   badgeBg = 'var(--bg-dark)',
   defaultOpen = true,
+  mobileDefaultOpen = false,
+  storageKey = null,
   children,
   extraHeaderActions = null,
   borderColor = 'var(--border-color)',
   style = {}
 }) {
-  const [isOpen, setIsOpen] = useState(defaultOpen)
+  // En celular las secciones arrancan plegadas: la pantalla queda como un indice
+  // de features y cada una se despliega a demanda. Si el usuario abre o cierra
+  // una seccion, esa preferencia se recuerda entre visitas.
+  const [isOpen, setIsOpen] = useState(() => {
+    if (storageKey) {
+      try {
+        const saved = window.localStorage.getItem(`dashSection:${storageKey}`)
+        if (saved === '1') return true
+        if (saved === '0') return false
+      } catch {
+        // localStorage puede no estar disponible (modo privado): usamos el default
+      }
+    }
+    return isMobileViewport() ? mobileDefaultOpen : defaultOpen
+  })
+
+  const isMobile = useIsMobile()
+
+  const toggleOpen = () => {
+    setIsOpen(prev => {
+      const next = !prev
+      if (storageKey) {
+        try {
+          window.localStorage.setItem(`dashSection:${storageKey}`, next ? '1' : '0')
+        } catch {
+          // sin persistencia, el estado vive solo en memoria
+        }
+      }
+      return next
+    })
+  }
 
   return (
     <div className="dashboard-collapsible-card" style={{ borderColor, ...style }}>
       <div 
         className={`dashboard-collapsible-header ${isOpen ? 'is-open' : ''}`}
-        onClick={() => setIsOpen(!isOpen)}
+        onClick={toggleOpen}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
+        <div className="dashboard-collapsible-title-group" style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
           {Icon && <Icon size={18} style={{ color: iconColor, flexShrink: 0 }} />}
           <h3 style={{ 
             margin: 0, 
@@ -310,10 +459,11 @@ function DashboardCollapsibleCard({
           )}
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }} onClick={e => e.stopPropagation()}>
-          {extraHeaderActions}
+          {/* Con la seccion plegada los botones de accion solo ensanchan el encabezado */}
+          {(!isMobile || isOpen) && extraHeaderActions}
           <button
             type="button"
-            onClick={() => setIsOpen(!isOpen)}
+            onClick={toggleOpen}
             className="dashboard-pill"
             style={{
               background: 'transparent',
@@ -361,6 +511,8 @@ function SalesTrendWidget({ chartData = [], totalRevenue = 0 }) {
       badgeColor="var(--accent-blue)"
       badgeBg="rgba(59, 130, 246, 0.12)"
       defaultOpen={true}
+      mobileDefaultOpen={false}
+      storageKey="salesTrend"
     >
       {chartData.length > 0 ? (
         <div style={{ height: 230, width: '100%' }}>
@@ -412,6 +564,10 @@ function TopProductsWidget({ products = [] }) {
   const [sourceFilter, setSourceFilter] = useState('all') // 'all', 'meli_only', 'web_only', 'both'
   const [displayLimit, setDisplayLimit] = useState(5)
   const [expandedIds, setExpandedIds] = useState({})
+  const isMobile = useIsMobile()
+  // El bloque de busqueda + filtros son dos filas de controles: en celular se
+  // muestran solo si el usuario los pide.
+  const [showFilters, setShowFilters] = useState(!isMobileViewport())
 
   const toggleExpand = (id) => {
     setExpandedIds(prev => ({ ...prev, [id]: !prev[id] }))
@@ -486,6 +642,8 @@ function TopProductsWidget({ products = [] }) {
       badgeColor="var(--accent-amber)"
       badgeBg="rgba(245, 158, 11, 0.12)"
       defaultOpen={true}
+      mobileDefaultOpen={false}
+      storageKey="topProducts"
       extraHeaderActions={
         visibleList.length > 0 ? (
           <button
@@ -507,7 +665,28 @@ function TopProductsWidget({ products = [] }) {
       }
     >
       {/* Search & Filters */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 12 }}>
+      {isMobile && (
+        <button
+          type="button"
+          className="dashboard-pill"
+          onClick={() => setShowFilters(v => !v)}
+          style={{
+            width: '100%',
+            marginBottom: 8,
+            backgroundColor: 'var(--bg-dark)',
+            border: '1px solid var(--border-color)',
+            color: 'var(--text-secondary)',
+            cursor: 'pointer',
+            fontWeight: 600,
+            justifyContent: 'space-between'
+          }}
+        >
+          <span>Buscar y ordenar</span>
+          {showFilters ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+        </button>
+      )}
+
+      <div style={{ display: (!isMobile || showFilters) ? 'flex' : 'none', flexDirection: 'column', gap: 8, marginBottom: 12 }}>
         {/* Row 1: Search & Channel Filter */}
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
           <div style={{ position: 'relative', flex: '1 1 180px', minWidth: '150px' }}>
@@ -690,9 +869,11 @@ function TopProductsWidget({ products = [] }) {
                       }}>
                         {p.title}
                       </div>
-                      <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', fontFamily: 'monospace' }}>
-                        {p.ml_id}
-                      </div>
+                      {!isMobile && (
+                        <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', fontFamily: 'monospace' }}>
+                          {p.ml_id}
+                        </div>
+                      )}
                     </div>
                   </div>
 
@@ -716,6 +897,11 @@ function TopProductsWidget({ products = [] }) {
                 {/* Expanded Details Panel (Desplegable) */}
                 {isExpanded && (
                   <div className="dashboard-product-details">
+                    {isMobile && (
+                      <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', fontFamily: 'monospace', marginBottom: 8 }}>
+                        {p.ml_id}
+                      </div>
+                    )}
                     {/* Visual proportion bar */}
                     <div style={{ marginBottom: 8 }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.72rem', marginBottom: 3 }}>
@@ -822,6 +1008,7 @@ function TopProductsWidget({ products = [] }) {
 // =============================================================================
 function DomainVisitsWidget({ visits = [] }) {
   const [displayLimit, setDisplayLimit] = useState(5)
+  const isMobile = useIsMobile()
   const totalVisits = useMemo(() => visits.reduce((sum, d) => sum + (d.count || 0), 0), [visits])
   const maxCount = useMemo(() => Math.max(...visits.map(d => d.count || 0), 1), [visits])
 
@@ -832,10 +1019,12 @@ function DomainVisitsWidget({ visits = [] }) {
       title="Visitas por Sitio Web"
       icon={Globe}
       iconColor="var(--accent-cyan)"
-      badge={`${visits.length} dominios (${totalVisits.toLocaleString()} v.)`}
+      badge={isMobile ? `${totalVisits.toLocaleString()} v.` : `${visits.length} dominios (${totalVisits.toLocaleString()} v.)`}
       badgeColor="var(--accent-cyan)"
       badgeBg="rgba(6, 182, 212, 0.12)"
       defaultOpen={true}
+      mobileDefaultOpen={false}
+      storageKey="domainVisits"
     >
       {visits.length > 0 ? (
         <div>
@@ -921,6 +1110,7 @@ function DomainVisitsWidget({ visits = [] }) {
 // =============================================================================
 function CountryVisitsWidget({ visits = [] }) {
   const [displayLimit, setDisplayLimit] = useState(5)
+  const isMobile = useIsMobile()
   const totalVisits = useMemo(() => visits.reduce((sum, c) => sum + (c.count || 0), 0), [visits])
   const maxCount = useMemo(() => Math.max(...visits.map(c => c.count || 0), 1), [visits])
 
@@ -928,13 +1118,15 @@ function CountryVisitsWidget({ visits = [] }) {
 
   return (
     <DashboardCollapsibleCard
-      title="Origen Geográfico (Visitas Web)"
+      title={isMobile ? 'Origen Geográfico' : 'Origen Geográfico (Visitas Web)'}
       icon={MapPin}
       iconColor="var(--accent-blue)"
-      badge={`${visits.length} países (${totalVisits.toLocaleString()} v.)`}
+      badge={isMobile ? `${totalVisits.toLocaleString()} v.` : `${visits.length} países (${totalVisits.toLocaleString()} v.)`}
       badgeColor="var(--accent-blue)"
       badgeBg="rgba(59, 130, 246, 0.12)"
       defaultOpen={true}
+      mobileDefaultOpen={false}
+      storageKey="countryVisits"
     >
       {visits.length > 0 ? (
         <div>
@@ -1027,6 +1219,7 @@ function CountryVisitsWidget({ visits = [] }) {
 // =============================================================================
 function LowStockAlertWidget({ products = [] }) {
   const [displayLimit, setDisplayLimit] = useState(5)
+  const isMobile = useIsMobile()
   if (!products || products.length === 0) return null
 
   const visibleList = products.slice(0, displayLimit)
@@ -1034,7 +1227,7 @@ function LowStockAlertWidget({ products = [] }) {
   return (
     <div style={{ marginTop: '18px' }}>
       <DashboardCollapsibleCard
-        title="Alerta de Reposición: Stock Crítico"
+        title={isMobile ? 'Stock Crítico' : 'Alerta de Reposición: Stock Crítico'}
         icon={AlertTriangle}
         iconColor="var(--accent-red)"
         badge={`${products.length} productos`}
@@ -1042,6 +1235,8 @@ function LowStockAlertWidget({ products = [] }) {
         badgeBg="rgba(239, 68, 68, 0.12)"
         borderColor="rgba(239, 68, 68, 0.35)"
         defaultOpen={true}
+        mobileDefaultOpen={false}
+        storageKey="lowStock"
         extraHeaderActions={
           <a
             href="/inventory"

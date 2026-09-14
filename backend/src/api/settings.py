@@ -40,19 +40,14 @@ class SyncAllRequest(BaseModel):
 def get_auth_status():
     user_id = config.get_user_id()
     token_valid = meli_api.validate_token()
-    nickname = database.get_setting('meli_nickname', '')
-    email = database.get_setting('meli_email', '')
     expected_account = database.get_setting('meli_expected_account', '')
-    
-    if user_id and token_valid and not nickname:
-        user_info = meli_api.fetch_user_info()
-        if user_info:
-            nickname = user_info.get("nickname", "")
-            email = user_info.get("email", "")
-            if nickname:
-                database.set_setting('meli_nickname', nickname)
-            if email:
-                database.set_setting('meli_email', email)
+
+    if user_id and token_valid:
+        nickname, email = meli_api.resolve_account_identity()
+    else:
+        nickname = database.get_setting('meli_nickname', '')
+        email = database.get_setting('meli_email', '')
+
     
     afip_enabled = database.get_setting('afip_enabled', '0') == '1'
     cert_exists = os.path.exists("backend/data/afip/arca.crt") or os.path.exists("data/afip/arca.crt")
@@ -109,6 +104,7 @@ def save_setup(req: SetupRequest, _=Depends(require_permission("settings"))):
         database.delete_setting('meli_token_expiry')
         database.delete_setting('meli_nickname')
         database.delete_setting('meli_email')
+        database.delete_setting('meli_email_checked')
     
     database.set_setting('meli_client_id', req.client_id)
     database.set_setting('meli_client_secret', req.client_secret)
@@ -187,6 +183,7 @@ def disconnect_meli(req: DisconnectMeliRequest, _=Depends(require_permission("se
     database.delete_setting('meli_token_expiry')
     database.delete_setting('meli_nickname')
     database.delete_setting('meli_email')
+    database.delete_setting('meli_email_checked')
     
     if req.clear_data:
         database.clear_meli_cache(delete_products=True, delete_orders=True, delete_questions=True, delete_mp_expenses=True)
@@ -201,6 +198,7 @@ def logout(_=Depends(require_permission("settings"))):
     database.delete_setting('meli_token_expiry')
     database.delete_setting('meli_nickname')
     database.delete_setting('meli_email')
+    database.delete_setting('meli_email_checked')
     database.clear_meli_cache(delete_products=True, delete_orders=True, delete_questions=True, delete_mp_expenses=True)
     return {"success": True}
 

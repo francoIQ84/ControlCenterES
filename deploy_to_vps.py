@@ -74,15 +74,15 @@ def main():
     print("[OK] Backend subido exitosamente")
     sftp.close()
 
-    # 4. Ejecutar migración 010 en postgres si no se ejecutó
-    print("\n4. Aplicando migración 010_mp_excluded_accounts.sql en Postgres...")
-    stdin, stdout, stderr = ssh.exec_command('su - postgres -c "psql -d controlcenter -f /var/www/controlcenter/backend/migrations/010_mp_excluded_accounts.sql"')
-    mig_out = stdout.read().decode()
-    mig_err = stderr.read().decode()
-    print(mig_out.strip() or mig_err.strip())
+    # Las migraciones NO se aplican desde aca a proposito: correrlas en cada
+    # deploy pisaba configuracion editada desde el panel (la 010 reescribia
+    # mp_excluded_emails con valores fijos en cada despliegue). Los archivos
+    # .sql se suben igual en el paso 3; aplicalos a mano cuando corresponda:
+    #   ssh root@144.91.80.88
+    #   su - postgres -c "psql -d controlcenter -f /var/www/controlcenter/backend/migrations/0XX_nombre.sql"
 
-    # 5. Ajustar permisos de archivos en el VPS
-    print("\n5. Ajustando permisos en /var/www/controlcenter...")
+    # 4. Ajustar permisos de archivos en el VPS
+    print("\n4. Ajustando permisos en /var/www/controlcenter...")
     cmd_perms = (
         "chown -R www-data:www-data /var/www/controlcenter/admin && "
         "chmod -R 755 /var/www/controlcenter/admin && "
@@ -92,15 +92,15 @@ def main():
     stdout.read()
     print("[OK] Permisos aplicados")
 
-    # 6. Reiniciar backend service
-    print("\n6. Reiniciando servicio de backend...")
+    # 5. Reiniciar backend service
+    print("\n5. Reiniciando servicio de backend...")
     stdin, stdout, stderr = ssh.exec_command("systemctl restart controlcenter-backend.service")
     stdout.read()
     time.sleep(2)
     print("[OK] Servicio backend reiniciado")
 
-    # 7. Recargar Nginx
-    print("\n7. Recargando Nginx...")
+    # 6. Recargar Nginx
+    print("\n6. Recargando Nginx...")
     stdin, stdout, stderr = ssh.exec_command("nginx -t && systemctl reload nginx")
     out = stdout.read().decode()
     err = stderr.read().decode()
@@ -109,23 +109,23 @@ def main():
     else:
         print(f"Nginx output: {out}\n{err}")
 
-    # 8. Verificar servicios
-    print("\n8. Verificando estado de los servicios...")
+    # 7. Verificar servicios
+    print("\n7. Verificando estado de los servicios...")
     stdin, stdout, stderr = ssh.exec_command("systemctl is-active controlcenter-backend.service controlcenter-storefront.service nginx")
     status = stdout.read().decode().strip().split()
     print(f"Backend: {status[0] if len(status) > 0 else 'unknown'}")
     print(f"Storefront: {status[1] if len(status) > 1 else 'unknown'}")
     print(f"Nginx: {status[2] if len(status) > 2 else 'unknown'}")
 
-    # 9. Verificación de index.html servido
-    print("\n9. Verificando index.html en el VPS...")
+    # 8. Verificación de index.html servido
+    print("\n8. Verificando index.html en el VPS...")
     stdin, stdout, stderr = ssh.exec_command("cat /var/www/controlcenter/admin/index.html")
     index_content = stdout.read().decode()
     print("Contenido index.html en VPS:")
     print(index_content.strip())
 
-    # 10. Verificación de logs recientes del backend
-    print("\n10. Últimos logs del backend...")
+    # 9. Verificación de logs recientes del backend
+    print("\n9. Últimos logs del backend...")
     stdin, stdout, stderr = ssh.exec_command("journalctl -u controlcenter-backend.service -n 15 --no-pager")
     print(stdout.read().decode().strip())
 

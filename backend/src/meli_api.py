@@ -82,6 +82,36 @@ def get_auth_url():
     
     return f"{auth_base}/authorization?response_type=code&client_id={client_id}&redirect_uri={redirect_uri}"
 
+def resolve_account_identity():
+    """Devuelve (nickname, email) de la cuenta de Mercado Libre vinculada.
+
+    Las cuentas vinculadas antes de que se empezara a guardar el email quedaron
+    con nickname pero sin email, y nunca se completaba. Se consulta /users/me
+    solo cuando falta alguno de los dos; el flag meli_email_checked evita
+    repetir la consulta en cada carga de pagina cuando Mercado Libre no informa
+    email para esa cuenta.
+    """
+    nickname = database.get_setting('meli_nickname', '')
+    email = database.get_setting('meli_email', '')
+    email_checked = database.get_setting('meli_email_checked', '0') == '1'
+
+    if nickname and (email or email_checked):
+        return nickname, email
+
+    user_info = fetch_user_info()
+    if not user_info:
+        return nickname, email
+
+    nickname = user_info.get("nickname", "") or nickname
+    email = user_info.get("email", "") or email
+    if nickname:
+        database.set_setting('meli_nickname', nickname)
+    if email:
+        database.set_setting('meli_email', email)
+    database.set_setting('meli_email_checked', '1')
+    return nickname, email
+
+
 def fetch_user_info(custom_token=None):
     """Fetches details of the authenticated Mercado Libre user (/users/me)."""
     if is_demo_mode():
