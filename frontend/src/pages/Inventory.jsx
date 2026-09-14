@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react'
-import { Package, CloudOff, Cloud, RefreshCw, Save, QrCode, Camera, ExternalLink, Eye, EyeOff, Store, Search, X, Gauge } from 'lucide-react'
+import { Package, CloudOff, Cloud, RefreshCw, Save, QrCode, Camera, ExternalLink, Eye, EyeOff, Store, Search, X, Gauge, SlidersHorizontal, Plus } from 'lucide-react'
 import { Html5QrcodeScanner } from 'html5-qrcode'
 import MediaBrowser from '../components/MediaBrowser'
 import { useTenant } from '../TenantContext'
@@ -60,6 +60,7 @@ export default function Inventory() {
   const [bulkPriceValue, setBulkPriceValue] = useState(0)
 
   // Dispatch Schedule State
+  const [showMobileActionsModal, setShowMobileActionsModal] = useState(false)
   const [showDispatchScheduleModal, setShowDispatchScheduleModal] = useState(false)
   const [dispatchConfig, setDispatchConfig] = useState({
     enabled: false,
@@ -1089,10 +1090,11 @@ export default function Inventory() {
   }, [sortedProducts, selectedIds, isAllVisibleSelected])
 
   const modifiedCount = getModifiedItems().length
+  const activeFiltersCount = (hiddenFilter !== 'visible' ? 1 : 0) + (outOfStockDays ? 1 : 0)
 
   return (
     <div>
-      <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: isReadingMode ? 12 : 20, flexWrap: 'wrap', gap: 12}}>
+      <div className={!isReadingMode ? "inventory-desktop-header" : ""} style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: isReadingMode ? 12 : 20, flexWrap: 'wrap', gap: 12}}>
         <div>
           <h1 className="page-title">{isReadingMode ? "Consulta de Mostrador (Stock & Precios)" : "Inventario de Publicaciones"}</h1>
           <p className="page-subtitle">{isReadingMode ? "Visualización rápida en tiempo real para atención al público en local. Precios de costo y márgenes protegidos." : "Sincronizá tus publicaciones de Mercado Libre y gestioná tu Tienda Web."}</p>
@@ -1310,7 +1312,371 @@ export default function Inventory() {
           </div>
         </div>
       ) : (
-        <div className="inventory-controls" style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, gap: 15, flexWrap: 'wrap'}}>
+        <>
+          {/* Mobile-Optimized Inventory Controls (Max 3 rows) */}
+          <div className="inventory-mobile-controls">
+            {/* Row 1: Header / Title, Count & Primary CTAs */}
+            <div className="inventory-mobile-header">
+              <h2 className="inventory-mobile-title">
+                Inventario
+                <span className="inventory-mobile-badge">{sortedProducts.length}</span>
+              </h2>
+              <div className="inventory-mobile-header-actions">
+                <button 
+                  type="button" 
+                  className="btn-mobile-tool reading-btn"
+                  onClick={toggleReadingMode}
+                  title="Modo Mostrador / Atención rápida en local"
+                >
+                  <Eye size={14} /> Mostrador
+                </button>
+                {!isSimpleView && (
+                  <button 
+                    type="button" 
+                    className="btn-mobile-tool"
+                    onClick={() => setShowQrScanModal(true)}
+                    title="Escanear QR"
+                  >
+                    <QrCode size={16} />
+                  </button>
+                )}
+                <button 
+                  type="button" 
+                  className="btn-mobile-primary"
+                  onClick={() => setShowAddModal(true)}
+                  title="Agregar nuevo producto"
+                >
+                  <Plus size={14} /> Producto
+                </button>
+              </div>
+            </div>
+
+            {/* Row 2: Search with clear button */}
+            <div className="inventory-mobile-search-row">
+              <Search size={16} className="search-icon" />
+              <input 
+                type="text" 
+                placeholder="Buscar por nombre o ID..." 
+                value={query} 
+                onChange={e => setQuery(e.target.value)} 
+              />
+              {query && (
+                <button 
+                  type="button" 
+                  className="clear-btn" 
+                  onClick={() => setQuery('')}
+                  title="Limpiar búsqueda"
+                >
+                  <X size={14} />
+                </button>
+              )}
+            </div>
+
+            {/* Row 3: 2-Column Filters (Categorías & Stock) */}
+            {!isSimpleView && (
+              <div className="inventory-mobile-filters-row">
+                <select
+                  value={categoryFilter}
+                  onChange={e => setCategoryFilter(e.target.value)}
+                  style={{
+                    border: categoryFilter === 'UNCATEGORIZED' ? '1px solid #f59e0b' : undefined,
+                    color: categoryFilter === 'UNCATEGORIZED' ? '#f59e0b' : undefined,
+                    fontWeight: categoryFilter === 'UNCATEGORIZED' ? 700 : undefined
+                  }}
+                >
+                  <option value="ALL">📁 Categorías ({products.length})</option>
+                  <option value="UNCATEGORIZED">⚠️ Sin Categoría ({uncategorizedCount})</option>
+                  {categories.map(c => (
+                    <option key={c.id} value={c.id}>📁 {c.name} ({categoryCounts[String(c.id)] || 0})</option>
+                  ))}
+                </select>
+
+                <select
+                  value={stockFilter}
+                  onChange={e => setStockFilter(e.target.value)}
+                  style={{
+                    border: stockFilter !== 'ALL' ? '1px solid var(--accent-blue)' : undefined,
+                    color: stockFilter !== 'ALL' ? 'var(--accent-blue)' : undefined,
+                    fontWeight: stockFilter !== 'ALL' ? 700 : undefined
+                  }}
+                >
+                  <option value="ALL">📦 Stock: Todos</option>
+                  <option value="IN_STOCK">✅ Con Stock (&gt;0)</option>
+                  <option value="OUT_OF_STOCK">❌ Sin Stock (=0)</option>
+                  <option value="CRITICAL">⚠️ Crítico (≤ Mínimo)</option>
+                </select>
+              </div>
+            )}
+
+            {/* Row 4: View toggle, Quick save, More filters drawer */}
+            <div className="inventory-mobile-subrow">
+              {!isSimpleView && (
+                <div className="inventory-view-toggle-pills">
+                  <button 
+                    type="button" 
+                    className={viewMode === 'detailed' ? 'active' : ''}
+                    onClick={() => setViewMode('detailed')}
+                  >
+                    Detallada
+                  </button>
+                  <button 
+                    type="button" 
+                    className={viewMode === 'compact' ? 'active' : ''}
+                    onClick={() => setViewMode('compact')}
+                  >
+                    Comprimida
+                  </button>
+                </div>
+              )}
+
+              {modifiedCount > 0 && (
+                <button 
+                  type="button" 
+                  className="btn-mobile-save-banner"
+                  onClick={saveAllChanges}
+                >
+                  <Save size={13} /> Guardar ({modifiedCount})
+                </button>
+              )}
+
+              {!isSimpleView && (
+                <button 
+                  type="button" 
+                  className={`btn-mobile-more-filters ${activeFiltersCount > 0 ? 'has-active' : ''}`}
+                  onClick={() => setShowMobileActionsModal(true)}
+                >
+                  <SlidersHorizontal size={13} />
+                  <span>Más Filtros</span>
+                  {activeFiltersCount > 0 && (
+                    <span className="mobile-active-filter-badge">{activeFiltersCount}</span>
+                  )}
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Bottom Sheet Drawer for Mobile Filters & Tools */}
+          {showMobileActionsModal && (
+            <div className="inventory-actions-sheet-overlay" onClick={() => setShowMobileActionsModal(false)}>
+              <div className="inventory-actions-sheet" onClick={e => e.stopPropagation()}>
+                <div className="sheet-drag-handle" />
+                <div className="sheet-header">
+                  <h3 className="sheet-title">Filtros & Herramientas</h3>
+                  <button 
+                    type="button" 
+                    className="btn-icon" 
+                    onClick={() => setShowMobileActionsModal(false)}
+                    style={{padding: 4}}
+                  >
+                    <X size={18} />
+                  </button>
+                </div>
+
+                {/* Visibilidad */}
+                <div className="sheet-section">
+                  <div className="sheet-section-title">Visibilidad de Productos</div>
+                  <div style={{display: 'flex', border: '1px solid var(--border-color)', borderRadius: 8, overflow: 'hidden', backgroundColor: 'var(--bg-card)', height: 36}}>
+                    <button 
+                      type="button" 
+                      style={{
+                        flex: 1, 
+                        border: 'none', 
+                        background: hiddenFilter === 'visible' ? 'var(--accent-blue)' : 'transparent',
+                        color: hiddenFilter === 'visible' ? '#fff' : 'var(--text-secondary)',
+                        fontWeight: 600,
+                        fontSize: '0.8rem',
+                        cursor: 'pointer'
+                      }}
+                      onClick={() => setHiddenFilter('visible')}
+                    >
+                      Visibles
+                    </button>
+                    <button 
+                      type="button" 
+                      style={{
+                        flex: 1, 
+                        border: 'none', 
+                        borderLeft: '1px solid var(--border-color)',
+                        borderRight: '1px solid var(--border-color)',
+                        background: hiddenFilter === 'all' ? 'var(--accent-blue)' : 'transparent',
+                        color: hiddenFilter === 'all' ? '#fff' : 'var(--text-secondary)',
+                        fontWeight: 600,
+                        fontSize: '0.8rem',
+                        cursor: 'pointer'
+                      }}
+                      onClick={() => setHiddenFilter('all')}
+                    >
+                      Todos
+                    </button>
+                    <button 
+                      type="button" 
+                      style={{
+                        flex: 1, 
+                        border: 'none', 
+                        background: hiddenFilter === 'hidden' ? 'var(--accent-red)' : 'transparent',
+                        color: hiddenFilter === 'hidden' ? '#fff' : 'var(--text-secondary)',
+                        fontWeight: 600,
+                        fontSize: '0.8rem',
+                        cursor: 'pointer'
+                      }}
+                      onClick={() => setHiddenFilter('hidden')}
+                    >
+                      Solo Ocultos
+                    </button>
+                  </div>
+                </div>
+
+                {/* Sin Stock por días */}
+                <div className="sheet-section">
+                  <div className="sheet-section-title">Filtro Sin Stock (Movimiento Reciente)</div>
+                  <select
+                    value={outOfStockDays || ''}
+                    onChange={e => setOutOfStockDays(e.target.value ? Number(e.target.value) : null)}
+                    style={{
+                      width: '100%',
+                      height: 38,
+                      padding: '0 10px',
+                      borderRadius: 8,
+                      fontSize: '0.84rem',
+                      fontWeight: outOfStockDays ? 700 : 'normal',
+                      backgroundColor: outOfStockDays ? 'rgba(239, 68, 68, 0.15)' : 'var(--bg-card)',
+                      color: outOfStockDays ? 'var(--accent-red)' : 'var(--text-primary)',
+                      border: outOfStockDays ? '1px solid var(--accent-red)' : '1px solid var(--border-color)'
+                    }}
+                  >
+                    <option value="">📦 Sin Stock: Desactivado</option>
+                    <option value="7">⚠️ Sin Stock (Últimos 7 días)</option>
+                    <option value="14">⚠️ Sin Stock (Últimos 14 días)</option>
+                    <option value="30">⚠️ Sin Stock (Últimos 30 días)</option>
+                  </select>
+                </div>
+
+                {/* Acciones y Canales */}
+                <div className="sheet-section">
+                  <div className="sheet-section-title">Canales & Exportación</div>
+                  <div className="sheet-grid-2">
+                    <button 
+                      type="button"
+                      className="btn" 
+                      style={{
+                        backgroundColor: '#107c41', 
+                        color: '#ffffff', 
+                        border: 'none', 
+                        display: 'flex', 
+                        alignItems: 'center', 
+                        justifyContent: 'center',
+                        gap: 6, 
+                        fontWeight: '600',
+                        fontSize: '0.8rem',
+                        height: 38
+                      }} 
+                      onClick={() => {
+                        setShowMobileActionsModal(false)
+                        exportToExcel()
+                      }}
+                    >
+                      📊 Exportar Excel
+                    </button>
+
+                    {isChannelEnabled('tiendanube') && (
+                      <button 
+                        type="button" 
+                        className="btn" 
+                        style={{
+                          backgroundColor: '#0080FF', 
+                          color: '#ffffff', 
+                          border: 'none', 
+                          display: 'flex', 
+                          alignItems: 'center', 
+                          justifyContent: 'center', 
+                          gap: 6, 
+                          fontWeight: '600',
+                          fontSize: '0.8rem',
+                          height: 38
+                        }} 
+                        onClick={() => {
+                          setShowMobileActionsModal(false)
+                          setShowTnExportModal(true)
+                        }}
+                      >
+                        🛍️ Tiendanube
+                      </button>
+                    )}
+
+                    <button 
+                      type="button" 
+                      className="btn" 
+                      style={{
+                        backgroundColor: 'var(--bg-card)', 
+                        color: 'var(--text-primary)', 
+                        border: '1px solid var(--border-color)', 
+                        display: 'flex', 
+                        alignItems: 'center', 
+                        justifyContent: 'center', 
+                        gap: 6,
+                        fontSize: '0.8rem',
+                        height: 38
+                      }} 
+                      onClick={() => {
+                        setShowMobileActionsModal(false)
+                        setShowCategoriesModal(true)
+                      }}
+                    >
+                      📁 Categorías
+                    </button>
+
+                    {isChannelEnabled('meli') && (
+                      <button 
+                        type="button" 
+                        className="btn" 
+                        style={{
+                          backgroundColor: 'var(--bg-card)', 
+                          color: 'var(--text-primary)', 
+                          border: '1px solid var(--border-color)', 
+                          display: 'flex', 
+                          alignItems: 'center', 
+                          justifyContent: 'center', 
+                          gap: 6,
+                          fontSize: '0.8rem',
+                          height: 38
+                        }} 
+                        onClick={() => {
+                          setShowMobileActionsModal(false)
+                          fetchDispatchSchedule()
+                          setShowDispatchScheduleModal(true)
+                        }}
+                      >
+                        📅 Disponib. MeLi
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Botón Aplicar / Cerrar */}
+                <button 
+                  type="button"
+                  className="btn" 
+                  style={{
+                    width: '100%', 
+                    height: 40,
+                    justifyContent: 'center', 
+                    borderRadius: 10,
+                    backgroundColor: 'var(--accent-blue)',
+                    color: 'white',
+                    fontWeight: 700,
+                    fontSize: '0.9rem',
+                    marginTop: 4
+                  }}
+                  onClick={() => setShowMobileActionsModal(false)}
+                >
+                  Listo
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Desktop Inventory Controls */}
+          <div className="inventory-desktop-controls inventory-controls" style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, gap: 15, flexWrap: 'wrap'}}>
           <div style={{display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap'}}>
             <input 
               type="text" 
@@ -1591,7 +1957,8 @@ export default function Inventory() {
             </button>
           </div>
         </div>
-      )}
+      </>
+    )}
 
       {showAddModal && (
         <div style={{
