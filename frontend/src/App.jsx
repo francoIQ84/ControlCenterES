@@ -15,6 +15,7 @@ import IndustrialProperty from './pages/IndustrialProperty'
 import Marketing from './pages/Marketing'
 import Tenants from './pages/Tenants'
 import MeliQuestions from './pages/MeliQuestions'
+import MeliOptimizer from './pages/MeliOptimizer'
 import { TenantProvider } from './TenantContext'
 
 // Global fetch interceptor to append authorization token
@@ -139,6 +140,7 @@ function App() {
             <Route path="expenses" element={<PermissionRoute permission="expenses"><Expenses /></PermissionRoute>} />
             <Route path="inpi" element={<PermissionRoute permission="inpi"><IndustrialProperty /></PermissionRoute>} />
             <Route path="marketing" element={<PermissionRoute permission="marketing"><Marketing /></PermissionRoute>} />
+            <Route path="meli-optimizer" element={<PermissionRoute permission="inventory"><MeliOptimizer /></PermissionRoute>} />
             <Route path="mercadolibre/preguntas" element={<Navigate to="/customers?tab=meli_questions" replace />} />
             {/* Administración de la plataforma. La página se autoprotege y el
                 backend exige require_platform_admin de todas formas. */}

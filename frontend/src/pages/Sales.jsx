@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { ShoppingBag, Globe, Store, Check, Clock, Plus, Trash2, ShoppingCart, DollarSign, Link, MessageSquare, Send, ExternalLink, FileText, UserCheck, Search, X, Filter, CheckSquare, Square, Layers, CheckCircle2, AlertCircle, Loader2, RefreshCw } from 'lucide-react'
+import { ShoppingBag, Globe, Store, Check, Clock, Plus, Trash2, ShoppingCart, DollarSign, Link, MessageSquare, Send, ExternalLink, FileText, UserCheck, Search, X, Filter, CheckSquare, Square, Layers, CheckCircle2, AlertCircle, Loader2, RefreshCw, Package } from 'lucide-react'
 import { useTenant } from '../TenantContext'
 
 export default function Sales() {
@@ -63,8 +63,10 @@ export default function Sales() {
     }
   }
 
-  // Active product search index for dropdown autocomplete
+  // Active product search index for dropdown autocomplete & mobile sheet
   const [activeSearchIdx, setActiveSearchIdx] = useState(null)
+  const [mobileSearchIdx, setMobileSearchIdx] = useState(null)
+  const [mobileSearchQuery, setMobileSearchQuery] = useState('')
 
   const [newOrder, setNewOrder] = useState({
     buyer_nickname: "",
@@ -589,6 +591,18 @@ export default function Sales() {
     return price
   }
 
+  const filterInventoryProducts = (query, list) => {
+    if (!query || !query.trim()) return (list || []).slice(0, 60)
+    const cleanQ = query.trim().toLowerCase()
+    const words = cleanQ.split(/\s+/).filter(Boolean)
+    return (list || []).filter(p => {
+      const title = (p.title || "").toLowerCase()
+      const id = String(p.ml_id || "").toLowerCase()
+      const sku = String(p.sku || "").toLowerCase()
+      return words.every(w => title.includes(w) || id.includes(w) || sku.includes(w))
+    }).slice(0, 60)
+  }
+
   const handleProductSelect = (index, prodId) => {
     const selectedProduct = inventory.find(p => p.ml_id === prodId)
     setNewOrder(prev => {
@@ -611,6 +625,25 @@ export default function Sales() {
       }
       return { ...prev, items: updatedItems }
     })
+    setActiveSearchIdx(null)
+    setMobileSearchIdx(null)
+    setMobileSearchQuery('')
+  }
+
+  const handleSelectCustomProduct = (index, customTitle) => {
+    setNewOrder(prev => {
+      const updatedItems = [...prev.items]
+      updatedItems[index] = {
+        ...updatedItems[index],
+        id: `manual-${Date.now()}`,
+        title: customTitle,
+        price: updatedItems[index].price || 0
+      }
+      return { ...prev, items: updatedItems }
+    })
+    setActiveSearchIdx(null)
+    setMobileSearchIdx(null)
+    setMobileSearchQuery('')
   }
 
   const handleBarcodeScanOrSearch = (index, text) => {
@@ -618,15 +651,18 @@ export default function Sales() {
     if (!text || text.trim().length < 2) return
 
     const cleanText = text.trim().toLowerCase()
-    // Check exact match by ml_id, title, or barcode
+    // Check exact match by ml_id, title, or barcode / sku
     const exactMatch = inventory.find(p => 
       String(p.ml_id).toLowerCase() === cleanText || 
-      String(p.title).toLowerCase() === cleanText
+      String(p.title).toLowerCase() === cleanText ||
+      String(p.sku || '').toLowerCase() === cleanText
     )
 
     if (exactMatch) {
       handleProductSelect(index, exactMatch.ml_id)
       setActiveSearchIdx(null)
+      setMobileSearchIdx(null)
+      setMobileSearchQuery('')
     }
   }
 
@@ -1717,59 +1753,45 @@ export default function Sales() {
 
       {/* Manual Sale Creation Modal */}
       {showModal && (
-        <div style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          backgroundColor: 'rgba(0, 0, 0, 0.6)',
-          display: 'flex',
-          justifyContent: 'center',
-          alignItems: 'center',
-          zIndex: 999,
-          padding: 20
-        }}>
-          <div className="card shadow-2xl" style={{
-            width: 700,
-            maxWidth: '100%',
-            maxHeight: '90vh',
-            display: 'flex',
-            flexDirection: 'column',
-            padding: 25,
-            overflow: 'hidden',
-            backgroundColor: 'var(--bg-card)',
-            borderRadius: 12
-          }}>
-            <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, borderBottom: '1px solid var(--border-color)', paddingBottom: 15}}>
-              <h3 style={{margin: 0, display: 'flex', alignItems: 'center', gap: 8}}><ShoppingCart /> Registrar Nueva Venta</h3>
+        <div className="sale-modal-overlay">
+          <div className="sale-modal-card">
+            {/* Header */}
+            <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, borderBottom: '1px solid var(--border-color)', paddingBottom: 12}}>
+              <h3 style={{margin: 0, display: 'flex', alignItems: 'center', gap: 8, fontSize: '1.1rem'}}><ShoppingCart size={20} /> Registrar Nueva Venta</h3>
               <button 
                 className="btn" 
-                style={{backgroundColor: 'var(--bg-dark)', color: 'var(--text-secondary)', padding: '6px 12px'}}
-                onClick={() => setShowModal(false)}
+                style={{backgroundColor: 'var(--bg-dark)', color: 'var(--text-secondary)', padding: '6px 12px', fontSize: '0.85rem'}}
+                onClick={() => {
+                  setShowModal(false)
+                  setMobileSearchIdx(null)
+                  setActiveSearchIdx(null)
+                }}
               >
-                Cerrar
+                ✕ Cerrar
               </button>
             </div>
 
-            <form onSubmit={handleCreateManualOrder} style={{flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 15, paddingRight: 5}}>
-              <div style={{display: 'flex', gap: 15, flexWrap: 'wrap'}}>
-                <label style={{flex: '1 1 170px'}}>Canal de Venta
+            <form onSubmit={handleCreateManualOrder} style={{flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 14, paddingRight: 4}}>
+              {/* Canal, Medio de Pago, Estado de Pago, Entrega */}
+              <div className="sale-fields-grid">
+                <label style={{margin: 0, fontSize: '0.8rem'}}>
+                  <span style={{color: 'var(--text-secondary)'}}>Canal de Venta</span>
                   <select 
                     value={newOrder.source_platform}
                     onChange={e => handleSourcePlatformChange(e.target.value)}
-                    style={{width: '100%', marginTop: 5}}
+                    style={{width: '100%', marginTop: 4}}
                   >
                     <option value="LOCAL">Local Comercial</option>
                     <option value="WEB">Tienda Web</option>
                   </select>
                 </label>
 
-                <label style={{flex: '1 1 230px'}}>Medio de Pago
+                <label style={{margin: 0, fontSize: '0.8rem'}}>
+                  <span style={{color: 'var(--text-secondary)'}}>Medio de Pago</span>
                   <select 
                     value={newOrder.payment_method}
                     onChange={e => handlePaymentMethodChange(e.target.value)}
-                    style={{width: '100%', marginTop: 5}}
+                    style={{width: '100%', marginTop: 4}}
                   >
                     <option value="Efectivo">💵 Efectivo</option>
                     <option value="Mercado Pago (Point)">💳 Mercado Pago (Point)</option>
@@ -1781,27 +1803,29 @@ export default function Sales() {
                   </select>
                 </label>
 
-                <label style={{flex: '1 1 200px'}}>Estado del Pago
+                <label style={{margin: 0, fontSize: '0.8rem'}}>
+                  <span style={{color: 'var(--text-secondary)'}}>Estado del Pago</span>
                   <select 
                     value={newOrder.payment_status}
                     onChange={e => setNewOrder({ ...newOrder, payment_status: e.target.value })}
                     style={{
                       width: '100%', 
-                      marginTop: 5,
+                      marginTop: 4,
                       fontWeight: 600,
                       color: newOrder.payment_status === 'paid' ? '#10b981' : '#d97706'
                     }}
                   >
                     <option value="paid">✅ Acreditado / Cobrado</option>
-                    <option value="pending">⏳ Pendiente de Acreditación</option>
+                    <option value="pending">⏳ Pendiente</option>
                   </select>
                 </label>
                 
-                <label style={{flex: '1 1 150px'}}>Estado de Entrega
+                <label style={{margin: 0, fontSize: '0.8rem'}}>
+                  <span style={{color: 'var(--text-secondary)'}}>Estado de Entrega</span>
                   <select 
                     value={newOrder.shipping_status}
                     onChange={e => setNewOrder({ ...newOrder, shipping_status: e.target.value })}
-                    style={{width: '100%', marginTop: 5}}
+                    style={{width: '100%', marginTop: 4}}
                   >
                     <option value="delivered">✅ Entregado</option>
                     <option value="pending">⏳ Pendiente</option>
@@ -1809,164 +1833,355 @@ export default function Sales() {
                 </label>
               </div>
 
-              <div style={{display: 'flex', gap: 15}}>
-                <label style={{flex: 1}}>Apodo / ID (Opcional)
+              {/* Datos del Comprador */}
+              <div className="sale-buyer-row">
+                <label style={{flex: 1, margin: 0, fontSize: '0.8rem'}}>
+                  <span style={{color: 'var(--text-secondary)'}}>Apodo / ID (Opcional)</span>
                   <input 
                     type="text" 
                     placeholder="Consumidor Final"
                     value={newOrder.buyer_nickname}
                     onChange={e => setNewOrder({ ...newOrder, buyer_nickname: e.target.value })}
-                    style={{width: '100%', marginTop: 5}}
+                    style={{width: '100%', marginTop: 4}}
                   />
                 </label>
                 
-                <label style={{flex: 1}}>Nombre Comprador (Opcional)
+                <label style={{flex: 1, margin: 0, fontSize: '0.8rem'}}>
+                  <span style={{color: 'var(--text-secondary)'}}>Nombre Comprador (Opcional)</span>
                   <input 
                     type="text" 
                     placeholder="Consumidor Final (Sin DNI)"
                     value={newOrder.buyer_name}
                     onChange={e => setNewOrder({ ...newOrder, buyer_name: e.target.value })}
-                    style={{width: '100%', marginTop: 5}}
+                    style={{width: '100%', marginTop: 4}}
                   />
                 </label>
               </div>
 
-              <div style={{borderTop: '1px solid var(--border-color)', paddingTop: 15}}>
+              {/* Productos Vendidos */}
+              <div style={{borderTop: '1px solid var(--border-color)', paddingTop: 14}}>
                 <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10}}>
-                  <h4 style={{margin: 0}}>Productos Vendidos</h4>
+                  <h4 style={{margin: 0, fontSize: '0.95rem', display: 'flex', alignItems: 'center', gap: 6}}>
+                    <span>📦 Productos a Vender</span>
+                    <span style={{fontSize: '0.75rem', fontWeight: 'normal', color: 'var(--text-secondary)'}}>
+                      ({newOrder.items.length})
+                    </span>
+                  </h4>
                   <button 
                     type="button" 
                     className="btn" 
-                    style={{backgroundColor: 'var(--accent-blue)', color: '#fff', padding: '4px 8px', fontSize: '0.75rem'}}
+                    style={{backgroundColor: 'var(--accent-blue)', color: '#fff', padding: '5px 10px', fontSize: '0.78rem', display: 'flex', alignItems: 'center', gap: 4}}
                     onClick={handleAddItem}
                   >
-                    + Añadir Producto
+                    <Plus size={14} /> Añadir Producto
                   </button>
                 </div>
 
                 {newOrder.items.map((item, idx) => {
-                  const filteredProducts = inventory.filter(p => {
-                    const q = (item.title || "").toLowerCase()
-                    return p.title.toLowerCase().includes(q) || String(p.ml_id).toLowerCase().includes(q)
-                  })
+                  const selectedProduct = inventory.find(p => p.ml_id === item.id)
+                  const isSelected = !!selectedProduct
+                  const thumb = selectedProduct?.thumbnail || (selectedProduct?.images ? selectedProduct.images.split(',')[0].trim() : '')
+                  const stock = selectedProduct ? (selectedProduct.available_quantity ?? selectedProduct.stock ?? 0) : null
+                  const subtotal = (item.price || 0) * (item.quantity || 1)
+                  const filteredProducts = filterInventoryProducts(item.title || "", inventory)
 
                   return (
-                    <div key={item.id} style={{display: 'flex', gap: 10, alignItems: 'flex-end', marginBottom: 10}}>
-                      <div style={{flex: 3, position: 'relative'}}>
-                        <label style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
-                          <span>🔍 Producto (Buscar / Escanear QR o Código)</span>
-                        </label>
+                    <div key={item.id} className="sale-item-card">
+                      {/* Product Header / Selection Area */}
+                      <div style={{position: 'relative'}}>
+                        <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6}}>
+                          <div style={{fontWeight: 700, fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: 6}}>
+                            <span>Item #{idx + 1}</span>
+                            {isSelected && (
+                              <span className="stock-badge-pill in-stock" style={{fontSize: '0.66rem', padding: '1px 5px'}}>
+                                Catálogo
+                              </span>
+                            )}
+                          </div>
+                          <div style={{display: 'flex', gap: 6, alignItems: 'center'}}>
+                            <button
+                              type="button"
+                              className="btn"
+                              style={{
+                                padding: '3px 8px', 
+                                fontSize: '0.72rem', 
+                                backgroundColor: 'var(--bg-dark)', 
+                                color: 'var(--accent-blue)',
+                                border: '1px solid var(--border-color)',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: 4
+                              }}
+                              onClick={() => {
+                                setMobileSearchQuery(item.title || '')
+                                setMobileSearchIdx(idx)
+                              }}
+                            >
+                              <Search size={12} />
+                              {isSelected ? "Cambiar" : "Buscar Catálogo"}
+                            </button>
+                            {newOrder.items.length > 1 && (
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveItem(idx)}
+                                title="Eliminar este producto"
+                                style={{
+                                  padding: '3px 6px',
+                                  backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                                  color: 'var(--accent-red)',
+                                  border: 'none',
+                                  borderRadius: 4,
+                                  cursor: 'pointer',
+                                  display: 'flex',
+                                  alignItems: 'center'
+                                }}
+                              >
+                                <Trash2 size={14} />
+                              </button>
+                            )}
+                          </div>
+                        </div>
 
-                        <input
-                          type="text"
-                          required
-                          placeholder="Escribe o escanea código con lector..."
-                          value={item.title || ""}
-                          onFocus={() => setActiveSearchIdx(idx)}
-                          onChange={e => {
-                            setActiveSearchIdx(idx)
-                            handleBarcodeScanOrSearch(idx, e.target.value)
-                          }}
-                          onKeyDown={e => {
-                            if (e.key === 'Enter') {
-                              e.preventDefault()
-                              if (filteredProducts.length > 0) {
-                                handleProductSelect(idx, filteredProducts[0].ml_id)
-                                setActiveSearchIdx(null)
-                              }
-                            }
-                          }}
-                          style={{width: '100%', marginTop: 5}}
-                        />
-
-                        {/* Autocomplete Dropdown List */}
-                        {activeSearchIdx === idx && (item.title || "").length > 0 && (
-                          <div style={{
-                            position: 'absolute', top: '100%', left: 0, right: 0,
-                            backgroundColor: 'var(--bg-card)', border: '1px solid var(--border-color)',
-                            borderRadius: 8, zIndex: 1000, maxHeight: 220, overflowY: 'auto',
-                            boxShadow: '0 8px 24px rgba(0,0,0,0.25)', marginTop: 2
-                          }}>
-                            {filteredProducts.length > 0 ? (
-                              filteredProducts.map(prod => (
-                                <div
-                                  key={prod.ml_id}
+                        {/* Selected Product Preview Card */}
+                        {isSelected ? (
+                          <div className="sale-item-selected-preview">
+                            <div style={{display: 'flex', alignItems: 'center', gap: 10, flex: 1, minWidth: 0}}>
+                              {thumb ? (
+                                <img
+                                  src={thumb}
+                                  alt=""
                                   style={{
-                                    padding: '8px 12px', 
-                                    cursor: 'pointer', 
-                                    borderBottom: '1px solid var(--border-color)',
-                                    display: 'flex',
-                                    justifyContent: 'space-between',
-                                    alignItems: 'center'
+                                    width: 40,
+                                    height: 40,
+                                    objectFit: 'contain',
+                                    borderRadius: 6,
+                                    backgroundColor: '#fff',
+                                    border: '1px solid var(--border-color)',
+                                    flexShrink: 0
                                   }}
-                                  onMouseDown={(e) => {
-                                    e.preventDefault()
-                                    handleProductSelect(idx, prod.ml_id)
-                                    setActiveSearchIdx(null)
-                                  }}
-                                >
-                                  <div>
-                                    <div style={{fontWeight: 'bold', fontSize: '0.85rem'}}>{prod.title}</div>
-                                    <div style={{fontSize: '0.75rem', color: 'var(--text-secondary)'}}>SKU/ID: {prod.ml_id}</div>
-                                  </div>
-                                  <div style={{fontWeight: 'bold', color: 'var(--accent-green)', fontSize: '0.85rem', textAlign: 'right'}}>
-                                    ${getProductPriceForOrder(prod, newOrder.source_platform, newOrder.payment_method).toLocaleString()}
-                                    {newOrder.payment_method === 'Efectivo' && (prod.cash_discount_pct || 0) > 0 && (
-                                      <div style={{fontSize: '0.7rem', color: '#10b981', fontWeight: 600}}>
-                                        💸 -{prod.cash_discount_pct}% efvo
-                                      </div>
-                                    )}
-                                  </div>
+                                  onError={(e) => { e.target.style.display = 'none' }}
+                                />
+                              ) : (
+                                <div style={{
+                                  width: 40,
+                                  height: 40,
+                                  borderRadius: 6,
+                                  backgroundColor: 'var(--bg-hover)',
+                                  border: '1px solid var(--border-color)',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  flexShrink: 0
+                                }}>
+                                  <Package size={20} color="var(--text-secondary)" />
                                 </div>
-                              ))
-                            ) : (
-                              <div style={{padding: 10, fontSize: '0.8rem', color: 'var(--text-secondary)', textAlign: 'center'}}>
-                                Se registrará como producto personalizado: "{item.title}"
+                              )}
+                              <div style={{flex: 1, minWidth: 0}}>
+                                <div style={{fontWeight: 700, fontSize: '0.85rem', color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis'}}>
+                                  {selectedProduct.title}
+                                </div>
+                                <div style={{display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: 2, flexWrap: 'wrap'}}>
+                                  <span style={{fontFamily: 'monospace'}}>{selectedProduct.ml_id}</span>
+                                  {stock !== null && (
+                                    <span className={`stock-badge-pill ${stock <= 0 ? 'out-of-stock' : stock <= 5 ? 'low-stock' : 'in-stock'}`} style={{fontSize: '0.65rem', padding: '1px 5px'}}>
+                                      {stock <= 0 ? '● Sin stock' : stock <= 5 ? `● ${stock} disp.` : `● ${stock} en stock`}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              className="btn"
+                              style={{padding: '4px 8px', fontSize: '0.72rem', backgroundColor: 'var(--bg-hover)', border: '1px solid var(--border-color)', flexShrink: 0}}
+                              onClick={() => {
+                                setMobileSearchQuery('')
+                                setMobileSearchIdx(idx)
+                              }}
+                            >
+                              Cambiar
+                            </button>
+                          </div>
+                        ) : (
+                          /* Autocomplete Search Input */
+                          <div>
+                            <div style={{position: 'relative'}}>
+                              <input
+                                type="text"
+                                required
+                                placeholder="🔍 Escribe nombre, SKU o toca buscar..."
+                                value={item.title || ""}
+                                onFocus={() => {
+                                  if (typeof window !== 'undefined' && window.innerWidth <= 768) {
+                                    setMobileSearchQuery(item.title || '')
+                                    setMobileSearchIdx(idx)
+                                  } else {
+                                    setActiveSearchIdx(idx)
+                                  }
+                                }}
+                                onChange={e => {
+                                  setActiveSearchIdx(idx)
+                                  handleBarcodeScanOrSearch(idx, e.target.value)
+                                }}
+                                onKeyDown={e => {
+                                  if (e.key === 'Enter') {
+                                    e.preventDefault()
+                                    if (filteredProducts.length > 0) {
+                                      handleProductSelect(idx, filteredProducts[0].ml_id)
+                                      setActiveSearchIdx(null)
+                                    } else if ((item.title || "").trim()) {
+                                      handleSelectCustomProduct(idx, item.title.trim())
+                                    }
+                                  }
+                                }}
+                                style={{width: '100%', paddingRight: 36}}
+                              />
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setMobileSearchQuery(item.title || '')
+                                  setMobileSearchIdx(idx)
+                                }}
+                                title="Abrir catálogo completo"
+                                style={{
+                                  position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)',
+                                  background: 'none', border: 'none', color: 'var(--accent-blue)', cursor: 'pointer', padding: 4
+                                }}
+                              >
+                                <Search size={16} />
+                              </button>
+                            </div>
+
+                            {/* Desktop Dropdown Autocomplete */}
+                            {activeSearchIdx === idx && (item.title || "").length > 0 && (
+                              <div className="sale-dropdown-menu">
+                                {filteredProducts.length > 0 ? (
+                                  filteredProducts.map(prod => {
+                                    const prodPrice = getProductPriceForOrder(prod, newOrder.source_platform, newOrder.payment_method)
+                                    const prodStock = prod.available_quantity ?? prod.stock ?? 0
+                                    const prodThumb = prod.thumbnail || (prod.images ? prod.images.split(',')[0].trim() : '')
+                                    return (
+                                      <div
+                                        key={prod.ml_id}
+                                        style={{
+                                          padding: '10px 12px', 
+                                          cursor: 'pointer', 
+                                          borderBottom: '1px solid var(--border-color)',
+                                          display: 'flex',
+                                          justifyContent: 'space-between',
+                                          alignItems: 'center',
+                                          gap: 10
+                                        }}
+                                        onMouseDown={(e) => {
+                                          e.preventDefault()
+                                          handleProductSelect(idx, prod.ml_id)
+                                          setActiveSearchIdx(null)
+                                        }}
+                                      >
+                                        <div style={{display: 'flex', alignItems: 'center', gap: 10, flex: 1, minWidth: 0}}>
+                                          {prodThumb ? (
+                                            <img src={prodThumb} alt="" style={{width: 36, height: 36, objectFit: 'contain', borderRadius: 6, backgroundColor: '#fff', flexShrink: 0}} />
+                                          ) : (
+                                            <div style={{width: 36, height: 36, borderRadius: 6, backgroundColor: 'var(--bg-hover)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0}}>
+                                              <Package size={18} color="var(--text-secondary)" />
+                                            </div>
+                                          )}
+                                          <div style={{flex: 1, minWidth: 0}}>
+                                            <div style={{fontWeight: 'bold', fontSize: '0.85rem', color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis'}}>
+                                              {prod.title}
+                                            </div>
+                                            <div style={{display: 'flex', gap: 8, fontSize: '0.72rem', color: 'var(--text-secondary)'}}>
+                                              <span style={{fontFamily: 'monospace'}}>{prod.ml_id}</span>
+                                              <span className={`stock-badge-pill ${prodStock <= 0 ? 'out-of-stock' : prodStock <= 5 ? 'low-stock' : 'in-stock'}`}>
+                                                {prodStock <= 0 ? '● Sin stock' : `● ${prodStock} disp.`}
+                                              </span>
+                                            </div>
+                                          </div>
+                                        </div>
+                                        <div style={{fontWeight: 'bold', color: 'var(--accent-green)', fontSize: '0.9rem', textAlign: 'right', flexShrink: 0}}>
+                                          ${prodPrice.toLocaleString()}
+                                          {newOrder.payment_method === 'Efectivo' && (prod.cash_discount_pct || 0) > 0 && (
+                                            <div style={{fontSize: '0.68rem', color: '#10b981', fontWeight: 600}}>
+                                              -{prod.cash_discount_pct}% efvo
+                                            </div>
+                                          )}
+                                        </div>
+                                      </div>
+                                    )
+                                  })
+                                ) : (
+                                  <div 
+                                    style={{padding: 12, fontSize: '0.82rem', color: 'var(--accent-blue)', textAlign: 'center', cursor: 'pointer', fontWeight: 600}}
+                                    onMouseDown={(e) => {
+                                      e.preventDefault()
+                                      handleSelectCustomProduct(idx, item.title)
+                                      setActiveSearchIdx(null)
+                                    }}
+                                  >
+                                    ➕ Usar como producto personalizado: "{item.title}"
+                                  </div>
+                                )}
                               </div>
                             )}
                           </div>
                         )}
                       </div>
-                      
-                      <label style={{width: 80}}>Cant.
-                        <input 
-                          type="number" 
-                          required 
-                          min="1"
-                          value={item.quantity}
-                          onChange={e => handleItemChange(idx, 'quantity', e.target.value)}
-                          style={{width: '100%', marginTop: 5}}
-                        />
-                      </label>
 
-                      <label style={{width: 120}}>Precio Unitario
-                        <input 
-                          type="number" 
-                          required 
-                          min="0" 
-                          step="0.01"
-                          placeholder="0.00"
-                          value={item.price || ""}
-                          onChange={e => handleItemChange(idx, 'price', e.target.value)}
-                          style={{width: '100%', marginTop: 5}}
-                        />
-                      </label>
+                      {/* Cantidad, Precio, Subtotal */}
+                      <div className="sale-item-inputs-grid">
+                        <label style={{margin: 0}}>
+                          <span style={{fontSize: '0.75rem', color: 'var(--text-secondary)'}}>Cantidad</span>
+                          <input 
+                            type="number" 
+                            required 
+                            min="1"
+                            value={item.quantity}
+                            onChange={e => handleItemChange(idx, 'quantity', e.target.value)}
+                            style={{width: '100%', marginTop: 3}}
+                          />
+                        </label>
 
-                      <button
-                        type="button"
-                        disabled={newOrder.items.length === 1}
-                        onClick={() => handleRemoveItem(idx)}
-                        style={{
-                          padding: 10,
-                          backgroundColor: 'rgba(239, 68, 68, 0.1)',
-                          color: 'var(--accent-red)',
-                          border: 'none',
-                          borderRadius: 6,
-                          cursor: newOrder.items.length === 1 ? 'not-allowed' : 'pointer'
-                        }}
-                      >
-                        <Trash2 size={16} />
-                      </button>
+                        <label style={{margin: 0}}>
+                          <span style={{fontSize: '0.75rem', color: 'var(--text-secondary)'}}>Precio Unitario ($)</span>
+                          <input 
+                            type="number" 
+                            required 
+                            min="0" 
+                            step="0.01"
+                            placeholder="0.00"
+                            value={item.price || ""}
+                            onChange={e => handleItemChange(idx, 'price', e.target.value)}
+                            style={{width: '100%', marginTop: 3}}
+                          />
+                        </label>
+
+                        <div className="sale-item-subtotal-cell">
+                          <span style={{fontSize: '0.75rem', color: 'var(--text-secondary)'}}>Subtotal:</span>
+                          <span style={{color: 'var(--accent-green)', fontWeight: 800, fontSize: '0.92rem'}}>${subtotal.toLocaleString()}</span>
+                        </div>
+
+                        <div style={{display: 'flex', alignItems: 'center', justifyContent: 'flex-end'}}>
+                          {newOrder.items.length > 1 && (
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveItem(idx)}
+                              title="Eliminar producto"
+                              style={{
+                                padding: '8px 10px',
+                                backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                                color: 'var(--accent-red)',
+                                border: 'none',
+                                borderRadius: 6,
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center'
+                              }}
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          )}
+                        </div>
+                      </div>
                     </div>
                   )
                 })}
@@ -1975,28 +2190,28 @@ export default function Sales() {
               {/* Facturación Electrónica ARCA (ex AFIP) */}
               <div style={{
                 backgroundColor: 'var(--bg-hover)', 
-                padding: '12px 16px', 
+                padding: '10px 14px', 
                 borderRadius: 8, 
                 border: '1px solid var(--border-color)',
                 display: 'flex', 
                 alignItems: 'center', 
                 justifyContent: 'space-between',
                 flexWrap: 'wrap',
-                gap: 12
+                gap: 10
               }}>
-                <label style={{display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', margin: 0, fontWeight: 'bold', fontSize: '0.9rem'}}>
+                <label style={{display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', margin: 0, fontWeight: 'bold', fontSize: '0.85rem'}}>
                   <input 
                     type="checkbox"
                     checked={newOrder.auto_invoice}
                     onChange={e => setNewOrder({ ...newOrder, auto_invoice: e.target.checked })}
                     style={{width: 18, height: 18, accentColor: 'var(--accent-blue)', cursor: 'pointer'}}
                   />
-                  📄 Emitir Factura Electrónica ARCA (AFIP) al finalizar
+                  📄 Emitir Factura ARCA (AFIP) al registrar
                 </label>
 
                 {newOrder.auto_invoice && (
                   <div style={{display: 'flex', gap: 10, alignItems: 'center'}}>
-                    <label style={{fontSize: '0.85rem', fontWeight: 'normal'}}>Tipo:
+                    <label style={{fontSize: '0.82rem', fontWeight: 'normal', margin: 0}}>Tipo:
                       <select 
                         value={newOrder.invoice_type}
                         onChange={e => setNewOrder({ ...newOrder, invoice_type: e.target.value })}
@@ -2010,35 +2225,243 @@ export default function Sales() {
                 )}
               </div>
 
+              {/* Footer Actions */}
               <div style={{
                 display: 'flex', 
                 justifyContent: 'space-between', 
                 alignItems: 'center', 
                 borderTop: '1px solid var(--border-color)', 
-                paddingTop: 15,
-                marginTop: 10,
+                paddingTop: 14,
+                marginTop: 6,
                 flexWrap: 'wrap',
-                gap: 10
+                gap: 12
               }}>
-                <div style={{fontSize: '1.1rem'}}>
-                  Total estimado: <strong>${newOrder.items.reduce((sum, item) => sum + (item.price * item.quantity), 0).toLocaleString()}</strong>
+                <div style={{fontSize: '1.05rem'}}>
+                  Total estimado: <strong style={{color: 'var(--accent-green)', fontSize: '1.25rem', marginLeft: 4}}>${newOrder.items.reduce((sum, item) => sum + (item.price * item.quantity), 0).toLocaleString()}</strong>
                 </div>
-                <div style={{display: 'flex', gap: 10}}>
+                <div style={{display: 'flex', gap: 10, flexWrap: 'wrap', flex: '1 1 auto', justifyContent: 'flex-end'}}>
                   <button 
                     type="button" 
                     className="btn" 
                     disabled={chargeLoading}
-                    style={{padding: '10px 16px', backgroundColor: '#009ee3', color: '#fff', border: 'none', borderRadius: 6, fontWeight: 'bold'}}
+                    style={{padding: '10px 14px', backgroundColor: '#009ee3', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 'bold', fontSize: '0.85rem'}}
                     onClick={handleGenerateMPCharge}
                   >
-                    {chargeLoading ? "Generando..." : "📱 Cobrar con QR / Link MP"}
+                    {chargeLoading ? "Generando..." : "📱 Cobrar con QR / MP"}
                   </button>
-                  <button type="submit" className="btn" style={{padding: '10px 20px'}}>
+                  <button type="submit" className="btn" style={{padding: '10px 18px', borderRadius: 8, fontWeight: 700}}>
                     Registrar Venta
                   </button>
                 </div>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Mobile Product Search Full-View Sheet Overlay */}
+      {mobileSearchIdx !== null && (
+        <div className="mobile-product-search-overlay">
+          <div className="mobile-product-search-header">
+            <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
+              <div style={{fontWeight: 700, fontSize: '0.95rem', display: 'flex', alignItems: 'center', gap: 6}}>
+                <Search size={18} color="var(--accent-blue)" /> Catálogo de Productos
+              </div>
+              <button
+                type="button"
+                className="btn"
+                style={{padding: '4px 10px', fontSize: '0.8rem', backgroundColor: 'var(--bg-dark)', border: '1px solid var(--border-color)', color: 'var(--text-secondary)'}}
+                onClick={() => {
+                  setMobileSearchIdx(null)
+                  setMobileSearchQuery('')
+                }}
+              >
+                ✕ Cerrar
+              </button>
+            </div>
+
+            <div style={{position: 'relative'}}>
+              <input
+                type="text"
+                autoFocus
+                placeholder="Escribe nombre, SKU o escanea..."
+                value={mobileSearchQuery}
+                onChange={(e) => {
+                  const val = e.target.value
+                  setMobileSearchQuery(val)
+                  // Barcode exact match
+                  const exact = inventory.find(p => String(p.ml_id).toLowerCase() === val.trim().toLowerCase() || String(p.sku || '').toLowerCase() === val.trim().toLowerCase())
+                  if (exact) {
+                    handleProductSelect(mobileSearchIdx, exact.ml_id)
+                  }
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault()
+                    const matches = filterInventoryProducts(mobileSearchQuery, inventory)
+                    if (matches.length > 0) {
+                      handleProductSelect(mobileSearchIdx, matches[0].ml_id)
+                    } else if (mobileSearchQuery.trim()) {
+                      handleSelectCustomProduct(mobileSearchIdx, mobileSearchQuery.trim())
+                    }
+                  }
+                }}
+                style={{
+                  width: '100%', 
+                  padding: '12px 36px 12px 14px', 
+                  fontSize: '0.95rem', 
+                  borderRadius: 8, 
+                  border: '2px solid var(--accent-blue)',
+                  backgroundColor: 'var(--bg-hover)'
+                }}
+              />
+              {mobileSearchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setMobileSearchQuery('')}
+                  style={{
+                    position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)',
+                    background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', padding: 4
+                  }}
+                >
+                  <X size={18} />
+                </button>
+              )}
+            </div>
+
+            <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.74rem', color: 'var(--text-secondary)'}}>
+              <span>{filterInventoryProducts(mobileSearchQuery, inventory).length} productos disponibles</span>
+              {newOrder.payment_method === 'Efectivo' && (
+                <span style={{color: '#10b981', fontWeight: 600}}>💸 Con descuento efectivo</span>
+              )}
+            </div>
+          </div>
+
+          <div className="mobile-product-search-list">
+            {/* Option to use custom text */}
+            {mobileSearchQuery.trim().length > 0 && (
+              <div
+                className="mobile-product-search-item"
+                style={{borderStyle: 'dashed', borderColor: 'var(--accent-blue)', backgroundColor: 'rgba(0, 158, 227, 0.08)'}}
+                onClick={() => {
+                  handleSelectCustomProduct(mobileSearchIdx, mobileSearchQuery.trim())
+                }}
+              >
+                <div style={{display: 'flex', alignItems: 'center', gap: 10}}>
+                  <div style={{width: 42, height: 42, borderRadius: 8, backgroundColor: 'rgba(0, 158, 227, 0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center'}}>
+                    <Plus size={20} color="var(--accent-blue)" />
+                  </div>
+                  <div>
+                    <div style={{fontWeight: 700, fontSize: '0.85rem', color: 'var(--text-primary)'}}>
+                      Usar producto personalizado
+                    </div>
+                    <div style={{fontSize: '0.75rem', color: 'var(--accent-blue)'}}>
+                      "{mobileSearchQuery.trim()}"
+                    </div>
+                  </div>
+                </div>
+                <span style={{fontSize: '0.75rem', fontWeight: 600, color: 'var(--accent-blue)'}}>Elegir ➔</span>
+              </div>
+            )}
+
+            {filterInventoryProducts(mobileSearchQuery, inventory).map(prod => {
+              const price = getProductPriceForOrder(prod, newOrder.source_platform, newOrder.payment_method)
+              const stock = prod.available_quantity ?? prod.stock ?? 0
+              const isOutOfStock = stock <= 0
+              const isLowStock = stock > 0 && stock <= 5
+              const thumb = prod.thumbnail || (prod.images ? prod.images.split(',')[0].trim() : '')
+
+              return (
+                <div
+                  key={prod.ml_id}
+                  className="mobile-product-search-item"
+                  onClick={() => {
+                    handleProductSelect(mobileSearchIdx, prod.ml_id)
+                  }}
+                >
+                  <div style={{display: 'flex', alignItems: 'center', gap: 10, flex: 1, minWidth: 0}}>
+                    {thumb ? (
+                      <img
+                        src={thumb}
+                        alt=""
+                        style={{
+                          width: 46,
+                          height: 46,
+                          objectFit: 'contain',
+                          borderRadius: 8,
+                          backgroundColor: '#fff',
+                          border: '1px solid var(--border-color)',
+                          flexShrink: 0
+                        }}
+                        onError={(e) => { e.target.style.display = 'none' }}
+                      />
+                    ) : (
+                      <div style={{
+                        width: 46,
+                        height: 46,
+                        borderRadius: 8,
+                        backgroundColor: 'var(--bg-hover)',
+                        border: '1px solid var(--border-color)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        flexShrink: 0
+                      }}>
+                        <Package size={20} color="var(--text-secondary)" />
+                      </div>
+                    )}
+                    <div style={{flex: 1, minWidth: 0}}>
+                      <div style={{
+                        fontWeight: 700, 
+                        fontSize: '0.85rem', 
+                        color: 'var(--text-primary)',
+                        lineHeight: '1.25',
+                        marginBottom: 3,
+                        display: '-webkit-box',
+                        WebkitLineClamp: 2,
+                        WebkitBoxOrient: 'vertical',
+                        overflow: 'hidden'
+                      }}>
+                        {prod.title}
+                      </div>
+                      <div style={{display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap'}}>
+                        <span style={{fontSize: '0.72rem', color: 'var(--text-secondary)', fontFamily: 'monospace'}}>
+                          {prod.ml_id}
+                        </span>
+                        <span className={`stock-badge-pill ${isOutOfStock ? 'out-of-stock' : isLowStock ? 'low-stock' : 'in-stock'}`}>
+                          {isOutOfStock ? '● Sin stock' : isLowStock ? `● ${stock} disp.` : `● ${stock} en stock`}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div style={{textAlign: 'right', flexShrink: 0, paddingLeft: 8}}>
+                    <div style={{fontWeight: 800, color: 'var(--accent-green)', fontSize: '0.95rem'}}>
+                      ${price.toLocaleString()}
+                    </div>
+                    {newOrder.payment_method === 'Efectivo' && (prod.cash_discount_pct || 0) > 0 && (
+                      <div style={{fontSize: '0.66rem', color: '#10b981', fontWeight: 600}}>
+                        -{prod.cash_discount_pct}% efvo
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )
+            })}
+
+            {filterInventoryProducts(mobileSearchQuery, inventory).length === 0 && (
+              <div style={{padding: 24, textAlign: 'center', color: 'var(--text-secondary)'}}>
+                <p style={{margin: 0, fontSize: '0.85rem'}}>No se encontraron productos con "{mobileSearchQuery}"</p>
+                <button
+                  type="button"
+                  className="btn"
+                  style={{marginTop: 10, backgroundColor: 'var(--accent-blue)', color: '#fff', fontSize: '0.8rem'}}
+                  onClick={() => handleSelectCustomProduct(mobileSearchIdx, mobileSearchQuery.trim())}
+                >
+                  Usar "{mobileSearchQuery}" como producto personalizado
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}

@@ -83,6 +83,19 @@ def _sync_one_tenant(tenant):
     except Exception as ship_err:
         print(f"[Scheduler][{slug}] Error en auto-envíos MeLi: {ship_err}")
 
+    # Auditoría automática de calidad de publicaciones MeLi (Optimizador IA)
+    try:
+        optimizer_enabled = config.get_setting("meli_optimizer_auto_audit") != "0"
+        if optimizer_enabled and config.is_configured():
+            from src.utils.meli_optimizer_service import audit_all_items
+            audit_result = audit_all_items()
+            total = audit_result.get("total", 0)
+            avg = audit_result.get("avg_score", 0)
+            if total > 0:
+                print(f"[Scheduler][{slug}] Auditoría ML Optimizer: {total} publicaciones, score promedio: {avg}/100")
+    except Exception as opt_err:
+        print(f"[Scheduler][{slug}] Error en auditoría ML Optimizer: {opt_err}")
+
     # Alertas automáticas por WhatsApp de vencimientos de servicios e impuestos
     _check_vencimientos_alerts_for_tenant(tenant)
 

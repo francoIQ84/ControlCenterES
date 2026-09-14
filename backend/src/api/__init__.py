@@ -20,6 +20,7 @@ from .marketing import router as marketing_router
 from .diffusion import router as diffusion_router
 from .meli_questions import router as meli_questions_router
 from .tiendanube import router as tiendanube_router
+from .meli_optimizer import router as meli_optimizer_router
 
 api_router = APIRouter()
 
@@ -53,6 +54,7 @@ api_router.include_router(marketing_router, prefix="/marketing", tags=["marketin
 api_router.include_router(diffusion_router, prefix="/diffusion", tags=["diffusion"], dependencies=[Depends(verify_session)])
 api_router.include_router(tiendanube_router, prefix="/tiendanube", tags=["tiendanube"])
 api_router.include_router(meli_questions_router)
+api_router.include_router(meli_optimizer_router, tags=["meli-optimizer"], dependencies=[Depends(verify_session), Depends(require_permission("inventory"))])
 
 
 

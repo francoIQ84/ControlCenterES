@@ -3548,6 +3548,182 @@ def get_meli_questions_stats():
             }
 
 
+# ───────────────────────────────────────────────────────────────────────
+# ML Optimizer — Tablas y CRUD
+# ───────────────────────────────────────────────────────────────────────
+
+def _ensure_optimizer_tables():
+    """Crea las tablas del optimizador si no existen."""
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS meli_optimizations (
+                    id SERIAL PRIMARY KEY,
+                    ml_id TEXT NOT NULL,
+                    opt_type TEXT NOT NULL DEFAULT 'audit',
+                    data_json TEXT NOT NULL,
+                    status TEXT DEFAULT 'pending',
+                    applied_fields TEXT,
+                    errors_json TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS meli_category_attrs_cache (
+                    category_id TEXT PRIMARY KEY,
+                    attrs_json TEXT NOT NULL,
+                    cached_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+
+
+def save_meli_optimization(ml_id: str, opt_type: str, data: dict):
+    """Guarda una auditoría u optimización para una publicación."""
+    _ensure_optimizer_tables()
+    data_json = json.dumps(data, ensure_ascii=False, default=str)
+    status = data.get("status", "pending")
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            # Upsert: si ya existe una del mismo tipo pendiente, la reemplaza
+            cursor.execute('''
+                DELETE FROM meli_optimizations
+                WHERE ml_id = %s AND opt_type = %s AND status IN ('pending', 'audit')
+            ''', (ml_id, opt_type))
+            cursor.execute('''
+                INSERT INTO meli_optimizations (ml_id, opt_type, data_json, status)
+                VALUES (%s, %s, %s, %s)
+            ''', (ml_id, opt_type, data_json, status))
+
+
+def get_pending_meli_optimization(ml_id: str) -> dict | None:
+    """Obtiene la última optimización pendiente para un item."""
+    _ensure_optimizer_tables()
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute('''
+                SELECT data_json FROM meli_optimizations
+                WHERE ml_id = %s AND opt_type = 'optimization' AND status = 'pending'
+                ORDER BY created_at DESC LIMIT 1
+            ''', (ml_id,))
+            row = cursor.fetchone()
+            if row:
+                return json.loads(row['data_json'])
+    return None
+
+
+def get_all_pending_meli_optimizations() -> list:
+    """Obtiene todas las optimizaciones pendientes."""
+    _ensure_optimizer_tables()
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute('''
+                SELECT ml_id, data_json FROM meli_optimizations
+                WHERE opt_type = 'optimization' AND status = 'pending'
+                ORDER BY created_at DESC
+            ''')
+            results = []
+            for row in cursor.fetchall():
+                data = json.loads(row['data_json'])
+                data['ml_id'] = row['ml_id']
+                results.append(data)
+            return results
+
+
+def update_meli_optimization_status(ml_id: str, status: str, applied: list = None, errors: list = None):
+    """Actualiza el estado de una optimización."""
+    _ensure_optimizer_tables()
+    applied_str = ",".join(applied) if applied else ""
+    errors_json = json.dumps(errors, ensure_ascii=False) if errors else ""
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute('''
+                UPDATE meli_optimizations
+                SET status = %s, applied_fields = %s, errors_json = %s, updated_at = CURRENT_TIMESTAMP
+                WHERE ml_id = %s AND opt_type = 'optimization' AND status = 'pending'
+            ''', (status, applied_str, errors_json, ml_id))
+
+
+def get_meli_optimization_history(limit: int = 50) -> list:
+    """Obtiene el historial de optimizaciones (no auditorías)."""
+    _ensure_optimizer_tables()
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute('''
+                SELECT id, ml_id, opt_type, data_json, status, applied_fields, errors_json, created_at, updated_at
+                FROM meli_optimizations
+                WHERE opt_type = 'optimization'
+                ORDER BY created_at DESC
+                LIMIT %s
+            ''', (limit,))
+            results = []
+            for row in cursor.fetchall():
+                entry = dict(row)
+                try:
+                    entry['data'] = json.loads(entry.pop('data_json', '{}'))
+                except (json.JSONDecodeError, TypeError):
+                    entry['data'] = {}
+                try:
+                    entry['errors'] = json.loads(entry.pop('errors_json', '[]') or '[]')
+                except (json.JSONDecodeError, TypeError):
+                    entry['errors'] = []
+                results.append(entry)
+            return results
+
+
+def get_latest_meli_audits() -> list:
+    """Obtiene la última auditoría de cada publicación."""
+    _ensure_optimizer_tables()
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute('''
+                SELECT DISTINCT ON (ml_id) ml_id, data_json, created_at
+                FROM meli_optimizations
+                WHERE opt_type = 'audit'
+                ORDER BY ml_id, created_at DESC
+            ''')
+            results = []
+            for row in cursor.fetchall():
+                try:
+                    data = json.loads(row['data_json'])
+                    data['cached_at'] = str(row['created_at'])
+                    results.append(data)
+                except (json.JSONDecodeError, TypeError):
+                    pass
+            return results
+
+
+def cache_meli_category_attrs(category_id: str, attrs: list):
+    """Cachea los atributos de una categoría de ML."""
+    _ensure_optimizer_tables()
+    attrs_json = json.dumps(attrs, ensure_ascii=False, default=str)
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute('''
+                INSERT INTO meli_category_attrs_cache (category_id, attrs_json, cached_at)
+                VALUES (%s, %s, CURRENT_TIMESTAMP)
+                ON CONFLICT (category_id) DO UPDATE SET
+                    attrs_json = EXCLUDED.attrs_json,
+                    cached_at = CURRENT_TIMESTAMP
+            ''', (category_id, attrs_json))
+
+
+def get_cached_meli_category_attrs(category_id: str) -> list | None:
+    """Obtiene los atributos cacheados de una categoría."""
+    _ensure_optimizer_tables()
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute('''
+                SELECT attrs_json FROM meli_category_attrs_cache
+                WHERE category_id = %s
+            ''', (category_id,))
+            row = cursor.fetchone()
+            if row:
+                try:
+                    return json.loads(row['attrs_json'])
+                except (json.JSONDecodeError, TypeError):
+                    pass
+    return None
 
 
 

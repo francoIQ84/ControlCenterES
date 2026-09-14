@@ -1797,3 +1797,138 @@ def send_order_message(order_id, text_message):
         return False, f"Error al enviar mensaje: {err_msg}"
 
 
+# --- Listing Optimizer API Helpers ---
+
+def fetch_item_full_details(ml_id: str) -> dict | None:
+    """Obtiene los datos completos de una publicación incluyendo
+    atributos, fotos, descripción, envío y video.
+
+    En modo demo genera datos de ejemplo realistas.
+    """
+    if is_demo_mode():
+        import random
+        mock_attrs = [
+            {"id": "BRAND", "name": "Marca", "value_name": "Genérica"},
+            {"id": "MODEL", "name": "Modelo", "value_name": "Estándar"},
+            {"id": "WEIGHT", "name": "Peso", "value_name": None},
+        ]
+        mock_pics = [{"id": f"pic_{i}", "secure_url": MOCK_THUMBNAILS[i % len(MOCK_THUMBNAILS)]} for i in range(random.randint(1, 4))]
+        return {
+            "id": ml_id,
+            "title": next((p.get("title", "") for p in (database.get_all_products() or []) if p.get("ml_id") == ml_id), f"Producto Demo {ml_id}"),
+            "price": float(random.randint(3000, 60000)),
+            "category_id": "MLA1234",
+            "status": "active",
+            "permalink": f"https://articulo.mercadolibre.com.ar/{ml_id}",
+            "thumbnail": MOCK_THUMBNAILS[hash(ml_id) % len(MOCK_THUMBNAILS)],
+            "pictures": mock_pics,
+            "attributes": mock_attrs,
+            "description": "Producto de excelente calidad. Ideal para uso doméstico e industrial. Envíos a todo el país.",
+            "shipping": {"free_shipping": random.choice([True, False])},
+            "video_id": None,
+        }
+
+    try:
+        res = api_request("GET", f"/items/{ml_id}")
+        if not res or res.status_code != 200:
+            return None
+        data = res.json()
+
+        # Obtener descripción por separado (sub-recurso)
+        desc_text = fetch_single_item_description(ml_id)
+
+        data["description"] = desc_text
+        return data
+    except Exception as e:
+        print(f"[Meli API] Error obteniendo detalles completos de {ml_id}: {e}")
+        return None
+
+
+def fetch_category_attributes(category_id: str) -> list:
+    """Obtiene los atributos requeridos/opcionales de una categoría de ML.
+
+    GET /categories/{category_id}/attributes
+    Retorna lista de dicts con: id, name, required, tags, values, etc.
+    """
+    if is_demo_mode():
+        return [
+            {"id": "BRAND", "name": "Marca", "required": True, "tags": {"required": True}, "values": [{"id": "9344", "name": "Genérica"}]},
+            {"id": "MODEL", "name": "Modelo", "required": True, "tags": {"required": True}, "values": []},
+            {"id": "WEIGHT", "name": "Peso", "required": False, "tags": {}, "values": []},
+            {"id": "COLOR", "name": "Color", "required": False, "tags": {}, "values": [{"id": "52049", "name": "Negro"}, {"id": "52053", "name": "Blanco"}]},
+            {"id": "MATERIAL", "name": "Material", "required": False, "tags": {}, "values": []},
+        ]
+
+    try:
+        url = f"{API_BASE_URL}/categories/{category_id}/attributes"
+        headers = {"Accept": "application/json"}
+        response = requests.get(url, headers=headers, timeout=15)
+        if response.status_code == 200:
+            return response.json()
+        print(f"[Meli API] Error obteniendo atributos de categoría {category_id}: {response.status_code}")
+        return []
+    except Exception as e:
+        print(f"[Meli API] Excepción al obtener atributos de categoría {category_id}: {e}")
+        return []
+
+
+def update_item_title(ml_id: str, new_title: str) -> tuple:
+    """Actualiza el título de una publicación en Mercado Libre.
+
+    PUT /items/{ml_id} con {"title": "..."}
+    """
+    if is_demo_mode():
+        return True, "Título actualizado (modo demo)"
+
+    try:
+        res = api_request("PUT", f"/items/{ml_id}", json_data={"title": new_title})
+        if res and res.status_code == 200:
+            return True, "Título actualizado exitosamente"
+        err = res.text[:200] if res else "Sin respuesta"
+        return False, f"Error al actualizar título ({res.status_code if res else '?'}): {err}"
+    except Exception as e:
+        return False, f"Excepción al actualizar título: {e}"
+
+
+def update_item_description(ml_id: str, new_description: str) -> tuple:
+    """Actualiza la descripción de una publicación en Mercado Libre.
+
+    PUT /items/{ml_id}/description con {"plain_text": "..."}
+    """
+    if is_demo_mode():
+        return True, "Descripción actualizada (modo demo)"
+
+    try:
+        res = api_request("PUT", f"/items/{ml_id}/description", json_data={"plain_text": new_description})
+        if res and res.status_code == 200:
+            return True, "Descripción actualizada exitosamente"
+        err = res.text[:200] if res else "Sin respuesta"
+        return False, f"Error al actualizar descripción ({res.status_code if res else '?'}): {err}"
+    except Exception as e:
+        return False, f"Excepción al actualizar descripción: {e}"
+
+
+def update_item_attributes(ml_id: str, attributes: list) -> tuple:
+    """Actualiza los atributos (ficha técnica) de una publicación.
+
+    PUT /items/{ml_id} con {"attributes": [...]}
+    Cada atributo es {"id": "BRAND", "value_name": "Mi Marca"}.
+    """
+    if is_demo_mode():
+        return True, "Atributos actualizados (modo demo)"
+
+    if not attributes:
+        return True, "Sin atributos para actualizar"
+
+    try:
+        payload = {"attributes": attributes}
+        res = api_request("PUT", f"/items/{ml_id}", json_data=payload)
+        if res and res.status_code == 200:
+            return True, f"{len(attributes)} atributos actualizados exitosamente"
+        err = res.text[:200] if res else "Sin respuesta"
+        # Algunos atributos pueden ser no-modificables, lo cual no es un error fatal
+        if res and res.status_code == 400 and "not_modifiable" in (res.text or ""):
+            return True, f"Algunos atributos no son modificables — se actualizaron los permitidos"
+        return False, f"Error al actualizar atributos ({res.status_code if res else '?'}): {err}"
+    except Exception as e:
+        return False, f"Excepción al actualizar atributos: {e}"

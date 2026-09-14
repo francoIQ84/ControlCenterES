@@ -56,6 +56,7 @@ En el comercio moderno, gestionar Mercado Libre, una tienda online propia, factu
 ---
 
 ### 3. 🛒 Ventas, TPV (Punto de Venta) & Cobro con QR Mercado Pago
+- **Conexión Unificada Mercado Libre & Mercado Pago (`ML/MP`)**: Un único proceso de autorización OAuth vincula tanto las funciones de **Mercado Libre** (ventas, preguntas, publicaciones, chat post-venta y adjunto de comprobantes) como de **Mercado Pago** (cobros QR dinámicos, links de pago, transferencias, terminales Point y saldo en cuenta).
 - **Sincronización de Órdenes Mercado Libre**: Carga automática de compradores, montos, comisión e impuestos.
 - **Punto de Venta Mostrador (Venta Local)**: Registro rápido de ventas presenciales con buscador dinámico de artículos.
 - **Escáner de Código de Barras & QR**: Compatible con lectores USB/Bluetooth y cámara de smartphone para autocompletar productos.
@@ -69,13 +70,17 @@ En el comercio moderno, gestionar Mercado Libre, una tienda online propia, factu
 - **Soporte Multicondición Fiscal**:
   - **Monotributo**: Emisión de **Factura C (`COD. 011`)**.
   - **Responsable Inscripto**: Emisión de **Factura B (`COD. 006`)** a Consumidores Finales y **Factura A (`COD. 001`)** a CUITs.
+- **Facturación Masiva en Lote**: Emisión consecutiva de decenas de comprobantes con correlatividad oficial garantizada (`FECompUltimoAutorizado`), espaciado preventivo de resguardo y **botón de reintento con un solo clic** para órdenes fallidas.
+- **Caché Multi-Nivel del Ticket de Acceso (WSAA)**: Reutilización inteligente del Token y Sign durante sus 12 horas de validez (en RAM, archivo local y PostgreSQL), eliminando el error `El CEE ya posee un TA valido` y acelerando la emisión a 0 ms por comprobante.
 - **Consulta al Padrón AFIP en Tiempo Real (`PersonaServiceA5`)**: Al ingresar un CUIT, autocompleta la Razón Social, Domicilio Fiscal y la **Condición frente al IVA del Comprador**.
 - **Selector de Condición IVA del Comprador**: Permite visualizar y seleccionar la condición frente al IVA (`IVA Exento`, `Responsable Inscripto`, `Responsable Monotributo`, `Consumidor Final`) para imprimirla en la factura.
 - **Inclusión Automática del Servicio de Envío Mercado Libre**: Obtención automática del costo de envío abonado por el comprador en ML e inclusión como ítem de servicio adicional (`Servicio de Envío Mercado Libre`) en la factura.
 - **Vista Previa de Corroboración Previa**: Desglose de ítems, precios, costo de envío y total final en la ventana modal antes de confirmar la emisión.
 - **Desglose de IVA 21%**: Generación correcta de campos `<AlicIva>`, `ImpNeto` e `ImpIVA` requeridos por la AFIP en Facturas A.
 - **Factura B Automática (Consumidor Final)**: Fallback inteligente si el comprador no presenta CUIT.
-- **Generación de PDF Oficial**: Descarga e impresión de comprobantes fiscales normativos.
+- **Adjunto Automático en Mercado Libre**: Subida automática del PDF generado a la API de Mercado Libre vinculándolo a la venta del cliente.
+- **Generación de PDF Oficial**: Descarga e impresión de comprobantes fiscales normativos con CAE y código de barras.
+- 📘 *Para más detalles técnicos y operativos, consultá la [Guía de Facturación AFIP / ARCA](docs/facturacion_afip_arca.md).*
 
 ---
 
@@ -401,6 +406,19 @@ En una arquitectura multi-tenant, la distribución de credenciales se estructura
 
 ---
 
+### 11. ☁️ Respaldos Automáticos en la Nube (Google Drive & Google Cloud)
+
+ControlCenterES incluye un módulo autónomo de **copias de seguridad programadas y manuales** que resguarda la base de datos PostgreSQL y los archivos del sistema:
+
+- **Subida Automática a Google Drive**: Tras generar un archivo comprimido `.zip` con el volcado completo de la base de datos, el backend lo envía automáticamente a una carpeta designada en tu Google Drive.
+- **Autenticación desatendida vía Service Account (Google Cloud)**:
+  - Utiliza credenciales de Cuenta de Servicio (`service_account.json`), lo que garantiza que las subidas continúen operando 24/7 sin caducidad de tokens ni necesidad de interacción humana.
+  - La aplicación solo accede a la carpeta específica de Drive compartida con permisos de "Editor" a la cuenta de servicio, manteniendo el resto de la cuenta de Google privada.
+- **Respaldos Manuales y Mensuales**: Soporte para generación a demanda desde el panel administrativo y ejecución periódica automática.
+- 📘 *Para el paso a paso completo de configuración en Google Cloud y Google Drive, consultá la [Guía de Integración con Google Drive](docs/integracion_google_drive.md).*
+
+---
+
 ## 🛠️ Arquitectura Técnica (Monorepo)
 
 ```
@@ -421,6 +439,7 @@ ControlCenterES/
 │   ├── tests/           # Integración (requieren PostgreSQL)
 │   │   └── unit/        # Unitarios con unittest, sin base de datos
 │   └── whatsapp/        # Pasarela Baileys Node.js para WhatsApp Gateway
+├── docs/                # Guías operativas y de integración (Google Drive, AFIP / ARCA)
 ├── frontend/            # Panel de Administración (React + Vite + Vanilla CSS)
 │   └── src/
 │       ├── TenantContext.jsx # Inquilino activo, módulos contratados, marca visual

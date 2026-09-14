@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom'
-import { LayoutDashboard, Package, Receipt, Users, Settings, Sun, Moon, RefreshCw, Zap, Image, LogOut, Menu, FileText, Wallet, BookOpen, ShieldCheck, Bell, CheckCircle2, X, Megaphone, UserCheck, MessageSquare, Building2, HelpCircle, Eye, Layers } from 'lucide-react'
+import { LayoutDashboard, Package, Receipt, Users, Settings, Sun, Moon, RefreshCw, Zap, Image, LogOut, Menu, FileText, Wallet, BookOpen, ShieldCheck, Bell, CheckCircle2, X, Megaphone, UserCheck, MessageSquare, Building2, HelpCircle, Eye, Layers, Sparkles } from 'lucide-react'
 import { useTenant } from '../TenantContext'
 
 // Mapa de ayuda contextual por ruta — se muestra al pulsar el botón "?"
@@ -117,6 +117,18 @@ const PAGE_HELP = {
       'Responder comentarios de Instagram',
       'Configurar cuentas de Instagram/Facebook',
       'Personalizar diseño de canvas (layout, logo, colores)'
+    ]
+  },
+  '/meli-optimizer': {
+    title: '✨ Optimizador IA de Publicaciones',
+    description: 'Auditoría y optimización automática de publicaciones de Mercado Libre con Inteligencia Artificial.',
+    features: [
+      'Auditoría masiva de calidad (score de salud por publicación)',
+      'Optimización de títulos SEO con IA (Gemini)',
+      'Generación de descripciones profesionales',
+      'Completar ficha técnica (atributos faltantes por categoría)',
+      'Aplicar cambios individualmente o de forma masiva',
+      'Auditoría automática diaria con alertas'
     ]
   },
   '/tenants': {
@@ -657,6 +669,12 @@ export default function Layout() {
             <NavLink to="/marketing" className={({isActive}) => `nav-link ${isActive ? 'active' : ''}`}>
               <Megaphone size={20} style={{ minWidth: 20 }} />
               <span className="nav-text">Marketing & Redes</span>
+            </NavLink>
+          )}
+          {canShow('inventory') && isChannelEnabled('meli') && (
+            <NavLink to="/meli-optimizer" className={({isActive}) => `nav-link ${isActive ? 'active' : ''}`}>
+              <Sparkles size={20} style={{ minWidth: 20 }} />
+              <span className="nav-text">Optimizador IA ML</span>
             </NavLink>
           )}
           {!isSimpleView && isPlatformAdmin && hasPermission('settings') && (
