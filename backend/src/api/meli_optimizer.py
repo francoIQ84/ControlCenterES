@@ -12,9 +12,11 @@ import traceback
 router = APIRouter(prefix="/meli-optimizer", tags=["meli-optimizer"])
 
 
-class OptimizeRequest(BaseModel):
-    """Body para personalizar la optimización."""
-    force: bool = False
+class OptimizeAllRequest(BaseModel):
+    """Body para personalizar qué publicaciones optimizar."""
+    status: Optional[str] = None       # ej: 'active', 'paused', 'all'
+    ml_ids: Optional[list] = None      # lista de ml_ids seleccionados
+    max_score: Optional[int] = 80      # umbral máximo de score
 
 
 class ApplyRequest(BaseModel):
@@ -29,11 +31,11 @@ class ApplyRequest(BaseModel):
 # ───────────────────────────────────────────────────────────────────────
 
 @router.get("/audit")
-def audit_all():
+def audit_all(status: Optional[str] = None):
     """Ejecuta auditoría masiva de todas las publicaciones ML del tenant."""
     from src.utils.meli_optimizer_service import audit_all_items
     try:
-        result = audit_all_items()
+        result = audit_all_items(status=status)
         return result
     except Exception as e:
         traceback.print_exc()
@@ -54,10 +56,17 @@ def audit_single(ml_id: str):
 
 @router.get("/audits/cached")
 def get_cached_audits():
-    """Retorna las últimas auditorías cacheadas (sin re-ejecutar)."""
+    """Retorna las últimas auditorías cacheadas con status enriquecido."""
     from src import database
     try:
         results = database.get_latest_meli_audits()
+        products_map = {p["ml_id"]: p.get("status") for p in database.get_all_products(include_hidden=True) if p.get("ml_id")}
+        for r in results:
+            item_id = r.get("ml_id")
+            if item_id in products_map:
+                r["status"] = products_map[item_id] or "active"
+            elif not r.get("status"):
+                r["status"] = "active"
         scores = [r.get("score", 0) for r in results]
         avg = round(sum(scores) / len(scores)) if scores else 0
         return {
@@ -92,11 +101,14 @@ def optimize_single(ml_id: str):
 
 
 @router.post("/optimize-all")
-def optimize_all():
-    """Optimiza todas las publicaciones con score bajo en batch."""
+def optimize_all(body: Optional[OptimizeAllRequest] = None):
+    """Optimiza publicaciones con IA según los filtros seleccionados (ej: solo activas, IDs específicos, etc.)."""
     from src.utils.meli_optimizer_service import optimize_all_items
     try:
-        result = optimize_all_items()
+        status = body.status if body else None
+        ml_ids = body.ml_ids if body else None
+        max_score = body.max_score if body and body.max_score is not None else 80
+        result = optimize_all_items(status=status, ml_ids=ml_ids, max_score=max_score)
         return result
     except Exception as e:
         traceback.print_exc()

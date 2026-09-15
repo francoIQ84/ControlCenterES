@@ -84,26 +84,61 @@ def audit_single_item(ml_id: str) -> dict:
     issues = []
     opportunities = []
 
+    is_catalog = bool(item_data.get("catalog_listing"))
+    sold_quantity = int(item_data.get("sold_quantity") or 0)
+
     # 1. Título
     title = item_data.get("title", "")
     title_score, title_issues, title_opps = _audit_title(title, item_data)
-    details["title"] = {"score": title_score, "current": title}
+    if is_catalog:
+        title_score = 100
+        title_issues = []
+        title_opps = []
+    details["title"] = {
+        "score": title_score,
+        "current": title,
+        "catalog_managed": is_catalog,
+        "has_sales": sold_quantity > 0,
+    }
     issues.extend(title_issues)
     opportunities.extend(title_opps)
 
     # 2. Descripción
     description = item_data.get("description", "") or ""
-    desc_score, desc_issues, desc_opps = _audit_description(description)
-    details["description"] = {"score": desc_score, "current_length": len(description)}
-    issues.extend(desc_issues)
-    opportunities.extend(desc_opps)
+    if is_catalog:
+        # En catálogo oficial de Mercado Libre la descripción la gestiona ML
+        desc_score = 100
+        desc_issues = []
+        desc_opps = []
+        details["description"] = {
+            "score": desc_score,
+            "current_length": len(description),
+            "catalog_managed": True,
+        }
+    else:
+        desc_score, desc_issues, desc_opps = _audit_description(description)
+        details["description"] = {"score": desc_score, "current_length": len(description)}
+        issues.extend(desc_issues)
+        opportunities.extend(desc_opps)
 
     # 3. Fotos
     pictures = item_data.get("pictures", [])
     photos_score, photos_issues, photos_opps = _audit_photos(pictures)
-    details["photos"] = {"score": photos_score, "count": len(pictures)}
+    if is_catalog:
+        # En catálogo las fotos principales vienen del catálogo oficial
+        photos_score = max(photos_score, 85)
+        photos_issues = [i for i in photos_issues if i.get("severity") != "critical"]
+    details["photos"] = {"score": photos_score, "count": len(pictures), "catalog_managed": is_catalog}
     issues.extend(photos_issues)
     opportunities.extend(photos_opps)
+
+    # Si es catálogo, informar en oportunidades
+    if is_catalog:
+        opportunities.append({
+            "area": "status",
+            "severity": "low",
+            "message": "Publicación de Catálogo ML: el título y descripción oficiales son gestionados por Mercado Libre. Para ganar la Buy Box optimizá ficha técnica y precio.",
+        })
 
     # 4. Atributos / Ficha Técnica
     item_attrs = item_data.get("attributes", [])
@@ -167,6 +202,9 @@ def audit_single_item(ml_id: str) -> dict:
         "title": title,
         "thumbnail": thumbnail,
         "status": status,
+        "catalog_listing": is_catalog,
+        "catalog_product_id": item_data.get("catalog_product_id"),
+        "sold_quantity": sold_quantity,
         "price": item_data.get("price", 0),
         "score": total_score,
         "issues": issues,
@@ -396,10 +434,12 @@ def _audit_shipping(shipping: dict, item_data: dict) -> tuple:
 # Auditoría masiva
 # ───────────────────────────────────────────────────────────────────────
 
-def audit_all_items() -> dict:
-    """Audita todas las publicaciones activas del tenant."""
+def audit_all_items(status: str = None) -> dict:
+    """Audita publicaciones del tenant (opcionalmente filtradas por estado, ej: 'active')."""
     products = database.get_all_products(include_hidden=False)
     ml_products = [p for p in products if p.get("ml_id") and not p["ml_id"].startswith(("LOCAL-", "WEB-"))]
+    if status and status != "all":
+        ml_products = [p for p in ml_products if p.get("status") == status]
 
     if not ml_products:
         return {"success": True, "total": 0, "results": [], "avg_score": 0}
@@ -549,9 +589,27 @@ def optimize_with_ai(ml_id: str, audit_result: dict = None) -> dict:
     issues_text = "\n".join(f"  - [{i['severity']}] {i['message']}" for i in audit_result.get("issues", []))
     opps_text = "\n".join(f"  - [{o['severity']}] {o['message']}" for o in audit_result.get("opportunities", []))
 
+    is_catalog = bool(audit_result.get("catalog_listing") or item_data.get("catalog_listing"))
+    sold_quantity = int(audit_result.get("sold_quantity") or item_data.get("sold_quantity") or 0)
+
+    catalog_instructions = ""
+    if is_catalog:
+        catalog_instructions = f"""
+--- IMPORTANTE: PUBLICACIÓN DE CATÁLOGO MERCADO LIBRE ---
+Esta publicación compite en el catálogo oficial de Mercado Libre.
+1. El título oficial NO se puede modificar en Mercado Libre (es gestionado por ML): en "optimized_title" devolvé exactamente: "{title}".
+2. La descripción oficial NO se puede modificar por API: en "optimized_description" devolvé exactamente la descripción actual o dejala vacía.
+3. TU FOCO PRINCIPAL es inferir atributos faltantes para la ficha técnica ("suggested_attributes") con máxima precisión a partir del producto, y dar sugerencias ("manual_suggestions") para ganar la Buy Box (precio competitivo, tiempos de despacho, etc.).
+"""
+    elif sold_quantity > 0:
+        catalog_instructions = f"""
+--- NOTA: PUBLICACIÓN CON VENTAS CONCRETADAS ({sold_quantity} vendidas) ---
+Mercado Libre prohíbe cambiar el título de publicaciones que ya tienen ventas. En "optimized_title" devolvé exactamente: "{title}". Enfocate en optimizar la descripción y la ficha técnica.
+"""
+
     prompt = f"""Sos un experto en SEO y optimización de publicaciones de Mercado Libre Argentina.
 Tu trabajo es optimizar esta publicación para maximizar su visibilidad en búsquedas, tasa de conversión y puntaje de calidad.
-
+{catalog_instructions}
 --- PUBLICACIÓN ACTUAL ---
 Título actual: {title}
 Precio: ${price:,.2f}
@@ -590,7 +648,7 @@ Respondé EXCLUSIVAMENTE en formato JSON válido (sin texto antes ni después, s
 }}
 
 REGLAS:
-- Si el título actual ya es bueno (score > 80), dejá el mismo o hacé ajustes mínimos.
+- Si el título actual ya es bueno (score > 80) o es de catálogo/tiene ventas, dejá el mismo título actual.
 - Para los atributos sugeridos, solo incluí los que puedas inferir con alta confianza del título y descripción existentes.
 - La descripción debe ser persuasiva pero informativa, sin frases prohibidas por ML.
 - Responder SOLO con JSON válido, sin explicaciones adicionales.
@@ -614,15 +672,20 @@ REGLAS:
 
         result = json.loads(cleaned)
 
+        opt_title = title if (is_catalog or sold_quantity > 0) else result.get("optimized_title", title)
+        opt_desc = description if is_catalog else result.get("optimized_description", "")
+
         optimization = {
             "ml_id": ml_id,
             "current_title": title,
             "current_description": description[:500],
-            "optimized_title": result.get("optimized_title", title),
-            "optimized_description": result.get("optimized_description", ""),
+            "optimized_title": opt_title,
+            "optimized_description": opt_desc,
             "suggested_attributes": result.get("suggested_attributes", []),
             "manual_suggestions": result.get("manual_suggestions", []),
             "score_before": score,
+            "catalog_listing": is_catalog,
+            "has_sales": sold_quantity > 0,
             "status": "pending",
             "generated_at": datetime.now().isoformat(),
         }
@@ -641,14 +704,39 @@ REGLAS:
         return {"ml_id": ml_id, "error": str(e)}
 
 
-def optimize_all_items(audit_results: list = None) -> dict:
-    """Optimiza todas las publicaciones con score < 80."""
+def optimize_all_items(audit_results: list = None, status: str = None, ml_ids: list = None, max_score: int = 80) -> dict:
+    """Optimiza publicaciones con IA según filtros (ej: solo activas, IDs específicos, etc.)."""
     if not audit_results:
-        audit_data = audit_all_items()
-        audit_results = audit_data.get("results", [])
+        cached = database.get_latest_meli_audits()
+        if cached:
+            audit_results = cached
+        else:
+            audit_data = audit_all_items()
+            audit_results = audit_data.get("results", [])
 
-    # Filtrar solo las que necesitan optimización
-    to_optimize = [r for r in audit_results if r.get("score", 100) < 80 and not r.get("error")]
+    products_map = {p["ml_id"]: p.get("status") for p in database.get_all_products(include_hidden=True) if p.get("ml_id")}
+
+    to_optimize = []
+    for item in audit_results:
+        item_id = item.get("ml_id")
+        item_status = products_map.get(item_id) or item.get("status") or "active"
+        item["status"] = item_status
+
+        # 1. Si se proveyó una lista explícita de IDs a optimizar
+        if ml_ids is not None:
+            if item_id in ml_ids:
+                to_optimize.append(item)
+            continue
+
+        # 2. Si se filtró por estado (ej: 'active')
+        if status and status != "all":
+            if item_status != status:
+                continue
+
+        # 3. Filtrar por score máximo para optimizar
+        if item.get("score", 100) < max_score and not item.get("error"):
+            to_optimize.append(item)
+
     # Ordenar por score ascendente (las peores primero)
     to_optimize.sort(key=lambda r: r.get("score", 0))
 
@@ -686,30 +774,56 @@ def apply_optimization(ml_id: str, optimization: dict = None) -> dict:
     if not optimization:
         return {"ml_id": ml_id, "success": False, "error": "No hay optimizaciones pendientes para esta publicación"}
 
+    is_catalog = bool(optimization.get("catalog_listing"))
+    has_sales = bool(optimization.get("has_sales"))
+
+    # Si no venían en optimization, consultar datos de la publicación en ML
+    if not is_catalog or not has_sales:
+        item_data = meli_api.fetch_item_full_details(ml_id)
+        if item_data:
+            if item_data.get("catalog_listing"):
+                is_catalog = True
+            if int(item_data.get("sold_quantity") or 0) > 0:
+                has_sales = True
+
     applied = []
     errors = []
 
     # 1. Aplicar título
     new_title = optimization.get("optimized_title")
-    if new_title and new_title != optimization.get("current_title"):
+    if is_catalog:
+        pass  # Título gestionado por catálogo oficial de ML
+    elif has_sales and new_title and new_title != optimization.get("current_title"):
+        pass  # Publicaciones con ventas no permiten cambio de título en ML
+    elif new_title and new_title != optimization.get("current_title"):
         try:
             ok, msg = meli_api.update_item_title(ml_id, new_title)
             if ok:
                 applied.append("title")
+                try:
+                    database.update_product_title(ml_id, new_title)
+                except Exception:
+                    pass
             else:
-                errors.append(f"Error actualizando título: {msg}")
+                errors.append(f"Título: {msg}")
         except Exception as e:
             errors.append(f"Excepción actualizando título: {e}")
 
     # 2. Aplicar descripción
     new_desc = optimization.get("optimized_description")
-    if new_desc and len(new_desc) > 50:
+    if is_catalog:
+        pass  # Descripción gestionada por catálogo oficial de ML
+    elif new_desc and len(new_desc) > 30 and new_desc != optimization.get("current_description"):
         try:
             ok, msg = meli_api.update_item_description(ml_id, new_desc)
             if ok:
                 applied.append("description")
+                try:
+                    database.update_product_description_meli(ml_id, new_desc)
+                except Exception:
+                    pass
             else:
-                errors.append(f"Error actualizando descripción: {msg}")
+                errors.append(f"Descripción: {msg}")
         except Exception as e:
             errors.append(f"Excepción actualizando descripción: {e}")
 
@@ -721,20 +835,25 @@ def apply_optimization(ml_id: str, optimization: dict = None) -> dict:
             if ok:
                 applied.append("attributes")
             else:
-                errors.append(f"Error actualizando atributos: {msg}")
+                errors.append(f"Atributos: {msg}")
         except Exception as e:
             errors.append(f"Excepción actualizando atributos: {e}")
 
+    # Re-auditar inmediatamente para reflejar nuevo score y datos actualizados
+    updated_audit = audit_single_item(ml_id)
+
     # Actualizar estado en DB
-    status = "applied" if applied and not errors else ("partial" if applied else "failed")
+    success = bool(applied) or (is_catalog and not errors)
+    status = "applied" if success and not errors else ("partial" if applied else "failed")
     database.update_meli_optimization_status(ml_id, status, applied=applied, errors=errors)
 
     return {
         "ml_id": ml_id,
-        "success": bool(applied),
+        "success": success,
         "applied": applied,
         "errors": errors,
         "status": status,
+        "updated_audit": updated_audit,
     }
 
 

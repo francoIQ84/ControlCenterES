@@ -3637,8 +3637,8 @@ export default function Marketing() {
 
       {/* MODAL: Crear Grupo de Difusión */}
       {showCreateGroupModal && (
-        <div style={{position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.7)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20}}>
-          <div className="card" style={{maxWidth: 680, width: '100%', maxHeight: '90vh', overflowY: 'auto', padding: 24, position: 'relative'}}>
+        <div style={{position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.7)', zIndex: 9999, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', overflowY: 'auto', padding: '12px 8px 24px', boxSizing: 'border-box'}}>
+          <div className="card" style={{maxWidth: 660, width: '100%', padding: '16px 14px 20px', position: 'relative', flexShrink: 0}}>
             <button onClick={() => setShowCreateGroupModal(false)} style={{position: 'absolute', top: 15, right: 15, background: 'none', border: 'none', color: 'var(--text-primary)', cursor: 'pointer'}}>
               <X size={20} />
             </button>
@@ -3807,9 +3807,9 @@ export default function Marketing() {
 
       {/* MODAL: Ver / Editar Miembros del Grupo */}
       {viewingMembersGroup && (
-        <div style={{position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.7)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20}}>
-          <div className="card" style={{maxWidth: 680, width: '100%', maxHeight: '85vh', overflowY: 'auto', padding: 24, position: 'relative'}}>
-            <button onClick={() => setViewingMembersGroup(null)} style={{position: 'absolute', top: 15, right: 15, background: 'none', border: 'none', color: 'var(--text-primary)', cursor: 'pointer'}}>
+        <div style={{position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.7)', zIndex: 9999, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', overflowY: 'auto', padding: '12px 8px 24px', boxSizing: 'border-box'}}>
+          <div className="card" style={{maxWidth: 660, width: '100%', padding: '16px 14px 20px', position: 'relative', flexShrink: 0}}>
+            <button onClick={() => setViewingMembersGroup(null)} style={{position: 'absolute', top: 12, right: 12, background: 'none', border: 'none', color: 'var(--text-primary)', cursor: 'pointer'}}>
               <X size={20} />
             </button>
             <h3 style={{marginTop: 0, marginBottom: 5}}>

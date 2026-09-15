@@ -801,12 +801,13 @@ export default function Tenants() {
         <div style={{
           position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
           backgroundColor: 'rgba(0, 0, 0, 0.65)', backdropFilter: 'blur(3px)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          zIndex: 9999, padding: '16px'
+          display: 'flex', alignItems: 'flex-start', justifyContent: 'center',
+          overflowY: 'auto', zIndex: 9999,
+          padding: '12px 8px 24px', boxSizing: 'border-box'
         }}>
           <div className="card" style={{
-            maxWidth: '720px', width: '100%', maxHeight: '90vh', overflowY: 'auto',
-            borderRadius: '16px', boxShadow: '0 20px 40px rgba(0,0,0,0.35)', padding: '24px'
+            maxWidth: '700px', width: '100%',
+            borderRadius: '12px', boxShadow: '0 20px 40px rgba(0,0,0,0.35)', padding: '16px 14px 20px', flexShrink: 0
           }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
               <div>
@@ -1093,12 +1094,13 @@ export default function Tenants() {
         <div style={{
           position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
           backgroundColor: 'rgba(0, 0, 0, 0.65)', backdropFilter: 'blur(3px)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          zIndex: 9999, padding: '16px'
+          display: 'flex', alignItems: 'flex-start', justifyContent: 'center',
+          overflowY: 'auto', zIndex: 9999,
+          padding: '12px 8px 24px', boxSizing: 'border-box'
         }}>
           <div className="card" style={{
-            maxWidth: '620px', width: '100%', maxHeight: '90vh', overflowY: 'auto',
-            borderRadius: '16px', boxShadow: '0 20px 40px rgba(0,0,0,0.35)', padding: '24px'
+            maxWidth: '600px', width: '100%',
+            borderRadius: '12px', boxShadow: '0 20px 40px rgba(0,0,0,0.35)', padding: '16px 14px 20px', flexShrink: 0
           }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14 }}>
               <div>

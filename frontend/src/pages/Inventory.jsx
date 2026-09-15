@@ -1746,8 +1746,9 @@ export default function Inventory() {
                 type="button"
                 className="btn" 
                 style={{
-                  padding: '6px 12px', 
-                  fontSize: '0.8rem',
+                  padding: '7px 14px', 
+                  fontSize: '0.85rem',
+                  fontWeight: viewMode === 'detailed' ? '700' : 'normal',
                   backgroundColor: viewMode === 'detailed' ? 'var(--accent-blue)' : 'transparent',
                   color: viewMode === 'detailed' ? '#fff' : 'var(--text-secondary)',
                   border: 'none',
@@ -1763,8 +1764,9 @@ export default function Inventory() {
                 type="button"
                 className="btn" 
                 style={{
-                  padding: '6px 12px', 
-                  fontSize: '0.8rem',
+                  padding: '7px 14px', 
+                  fontSize: '0.85rem',
+                  fontWeight: viewMode === 'compact' ? '700' : 'normal',
                   backgroundColor: viewMode === 'compact' ? 'var(--accent-blue)' : 'transparent',
                   color: viewMode === 'compact' ? '#fff' : 'var(--text-secondary)',
                   border: 'none',
@@ -1961,76 +1963,107 @@ export default function Inventory() {
     )}
 
       {showAddModal && (
-        <div style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          backgroundColor: 'rgba(0, 0, 0, 0.7)',
-          display: 'flex',
-          justifyContent: 'center',
-          alignItems: 'center',
-          zIndex: 1000
-        }}>
-          <div className="card" style={{
-            width: 500,
-            maxWidth: '90%',
-            maxHeight: '90vh',
+        <div
+          onClick={e => { if (e.target === e.currentTarget) handleCancelAdd(); }}
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(0, 0, 0, 0.65)',
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'flex-start',
             overflowY: 'auto',
-            padding: 25,
+            zIndex: 1000,
+            padding: '12px 8px 24px',
+            boxSizing: 'border-box'
+          }}
+        >
+          <div className="card" style={{
+            width: '100%',
+            maxWidth: 480,
+            padding: '16px 14px 20px',
             border: '1px solid var(--border-color)',
-            backgroundColor: 'var(--bg-card)'
+            backgroundColor: 'var(--bg-card)',
+            borderRadius: 12,
+            flexShrink: 0
           }}>
-            <h3 style={{marginTop: 0, marginBottom: 20}}>Agregar Nuevo Producto</h3>
-            
-            <form onSubmit={handleAddSubmit} style={{display: 'flex', flexDirection: 'column', gap: 15}}>
-              <label style={{fontSize: '0.85rem'}}>Título *
-                <input type="text" required value={newProduct.title} onChange={e => setNewProduct({...newProduct, title: e.target.value})} style={{width: '100%', marginTop: 5}}/>
+            {/* Header */}
+            <div style={{display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14}}>
+              <h3 style={{margin: 0, fontSize: '1rem', fontWeight: 700}}>➕ Agregar Producto</h3>
+              <button type="button" onClick={handleCancelAdd} style={{background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', fontSize: '1.2rem', lineHeight: 1, padding: '2px 6px', borderRadius: 4}}>✕</button>
+            </div>
+
+            <form onSubmit={handleAddSubmit} style={{display: 'flex', flexDirection: 'column', gap: 10}}>
+
+              {/* Título */}
+              <label style={{fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'flex', flexDirection: 'column', gap: 3}}>
+                TÍTULO *
+                <input type="text" required value={newProduct.title} onChange={e => setNewProduct({...newProduct, title: e.target.value})} style={{width: '100%', fontSize: '0.9rem', padding: '7px 9px', boxSizing: 'border-box'}}/>
               </label>
-              
-              <div style={{display: 'flex', gap: 15}}>
-                <label style={{flex: 1, fontSize: '0.85rem'}}>Stock *
-                  <input type="number" required min="0" value={newProduct.qty} onChange={e => setNewProduct({...newProduct, qty: parseInt(e.target.value) || 0})} style={{width: '100%', marginTop: 5}}/>
+
+              {/* Fila 1: Stock + Costo Base */}
+              <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8}}>
+                <label style={{fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'flex', flexDirection: 'column', gap: 3}}>
+                  STOCK *
+                  <input type="number" required min="0" value={newProduct.qty} onChange={e => setNewProduct({...newProduct, qty: parseInt(e.target.value) || 0})} style={{width: '100%', fontSize: '0.88rem', padding: '7px 8px', boxSizing: 'border-box'}}/>
                 </label>
-                <label style={{flex: 1, fontSize: '0.85rem'}}>Costo Base *
-                  <input type="number" required step="0.01" min="0" value={newProduct.cost} onChange={e => setNewProduct({...newProduct, cost: parseFloat(e.target.value) || 0})} style={{width: '100%', marginTop: 5}}/>
-                </label>
-                <label style={{flex: 1, fontSize: '0.85rem'}}>Costo Adic. ML
-                  <input type="number" step="0.01" min="0" value={newProduct.cost_meli} onChange={e => setNewProduct({...newProduct, cost_meli: parseFloat(e.target.value) || 0})} style={{width: '100%', marginTop: 5}}/>
-                </label>
-                <label style={{flex: 1, fontSize: '0.85rem'}}>Stock Mínimo
-                  <input type="number" min="0" value={newProduct.min_stock} onChange={e => setNewProduct({...newProduct, min_stock: parseInt(e.target.value) || 0})} style={{width: '100%', marginTop: 5}}/>
+                <label style={{fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'flex', flexDirection: 'column', gap: 3}}>
+                  COSTO BASE *
+                  <input type="number" required step="0.01" min="0" value={newProduct.cost} onChange={e => setNewProduct({...newProduct, cost: parseFloat(e.target.value) || 0})} style={{width: '100%', fontSize: '0.88rem', padding: '7px 8px', boxSizing: 'border-box'}}/>
                 </label>
               </div>
 
-              <div style={{display: 'flex', gap: 15, flexWrap: 'wrap'}}>
-                <label style={{flex: 1, minWidth: 130, fontSize: '0.85rem'}}>Precio ML / Original *
-                  <input type="number" required step="0.01" min="0" value={newProduct.price} onChange={e => setNewProduct({...newProduct, price: parseFloat(e.target.value) || 0})} style={{width: '100%', marginTop: 5}}/>
+              {/* Fila 2: Costo Adic. ML + Stock Mínimo */}
+              <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8}}>
+                <label style={{fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'flex', flexDirection: 'column', gap: 3}}>
+                  COSTO ADIC. ML
+                  <input type="number" step="0.01" min="0" value={newProduct.cost_meli} onChange={e => setNewProduct({...newProduct, cost_meli: parseFloat(e.target.value) || 0})} style={{width: '100%', fontSize: '0.88rem', padding: '7px 8px', boxSizing: 'border-box'}}/>
                 </label>
-                <label style={{flex: 1, minWidth: 130, fontSize: '0.85rem'}}>Precio Web / Lista *
-                  <input type="number" required step="0.01" min="0" value={newProduct.price_web} onChange={e => setNewProduct({...newProduct, price_web: parseFloat(e.target.value) || 0})} style={{width: '100%', marginTop: 5}}/>
-                </label>
-                <label style={{flex: 1, minWidth: 130, fontSize: '0.85rem'}} title="Descuento en efectivo sobre el precio de lista para cobro en local">💵 % Desc. Efectivo
-                  <input type="number" step="1" min="0" max="100" value={newProduct.cash_discount_pct || 0} onChange={e => setNewProduct({...newProduct, cash_discount_pct: parseFloat(e.target.value) || 0})} style={{width: '100%', marginTop: 5}} placeholder="0"/>
+                <label style={{fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'flex', flexDirection: 'column', gap: 3}}>
+                  STOCK MÍNIMO
+                  <input type="number" min="0" value={newProduct.min_stock} onChange={e => setNewProduct({...newProduct, min_stock: parseInt(e.target.value) || 0})} style={{width: '100%', fontSize: '0.88rem', padding: '7px 8px', boxSizing: 'border-box'}}/>
                 </label>
               </div>
 
-              <label style={{fontSize: '0.85rem'}}>
-                <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 5}}>
-                  <span>URL de Imagen (Opcional)</span>
-                  <button type="button" className="btn" style={{padding: '3px 8px', fontSize: '0.75rem'}} onClick={() => openGallery((url) => setNewProduct(prev => ({...prev, images: url})))}>
-                    Seleccionar de Galería
+              {/* Fila 3: Precio ML + Precio Web */}
+              <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8}}>
+                <label style={{fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'flex', flexDirection: 'column', gap: 3}}>
+                  PRECIO ML / ORIG. *
+                  <input type="number" required step="0.01" min="0" value={newProduct.price} onChange={e => setNewProduct({...newProduct, price: parseFloat(e.target.value) || 0})} style={{width: '100%', fontSize: '0.88rem', padding: '7px 8px', boxSizing: 'border-box'}}/>
+                </label>
+                <label style={{fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'flex', flexDirection: 'column', gap: 3}}>
+                  PRECIO WEB / LISTA *
+                  <input type="number" required step="0.01" min="0" value={newProduct.price_web} onChange={e => setNewProduct({...newProduct, price_web: parseFloat(e.target.value) || 0})} style={{width: '100%', fontSize: '0.88rem', padding: '7px 8px', boxSizing: 'border-box'}}/>
+                </label>
+              </div>
+
+              {/* % Desc. Efectivo */}
+              <label style={{fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'flex', flexDirection: 'column', gap: 3}} title="Descuento en efectivo sobre el precio de lista para cobro en local">
+                💵 % DESC. EFECTIVO
+                <input type="number" step="1" min="0" max="100" value={newProduct.cash_discount_pct || 0} onChange={e => setNewProduct({...newProduct, cash_discount_pct: parseFloat(e.target.value) || 0})} style={{width: '100%', fontSize: '0.88rem', padding: '7px 8px', boxSizing: 'border-box'}} placeholder="0"/>
+              </label>
+
+              {/* Imagen */}
+              <label style={{fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'flex', flexDirection: 'column', gap: 3}}>
+                <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
+                  <span>URL IMAGEN (OPCIONAL)</span>
+                  <button type="button" className="btn" style={{padding: '3px 8px', fontSize: '0.7rem'}} onClick={() => openGallery((url) => setNewProduct(prev => ({...prev, images: url})))}>
+                    📷 Galería
                   </button>
                 </div>
-                <input type="text" value={newProduct.images} onChange={e => setNewProduct({...newProduct, images: e.target.value})} placeholder="https://ejemplo.com/foto.jpg" style={{width: '100%'}}/>
+                <input type="text" value={newProduct.images} onChange={e => setNewProduct({...newProduct, images: e.target.value})} placeholder="https://ejemplo.com/foto.jpg" style={{width: '100%', fontSize: '0.85rem', padding: '7px 8px', boxSizing: 'border-box'}}/>
               </label>
 
-              <label style={{fontSize: '0.85rem'}}>Categoría
-                <select 
-                  value={newProduct.category_id} 
-                  onChange={e => setNewProduct({...newProduct, category_id: e.target.value ? parseInt(e.target.value) : ""})} 
-                  style={{width: '100%', marginTop: 5}}
+              {/* Categoría */}
+              <label style={{fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'flex', flexDirection: 'column', gap: 3}}>
+                CATEGORÍA
+                <select
+                  value={newProduct.category_id}
+                  onChange={e => setNewProduct({...newProduct, category_id: e.target.value ? parseInt(e.target.value) : ""})}
+                  style={{width: '100%', fontSize: '0.88rem', padding: '7px 8px', boxSizing: 'border-box', backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)', border: '1px solid var(--border-color)', borderRadius: 4}}
                 >
                   <option value="">Sin Categoría</option>
                   {categories.map(c => (
@@ -2039,41 +2072,46 @@ export default function Inventory() {
                 </select>
               </label>
 
-              <label style={{fontSize: '0.85rem'}}>Descripción Web
-                <textarea value={newProduct.description} onChange={e => setNewProduct({...newProduct, description: e.target.value})} style={{width: '100%', height: 70, marginTop: 5, padding: 8, backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)', border: '1px solid var(--border-color)', borderRadius: 4}}/>
+              {/* Descripción Web */}
+              <label style={{fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'flex', flexDirection: 'column', gap: 3}}>
+                DESCRIPCIÓN WEB
+                <textarea value={newProduct.description} onChange={e => setNewProduct({...newProduct, description: e.target.value})} style={{width: '100%', height: 52, fontSize: '0.85rem', padding: '7px 8px', boxSizing: 'border-box', backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)', border: '1px solid var(--border-color)', borderRadius: 4, resize: 'vertical'}}/>
               </label>
 
-              <label style={{display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.85rem', cursor: 'pointer'}}>
-                <input type="checkbox" checked={newProduct.is_web_active} onChange={e => setNewProduct({...newProduct, is_web_active: e.target.checked})} style={{width: 'auto'}}/>
+              {/* Mostrar en Tienda Web */}
+              <label style={{display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.85rem', cursor: 'pointer', padding: '4px 0'}}>
+                <input type="checkbox" checked={newProduct.is_web_active} onChange={e => setNewProduct({...newProduct, is_web_active: e.target.checked})} style={{width: 'auto', accentColor: 'var(--accent-blue)'}}/>
                 Mostrar en la Tienda Web
               </label>
 
-              <div style={{border: '1px solid var(--border-color)', borderRadius: 6, padding: 12, display: 'flex', flexDirection: 'column', gap: 10}}>
-                <span style={{fontSize: '0.85rem', fontWeight: 'bold'}}>Destino del Producto:</span>
+              {/* Destino */}
+              <div style={{border: '1px solid var(--border-color)', borderRadius: 6, padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 8}}>
+                <span style={{fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-secondary)'}}>DESTINO DEL PRODUCTO</span>
                 <label style={{display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.85rem', cursor: 'pointer'}}>
                   <input type="radio" name="destination" checked={!newProduct.publish_to_meli} onChange={() => setNewProduct({...newProduct, publish_to_meli: false})}/>
-                  Solo en la Tienda Web (Local)
+                  Solo Tienda Web (Local)
                 </label>
                 <label style={{display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.85rem', cursor: 'pointer'}}>
                   <input type="radio" name="destination" checked={newProduct.publish_to_meli} onChange={() => setNewProduct({...newProduct, publish_to_meli: true})}/>
-                  Publicar en Mercado Libre y Tienda Web
+                  Publicar en Mercado Libre
                 </label>
-
                 {newProduct.publish_to_meli && (
-                  <div style={{fontSize: '0.75rem', color: 'var(--accent-blue)', padding: '5px 10px', backgroundColor: 'rgba(59, 130, 246, 0.1)', borderRadius: 4, marginTop: 5}}>
-                    💡 Nota: En modo real se recomienda publicar directamente en Mercado Libre y sincronizar. En modo Demo, esto simulará la publicación de inmediato generando un ID MLA.
+                  <div style={{fontSize: '0.72rem', color: 'var(--accent-blue)', padding: '5px 8px', backgroundColor: 'rgba(59, 130, 246, 0.1)', borderRadius: 4}}>
+                    💡 En modo Demo se simulará la publicación generando un ID MLA.
                   </div>
                 )}
               </div>
 
-              <div style={{display: 'flex', justify: 'flex-end', gap: 10, marginTop: 10}}>
-                <button type="button" className="btn" style={{backgroundColor: 'transparent', border: '1px solid var(--border-color)', color: 'var(--text-primary)'}} onClick={handleCancelAdd}>
+              {/* Botones */}
+              <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 4}}>
+                <button type="button" className="btn" style={{backgroundColor: 'transparent', border: '1px solid var(--border-color)', color: 'var(--text-primary)', padding: '10px', fontSize: '0.88rem', borderRadius: 8}} onClick={handleCancelAdd}>
                   Cancelar
                 </button>
-                <button type="submit" className="btn">
-                  Guardar Producto
+                <button type="submit" className="btn" style={{padding: '10px', fontSize: '0.88rem', fontWeight: 700, borderRadius: 8}}>
+                  Guardar
                 </button>
               </div>
+
             </form>
           </div>
         </div>
@@ -2362,9 +2400,9 @@ export default function Inventory() {
                       <th onClick={() => requestSort('quality')} style={{cursor: 'pointer', userSelect: 'none', width: 85, textAlign: 'center'}} title="Objetivos de calidad pendientes. Ordenar dos veces para ver las peores primero.">Calidad{getSortIcon('quality')}</th>
                       <th onClick={() => requestSort('stock')} style={{cursor: 'pointer', userSelect: 'none', width: 60}} title="Ordenar por Stock">Stock{getSortIcon('stock')}</th>
                       <th style={{width: 75}}>P. ML</th>
+                      <th style={{width: 75}}>P. Web</th>
                       <th style={{width: 75}}>C. Base</th>
                       <th style={{width: 75}}>C. ML ⓘ</th>
-                      <th style={{width: 75}}>P. Web</th>
                       <th style={{width: 95, textAlign: 'center'}} title="Precio y descuento para cobro en efectivo en el local físico (No visible en la web)">💵 P. Efectivo</th>
                       <th onClick={() => requestSort('is_web_active')} style={{cursor: 'pointer', userSelect: 'none', width: 85, textAlign: 'center'}} title="Ordenar por Estado de Tienda Web (Activo/Desactivo)">Estado Web{getSortIcon('is_web_active')}</th>
                       <th style={{width: 100}}>Acciones</th>
@@ -2498,64 +2536,52 @@ export default function Inventory() {
       )}
 
       {showCategoriesModal && (
-        <div style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          backgroundColor: 'rgba(0, 0, 0, 0.7)',
-          display: 'flex',
-          justifyContent: 'center',
-          alignItems: 'center',
-          zIndex: 1000
-        }}>
+        <div
+          onClick={e => { if (e.target === e.currentTarget) setShowCategoriesModal(false) }}
+          style={{
+            position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+            backgroundColor: 'rgba(0, 0, 0, 0.65)', display: 'flex',
+            justifyContent: 'center', alignItems: 'flex-start',
+            overflowY: 'auto', zIndex: 1000,
+            padding: '12px 8px 24px', boxSizing: 'border-box'
+          }}
+        >
           <div className="card" style={{
-            width: 450,
-            maxWidth: '90%',
-            maxHeight: '80vh',
-            overflowY: 'auto',
-            padding: 25,
+            width: '100%', maxWidth: 430,
+            padding: '16px 14px 20px',
             border: '1px solid var(--border-color)',
-            backgroundColor: 'var(--bg-card)',
-            borderRadius: 12
+            backgroundColor: 'var(--bg-card)', borderRadius: 12, flexShrink: 0
           }}>
-            <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, borderBottom: '1px solid var(--border-color)', paddingBottom: 15}}>
-              <h3 style={{margin: 0}}>Gestionar Categorías</h3>
-              <button 
-                className="btn" 
-                style={{backgroundColor: 'transparent', border: '1px solid var(--border-color)', color: 'var(--text-primary)', padding: '4px 8px', fontSize: '0.75rem'}}
-                onClick={() => setShowCategoriesModal(false)}
-              >
-                Cerrar
-              </button>
+            <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, borderBottom: '1px solid var(--border-color)', paddingBottom: 12}}>
+              <h3 style={{margin: 0, fontSize: '1rem', fontWeight: 700}}>🏷️ Categorías</h3>
+              <button type="button" onClick={() => setShowCategoriesModal(false)} style={{background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', fontSize: '1.2rem', lineHeight: 1, padding: '2px 6px'}}>✕</button>
             </div>
             
-            <form onSubmit={handleCreateCategory} style={{display: 'flex', gap: 10, marginBottom: 20}}>
+            <form onSubmit={handleCreateCategory} style={{display: 'flex', gap: 8, marginBottom: 16}}>
               <input 
                 type="text" 
                 required 
                 placeholder="Nueva categoría (ej. Bombas)" 
                 value={newCategoryName}
                 onChange={e => setNewCategoryName(e.target.value)}
-                style={{flex: 1, padding: 6}}
+                style={{flex: 1, padding: '7px 9px', fontSize: '0.88rem', boxSizing: 'border-box'}}
               />
-              <button type="submit" className="btn" style={{padding: '6px 12px'}}>Añadir</button>
+              <button type="submit" className="btn" style={{padding: '7px 12px', fontSize: '0.85rem', whiteSpace: 'nowrap'}}>Añadir</button>
             </form>
             
-            <div style={{display: 'flex', flexDirection: 'column', gap: 10}}>
-              <span style={{fontSize: '0.8rem', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em'}}>Categorías Existentes</span>
+            <div style={{display: 'flex', flexDirection: 'column', gap: 8}}>
+              <span style={{fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em'}}>Categorías Existentes</span>
               {categories.length === 0 ? (
-                <p style={{color: 'var(--text-secondary)', fontSize: '0.9rem', textAlign: 'center', margin: '20px 0'}}>No hay categorías creadas aún.</p>
+                <p style={{color: 'var(--text-secondary)', fontSize: '0.88rem', textAlign: 'center', margin: '16px 0'}}>No hay categorías creadas aún.</p>
               ) : (
-                <ul style={{listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: 8, maxHeight: '30vh', overflowY: 'auto'}}>
+                <ul style={{listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: 6, maxHeight: '40vh', overflowY: 'auto'}}>
                   {categories.map(c => (
-                    <li key={c.id} style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 12px', border: '1px solid var(--border-color)', borderRadius: 6, backgroundColor: 'rgba(0,0,0,0.02)'}}>
-                      <span style={{fontWeight: 500, fontSize: '0.9rem'}}>{c.name} <small style={{color: 'var(--text-secondary)', fontWeight: 'normal'}}>({categoryCounts[String(c.id)] || 0} productos)</small></span>
+                    <li key={c.id} style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '7px 10px', border: '1px solid var(--border-color)', borderRadius: 6}}>
+                      <span style={{fontWeight: 500, fontSize: '0.88rem'}}>{c.name} <small style={{color: 'var(--text-secondary)', fontWeight: 'normal'}}>({categoryCounts[String(c.id)] || 0})</small></span>
                       <button 
                         type="button" 
                         className="btn" 
-                        style={{backgroundColor: 'rgba(239, 68, 68, 0.1)', color: 'var(--accent-red)', padding: '2px 6px', fontSize: '0.75rem', border: 'none'}}
+                        style={{backgroundColor: 'rgba(239, 68, 68, 0.1)', color: 'var(--accent-red)', padding: '2px 8px', fontSize: '0.72rem', border: 'none'}}
                         onClick={() => handleDeleteCategory(c.id)}
                       >
                         Eliminar
@@ -2582,27 +2608,31 @@ export default function Inventory() {
         />
       )}
       {showBulkCategoryModal && (
-        <div style={{
-          position: 'fixed',
-          top: 0, left: 0, right: 0, bottom: 0,
-          backgroundColor: 'rgba(0,0,0,0.7)',
-          display: 'flex', justifyContent: 'center', alignItems: 'center',
-          zIndex: 1050
-        }}>
+        <div
+          onClick={e => { if (e.target === e.currentTarget) setShowBulkCategoryModal(false) }}
+          style={{
+            position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+            backgroundColor: 'rgba(0,0,0,0.65)', display: 'flex', justifyContent: 'center', alignItems: 'flex-start',
+            overflowY: 'auto', zIndex: 1050, padding: '12px 8px 24px', boxSizing: 'border-box'
+          }}
+        >
           <div className="card" style={{
-            width: 420, maxWidth: '90%', padding: 25,
-            backgroundColor: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: 12
+            width: '100%', maxWidth: 400, padding: '16px 14px 20px',
+            backgroundColor: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: 12, flexShrink: 0
           }}>
-            <h3 style={{marginTop: 0, marginBottom: 15}}>Asignar Categoría en Lote</h3>
-            <p style={{fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: 15}}>
-              Se asignará la categoría elegida a los <strong>{selectedIds.length}</strong> productos seleccionados.
+            <div style={{display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12}}>
+              <h3 style={{margin: 0, fontSize: '1rem', fontWeight: 700}}>Asignar Categoría en Lote</h3>
+              <button type="button" onClick={() => setShowBulkCategoryModal(false)} style={{background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', fontSize: '1.2rem', lineHeight: 1, padding: '2px 6px'}}>✕</button>
+            </div>
+            <p style={{fontSize: '0.82rem', color: 'var(--text-secondary)', marginBottom: 12, marginTop: 0}}>
+              Se asignará la categoría a los <strong>{selectedIds.length}</strong> productos seleccionados.
             </p>
-            <form onSubmit={handleApplyBulkCategory} style={{display: 'flex', flexDirection: 'column', gap: 15}}>
-              <label style={{fontSize: '0.85rem'}}>Categoría:
+            <form onSubmit={handleApplyBulkCategory} style={{display: 'flex', flexDirection: 'column', gap: 10}}>
+              <label style={{fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', display: 'flex', flexDirection: 'column', gap: 3}}>CATEGORÍA
                 <select 
                   value={bulkTargetCategory}
                   onChange={e => setBulkTargetCategory(e.target.value)}
-                  style={{width: '100%', marginTop: 6, padding: '8px 10px', borderRadius: 6, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)'}}
+                  style={{width: '100%', fontSize: '0.88rem', padding: '7px 9px', borderRadius: 6, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)', boxSizing: 'border-box'}}
                 >
                   <option value="">Sin Categoría ({uncategorizedCount})</option>
                   {categories.map(c => (
@@ -2610,12 +2640,10 @@ export default function Inventory() {
                   ))}
                 </select>
               </label>
-              <div style={{display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 10}}>
-                <button type="button" className="btn" style={{backgroundColor: 'transparent', border: '1px solid var(--border-color)', color: 'var(--text-primary)'}} onClick={() => setShowBulkCategoryModal(false)}>
-                  Cancelar
-                </button>
-                <button type="submit" className="btn" style={{backgroundColor: 'var(--accent-blue)', color: '#fff'}}>
-                  Aplicar a {selectedIds.length} Productos
+              <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 4}}>
+                <button type="button" className="btn" style={{backgroundColor: 'transparent', border: '1px solid var(--border-color)', color: 'var(--text-primary)', padding: '10px', borderRadius: 8, fontSize: '0.88rem'}} onClick={() => setShowBulkCategoryModal(false)}>Cancelar</button>
+                <button type="submit" className="btn" style={{backgroundColor: 'var(--accent-blue)', color: '#fff', padding: '10px', borderRadius: 8, fontWeight: 700, fontSize: '0.88rem'}}>
+                  Aplicar ({selectedIds.length})
                 </button>
               </div>
             </form>
@@ -2624,24 +2652,28 @@ export default function Inventory() {
       )}
 
       {showBulkPriceModal && (
-        <div style={{
-          position: 'fixed',
-          top: 0, left: 0, right: 0, bottom: 0,
-          backgroundColor: 'rgba(0,0,0,0.7)',
-          display: 'flex', justifyContent: 'center', alignItems: 'center',
-          zIndex: 1050
-        }}>
+        <div
+          onClick={e => { if (e.target === e.currentTarget) setShowBulkPriceModal(false) }}
+          style={{
+            position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+            backgroundColor: 'rgba(0,0,0,0.65)', display: 'flex', justifyContent: 'center', alignItems: 'flex-start',
+            overflowY: 'auto', zIndex: 1050, padding: '12px 8px 24px', boxSizing: 'border-box'
+          }}
+        >
           <div className="card" style={{
-            width: 480, maxWidth: '90%', padding: 25,
-            backgroundColor: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: 12
+            width: '100%', maxWidth: 460, padding: '16px 14px 20px',
+            backgroundColor: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: 12, flexShrink: 0
           }}>
-            <h3 style={{marginTop: 0, marginBottom: 15}}>Ajuste Masivo de Precios / Efectivo</h3>
-            <p style={{fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: 15}}>
+            <div style={{display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12}}>
+              <h3 style={{margin: 0, fontSize: '1rem', fontWeight: 700}}>Ajuste Masivo de Precios</h3>
+              <button type="button" onClick={() => setShowBulkPriceModal(false)} style={{background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', fontSize: '1.2rem', lineHeight: 1, padding: '2px 6px'}}>✕</button>
+            </div>
+            <p style={{fontSize: '0.82rem', color: 'var(--text-secondary)', marginBottom: 12, marginTop: 0}}>
               Modificar el precio o descuento de los <strong>{selectedIds.length}</strong> productos seleccionados.
             </p>
 
-            <form onSubmit={handleApplyBulkPriceAdjust} style={{display: 'flex', flexDirection: 'column', gap: 15}}>
-              <label style={{fontSize: '0.85rem'}}>Aplicar a:
+            <form onSubmit={handleApplyBulkPriceAdjust} style={{display: 'flex', flexDirection: 'column', gap: 10}}>
+              <label style={{fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', display: 'flex', flexDirection: 'column', gap: 3}}>APLICAR A
                 <select 
                   value={bulkPriceTarget} 
                   onChange={e => {
@@ -2653,26 +2685,26 @@ export default function Inventory() {
                       setBulkPriceType('percentage')
                     }
                   }}
-                  style={{width: '100%', marginTop: 5, padding: '7px 10px', borderRadius: 6, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)'}}
+                  style={{width: '100%', fontSize: '0.88rem', padding: '7px 9px', borderRadius: 6, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)', boxSizing: 'border-box'}}
                 >
-                  <option value="both">Ambos (Precio MeLi y Precio Web)</option>
-                  <option value="cash_discount">💵 Descuento en Efectivo (% desc. sobre precio lista)</option>
+                  <option value="both">Ambos (MeLi y Web)</option>
+                  <option value="cash_discount">💵 Descuento en Efectivo (%)</option>
                   <option value="web">Solo Precio Tienda Web</option>
                   <option value="meli">Solo Precio Mercado Libre</option>
                 </select>
               </label>
 
-              <div style={{display: 'flex', gap: 12}}>
-                <label style={{flex: 1, fontSize: '0.85rem'}}>Tipo de Ajuste:
+              <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8}}>
+                <label style={{fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', display: 'flex', flexDirection: 'column', gap: 3}}>TIPO DE AJUSTE
                   <select 
                     value={bulkPriceType} 
                     onChange={e => setBulkPriceType(e.target.value)}
-                    style={{width: '100%', marginTop: 5, padding: '7px 10px', borderRadius: 6, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)'}}
+                    style={{width: '100%', fontSize: '0.85rem', padding: '7px 8px', borderRadius: 6, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)', boxSizing: 'border-box'}}
                   >
                     {bulkPriceTarget === 'cash_discount' ? (
                       <>
-                        <option value="set_exact">Fijar porcentaje directo (%)</option>
-                        <option value="percentage">Sumar / Restar al % actual (%)</option>
+                        <option value="set_exact">Fijar % directo</option>
+                        <option value="percentage">Sumar / Restar al %</option>
                       </>
                     ) : (
                       <>
@@ -2684,11 +2716,8 @@ export default function Inventory() {
                   </select>
                 </label>
 
-                <label style={{flex: 1, fontSize: '0.85rem'}}>
-                  {bulkPriceTarget === 'cash_discount' 
-                    ? 'Descuento (%):' 
-                    : `Valor (${bulkPriceType === 'percentage' ? '%' : '$'}):`
-                  }
+                <label style={{fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', display: 'flex', flexDirection: 'column', gap: 3}}>
+                  {bulkPriceTarget === 'cash_discount' ? 'DESCUENTO (%)' : `VALOR (${bulkPriceType === 'percentage' ? '%' : '$'})`}
                   <input 
                     type="number" 
                     step="any"
@@ -2698,34 +2727,33 @@ export default function Inventory() {
                     value={bulkPriceValue}
                     onChange={e => setBulkPriceValue(e.target.value)}
                     placeholder={bulkPriceTarget === 'cash_discount' ? "ej: 10" : "ej: 10 o -5"}
-                    style={{width: '100%', marginTop: 5, padding: '7px 10px', borderRadius: 6, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)'}}
+                    style={{width: '100%', fontSize: '0.88rem', padding: '7px 8px', borderRadius: 6, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)', boxSizing: 'border-box'}}
                   />
                 </label>
               </div>
 
               <div style={{
-                padding: '10px 14px',
-                borderRadius: 6,
+                padding: '9px 12px', borderRadius: 6,
                 backgroundColor: bulkPriceTarget === 'cash_discount' ? 'rgba(16, 185, 129, 0.1)' : 'rgba(59, 130, 246, 0.1)',
                 border: bulkPriceTarget === 'cash_discount' ? '1px solid rgba(16, 185, 129, 0.3)' : '1px solid rgba(59, 130, 246, 0.2)',
-                fontSize: '0.8rem',
+                fontSize: '0.78rem',
                 color: bulkPriceTarget === 'cash_discount' ? '#059669' : 'var(--accent-blue)'
               }}>
-                💡 <strong>Resumen del ajuste:</strong> {
+                💡 <strong>Resumen:</strong> {
                   bulkPriceTarget === 'cash_discount' ? (
                     bulkPriceType === 'set_exact' ? (
-                      `Fijará un ${bulkPriceValue || 0}% de descuento en efectivo en los ${selectedIds.length} productos seleccionados (el precio para cobrar en efectivo en el local se recalculará automáticamente).`
+                      `Fijará un ${bulkPriceValue || 0}% de descuento en efectivo en los ${selectedIds.length} productos.`
                     ) : (
                       parseFloat(bulkPriceValue) === 0 ? "Sin cambio" : (
                         parseFloat(bulkPriceValue) > 0
-                          ? `Aumentará el % de descuento en efectivo un ${bulkPriceValue}% en los productos seleccionados.`
-                          : `Reducirá el % de descuento en efectivo un ${Math.abs(bulkPriceValue)}% en los productos seleccionados.`
+                          ? `Aumentará el % de descuento un ${bulkPriceValue}%.`
+                          : `Reducirá el % de descuento un ${Math.abs(bulkPriceValue)}%.`
                       )
                     )
                   ) : (
                     parseFloat(bulkPriceValue) === 0 ? "Sin cambio" : (
                       bulkPriceType === 'set_exact' ? (
-                        `Fijará el precio a $${bulkPriceValue} en los productos seleccionados.`
+                        `Fijará el precio a $${bulkPriceValue}.`
                       ) : (
                         parseFloat(bulkPriceValue) > 0 
                           ? `Aumentará los precios un ${bulkPriceType === 'percentage' ? `${bulkPriceValue}%` : `$${bulkPriceValue}`}`
@@ -2736,13 +2764,9 @@ export default function Inventory() {
                 }
               </div>
 
-              <div style={{display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 10}}>
-                <button type="button" className="btn" style={{backgroundColor: 'transparent', border: '1px solid var(--border-color)', color: 'var(--text-primary)'}} onClick={() => setShowBulkPriceModal(false)}>
-                  Cancelar
-                </button>
-                <button type="submit" className="btn" style={{backgroundColor: 'var(--accent-emerald)', color: '#fff'}}>
-                  Aplicar Ajuste
-                </button>
+              <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 4}}>
+                <button type="button" className="btn" style={{backgroundColor: 'transparent', border: '1px solid var(--border-color)', color: 'var(--text-primary)', padding: '10px', borderRadius: 8, fontSize: '0.88rem'}} onClick={() => setShowBulkPriceModal(false)}>Cancelar</button>
+                <button type="submit" className="btn" style={{backgroundColor: 'var(--accent-emerald)', color: '#fff', padding: '10px', borderRadius: 8, fontWeight: 700, fontSize: '0.88rem'}}>Aplicar Ajuste</button>
               </div>
             </form>
           </div>
@@ -2750,27 +2774,159 @@ export default function Inventory() {
       )}
 
       {showDispatchScheduleModal && (
-        <div style={{
-          position: 'fixed',
-          top: 0, left: 0, right: 0, bottom: 0,
-          backgroundColor: 'rgba(0, 0, 0, 0.7)',
-          display: 'flex', justifyContent: 'center', alignItems: 'center',
-          zIndex: 1050
-        }}>
+        <div
+          onClick={e => { if (e.target === e.currentTarget) setShowDispatchScheduleModal(false) }}
+          style={{
+            position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+            backgroundColor: 'rgba(0, 0, 0, 0.65)', display: 'flex', justifyContent: 'center', alignItems: 'flex-start',
+            overflowY: 'auto', zIndex: 1050, padding: '12px 8px 24px', boxSizing: 'border-box'
+          }}
+        >
           <div className="card" style={{
-            width: 520, maxWidth: '92%', maxHeight: '90vh', overflowY: 'auto', padding: 25,
-            border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-card)', borderRadius: 12
+            width: '100%', maxWidth: 500, padding: '16px 14px 20px',
+            border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-card)', borderRadius: 12, flexShrink: 0
           }}>
-            <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15, borderBottom: '1px solid var(--border-color)', paddingBottom: 12}}>
-              <h3 style={{margin: 0}}>📅 Programación de Disponibilidad MeLi</h3>
-              <button 
-                className="btn" 
-                style={{backgroundColor: 'transparent', border: '1px solid var(--border-color)', color: 'var(--text-primary)', padding: '4px 8px', fontSize: '0.75rem'}}
-                onClick={() => setShowDispatchScheduleModal(false)}
-              >
-                Cerrar
-              </button>
+            <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, borderBottom: '1px solid var(--border-color)', paddingBottom: 10}}>
+              <h3 style={{margin: 0, fontSize: '1rem', fontWeight: 700}}>📅 Disponibilidad MeLi</h3>
+              <button type="button" onClick={() => setShowDispatchScheduleModal(false)} style={{background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', fontSize: '1.2rem', lineHeight: 1, padding: '2px 6px'}}>✕</button>
             </div>
+
+            <div style={{
+              padding: '10px 12px', borderRadius: 8,
+              backgroundColor: dispatchConfig.current_mode === 'weekend' ? 'rgba(245, 158, 11, 0.15)' : 'rgba(16, 185, 129, 0.15)',
+              border: dispatchConfig.current_mode === 'weekend' ? '1px solid rgba(245, 158, 11, 0.3)' : '1px solid rgba(16, 185, 129, 0.3)',
+              marginBottom: 14
+            }}>
+              <div style={{display: 'flex', alignItems: 'center', gap: 8, fontWeight: 'bold', fontSize: '0.82rem', color: dispatchConfig.current_mode === 'weekend' ? '#d97706' : '#10b981'}}>
+                {dispatchConfig.current_mode === 'weekend' ? '🌙 Modo Fin de Semana Activo' : '☀️ Modo Días Hábiles Activo'}
+              </div>
+              <div style={{fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: 3}}>
+                Disponibilidad: <strong>{dispatchConfig.current_mode === 'weekend' ? dispatchConfig.weekend_days : dispatchConfig.weekday_days} días</strong>.
+                {dispatchConfig.last_applied_at && (
+                  <span style={{display: 'block', marginTop: 2, fontSize: '0.7rem'}}>
+                    Último cambio: {new Date(dispatchConfig.last_applied_at).toLocaleString('es-AR')}
+                  </span>
+                )}
+              </div>
+            </div>
+
+            <form onSubmit={handleSaveDispatchSchedule} style={{display: 'flex', flexDirection: 'column', gap: 12}}>
+              <label style={{display: 'flex', alignItems: 'center', gap: 10, fontSize: '0.88rem', fontWeight: 'bold', cursor: 'pointer'}}>
+                <input 
+                  type="checkbox" 
+                  checked={dispatchConfig.enabled} 
+                  onChange={e => setDispatchConfig({...dispatchConfig, enabled: e.target.checked})}
+                  style={{width: 18, height: 18, cursor: 'pointer'}}
+                />
+                Activar Programación Automática Semanal
+              </label>
+
+              <div style={{border: '1px solid var(--border-color)', borderRadius: 8, padding: '12px 12px', display: 'flex', flexDirection: 'column', gap: 10}}>
+                <span style={{fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase'}}>DÍAS DE ELABORACIÓN / ENVÍO</span>
+
+                <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8}}>
+                  <label style={{fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', display: 'flex', flexDirection: 'column', gap: 3}}>☀️ SEM. (LUN–VIE)
+                    <select 
+                      value={dispatchConfig.weekday_days}
+                      onChange={e => setDispatchConfig({...dispatchConfig, weekday_days: parseInt(e.target.value) || 0})}
+                      style={{width: '100%', fontSize: '0.85rem', padding: '6px 7px', borderRadius: 4, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)', boxSizing: 'border-box'}}
+                    >
+                      <option value={0}>0 días (inmediata)</option>
+                      <option value={1}>1 día</option>
+                      <option value={2}>2 días</option>
+                      <option value={3}>3 días</option>
+                      <option value={4}>4 días</option>
+                      <option value={5}>5 días</option>
+                    </select>
+                  </label>
+
+                  <label style={{fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', display: 'flex', flexDirection: 'column', gap: 3}}>🌙 FIN DE SEMANA
+                    <select 
+                      value={dispatchConfig.weekend_days}
+                      onChange={e => setDispatchConfig({...dispatchConfig, weekend_days: parseInt(e.target.value) || 0})}
+                      style={{width: '100%', fontSize: '0.85rem', padding: '6px 7px', borderRadius: 4, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)', boxSizing: 'border-box'}}
+                    >
+                      <option value={0}>0 días (inmediata)</option>
+                      <option value={1}>1 día</option>
+                      <option value={2}>2 días</option>
+                      <option value={3}>3 días</option>
+                      <option value={4}>4 días</option>
+                      <option value={5}>5 días</option>
+                    </select>
+                  </label>
+                </div>
+              </div>
+
+              <div style={{border: '1px solid var(--border-color)', borderRadius: 8, padding: '12px 12px', display: 'flex', flexDirection: 'column', gap: 10}}>
+                <span style={{fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase'}}>FRANJA HORARIA FIN DE SEMANA</span>
+
+                <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8}}>
+                  <label style={{fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', display: 'flex', flexDirection: 'column', gap: 3}}>INICIO DÍA
+                    <select 
+                      value={dispatchConfig.weekend_start_day}
+                      onChange={e => setDispatchConfig({...dispatchConfig, weekend_start_day: parseInt(e.target.value)})}
+                      style={{width: '100%', fontSize: '0.85rem', padding: '6px 7px', borderRadius: 4, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)', boxSizing: 'border-box'}}
+                    >
+                      <option value={4}>Viernes</option>
+                      <option value={5}>Sábado</option>
+                    </select>
+                  </label>
+
+                  <label style={{fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', display: 'flex', flexDirection: 'column', gap: 3}}>INICIO HORA
+                    <select 
+                      value={dispatchConfig.weekend_start_hour}
+                      onChange={e => setDispatchConfig({...dispatchConfig, weekend_start_hour: parseInt(e.target.value)})}
+                      style={{width: '100%', fontSize: '0.85rem', padding: '6px 7px', borderRadius: 4, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)', boxSizing: 'border-box'}}
+                    >
+                      {Array.from({length: 24}, (_, i) => (
+                        <option key={i} value={i}>{String(i).padStart(2, '0')}:00 hs</option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <label style={{fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', display: 'flex', flexDirection: 'column', gap: 3}}>FIN DÍA
+                    <select 
+                      value={dispatchConfig.weekend_end_day}
+                      onChange={e => setDispatchConfig({...dispatchConfig, weekend_end_day: parseInt(e.target.value)})}
+                      style={{width: '100%', fontSize: '0.85rem', padding: '6px 7px', borderRadius: 4, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)', boxSizing: 'border-box'}}
+                    >
+                      <option value={0}>Lunes</option>
+                      <option value={6}>Domingo</option>
+                    </select>
+                  </label>
+
+                  <label style={{fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', display: 'flex', flexDirection: 'column', gap: 3}}>FIN HORA
+                    <select 
+                      value={dispatchConfig.weekend_end_hour}
+                      onChange={e => setDispatchConfig({...dispatchConfig, weekend_end_hour: parseInt(e.target.value)})}
+                      style={{width: '100%', fontSize: '0.85rem', padding: '6px 7px', borderRadius: 4, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)', boxSizing: 'border-box'}}
+                    >
+                      {Array.from({length: 24}, (_, i) => (
+                        <option key={i} value={i}>{String(i).padStart(2, '0')}:00 hs</option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+              </div>
+
+              <button 
+                type="button" 
+                className="btn" 
+                style={{backgroundColor: 'rgba(245, 158, 11, 0.15)', color: '#d97706', border: '1px solid rgba(245, 158, 11, 0.3)', fontSize: '0.82rem', padding: '8px'}}
+                onClick={handleApplyDispatchScheduleNow}
+                title="Aplica la disponibilidad según el horario actual a todas las publicaciones en MeLi de inmediato"
+              >
+                ⚡ Aplicar Cambio Ahora
+              </button>
+
+              <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8}}>
+                <button type="button" className="btn" style={{backgroundColor: 'transparent', border: '1px solid var(--border-color)', color: 'var(--text-primary)', padding: '10px', borderRadius: 8, fontSize: '0.88rem'}} onClick={() => setShowDispatchScheduleModal(false)}>Cancelar</button>
+                <button type="submit" className="btn" style={{backgroundColor: 'var(--accent-blue)', color: '#fff', padding: '10px', borderRadius: 8, fontWeight: 700, fontSize: '0.88rem'}}>Guardar</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
             <div style={{
               padding: '12px 15px',
@@ -2792,137 +2948,6 @@ export default function Inventory() {
               </div>
             </div>
 
-            <form onSubmit={handleSaveDispatchSchedule} style={{display: 'flex', flexDirection: 'column', gap: 16}}>
-              <label style={{display: 'flex', alignItems: 'center', gap: 10, fontSize: '0.9rem', fontWeight: 'bold', cursor: 'pointer'}}>
-                <input 
-                  type="checkbox" 
-                  checked={dispatchConfig.enabled} 
-                  onChange={e => setDispatchConfig({...dispatchConfig, enabled: e.target.checked})}
-                  style={{width: 18, height: 18, cursor: 'pointer'}}
-                />
-                Activar Programación Automática Semanal
-              </label>
-
-              <div style={{border: '1px solid var(--border-color)', borderRadius: 8, padding: 15, display: 'flex', flexDirection: 'column', gap: 12}}>
-                <span style={{fontSize: '0.85rem', fontWeight: 'bold'}}>Configuración de Días de Elaboración / Envío:</span>
-
-                <div style={{display: 'flex', gap: 15}}>
-                  <label style={{flex: 1, fontSize: '0.82rem'}}>
-                    ☀️ En la semana (Lun - Vie):
-                    <select 
-                      value={dispatchConfig.weekday_days}
-                      onChange={e => setDispatchConfig({...dispatchConfig, weekday_days: parseInt(e.target.value) || 0})}
-                      style={{width: '100%', marginTop: 5, padding: 6, borderRadius: 4, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)'}}
-                    >
-                      <option value={0}>0 días (Entrega inmediata)</option>
-                      <option value={1}>1 día de elaboración</option>
-                      <option value={2}>2 días de elaboración</option>
-                      <option value={3}>3 días de elaboración</option>
-                      <option value={4}>4 días de elaboración</option>
-                      <option value={5}>5 días de elaboración</option>
-                    </select>
-                  </label>
-
-                  <label style={{flex: 1, fontSize: '0.82rem'}}>
-                    🌙 Fin de Semana:
-                    <select 
-                      value={dispatchConfig.weekend_days}
-                      onChange={e => setDispatchConfig({...dispatchConfig, weekend_days: parseInt(e.target.value) || 0})}
-                      style={{width: '100%', marginTop: 5, padding: 6, borderRadius: 4, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)'}}
-                    >
-                      <option value={0}>0 días (Entrega inmediata)</option>
-                      <option value={1}>1 día de elaboración</option>
-                      <option value={2}>2 días de elaboración</option>
-                      <option value={3}>3 días de elaboración</option>
-                      <option value={4}>4 días de elaboración</option>
-                      <option value={5}>5 días de elaboración</option>
-                    </select>
-                  </label>
-                </div>
-              </div>
-
-              <div style={{border: '1px solid var(--border-color)', borderRadius: 8, padding: 15, display: 'flex', flexDirection: 'column', gap: 12}}>
-                <span style={{fontSize: '0.85rem', fontWeight: 'bold'}}>Franja Horaria de Fin de Semana:</span>
-
-                <div style={{display: 'flex', gap: 15}}>
-                  <label style={{flex: 1, fontSize: '0.82rem'}}>
-                    Inicio de Fin de Semana:
-                    <select 
-                      value={dispatchConfig.weekend_start_day}
-                      onChange={e => setDispatchConfig({...dispatchConfig, weekend_start_day: parseInt(e.target.value)})}
-                      style={{width: '100%', marginTop: 5, padding: 6, borderRadius: 4, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)'}}
-                    >
-                      <option value={4}>Viernes</option>
-                      <option value={5}>Sábado</option>
-                    </select>
-                  </label>
-
-                  <label style={{flex: 1, fontSize: '0.82rem'}}>
-                    Hora de Inicio:
-                    <select 
-                      value={dispatchConfig.weekend_start_hour}
-                      onChange={e => setDispatchConfig({...dispatchConfig, weekend_start_hour: parseInt(e.target.value)})}
-                      style={{width: '100%', marginTop: 5, padding: 6, borderRadius: 4, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)'}}
-                    >
-                      {Array.from({length: 24}, (_, i) => (
-                        <option key={i} value={i}>{String(i).padStart(2, '0')}:00 hs</option>
-                      ))}
-                    </select>
-                  </label>
-                </div>
-
-                <div style={{display: 'flex', gap: 15}}>
-                  <label style={{flex: 1, fontSize: '0.82rem'}}>
-                    Fin de Fin de Semana:
-                    <select 
-                      value={dispatchConfig.weekend_end_day}
-                      onChange={e => setDispatchConfig({...dispatchConfig, weekend_end_day: parseInt(e.target.value)})}
-                      style={{width: '100%', marginTop: 5, padding: 6, borderRadius: 4, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)'}}
-                    >
-                      <option value={0}>Lunes</option>
-                      <option value={6}>Domingo</option>
-                    </select>
-                  </label>
-
-                  <label style={{flex: 1, fontSize: '0.82rem'}}>
-                    Hora de Fin:
-                    <select 
-                      value={dispatchConfig.weekend_end_hour}
-                      onChange={e => setDispatchConfig({...dispatchConfig, weekend_end_hour: parseInt(e.target.value)})}
-                      style={{width: '100%', marginTop: 5, padding: 6, borderRadius: 4, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)'}}
-                    >
-                      {Array.from({length: 24}, (_, i) => (
-                        <option key={i} value={i}>{String(i).padStart(2, '0')}:00 hs</option>
-                      ))}
-                    </select>
-                  </label>
-                </div>
-              </div>
-
-              <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 10, gap: 10, flexWrap: 'wrap'}}>
-                <button 
-                  type="button" 
-                  className="btn" 
-                  style={{backgroundColor: 'rgba(245, 158, 11, 0.15)', color: '#d97706', border: '1px solid rgba(245, 158, 11, 0.3)', fontSize: '0.8rem'}}
-                  onClick={handleApplyDispatchScheduleNow}
-                  title="Aplica la disponibilidad según el horario actual a todas las publicaciones en Mercado Libre de inmediato"
-                >
-                  ⚡ Aplicar Cambio Ahora
-                </button>
-
-                <div style={{display: 'flex', gap: 10}}>
-                  <button type="button" className="btn" style={{backgroundColor: 'transparent', border: '1px solid var(--border-color)', color: 'var(--text-primary)'}} onClick={() => setShowDispatchScheduleModal(false)}>
-                    Cancelar
-                  </button>
-                  <button type="submit" className="btn" style={{backgroundColor: 'var(--accent-blue)', color: '#fff'}}>
-                    Guardar Configuración
-                  </button>
-                </div>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
       {/* Modal: Exportar Catálogo Masivo a Tiendanube */}
       {showTnExportModal && (
         <div style={{
@@ -3666,10 +3691,10 @@ function ProductRow({ p, onSave, onOpenGallery, onDraftChange, categories, categ
           <td data-label="Detalle" className="cell-detail" style={{padding: '6px 10px'}}>
             <div 
               style={{
-                fontWeight: 600, 
-                fontSize: '0.86rem', 
+                fontWeight: 700, 
+                fontSize: '0.96rem', 
                 color: 'var(--text-primary)', 
-                lineHeight: '1.3',
+                lineHeight: '1.35',
                 wordBreak: 'break-word'
               }} 
               title={p.title}
@@ -3677,14 +3702,14 @@ function ProductRow({ p, onSave, onOpenGallery, onDraftChange, categories, categ
               {p.title}
             </div>
             <div style={{display: 'flex', alignItems: 'center', gap: 6, marginTop: 4, flexWrap: 'wrap'}}>
-              <span style={{color: 'var(--text-secondary)', fontSize: '0.7rem', fontFamily: 'monospace'}}>{p.ml_id}</span>
+              <span style={{color: 'var(--text-secondary)', fontSize: '0.76rem', fontFamily: 'monospace'}}>{p.ml_id}</span>
               {p.category_name ? (
                 <span style={{
                   display: 'inline-flex',
                   alignItems: 'center',
-                  padding: '1px 6px',
-                  fontSize: '0.65rem',
-                  borderRadius: 3,
+                  padding: '2px 7px',
+                  fontSize: '0.74rem',
+                  borderRadius: 4,
                   backgroundColor: 'var(--bg-hover)',
                   color: 'var(--text-secondary)'
                 }}>
@@ -3694,9 +3719,9 @@ function ProductRow({ p, onSave, onOpenGallery, onDraftChange, categories, categ
                 <span style={{
                   display: 'inline-flex',
                   alignItems: 'center',
-                  padding: '1px 6px',
-                  fontSize: '0.65rem',
-                  borderRadius: 3,
+                  padding: '2px 7px',
+                  fontSize: '0.74rem',
+                  borderRadius: 4,
                   backgroundColor: 'rgba(245, 158, 11, 0.2)',
                   color: '#d97706',
                   fontWeight: 600
@@ -3823,7 +3848,7 @@ function ProductRow({ p, onSave, onOpenGallery, onDraftChange, categories, categ
           </td>
           <td data-label="Estado ML" className="cell-status-ml" style={{padding: '5px 8px'}}>
             <span style={{
-              fontSize: '0.78rem', 
+              fontSize: '0.82rem', 
               fontWeight: 600,
               padding: '2px 6px',
               borderRadius: 4,
@@ -3837,55 +3862,55 @@ function ProductRow({ p, onSave, onOpenGallery, onDraftChange, categories, categ
             <QualityBadge health={health} onClick={() => onOpenQuality && onOpenQuality(p, health)} />
           </td>
           <td data-label="Stock" className="cell-stock" style={{padding: '5px 8px'}}>
-            <input type="number" value={qty} onChange={e => setQty(e.target.value)} style={{width: 55, padding: '3px 5px', fontSize: '0.8rem', border: '1px solid var(--border-color)', borderRadius: 4, backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)'}}/>
+            <input type="number" value={qty} onChange={e => setQty(e.target.value)} style={{width: 60, padding: '4px 6px', fontSize: '0.88rem', border: '1px solid var(--border-color)', borderRadius: 6, backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)'}}/>
             {p.prev_stock !== null && p.prev_stock !== undefined && (
-              <div style={{fontSize: '0.65rem', color: 'var(--text-secondary)', marginTop: 1}}>ant: {p.prev_stock}</div>
+              <div style={{fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: 2}}>ant: {p.prev_stock}</div>
             )}
           </td>
           <td data-label="P. ML" className="cell-price-ml" style={{padding: '5px 8px'}}>
-            <input type="number" value={price} onChange={e => setPrice(e.target.value)} style={{width: 75, padding: '3px 5px', fontSize: '0.8rem', border: '1px solid var(--border-color)', borderRadius: 4, backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)'}} disabled={p.status === 'local'}/>
+            <input type="number" value={price} onChange={e => setPrice(e.target.value)} style={{width: 80, padding: '4px 6px', fontSize: '0.88rem', border: '1px solid var(--border-color)', borderRadius: 6, backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)'}} disabled={p.status === 'local'}/>
             {p.prev_price !== null && p.prev_price !== undefined && (
-              <div style={{fontSize: '0.65rem', color: 'var(--text-secondary)', marginTop: 1}}>ant: ${p.prev_price.toLocaleString('es-AR')}</div>
-            )}
-          </td>
-          <td data-label="C. Base" className="cell-cost-base" style={{padding: '5px 8px'}}>
-            <input type="number" value={cost} onChange={e => setCost(e.target.value)} style={{width: 75, padding: '3px 5px', fontSize: '0.8rem', border: '1px solid var(--border-color)', borderRadius: 4, backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)'}}/>
-            {p.prev_cost_price !== null && p.prev_cost_price !== undefined && (
-              <div style={{fontSize: '0.65rem', color: 'var(--text-secondary)', marginTop: 1}}>ant: ${p.prev_cost_price.toLocaleString('es-AR')}</div>
-            )}
-          </td>
-          <td data-label="C. ML" className="cell-cost-ml" style={{padding: '5px 8px'}}>
-            <input type="number" value={costMeli} onChange={e => setCostMeli(e.target.value)} style={{width: 65, padding: '3px 5px', fontSize: '0.8rem', border: '1px solid var(--border-color)', borderRadius: 4, backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)'}}/>
-            {p.prev_cost_meli !== null && p.prev_cost_meli !== undefined && (
-              <div style={{fontSize: '0.65rem', color: 'var(--text-secondary)', marginTop: 1}}>ant: ${p.prev_cost_meli.toLocaleString('es-AR')}</div>
+              <div style={{fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: 2}}>ant: ${p.prev_price.toLocaleString('es-AR')}</div>
             )}
           </td>
           <td data-label="P. Web" className="cell-price-web" style={{padding: '5px 8px'}}>
-            <input type="number" value={priceWeb} onChange={e => setPriceWeb(e.target.value)} style={{width: 75, padding: '3px 5px', fontSize: '0.8rem', border: '1px solid var(--border-color)', borderRadius: 4, backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)'}}/>
+            <input type="number" value={priceWeb} onChange={e => setPriceWeb(e.target.value)} style={{width: 80, padding: '4px 6px', fontSize: '0.88rem', border: '1px solid var(--border-color)', borderRadius: 6, backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)'}}/>
             {p.prev_price_web !== null && p.prev_price_web !== undefined && (
-              <div style={{fontSize: '0.65rem', color: 'var(--text-secondary)', marginTop: 1}}>ant: ${p.prev_price_web.toLocaleString('es-AR')}</div>
+              <div style={{fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: 2}}>ant: ${p.prev_price_web.toLocaleString('es-AR')}</div>
+            )}
+          </td>
+          <td data-label="C. Base" className="cell-cost-base" style={{padding: '5px 8px'}}>
+            <input type="number" value={cost} onChange={e => setCost(e.target.value)} style={{width: 80, padding: '4px 6px', fontSize: '0.88rem', border: '1px solid var(--border-color)', borderRadius: 6, backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)'}}/>
+            {p.prev_cost_price !== null && p.prev_cost_price !== undefined && (
+              <div style={{fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: 2}}>ant: ${p.prev_cost_price.toLocaleString('es-AR')}</div>
+            )}
+          </td>
+          <td data-label="C. ML" className="cell-cost-ml" style={{padding: '5px 8px'}}>
+            <input type="number" value={costMeli} onChange={e => setCostMeli(e.target.value)} style={{width: 70, padding: '4px 6px', fontSize: '0.88rem', border: '1px solid var(--border-color)', borderRadius: 6, backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)'}}/>
+            {p.prev_cost_meli !== null && p.prev_cost_meli !== undefined && (
+              <div style={{fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: 2}}>ant: ${p.prev_cost_meli.toLocaleString('es-AR')}</div>
             )}
           </td>
           <td data-label="P. Efectivo" className="cell-price-cash" style={{padding: '5px 8px', textAlign: 'center'}}>
-            <div className="cash-pricing-box" style={{display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, padding: '4px 6px', borderRadius: 6, backgroundColor: 'rgba(16, 185, 129, 0.08)', border: '1px solid rgba(16, 185, 129, 0.25)'}}>
-              <div className="cash-price-val" style={{fontWeight: 700, fontSize: '0.9rem', color: '#10b981', whiteSpace: 'nowrap', lineHeight: 1.1}} title="Precio a cobrar en efectivo en el local físico">
+            <div className="cash-pricing-box" style={{display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, padding: '6px 8px', borderRadius: 6, backgroundColor: 'rgba(16, 185, 129, 0.08)', border: '1px solid rgba(16, 185, 129, 0.25)'}}>
+              <div className="cash-price-val" style={{fontWeight: 700, fontSize: '0.96rem', color: '#10b981', whiteSpace: 'nowrap', lineHeight: 1.1}} title="Precio a cobrar en efectivo en el local físico">
                 ${finalCashPrice.toLocaleString('es-AR')}
               </div>
-              <div className="cash-discount-row" style={{display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 2}}>
-                <span style={{fontSize: '0.66rem', color: 'var(--text-secondary)', fontWeight: 600}}>%</span>
+              <div className="cash-discount-row" style={{display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 3}}>
+                <span style={{fontSize: '0.72rem', color: 'var(--text-secondary)', fontWeight: 600}}>%</span>
                 <input 
                   type="number" 
-                  step="1"
-                  min="0"
-                  max="100"
+                  step="1" 
+                  min="0" 
+                  max="100" 
                   value={cashDiscountPct} 
                   onChange={e => setCashDiscountPct(e.target.value)} 
                   placeholder="0"
                   title="% Descuento efectivo sobre precio de lista"
                   style={{
-                    width: 44, 
+                    width: 48, 
                     padding: '2px 4px', 
-                    fontSize: '0.76rem', 
+                    fontSize: '0.82rem', 
                     fontWeight: 600,
                     textAlign: 'center',
                     border: '1px solid var(--border-color)', 
@@ -3894,15 +3919,15 @@ function ProductRow({ p, onSave, onOpenGallery, onDraftChange, categories, categ
                     color: 'var(--text-primary)'
                   }}
                 />
-                <span style={{fontSize: '0.66rem', color: 'var(--text-secondary)'}}>desc</span>
+                <span style={{fontSize: '0.72rem', color: 'var(--text-secondary)'}}>desc</span>
               </div>
             </div>
           </td>
           <td data-label="Estado Web" className="cell-status-web" style={{padding: '5px 8px', textAlign: 'center'}}>
             <div style={{display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2}}>
               <span style={{
-                fontSize: '0.72rem', 
-                fontWeight: 600,
+                fontSize: '0.82rem', 
+                fontWeight: 700,
                 color: isWebActive ? '#10b981' : '#ef4444'
               }}>
                 {isWebActive ? 'Activo' : 'Desactivo'}
@@ -3927,7 +3952,7 @@ function ProductRow({ p, onSave, onOpenGallery, onDraftChange, categories, categ
               <button type="button" className="btn-icon" onClick={() => onToggleHide(p.ml_id, p.is_hidden)} title={p.is_hidden ? "Restaurar a inventario activo" : "Ocultar / Archivar producto"} style={{padding: 4, color: p.is_hidden ? '#ef4444' : 'var(--text-secondary)'}}>
                 {p.is_hidden ? <EyeOff size={14} /> : <Eye size={14} />}
               </button>
-              <button type="button" className="btn" style={{padding: '3px 6px', fontSize: '0.7rem', backgroundColor: 'var(--bg-hover)', color: 'var(--text-primary)', border: 'none', borderRadius: 4, cursor: 'pointer'}} onClick={() => setShowWebDetails(!showWebDetails)}>
+              <button type="button" className="btn" style={{padding: '4px 8px', fontSize: '0.78rem', fontWeight: 600, backgroundColor: 'var(--bg-hover)', color: 'var(--text-primary)', border: 'none', borderRadius: 4, cursor: 'pointer'}} onClick={() => setShowWebDetails(!showWebDetails)}>
                 Web {showWebDetails ? '▲' : '▼'}
               </button>
             </div>
@@ -4188,46 +4213,46 @@ function ProductRow({ p, onSave, onOpenGallery, onDraftChange, categories, categ
           backgroundColor: (p.available_quantity <= (p.min_stock || 3) && p.status === 'active') ? 'rgba(245, 158, 11, 0.05)' : 'transparent'
         }}>
           <div style={{display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center'}}>
-            <label style={{fontSize: '0.8rem', color: 'var(--text-secondary)'}}>Stock:
-              <input type="number" value={qty} onChange={e => setQty(e.target.value)} style={{width: 60, marginLeft: 5, padding: 4}}/>
-              {p.prev_stock !== null && p.prev_stock !== undefined && <div style={{fontSize: '0.65rem', color: 'var(--text-secondary)', marginTop: 2, textAlign: 'center'}}>ant: {p.prev_stock}</div>}
+            <label style={{fontSize: '0.85rem', color: 'var(--text-secondary)'}}>Stock:
+              <input type="number" value={qty} onChange={e => setQty(e.target.value)} style={{width: 65, marginLeft: 5, padding: '4px 6px', fontSize: '0.88rem'}}/>
+              {p.prev_stock !== null && p.prev_stock !== undefined && <div style={{fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: 2, textAlign: 'center'}}>ant: {p.prev_stock}</div>}
             </label>
-            <label style={{fontSize: '0.8rem', color: 'var(--text-secondary)'}}>Precio ML:
-              <input type="number" value={price} onChange={e => setPrice(e.target.value)} style={{width: 80, marginLeft: 5, padding: 4}} disabled={p.status === 'local'}/>
-              {p.prev_price !== null && p.prev_price !== undefined && <div style={{fontSize: '0.65rem', color: 'var(--text-secondary)', marginTop: 2, textAlign: 'center'}}>ant: ${p.prev_price.toLocaleString('es-AR')}</div>}
+            <label style={{fontSize: '0.85rem', color: 'var(--text-secondary)'}}>Precio ML:
+              <input type="number" value={price} onChange={e => setPrice(e.target.value)} style={{width: 85, marginLeft: 5, padding: '4px 6px', fontSize: '0.88rem'}} disabled={p.status === 'local'}/>
+              {p.prev_price !== null && p.prev_price !== undefined && <div style={{fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: 2, textAlign: 'center'}}>ant: ${p.prev_price.toLocaleString('es-AR')}</div>}
             </label>
-            <label style={{fontSize: '0.8rem', color: 'var(--text-secondary)'}}>Costo Base:
-              <input type="number" value={cost} onChange={e => setCost(e.target.value)} style={{width: 80, marginLeft: 5, padding: 4}}/>
-              {p.prev_cost_price !== null && p.prev_cost_price !== undefined && <div style={{fontSize: '0.65rem', color: 'var(--text-secondary)', marginTop: 2, textAlign: 'center'}}>ant: ${p.prev_cost_price.toLocaleString('es-AR')}</div>}
+            <label style={{fontSize: '0.85rem', color: 'var(--text-secondary)'}}>Costo Base:
+              <input type="number" value={cost} onChange={e => setCost(e.target.value)} style={{width: 85, marginLeft: 5, padding: '4px 6px', fontSize: '0.88rem'}}/>
+              {p.prev_cost_price !== null && p.prev_cost_price !== undefined && <div style={{fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: 2, textAlign: 'center'}}>ant: ${p.prev_cost_price.toLocaleString('es-AR')}</div>}
             </label>
-            <label style={{fontSize: '0.8rem', color: 'var(--text-secondary)'}} title="Costo total de Mercado Libre obtenido desde la API (Comisión de venta + Envío gratis si aplica)">Costo ML ⓘ:
-              <input type="number" value={costMeli} onChange={e => setCostMeli(e.target.value)} style={{width: 70, marginLeft: 5, padding: 4}}/>
-              {p.prev_cost_meli !== null && p.prev_cost_meli !== undefined && <div style={{fontSize: '0.65rem', color: 'var(--text-secondary)', marginTop: 2, textAlign: 'center'}}>ant: ${p.prev_cost_meli.toLocaleString('es-AR')}</div>}
+            <label style={{fontSize: '0.85rem', color: 'var(--text-secondary)'}} title="Costo total de Mercado Libre obtenido desde la API (Comisión de venta + Envío gratis si aplica)">Costo ML ⓘ:
+              <input type="number" value={costMeli} onChange={e => setCostMeli(e.target.value)} style={{width: 75, marginLeft: 5, padding: '4px 6px', fontSize: '0.88rem'}}/>
+              {p.prev_cost_meli !== null && p.prev_cost_meli !== undefined && <div style={{fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: 2, textAlign: 'center'}}>ant: ${p.prev_cost_meli.toLocaleString('es-AR')}</div>}
             </label>
-            <label style={{fontSize: '0.8rem', color: 'var(--text-secondary)'}}>Alerta Mín:
-              <input type="number" value={minStock} onChange={e => setMinStock(e.target.value)} style={{width: 50, marginLeft: 5, padding: 4}}/>
+            <label style={{fontSize: '0.85rem', color: 'var(--text-secondary)'}}>Alerta Mín:
+              <input type="number" value={minStock} onChange={e => setMinStock(e.target.value)} style={{width: 55, marginLeft: 5, padding: '4px 6px', fontSize: '0.88rem'}}/>
             </label>
           </div>
           {(p.available_quantity <= (p.min_stock || 3) && p.status === 'active') && (
-            <div style={{fontSize: '0.75rem', color: 'var(--accent-orange)', fontWeight: 'bold', marginTop: 4}}>
+            <div style={{fontSize: '0.78rem', color: 'var(--accent-orange)', fontWeight: 'bold', marginTop: 4}}>
               ⚠️ Stock Bajo (Límite: {p.min_stock || 3})
             </div>
           )}
           {p.status !== 'local' && numPrice > 0 && (
-            <div style={{fontSize: '0.75rem', color: profitMeli >= 0 ? 'var(--accent-emerald)' : 'var(--accent-red)', marginTop: 5, fontWeight: 600}}>
+            <div style={{fontSize: '0.78rem', color: profitMeli >= 0 ? 'var(--accent-emerald)' : 'var(--accent-red)', marginTop: 5, fontWeight: 600}}>
               Margen ML: {marginMeli.toFixed(1)}% (Beneficio: ${profitMeli.toFixed(2)})
             </div>
           )}
         </td>
         <td data-label="Tienda Web">
           <div style={{display: 'flex', flexDirection: 'column', gap: 5}}>
-            <label style={{fontSize: '0.8rem', color: 'var(--text-secondary)'}}>
+            <label style={{fontSize: '0.85rem', color: 'var(--text-secondary)'}}>
               <input type="checkbox" checked={isWebActive} onChange={e => setIsWebActive(e.target.checked)} style={{marginRight: 5}}/>
               Mostrar en Web
             </label>
-            <label style={{fontSize: '0.8rem', color: 'var(--text-secondary)'}}>Precio Web:
-              <input type="number" value={priceWeb} onChange={e => setPriceWeb(e.target.value)} style={{width: 80, marginLeft: 5, padding: 4}}/>
-              {p.prev_price_web !== null && p.prev_price_web !== undefined && <div style={{fontSize: '0.65rem', color: 'var(--text-secondary)', marginTop: 2}}>ant: ${p.prev_price_web.toLocaleString('es-AR')}</div>}
+            <label style={{fontSize: '0.85rem', color: 'var(--text-secondary)'}}>Precio Web:
+              <input type="number" value={priceWeb} onChange={e => setPriceWeb(e.target.value)} style={{width: 85, marginLeft: 5, padding: '4px 6px', fontSize: '0.88rem'}}/>
+              {p.prev_price_web !== null && p.prev_price_web !== undefined && <div style={{fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: 2}}>ant: ${p.prev_price_web.toLocaleString('es-AR')}</div>}
             </label>
             {numPriceWeb > 0 && (
               <div style={{fontSize: '0.75rem', color: profitWeb >= 0 ? 'var(--accent-emerald)' : 'var(--accent-red)', marginTop: 2, fontWeight: 600}}>

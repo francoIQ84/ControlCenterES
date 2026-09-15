@@ -412,142 +412,130 @@ export default function BlogCMS() {
 
       {/* MODAL CREAR/EDITAR ARTÍCULO */}
       {showModal && (
-        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, padding: 20 }}>
-          <div style={{ backgroundColor: 'var(--bg-card)', borderRadius: 10, width: '100%', maxWidth: 800, maxHeight: '90vh', overflowY: 'auto', padding: 25, border: '1px solid var(--border-color)' }}>
-            <h2 style={{ margin: '0 0 20px 0', fontSize: '1.3rem', fontWeight: 700 }}>
-              {editingPost ? 'Editar Artículo Informativo' : 'Crear Nuevo Artículo Informativo'}
-            </h2>
+        <div
+          onClick={e => { if (e.target === e.currentTarget) setShowModal(false) }}
+          style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.65)', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', zIndex: 100, overflowY: 'auto', padding: '12px 8px 24px', boxSizing: 'border-box' }}
+        >
+          <div style={{ backgroundColor: 'var(--bg-card)', borderRadius: 12, width: '100%', maxWidth: 780, padding: '16px 14px 20px', border: '1px solid var(--border-color)', flexShrink: 0 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+              <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 700 }}>
+                {editingPost ? '✏️ Editar Artículo' : '➕ Nuevo Artículo'}
+              </h3>
+              <button type="button" onClick={() => setShowModal(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', fontSize: '1.2rem', lineHeight: 1, padding: '2px 6px' }}>✕</button>
+            </div>
 
-            <form onSubmit={handleSavePost}>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 15, marginBottom: 15 }}>
-                <div>
-                  <label style={{ display: 'block', fontWeight: 600, fontSize: '0.85rem', marginBottom: 5 }}>Título del Artículo *</label>
+            <form onSubmit={handleSavePost} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                <label style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                  <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>TÍTULO *</span>
                   <input
                     type="text"
                     value={formTitle}
                     onChange={e => setFormTitle(e.target.value)}
-                    placeholder="Ej: Guía de uso: Cómo medir el pH digitalmente"
+                    placeholder="Ej: Guía de uso: Cómo medir el pH"
                     required
-                    style={{ width: '100%', padding: '8px 12px', borderRadius: 6, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)' }}
+                    style={{ width: '100%', padding: '7px 9px', borderRadius: 6, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)', fontSize: '0.88rem', boxSizing: 'border-box' }}
                   />
-                </div>
+                </label>
 
-                <div>
-                  <label style={{ display: 'block', fontWeight: 600, fontSize: '0.85rem', marginBottom: 5 }}>Categoría</label>
+                <label style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                  <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>CATEGORÍA</span>
                   <select
                     value={formCategory}
                     onChange={e => setFormCategory(e.target.value)}
-                    style={{ width: '100%', padding: '8px 12px', borderRadius: 6, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)' }}
+                    style={{ width: '100%', padding: '7px 9px', borderRadius: 6, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)', fontSize: '0.88rem', boxSizing: 'border-box' }}
                   >
                     <option value="Guía de Uso">Guía de Uso de Producto</option>
                     <option value="Conceptos">Conceptos de Cultivo</option>
                     <option value="Tutorial">Tutorial Paso a Paso</option>
-                    <option value="Consejos">Consejos & Mantenimiento</option>
+                    <option value="Consejos">Consejos &amp; Mantenimiento</option>
                     <option value="General">General</option>
                   </select>
-                </div>
+                </label>
               </div>
 
-              <div style={{ marginBottom: 15 }}>
-                <label style={{ display: 'block', fontWeight: 600, fontSize: '0.85rem', marginBottom: 5 }}>Imagen de Portada</label>
-                <div style={{ display: 'flex', gap: 10 }}>
+              <label style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>IMAGEN DE PORTADA</span>
+                <div style={{ display: 'flex', gap: 8 }}>
                   <input
                     type="text"
                     value={formCoverImage}
                     onChange={e => setFormCoverImage(e.target.value)}
                     placeholder="https://..."
-                    style={{ flex: 1, padding: '8px 12px', borderRadius: 6, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)' }}
+                    style={{ flex: 1, padding: '7px 9px', borderRadius: 6, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)', fontSize: '0.88rem' }}
                   />
                   <button
                     type="button"
                     className="btn"
-                    onClick={() => {
-                      setMediaTargetField('cover')
-                      setShowMediaModal(true)
-                    }}
-                    style={{ padding: '8px 12px', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: 5 }}
+                    onClick={() => { setMediaTargetField('cover'); setShowMediaModal(true) }}
+                    style={{ padding: '7px 10px', fontSize: '0.78rem', display: 'flex', alignItems: 'center', gap: 4 }}
                   >
-                    <ImageIcon size={16} /> Galería
+                    <ImageIcon size={14} /> Galería
                   </button>
                 </div>
-              </div>
+              </label>
 
-              <div style={{ marginBottom: 15 }}>
-                <label style={{ display: 'block', fontWeight: 600, fontSize: '0.85rem', marginBottom: 5 }}>Breve Resumen / Extracto</label>
+              <label style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>EXTRACTO / RESUMEN</span>
                 <textarea
                   rows={2}
                   value={formSummary}
                   onChange={e => setFormSummary(e.target.value)}
-                  placeholder="Resumen corto explicativo para la tarjeta del blog..."
-                  style={{ width: '100%', padding: '8px 12px', borderRadius: 6, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)' }}
+                  placeholder="Resumen corto para la tarjeta del blog..."
+                  style={{ width: '100%', padding: '7px 9px', borderRadius: 6, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)', fontSize: '0.88rem', boxSizing: 'border-box', resize: 'vertical' }}
                 />
-              </div>
+              </label>
 
-              <div style={{ marginBottom: 15 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 5 }}>
-                  <label style={{ fontWeight: 600, fontSize: '0.85rem' }}>Cuerpo Completo del Artículo *</label>
+              <label style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>CUERPO DEL ARTÍCULO *</span>
                   <button
                     type="button"
                     className="btn"
-                    onClick={() => {
-                      setMediaTargetField('content')
-                      setShowMediaModal(true)
-                    }}
-                    style={{ padding: '3px 8px', fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: 4 }}
+                    onClick={() => { setMediaTargetField('content'); setShowMediaModal(true) }}
+                    style={{ padding: '3px 8px', fontSize: '0.72rem', display: 'flex', alignItems: 'center', gap: 4 }}
                   >
-                    <ImageIcon size={14} /> Insertar Imagen de Galería
+                    <ImageIcon size={13} /> Insertar imagen
                   </button>
                 </div>
                 <textarea
-                  rows={10}
+                  rows={8}
                   value={formContent}
                   onChange={e => setFormContent(e.target.value)}
-                  placeholder="Redacta la guía o concepto. Puedes incluir texto explicativo, pasos (1, 2, 3) y URLs de imágenes..."
+                  placeholder="Redacta la guía o concepto. Puedes incluir texto, pasos (1, 2, 3) y URLs de imágenes..."
                   required
-                  style={{ width: '100%', padding: '10px 12px', borderRadius: 6, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)', fontFamily: 'inherit' }}
+                  style={{ width: '100%', padding: '7px 9px', borderRadius: 6, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)', fontFamily: 'inherit', fontSize: '0.88rem', boxSizing: 'border-box', resize: 'vertical' }}
                 />
-              </div>
+              </label>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 15, marginBottom: 20 }}>
-                <div>
-                  <label style={{ display: 'block', fontWeight: 600, fontSize: '0.85rem', marginBottom: 5 }}>Fecha de Publicación</label>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                <label style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                  <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>FECHA PUBLICACIÓN</span>
                   <input
                     type="datetime-local"
                     value={formPublishedAt}
                     onChange={e => setFormPublishedAt(e.target.value)}
-                    style={{ width: '100%', padding: '8px 12px', borderRadius: 6, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)' }}
+                    style={{ width: '100%', padding: '7px 9px', borderRadius: 6, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)', fontSize: '0.88rem', boxSizing: 'border-box' }}
                   />
-                </div>
+                </label>
 
-                <div>
-                  <label style={{ display: 'block', fontWeight: 600, fontSize: '0.85rem', marginBottom: 5 }}>Estado de Visibilidad</label>
+                <label style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                  <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>VISIBILIDAD</span>
                   <select
                     value={formIsPublished}
                     onChange={e => setFormIsPublished(parseInt(e.target.value, 10))}
-                    style={{ width: '100%', padding: '8px 12px', borderRadius: 6, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)' }}
+                    style={{ width: '100%', padding: '7px 9px', borderRadius: 6, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)', fontSize: '0.88rem', boxSizing: 'border-box' }}
                   >
-                    <option value={1}>Eye Publicado en el sitio web</option>
-                    <option value={0}>EyeOff Borrador / Oculto</option>
+                    <option value={1}>Publicado</option>
+                    <option value={0}>Borrador / Oculto</option>
                   </select>
-                </div>
+                </label>
               </div>
 
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, borderTop: '1px solid var(--border-color)', paddingTop: 15 }}>
-                <button
-                  type="button"
-                  className="btn"
-                  onClick={() => setShowModal(false)}
-                  style={{ padding: '8px 16px' }}
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  className="btn btn-primary"
-                  disabled={savingPost}
-                  style={{ padding: '8px 20px', fontWeight: 600 }}
-                >
-                  {savingPost ? 'Guardando...' : (editingPost ? 'Guardar Cambios' : 'Publicar Artículo')}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, borderTop: '1px solid var(--border-color)', paddingTop: 12 }}>
+                <button type="button" className="btn" onClick={() => setShowModal(false)} style={{ padding: '10px', borderRadius: 8, fontSize: '0.88rem' }}>Cancelar</button>
+                <button type="submit" className="btn btn-primary" disabled={savingPost} style={{ padding: '10px', borderRadius: 8, fontWeight: 700, fontSize: '0.88rem' }}>
+                  {savingPost ? 'Guardando...' : (editingPost ? 'Guardar Cambios' : 'Publicar')}
                 </button>
               </div>
             </form>
@@ -557,11 +545,11 @@ export default function BlogCMS() {
 
       {/* MODAL SELECCION MULTIMEDIA BLOG */}
       {showMediaModal && (
-        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 110, padding: 20 }}>
-          <div style={{ backgroundColor: 'var(--bg-card)', borderRadius: 10, width: '100%', maxWidth: 750, maxHeight: '85vh', overflowY: 'auto', padding: 20, border: '1px solid var(--border-color)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 }}>
-              <h3 style={{ margin: 0, fontSize: '1.1rem' }}>Seleccionar Imagen de Galería</h3>
-              <button className="btn" onClick={() => setShowMediaModal(false)}>Cerrar</button>
+        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.65)', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', zIndex: 110, overflowY: 'auto', padding: '12px 8px 24px', boxSizing: 'border-box' }}>
+          <div style={{ backgroundColor: 'var(--bg-card)', borderRadius: 12, width: '100%', maxWidth: 720, padding: '16px 14px 20px', border: '1px solid var(--border-color)', flexShrink: 0 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+              <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 700 }}>🖼️ Seleccionar Imagen</h3>
+              <button className="btn" onClick={() => setShowMediaModal(false)} style={{ padding: '4px 8px', fontSize: '0.78rem' }}>Cerrar</button>
             </div>
             <MediaBrowser onSelectImage={(url) => {
               if (mediaTargetField === 'cover') {
@@ -577,11 +565,11 @@ export default function BlogCMS() {
 
       {/* MODAL SELECCION MULTIMEDIA ABOUT */}
       {showAboutMediaModal && (
-        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 110, padding: 20 }}>
-          <div style={{ backgroundColor: 'var(--bg-card)', borderRadius: 10, width: '100%', maxWidth: 750, maxHeight: '85vh', overflowY: 'auto', padding: 20, border: '1px solid var(--border-color)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 }}>
-              <h3 style={{ margin: 0, fontSize: '1.1rem' }}>Seleccionar Imagen para Quiénes Somos</h3>
-              <button className="btn" onClick={() => setShowAboutMediaModal(false)}>Cerrar</button>
+        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.65)', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', zIndex: 110, overflowY: 'auto', padding: '12px 8px 24px', boxSizing: 'border-box' }}>
+          <div style={{ backgroundColor: 'var(--bg-card)', borderRadius: 12, width: '100%', maxWidth: 720, padding: '16px 14px 20px', border: '1px solid var(--border-color)', flexShrink: 0 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+              <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 700 }}>🖼️ Imagen Quiénes Somos</h3>
+              <button className="btn" onClick={() => setShowAboutMediaModal(false)} style={{ padding: '4px 8px', fontSize: '0.78rem' }}>Cerrar</button>
             </div>
             <MediaBrowser onSelectImage={(url) => {
               setCmsConfig(prev => ({

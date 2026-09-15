@@ -2468,83 +2468,84 @@ export default function Sales() {
 
       {/* Generated Mercado Pago QR & Payment Link Modal */}
       {generatedCharge && (
-        <div style={{
-          position: 'fixed',
-          top: 0, left: 0, right: 0, bottom: 0,
-          backgroundColor: 'rgba(0,0,0,0.75)',
-          display: 'flex',
-          justifyContent: 'center',
-          alignItems: 'center',
-          zIndex: 1100,
-          padding: 20
-        }}>
-          <div className="card shadow-2xl" style={{width: 480, maxWidth: '100%', textAlign: 'center', padding: 25, borderRadius: 12}}>
-            <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-color)', paddingBottom: 10, marginBottom: 15}}>
-              <h3 style={{margin: 0, color: '#009ee3', display: 'flex', alignItems: 'center', gap: 8}}>
+        <div
+          onClick={e => { if (e.target === e.currentTarget) setGeneratedCharge(null) }}
+          style={{
+            position: 'fixed',
+            top: 0, left: 0, right: 0, bottom: 0,
+            backgroundColor: 'rgba(0,0,0,0.75)',
+            display: 'flex', justifyContent: 'center', alignItems: 'flex-start',
+            overflowY: 'auto', zIndex: 1100,
+            padding: '12px 8px 24px', boxSizing: 'border-box'
+          }}
+        >
+          <div className="card shadow-2xl" style={{width: '100%', maxWidth: 440, textAlign: 'center', padding: '16px 14px 20px', borderRadius: 12, flexShrink: 0}}>
+            <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-color)', paddingBottom: 10, marginBottom: 12}}>
+              <h3 style={{margin: 0, fontSize: '1rem', color: '#009ee3', display: 'flex', alignItems: 'center', gap: 8}}>
                 📱 Cobro con Mercado Pago
               </h3>
               <button 
-                className="btn" 
-                style={{padding: '4px 10px', backgroundColor: 'transparent', color: 'var(--text-secondary)'}}
+                type="button"
+                style={{background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', fontSize: '1.2rem', lineHeight: 1, padding: '2px 6px'}}
                 onClick={() => setGeneratedCharge(null)}
               >
                 ✕
               </button>
             </div>
 
-            <p style={{fontSize: '0.9rem', color: 'var(--text-secondary)', marginBottom: 15}}>
-              Monto a Cobrar: <strong style={{fontSize: '1.4rem', color: 'var(--text-primary)'}}>${generatedCharge.total_amount?.toLocaleString()}</strong>
+            <p style={{fontSize: '0.88rem', color: 'var(--text-secondary)', marginBottom: 12, marginTop: 0}}>
+              Monto a Cobrar: <strong style={{fontSize: '1.3rem', color: 'var(--text-primary)'}}>${generatedCharge.total_amount?.toLocaleString()}</strong>
             </p>
 
             <div style={{
               backgroundColor: '#ffffff',
-              padding: 15,
-              borderRadius: 12,
+              padding: 12,
+              borderRadius: 10,
               display: 'inline-block',
               boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
-              marginBottom: 15
+              marginBottom: 12
             }}>
               <img 
                 src={generatedCharge.qr_code_url} 
                 alt="QR Mercado Pago" 
-                style={{width: 240, height: 240, display: 'block'}}
+                style={{width: 200, height: 200, display: 'block'}}
               />
             </div>
 
-            <p style={{fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: 20}}>
-              📲 <strong>El cliente debe abrir su app de Mercado Pago o cámara</strong> y escanear este código QR para abonar en el acto.
+            <p style={{fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: 14}}>
+              📲 <strong>El cliente debe abrir su app de Mercado Pago o cámara</strong> y escanear este QR para abonar.
             </p>
 
-            <div style={{display: 'flex', flexDirection: 'column', gap: 10}}>
-              <div style={{display: 'flex', gap: 10}}>
+            <div style={{display: 'flex', flexDirection: 'column', gap: 8}}>
+              <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8}}>
                 <button 
                   type="button" 
                   className="btn" 
-                  style={{flex: 1, padding: '10px', backgroundColor: 'var(--bg-hover)', color: 'var(--text-primary)'}}
+                  style={{padding: '10px', backgroundColor: 'var(--bg-hover)', color: 'var(--text-primary)', fontSize: '0.82rem'}}
                   onClick={() => {
                     navigator.clipboard.writeText(generatedCharge.init_point)
                     alert("¡Link de Pago copiado al portapapeles!")
                   }}
                 >
-                  🔗 Copiar Link de Pago
+                  🔗 Copiar Link
                 </button>
                 <button 
                   type="button" 
                   className="btn" 
-                  style={{flex: 1, padding: '10px', backgroundColor: '#25D366', color: '#fff', border: 'none', fontWeight: 'bold'}}
+                  style={{padding: '10px', backgroundColor: '#25D366', color: '#fff', border: 'none', fontWeight: 'bold', fontSize: '0.82rem'}}
                   onClick={() => {
                     const text = encodeURIComponent(`Hola! Aquí tienes el link para abonar tu compra de $${generatedCharge.total_amount?.toLocaleString()} por Mercado Pago: ${generatedCharge.init_point}`)
                     window.open(`https://wa.me/?text=${text}`, '_blank')
                   }}
                 >
-                  💬 Enviar por WhatsApp
+                  💬 WhatsApp
                 </button>
               </div>
 
               <button 
                 type="button" 
                 className="btn" 
-                style={{width: '100%', padding: '12px', marginTop: 10, fontSize: '1rem', fontWeight: 'bold'}}
+                style={{width: '100%', padding: '11px', marginTop: 4, fontSize: '0.9rem', fontWeight: 'bold'}}
                 onClick={() => {
                   setGeneratedCharge(null)
                   setShowModal(false)
@@ -2560,21 +2561,23 @@ export default function Sales() {
 
       {/* Inventory Link Modal */}
       {linkModalOrder && (
-        <div style={{
-          position: 'fixed',
-          top: 0, left: 0, right: 0, bottom: 0,
-          backgroundColor: 'rgba(0,0,0,0.6)',
-          display: 'flex',
-          justifyContent: 'center',
-          alignItems: 'center',
-          zIndex: 1000
-        }}>
-          <div className="card" style={{width: '90%', maxWidth: 500, maxHeight: '90vh', overflowY: 'auto'}}>
-            <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15, borderBottom: '1px solid var(--border-color)', paddingBottom: 10}}>
-              <h3>🔗 Vincular Cobro a Inventario</h3>
+        <div
+          onClick={e => { if (e.target === e.currentTarget) setLinkModalOrder(null) }}
+          style={{
+            position: 'fixed',
+            top: 0, left: 0, right: 0, bottom: 0,
+            backgroundColor: 'rgba(0,0,0,0.65)',
+            display: 'flex', justifyContent: 'center', alignItems: 'flex-start',
+            overflowY: 'auto', zIndex: 1000,
+            padding: '12px 8px 24px', boxSizing: 'border-box'
+          }}
+        >
+          <div className="card" style={{width: '100%', maxWidth: 480, padding: '16px 14px 20px', flexShrink: 0}}>
+            <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, borderBottom: '1px solid var(--border-color)', paddingBottom: 10}}>
+              <h3 style={{margin: 0, fontSize: '1rem', fontWeight: 700}}>🔗 Vincular Cobro a Inventario</h3>
               <button 
-                className="btn" 
-                style={{padding: '4px 10px', backgroundColor: 'transparent', color: 'var(--text-secondary)'}}
+                type="button"
+                style={{background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', fontSize: '1.2rem', lineHeight: 1, padding: '2px 6px'}}
                 onClick={() => setLinkModalOrder(null)}
               >
                 ✕
@@ -2611,17 +2614,17 @@ export default function Sales() {
                 setLinkingLoading(false)
               }
             }}>
-              <p style={{fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: 15}}>
-                Este cobro de <strong>${linkModalOrder.total_amount?.toLocaleString()}</strong> ({linkModalOrder.source_platform}) no tiene producto asignado. Selecciona el producto vendido para descontar stock y calcular ganancias netas:
+              <p style={{fontSize: '0.82rem', color: 'var(--text-secondary)', marginBottom: 12, marginTop: 0}}>
+                Cobro de <strong>${linkModalOrder.total_amount?.toLocaleString()}</strong> ({linkModalOrder.source_platform}) sin producto. Selecciona el producto vendido para descontar stock:
               </p>
 
-              <div style={{display: 'flex', flexDirection: 'column', gap: 15}}>
-                <label>Producto del Inventario
+              <div style={{display: 'flex', flexDirection: 'column', gap: 10}}>
+                <label style={{fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', display: 'flex', flexDirection: 'column', gap: 3}}>PRODUCTO
                   <select 
                     required 
                     value={selectedProdId} 
                     onChange={e => setSelectedProdId(e.target.value)}
-                    style={{width: '100%', marginTop: 5, padding: '8px', borderRadius: 6, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)'}}
+                    style={{width: '100%', fontSize: '0.88rem', padding: '7px 9px', borderRadius: 6, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)', boxSizing: 'border-box'}}
                   >
                     <option value="">Selecciona un producto...</option>
                     {inventory.map(p => (
@@ -2632,29 +2635,29 @@ export default function Sales() {
                   </select>
                 </label>
 
-                <label>Cantidad Vendida
+                <label style={{fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', display: 'flex', flexDirection: 'column', gap: 3}}>CANTIDAD
                   <input 
                     type="number" 
                     required 
                     min="1" 
                     value={selectedQty} 
                     onChange={e => setSelectedQty(parseInt(e.target.value) || 1)}
-                    style={{width: '100%', marginTop: 5, padding: '8px', borderRadius: 6, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)'}}
+                    style={{width: '100%', fontSize: '0.88rem', padding: '7px 9px', borderRadius: 6, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)', boxSizing: 'border-box'}}
                   />
                 </label>
               </div>
 
-              <div style={{display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 20, borderTop: '1px solid var(--border-color)', paddingTop: 15}}>
+              <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 12, borderTop: '1px solid var(--border-color)', paddingTop: 12}}>
                 <button 
                   type="button" 
                   className="btn" 
-                  style={{backgroundColor: 'var(--bg-hover)', color: 'var(--text-secondary)'}}
+                  style={{padding: '10px', backgroundColor: 'transparent', border: '1px solid var(--border-color)', color: 'var(--text-secondary)', borderRadius: 8, fontSize: '0.88rem'}}
                   onClick={() => setLinkModalOrder(null)}
                 >
                   Cancelar
                 </button>
-                <button type="submit" className="btn" disabled={linkingLoading}>
-                  {linkingLoading ? "Viculando..." : "Vincular y Descontar Stock"}
+                <button type="submit" className="btn" disabled={linkingLoading} style={{padding: '10px', borderRadius: 8, fontWeight: 700, fontSize: '0.88rem'}}>
+                  {linkingLoading ? "Vinculando..." : "Vincular Stock"}
                 </button>
               </div>
             </form>
@@ -2666,11 +2669,13 @@ export default function Sales() {
         <div style={{
           position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
           backgroundColor: 'rgba(0,0,0,0.75)', display: 'flex',
-          justifyContent: 'center', alignItems: 'center', zIndex: 1100, padding: 20
+          justifyContent: 'center', alignItems: 'flex-start',
+          overflowY: 'auto', zIndex: 1100,
+          padding: '12px 8px 24px', boxSizing: 'border-box'
         }}>
-          <div className="card shadow-2xl" style={{width: 520, maxWidth: '100%', padding: 25, borderRadius: 12}}>
-            <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15, borderBottom: '1px solid var(--border-color)', paddingBottom: 10}}>
-              <h3 style={{margin: 0, color: 'var(--accent-blue)', display: 'flex', alignItems: 'center', gap: 8}}>
+          <div className="card shadow-2xl" style={{width: '100%', maxWidth: 520, padding: '16px 14px 20px', borderRadius: 12, flexShrink: 0}}>
+            <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, borderBottom: '1px solid var(--border-color)', paddingBottom: 10}}>
+              <h3 style={{margin: 0, fontSize: '1rem', color: 'var(--accent-blue)', display: 'flex', alignItems: 'center', gap: 8}}>
                 📄 Emitir Factura AFIP / ARCA
               </h3>
               <button 

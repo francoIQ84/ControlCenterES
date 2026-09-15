@@ -448,20 +448,22 @@ export default function MeliQuestions({ embedded = false }) {
         <div style={{
           position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
           backgroundColor: 'rgba(0,0,0,0.75)', zIndex: 1000,
-          display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20
+          display: 'flex', alignItems: 'flex-start', justifyContent: 'center',
+          overflowY: 'auto', padding: '12px 8px 24px', boxSizing: 'border-box'
         }}>
           <div style={{
-            backgroundColor: 'var(--bg-card, #1f2937)', borderRadius: 16,
-            maxWidth: 650, width: '100%', maxHeight: '90vh', overflowY: 'auto',
-            border: '1px solid var(--border-color, #374151)', padding: 24, boxShadow: '0 20px 40px rgba(0,0,0,0.5)'
+            backgroundColor: 'var(--bg-card, #1f2937)', borderRadius: 12,
+            width: '100%', maxWidth: 600,
+            border: '1px solid var(--border-color, #374151)', padding: '16px 14px 20px',
+            boxShadow: '0 20px 40px rgba(0,0,0,0.5)', flexShrink: 0
           }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
-              <h2 style={{ fontSize: '1.25rem', fontWeight: 800, margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
-                <Settings className="text-yellow-500" size={22} />
-                Ajustes de Auto-Responder (Gemini AI)
-              </h2>
-              <button onClick={() => setShowSettings(false)} style={{ background: 'none', border: 'none', color: '#9ca3af', cursor: 'pointer' }}>
-                <X size={20} />
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+              <h3 style={{ fontSize: '1rem', fontWeight: 800, margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
+                <Settings size={18} style={{color: '#f59e0b'}} />
+                Ajustes Auto-Responder
+              </h3>
+              <button onClick={() => setShowSettings(false)} style={{ background: 'none', border: 'none', color: '#9ca3af', cursor: 'pointer', fontSize: '1.2rem', lineHeight: 1, padding: '2px 6px' }}>
+                ✕
               </button>
             </div>
 
@@ -571,19 +573,19 @@ export default function MeliQuestions({ embedded = false }) {
             </div>
 
             {/* ACCIONES FOOTER */}
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 4 }}>
               <button
                 onClick={() => setShowSettings(false)}
-                style={{ padding: '10px 18px', borderRadius: 8, border: '1px solid var(--border-color, #374151)', backgroundColor: 'transparent', color: '#9ca3af', fontWeight: 600, cursor: 'pointer' }}
+                style={{ padding: '10px', borderRadius: 8, border: '1px solid var(--border-color, #374151)', backgroundColor: 'transparent', color: '#9ca3af', fontWeight: 600, cursor: 'pointer', fontSize: '0.88rem' }}
               >
                 Cancelar
               </button>
               <button
                 onClick={handleSaveSettings}
                 disabled={savingSettings}
-                style={{ padding: '10px 20px', borderRadius: 8, border: 'none', backgroundColor: '#f59e0b', color: '#fff', fontWeight: 700, cursor: 'pointer' }}
+                style={{ padding: '10px', borderRadius: 8, border: 'none', backgroundColor: '#f59e0b', color: '#fff', fontWeight: 700, cursor: 'pointer', fontSize: '0.88rem' }}
               >
-                {savingSettings ? 'Guardando...' : 'Guardar Ajustes'}
+                {savingSettings ? 'Guardando...' : 'Guardar'}
               </button>
             </div>
           </div>
@@ -592,61 +594,64 @@ export default function MeliQuestions({ embedded = false }) {
 
       {/* MODAL RESPUESTA MANUAL / EDICIÓN */}
       {selectedQuestion && (
-        <div style={{
-          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-          backgroundColor: 'rgba(0,0,0,0.75)', zIndex: 1000,
-          display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20
-        }}>
+        <div
+          onClick={e => { if (e.target === e.currentTarget) setSelectedQuestion(null) }}
+          style={{
+            position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+            backgroundColor: 'rgba(0,0,0,0.75)', zIndex: 1000,
+            display: 'flex', alignItems: 'flex-start', justifyContent: 'center',
+            overflowY: 'auto', padding: '12px 8px 24px', boxSizing: 'border-box'
+          }}
+        >
           <div style={{
-            backgroundColor: 'var(--bg-card, #1f2937)', borderRadius: 16,
-            maxWidth: 550, width: '100%', border: '1px solid var(--border-color, #374151)', padding: 24
+            backgroundColor: 'var(--bg-card, #1f2937)', borderRadius: 12,
+            width: '100%', maxWidth: 520,
+            border: '1px solid var(--border-color, #374151)', padding: '16px 14px 20px', flexShrink: 0
           }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-              <h3 style={{ margin: 0, fontWeight: 700, fontSize: '1.1rem' }}>Responder Pregunta MeLi</h3>
-              <button onClick={() => setSelectedQuestion(null)} style={{ background: 'none', border: 'none', color: '#9ca3af', cursor: 'pointer' }}>
-                <X size={20} />
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+              <h3 style={{ margin: 0, fontWeight: 700, fontSize: '1rem' }}>💬 Responder Pregunta</h3>
+              <button onClick={() => setSelectedQuestion(null)} style={{ background: 'none', border: 'none', color: '#9ca3af', cursor: 'pointer', fontSize: '1.2rem', lineHeight: 1, padding: '2px 6px' }}>
+                ✕
               </button>
             </div>
 
-            <div style={{ marginBottom: 14, padding: 12, borderRadius: 8, backgroundColor: 'rgba(255,255,255,0.03)' }}>
-              <div style={{ fontSize: '0.8rem', color: '#f59e0b', fontWeight: 600 }}>
-                Pregunta de @{selectedQuestion.buyer_nickname || 'Comprador'}:
+            <div style={{ marginBottom: 12, padding: '10px 12px', borderRadius: 8, backgroundColor: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-color, #374151)' }}>
+              <div style={{ fontSize: '0.72rem', color: '#f59e0b', fontWeight: 700, textTransform: 'uppercase', marginBottom: 4 }}>
+                Pregunta de @{selectedQuestion.buyer_nickname || 'Comprador'}
               </div>
-              <div style={{ fontSize: '0.9rem', fontStyle: 'italic', margin: '4px 0 0' }}>
+              <div style={{ fontSize: '0.88rem', fontStyle: 'italic' }}>
                 "{selectedQuestion.question_text}"
               </div>
             </div>
 
-            <div style={{ marginBottom: 20 }}>
-              <label style={{ display: 'block', fontWeight: 600, fontSize: '0.85rem', marginBottom: 6 }}>
-                Tu Respuesta (se enviará a Mercado Libre):
-              </label>
+            <label style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 12 }}>
+              <span style={{ fontSize: '0.75rem', fontWeight: 600, color: '#9ca3af', textTransform: 'uppercase' }}>TU RESPUESTA</span>
               <textarea
                 rows={4}
                 value={manualAnswerText}
                 onChange={(e) => setManualAnswerText(e.target.value)}
                 style={{
-                  width: '100%', padding: 12, borderRadius: 8,
+                  width: '100%', padding: '8px 10px', borderRadius: 8, boxSizing: 'border-box',
                   border: '1px solid var(--border-color, #374151)', backgroundColor: 'rgba(0,0,0,0.2)',
-                  color: '#fff', fontSize: '0.9rem'
+                  color: '#fff', fontSize: '0.88rem', resize: 'vertical'
                 }}
               />
-            </div>
+            </label>
 
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
               <button
                 onClick={() => setSelectedQuestion(null)}
-                style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid var(--border-color, #374151)', backgroundColor: 'transparent', color: '#9ca3af', fontWeight: 600, cursor: 'pointer' }}
+                style={{ padding: '10px', borderRadius: 8, border: '1px solid var(--border-color, #374151)', backgroundColor: 'transparent', color: '#9ca3af', fontWeight: 600, cursor: 'pointer', fontSize: '0.88rem' }}
               >
                 Cancelar
               </button>
               <button
                 onClick={handleSendAnswer}
                 disabled={answering || !manualAnswerText.trim()}
-                style={{ padding: '8px 18px', borderRadius: 8, border: 'none', backgroundColor: '#10b981', color: '#fff', fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}
+                style={{ padding: '10px', borderRadius: 8, border: 'none', backgroundColor: '#10b981', color: '#fff', fontWeight: 700, cursor: 'pointer', fontSize: '0.88rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
               >
                 <Send size={14} />
-                {answering ? 'Publicando en MeLi...' : 'Publicar Respuesta'}
+                {answering ? 'Publicando...' : 'Publicar'}
               </button>
             </div>
           </div>

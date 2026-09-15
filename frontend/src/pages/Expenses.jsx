@@ -1651,99 +1651,107 @@ export default function Expenses() {
       )}
       {/* --- EDIT MODAL --- */}
       {editModal.open && editModal.item && (
-        <div style={{
-          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-          backgroundColor: 'rgba(0,0,0,0.7)', display: 'flex',
-          justifyContent: 'center', alignItems: 'center', zIndex: 1000
-        }}>
-          <div className="card" style={{ width: 450, maxWidth: '90%', padding: 25, backgroundColor: 'var(--bg-card)', border: '1px solid var(--border-color)' }}>
-            <h3 style={{ marginTop: 0, marginBottom: 20 }}>
-              ✏️ Editar {editModal.type === 'fixed' ? 'Gasto Fijo' : editModal.type === 'variable' ? 'Gasto Variable' : 'Ingreso Manual'}
-            </h3>
-            <form onSubmit={handleSaveEdit} style={{ display: 'flex', flexDirection: 'column', gap: 15 }}>
+        <div
+          onClick={e => { if (e.target === e.currentTarget) setEditModal({ open: false, type: '', item: null }) }}
+          style={{
+            position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+            backgroundColor: 'rgba(0,0,0,0.65)', display: 'flex',
+            justifyContent: 'center', alignItems: 'flex-start',
+            overflowY: 'auto', zIndex: 1000,
+            padding: '12px 8px 24px', boxSizing: 'border-box'
+          }}
+        >
+          <div className="card" style={{ width: '100%', maxWidth: 440, padding: '16px 14px 20px', backgroundColor: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: 12, flexShrink: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+              <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 700 }}>
+                ✏️ Editar {editModal.type === 'fixed' ? 'Gasto Fijo' : editModal.type === 'variable' ? 'Gasto Variable' : 'Ingreso Manual'}
+              </h3>
+              <button type="button" onClick={() => setEditModal({ open: false, type: '', item: null })} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', fontSize: '1.2rem', lineHeight: 1, padding: '2px 6px' }}>✕</button>
+            </div>
+            <form onSubmit={handleSaveEdit} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               {editModal.type !== 'fixed' && (
-                <label style={{ fontSize: '0.85rem' }}>Fecha *
-                  <input 
-                    type="date" 
-                    required 
-                    value={editModal.item.date || ''} 
-                    onChange={e => setEditModal(prev => ({ ...prev, item: { ...prev.item, date: e.target.value } }))} 
-                    style={{ width: '100%', marginTop: 4 }}
+                <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', display: 'flex', flexDirection: 'column', gap: 3 }}>FECHA *
+                  <input
+                    type="date"
+                    required
+                    value={editModal.item.date || ''}
+                    onChange={e => setEditModal(prev => ({ ...prev, item: { ...prev.item, date: e.target.value } }))}
+                    style={{ width: '100%', fontSize: '0.88rem', padding: '7px 8px', boxSizing: 'border-box' }}
                   />
                 </label>
               )}
-              <label style={{ fontSize: '0.85rem' }}>Descripción *
-                <input 
-                  type="text" 
-                  required 
-                  value={editModal.item.description || ''} 
-                  onChange={e => setEditModal(prev => ({ ...prev, item: { ...prev.item, description: e.target.value } }))} 
-                  style={{ width: '100%', marginTop: 4 }}
+              <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', display: 'flex', flexDirection: 'column', gap: 3 }}>DESCRIPCIÓN *
+                <input
+                  type="text"
+                  required
+                  value={editModal.item.description || ''}
+                  onChange={e => setEditModal(prev => ({ ...prev, item: { ...prev.item, description: e.target.value } }))}
+                  style={{ width: '100%', fontSize: '0.88rem', padding: '7px 8px', boxSizing: 'border-box' }}
                 />
               </label>
-              <label style={{ fontSize: '0.85rem' }}>Monto $ *
-                <input 
-                  type="number" 
-                  step="0.01" 
-                  required 
-                  value={editModal.item.amount || ''} 
-                  onChange={e => setEditModal(prev => ({ ...prev, item: { ...prev.item, amount: e.target.value } }))} 
-                  style={{ width: '100%', marginTop: 4 }}
+              <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', display: 'flex', flexDirection: 'column', gap: 3 }}>MONTO $ *
+                <input
+                  type="number"
+                  step="0.01"
+                  required
+                  value={editModal.item.amount || ''}
+                  onChange={e => setEditModal(prev => ({ ...prev, item: { ...prev.item, amount: e.target.value } }))}
+                  style={{ width: '100%', fontSize: '0.88rem', padding: '7px 8px', boxSizing: 'border-box' }}
                 />
               </label>
               {editModal.type === 'vencimientos' && (
                 <>
-                  <label style={{ fontSize: '0.85rem' }}>Fecha de Vencimiento *
-                    <input 
-                      type="date" 
-                      required 
-                      value={editModal.item.due_date || ''} 
-                      onChange={e => setEditModal(prev => ({ ...prev, item: { ...prev.item, due_date: e.target.value } }))} 
-                      style={{ width: '100%', marginTop: 4 }}
+                  <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', display: 'flex', flexDirection: 'column', gap: 3 }}>FECHA DE VENCIMIENTO *
+                    <input
+                      type="date"
+                      required
+                      value={editModal.item.due_date || ''}
+                      onChange={e => setEditModal(prev => ({ ...prev, item: { ...prev.item, due_date: e.target.value } }))}
+                      style={{ width: '100%', fontSize: '0.88rem', padding: '7px 8px', boxSizing: 'border-box' }}
                     />
                   </label>
-                  <label style={{ fontSize: '0.85rem' }}>Link de Pago (Mercado Pago, PMC, VEP)
-                    <input 
-                      type="url" 
-                      placeholder="https://..." 
-                      value={editModal.item.payment_link || ''} 
-                      onChange={e => setEditModal(prev => ({ ...prev, item: { ...prev.item, payment_link: e.target.value } }))} 
-                      style={{ width: '100%', marginTop: 4 }}
+                  <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', display: 'flex', flexDirection: 'column', gap: 3 }}>LINK DE PAGO (MP, PMC, VEP)
+                    <input
+                      type="url"
+                      placeholder="https://..."
+                      value={editModal.item.payment_link || ''}
+                      onChange={e => setEditModal(prev => ({ ...prev, item: { ...prev.item, payment_link: e.target.value } }))}
+                      style={{ width: '100%', fontSize: '0.88rem', padding: '7px 8px', boxSizing: 'border-box' }}
                     />
                   </label>
-                  <label style={{ fontSize: '0.85rem' }}>Código de Pago (CPE / VEP / Barcode)
-                    <input 
-                      type="text" 
-                      placeholder="12345678..." 
-                      value={editModal.item.payment_code || ''} 
-                      onChange={e => setEditModal(prev => ({ ...prev, item: { ...prev.item, payment_code: e.target.value } }))} 
-                      style={{ width: '100%', marginTop: 4 }}
+                  <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', display: 'flex', flexDirection: 'column', gap: 3 }}>CÓDIGO DE PAGO (CPE / VEP)
+                    <input
+                      type="text"
+                      placeholder="12345678..."
+                      value={editModal.item.payment_code || ''}
+                      onChange={e => setEditModal(prev => ({ ...prev, item: { ...prev.item, payment_code: e.target.value } }))}
+                      style={{ width: '100%', fontSize: '0.88rem', padding: '7px 8px', boxSizing: 'border-box' }}
                     />
                   </label>
                 </>
               )}
-              <label style={{ fontSize: '0.85rem' }}>Categoría
-                <select 
-                  value={editModal.item.category || ''} 
-                  onChange={e => setEditModal(prev => ({ ...prev, item: { ...prev.item, category: e.target.value } }))} 
-                  style={{ width: '100%', marginTop: 4 }}
+              <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', display: 'flex', flexDirection: 'column', gap: 3 }}>CATEGORÍA
+                <select
+                  value={editModal.item.category || ''}
+                  onChange={e => setEditModal(prev => ({ ...prev, item: { ...prev.item, category: e.target.value } }))}
+                  style={{ width: '100%', fontSize: '0.88rem', padding: '7px 8px', boxSizing: 'border-box', backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)', border: '1px solid var(--border-color)', borderRadius: 4 }}
                 >
                   {(editModal.type === 'fixed' ? fixedCategories : editModal.type === 'variable' ? variableCategories : editModal.type === 'vencimientos' ? serviceCategories : incomeCategories).map(c => (
                     <option key={c} value={c}>{c}</option>
                   ))}
                 </select>
               </label>
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 10 }}>
-                <button 
-                  type="button" 
-                  className="btn" 
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 4 }}>
+                <button
+                  type="button"
+                  className="btn"
                   onClick={() => setEditModal({ open: false, type: '', item: null })}
-                  style={{ backgroundColor: 'transparent', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}
+                  style={{ backgroundColor: 'transparent', border: '1px solid var(--border-color)', color: 'var(--text-primary)', padding: '10px', borderRadius: 8, fontSize: '0.88rem' }}
                 >
                   Cancelar
                 </button>
-                <button type="submit" className="btn-primary" style={{ padding: '6px 16px' }}>
-                  Guardar Cambios
+                <button type="submit" className="btn-primary" style={{ padding: '10px', borderRadius: 8, fontWeight: 700, fontSize: '0.88rem' }}>
+                  Guardar
                 </button>
               </div>
             </form>

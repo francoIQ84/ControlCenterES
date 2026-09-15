@@ -1912,10 +1912,19 @@ def update_item_title(ml_id: str, new_title: str) -> tuple:
 
     try:
         res = api_request("PUT", f"/items/{ml_id}", json_data={"title": new_title})
-        if res and res.status_code == 200:
+        if res is not None and res.status_code in (200, 201):
             return True, "Título actualizado exitosamente"
-        err = res.text[:200] if res else "Sin respuesta"
-        return False, f"Error al actualizar título ({res.status_code if res else '?'}): {err}"
+        code = res.status_code if res is not None else "?"
+        err = res.text[:300] if res is not None else "Sin respuesta"
+        if res is not None:
+            try:
+                data = res.json()
+                msg = data.get("message") or (data.get("cause") and str(data.get("cause")))
+                if msg:
+                    err = msg
+            except Exception:
+                pass
+        return False, f"Error al actualizar título ({code}): {err}"
     except Exception as e:
         return False, f"Excepción al actualizar título: {e}"
 
@@ -1924,16 +1933,34 @@ def update_item_description(ml_id: str, new_description: str) -> tuple:
     """Actualiza la descripción de una publicación en Mercado Libre.
 
     PUT /items/{ml_id}/description con {"plain_text": "..."}
+    Si la publicación nunca tuvo descripción (404), intenta POST.
     """
     if is_demo_mode():
         return True, "Descripción actualizada (modo demo)"
 
     try:
         res = api_request("PUT", f"/items/{ml_id}/description", json_data={"plain_text": new_description})
-        if res and res.status_code == 200:
+        if res is not None and res.status_code in (200, 201):
             return True, "Descripción actualizada exitosamente"
-        err = res.text[:200] if res else "Sin respuesta"
-        return False, f"Error al actualizar descripción ({res.status_code if res else '?'}): {err}"
+        
+        # Si 404, puede no existir la descripción aún -> crear con POST
+        if res is not None and res.status_code == 404:
+            res_post = api_request("POST", f"/items/{ml_id}/description", json_data={"plain_text": new_description})
+            if res_post is not None and res_post.status_code in (200, 201):
+                return True, "Descripción creada exitosamente"
+            res = res_post
+
+        code = res.status_code if res is not None else "?"
+        err = res.text[:300] if res is not None else "Sin respuesta"
+        if res is not None:
+            try:
+                data = res.json()
+                msg = data.get("message") or (data.get("cause") and str(data.get("cause")))
+                if msg:
+                    err = msg
+            except Exception:
+                pass
+        return False, f"Error al actualizar descripción ({code}): {err}"
     except Exception as e:
         return False, f"Excepción al actualizar descripción: {e}"
 
@@ -1953,12 +1980,21 @@ def update_item_attributes(ml_id: str, attributes: list) -> tuple:
     try:
         payload = {"attributes": attributes}
         res = api_request("PUT", f"/items/{ml_id}", json_data=payload)
-        if res and res.status_code == 200:
+        if res is not None and res.status_code in (200, 201):
             return True, f"{len(attributes)} atributos actualizados exitosamente"
-        err = res.text[:200] if res else "Sin respuesta"
-        # Algunos atributos pueden ser no-modificables, lo cual no es un error fatal
-        if res and res.status_code == 400 and "not_modifiable" in (res.text or ""):
-            return True, f"Algunos atributos no son modificables — se actualizaron los permitidos"
-        return False, f"Error al actualizar atributos ({res.status_code if res else '?'}): {err}"
+        code = res.status_code if res is not None else "?"
+        err = res.text[:300] if res is not None else "Sin respuesta"
+        if res is not None:
+            # Algunos atributos pueden ser no-modificables, lo cual no es un error fatal
+            if res.status_code == 400 and "not_modifiable" in (res.text or ""):
+                return True, f"Algunos atributos no son modificables — se actualizaron los permitidos"
+            try:
+                data = res.json()
+                msg = data.get("message") or (data.get("cause") and str(data.get("cause")))
+                if msg:
+                    err = msg
+            except Exception:
+                pass
+        return False, f"Error al actualizar atributos ({code}): {err}"
     except Exception as e:
         return False, f"Excepción al actualizar atributos: {e}"
