@@ -579,7 +579,10 @@ input, select {
 
   /* Inventory Controls Responsive Rules */
   .inventory-desktop-controls,
-  .inventory-desktop-header {
+  .inventory-desktop-header,
+  .inventory-sticky-scrollbar-bar,
+  .inventory-desktop-zoom-controls,
+  .table-scroll-hint-right {
     display: none !important;
   }
 
@@ -1357,6 +1360,26 @@ input, select {
     position: relative;
     overflow-x: auto;
     max-width: 100%;
+    scrollbar-width: thin;
+    scrollbar-color: var(--accent-blue) rgba(255, 255, 255, 0.05);
+  }
+
+  .data-table-wrapper::-webkit-scrollbar {
+    height: 9px;
+  }
+
+  .data-table-wrapper::-webkit-scrollbar-track {
+    background: rgba(0, 0, 0, 0.15);
+    border-radius: 6px;
+  }
+
+  .data-table-wrapper::-webkit-scrollbar-thumb {
+    background: var(--accent-blue);
+    border-radius: 6px;
+  }
+
+  .data-table-wrapper::-webkit-scrollbar-thumb:hover {
+    background: #2563eb;
   }
 
   .sticky-col-left-1 {
@@ -1369,15 +1392,150 @@ input, select {
 
   .sticky-col-left-2 {
     position: sticky;
-    left: 60px;
+    left: 45px;
     z-index: 5;
     background-color: var(--bg-card) !important;
     box-shadow: 3px 0 6px -2px rgba(0, 0, 0, 0.15);
   }
 
+  th.sticky-col-left-1,
+  th.sticky-col-left-2 {
+    background-color: var(--bg-card) !important;
+    z-index: 7;
+  }
+
   tr:hover .sticky-col-left-1,
   tr:hover .sticky-col-left-2 {
     background-color: var(--bg-card-hover) !important;
+  }
+
+  /* Desktop Inventory Sticky Scrollbar Bar */
+  .inventory-sticky-scrollbar-bar {
+    position: sticky;
+    bottom: 0;
+    z-index: 40;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 14px;
+    margin: 10px -14px -16px -14px;
+    background: var(--bg-card);
+    border-top: 1px solid var(--border-color);
+    box-shadow: 0 -6px 20px rgba(0, 0, 0, 0.35);
+    border-radius: 0 0 12px 12px;
+  }
+
+  .sticky-scroll-controls-left,
+  .sticky-scroll-controls-right {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+  }
+
+  .sticky-scroll-btn {
+    width: 28px;
+    height: 28px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 6px;
+    border: 1px solid var(--border-color);
+    background: var(--bg-dark);
+    color: var(--text-primary);
+    cursor: pointer;
+    font-size: 0.85rem;
+    font-weight: bold;
+    transition: all 0.15s ease;
+  }
+
+  .sticky-scroll-btn:hover:not(:disabled) {
+    background: var(--accent-blue);
+    color: #fff;
+    border-color: var(--accent-blue);
+  }
+
+  .sticky-scroll-btn:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+  }
+
+  .sticky-scroll-label {
+    font-size: 0.74rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    white-space: nowrap;
+  }
+
+  .sticky-scroll-track {
+    flex: 1;
+    overflow-x: auto;
+    overflow-y: hidden;
+    height: 14px;
+    scrollbar-width: thin;
+    scrollbar-color: var(--accent-blue) rgba(0, 0, 0, 0.2);
+    cursor: pointer;
+  }
+
+  .sticky-scroll-track::-webkit-scrollbar {
+    height: 10px;
+  }
+
+  .sticky-scroll-track::-webkit-scrollbar-track {
+    background: rgba(0, 0, 0, 0.25);
+    border-radius: 8px;
+  }
+
+  .sticky-scroll-track::-webkit-scrollbar-thumb {
+    background: var(--accent-blue);
+    border-radius: 8px;
+    border: 2px solid var(--bg-card);
+  }
+
+  .sticky-scroll-track::-webkit-scrollbar-thumb:hover {
+    background: #60a5fa;
+  }
+
+  .sticky-scroll-more-badge {
+    font-size: 0.72rem;
+    font-weight: 700;
+    color: var(--accent-blue);
+    background: rgba(59, 130, 246, 0.15);
+    border: 1px solid rgba(59, 130, 246, 0.3);
+    padding: 3px 8px;
+    border-radius: 12px;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+
+  .table-scroll-hint-right {
+    position: absolute;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    width: 28px;
+    pointer-events: none;
+    background: linear-gradient(to right, transparent, rgba(15, 23, 42, 0.45));
+    z-index: 15;
+    transition: opacity 0.2s ease;
+  }
+
+  body.light-mode .table-scroll-hint-right {
+    background: linear-gradient(to right, transparent, rgba(0, 0, 0, 0.12));
+  }
+
+  /* Compact Desktop Inventory Density Optimization */
+  .inventory-page-container {
+    width: 100%;
+  }
+
+  .inventory-page-container .table-card {
+    padding: 12px 14px 16px 14px;
+  }
+  
+  .inventory-page-container .data-table th,
+  .inventory-page-container .data-table td {
+    padding: 6px 8px;
   }
 }
 

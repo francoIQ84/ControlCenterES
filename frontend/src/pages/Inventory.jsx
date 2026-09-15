@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { Package, CloudOff, Cloud, RefreshCw, Save, QrCode, Camera, ExternalLink, Eye, EyeOff, Store, Search, X, Gauge, SlidersHorizontal, Plus } from 'lucide-react'
 import { Html5QrcodeScanner } from 'html5-qrcode'
 import MediaBrowser from '../components/MediaBrowser'
@@ -1092,8 +1092,103 @@ export default function Inventory() {
   const modifiedCount = getModifiedItems().length
   const activeFiltersCount = (hiddenFilter !== 'visible' ? 1 : 0) + (outOfStockDays ? 1 : 0)
 
+  // Desktop Zoom & Horizontal Scroll States (Exclusive to Desktop)
+  const [desktopZoom, setDesktopZoom] = useState(() => {
+    const saved = localStorage.getItem('inventory_desktop_zoom')
+    return saved ? parseFloat(saved) : 0.88
+  })
+  const [isMobile, setIsMobile] = useState(() => typeof window !== 'undefined' ? window.innerWidth <= 768 : false)
+
+  useEffect(() => {
+    const handleResize = () => {
+      setIsMobile(window.innerWidth <= 768)
+    }
+    window.addEventListener('resize', handleResize)
+    return () => window.removeEventListener('resize', handleResize)
+  }, [])
+
+  const handleSetZoom = (newZoom) => {
+    const clamped = Math.max(0.70, Math.min(1.15, Math.round(newZoom * 100) / 100))
+    setDesktopZoom(clamped)
+    localStorage.setItem('inventory_desktop_zoom', String(clamped))
+  }
+
+  const tableWrapperRef = useRef(null)
+  const bottomScrollbarRef = useRef(null)
+  const isSyncingScroll = useRef(false)
+  const [canScrollLeft, setCanScrollLeft] = useState(false)
+  const [canScrollRight, setCanScrollRight] = useState(false)
+  const [hasTableOverflow, setHasTableOverflow] = useState(false)
+  const [tableScrollWidth, setTableScrollWidth] = useState(0)
+
+  const updateTableScrollState = useCallback(() => {
+    const el = tableWrapperRef.current
+    if (!el) return
+    const { scrollLeft, scrollWidth, clientWidth } = el
+    const maxScroll = scrollWidth - clientWidth
+    const overflow = maxScroll > 4
+    setHasTableOverflow(overflow)
+    setCanScrollLeft(scrollLeft > 4)
+    setCanScrollRight(scrollLeft < maxScroll - 4)
+    setTableScrollWidth(scrollWidth)
+  }, [])
+
+  useEffect(() => {
+    const el = tableWrapperRef.current
+    if (!el) return
+    updateTableScrollState()
+
+    const onScroll = () => {
+      updateTableScrollState()
+      if (isSyncingScroll.current) return
+      isSyncingScroll.current = true
+      if (bottomScrollbarRef.current) {
+        bottomScrollbarRef.current.scrollLeft = el.scrollLeft
+      }
+      requestAnimationFrame(() => {
+        isSyncingScroll.current = false
+      })
+    }
+
+    el.addEventListener('scroll', onScroll, { passive: true })
+
+    const ro = new ResizeObserver(() => {
+      updateTableScrollState()
+    })
+    ro.observe(el)
+    if (el.firstElementChild) ro.observe(el.firstElementChild)
+
+    return () => {
+      el.removeEventListener('scroll', onScroll)
+      ro.disconnect()
+    }
+  }, [updateTableScrollState, desktopZoom, viewMode, isReadingMode, sortedProducts?.length])
+
+  const handleBottomScroll = (e) => {
+    if (isSyncingScroll.current) return
+    isSyncingScroll.current = true
+    if (tableWrapperRef.current) {
+      tableWrapperRef.current.scrollLeft = e.currentTarget.scrollLeft
+    }
+    requestAnimationFrame(() => {
+      isSyncingScroll.current = false
+    })
+  }
+
+  const scrollTableBy = (delta) => {
+    if (!tableWrapperRef.current) return
+    tableWrapperRef.current.scrollBy({ left: delta, behavior: 'smooth' })
+  }
+
+  const handleTableWheel = (e) => {
+    if (e.shiftKey && tableWrapperRef.current) {
+      e.preventDefault()
+      tableWrapperRef.current.scrollLeft += e.deltaY || e.deltaX
+    }
+  }
+
   return (
-    <div>
+    <div className="inventory-page-container">
       <div className={!isReadingMode ? "inventory-desktop-header" : ""} style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: isReadingMode ? 12 : 20, flexWrap: 'wrap', gap: 12}}>
         <div>
           <h1 className="page-title">{isReadingMode ? "Consulta de Mostrador (Stock & Precios)" : "Inventario de Publicaciones"}</h1>
@@ -1863,6 +1958,161 @@ export default function Inventory() {
               <option value="30">⚠️ Sin Stock (Últ. 30 días)</option>
             </select>
             )}
+
+            {/* Desktop Zoom Controller */}
+            <div className="inventory-desktop-zoom-controls" style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 4,
+              padding: '3px 8px',
+              borderRadius: 6,
+              backgroundColor: 'var(--bg-card)',
+              border: '1px solid var(--border-color)',
+              height: 34,
+              boxSizing: 'border-box'
+            }}>
+              <span style={{ fontSize: '0.74rem', color: 'var(--text-secondary)', fontWeight: 600 }}>
+                🔍 Zoom:
+              </span>
+              <button
+                type="button"
+                onClick={() => handleSetZoom(desktopZoom - 0.05)}
+                disabled={desktopZoom <= 0.70}
+                style={{
+                  width: 22,
+                  height: 22,
+                  padding: 0,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  borderRadius: 4,
+                  border: '1px solid var(--border-color)',
+                  backgroundColor: 'var(--bg-dark)',
+                  color: 'var(--text-primary)',
+                  cursor: desktopZoom <= 0.70 ? 'not-allowed' : 'pointer',
+                  opacity: desktopZoom <= 0.70 ? 0.35 : 1,
+                  fontWeight: 'bold',
+                  fontSize: '0.85rem'
+                }}
+                title="Alejar / Reducir zoom (Zoom Out)"
+              >
+                -
+              </button>
+              <select
+                value={Math.round(desktopZoom * 100)}
+                onChange={e => handleSetZoom(Number(e.target.value) / 100)}
+                style={{
+                  fontSize: '0.78rem',
+                  fontWeight: 700,
+                  padding: '2px 4px',
+                  borderRadius: 4,
+                  border: 'none',
+                  backgroundColor: 'transparent',
+                  color: 'var(--accent-blue)',
+                  cursor: 'pointer'
+                }}
+                title="Seleccionar escala ajustada"
+              >
+                <option value="100">100% (Normal)</option>
+                <option value="92">92% (Equilibrado)</option>
+                <option value="88">88% (Ajustado ⭐)</option>
+                <option value="82">82% (Compacto)</option>
+                <option value="75">75% (Mínimo)</option>
+              </select>
+              <button
+                type="button"
+                onClick={() => handleSetZoom(desktopZoom + 0.05)}
+                disabled={desktopZoom >= 1.15}
+                style={{
+                  width: 22,
+                  height: 22,
+                  padding: 0,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  borderRadius: 4,
+                  border: '1px solid var(--border-color)',
+                  backgroundColor: 'var(--bg-dark)',
+                  color: 'var(--text-primary)',
+                  cursor: desktopZoom >= 1.15 ? 'not-allowed' : 'pointer',
+                  opacity: desktopZoom >= 1.15 ? 0.35 : 1,
+                  fontWeight: 'bold',
+                  fontSize: '0.85rem'
+                }}
+                title="Acercar / Aumentar zoom (Zoom In)"
+              >
+                +
+              </button>
+              {Math.round(desktopZoom * 100) !== 88 && (
+                <button
+                  type="button"
+                  onClick={() => handleSetZoom(0.88)}
+                  style={{
+                    fontSize: '0.68rem',
+                    padding: '2px 5px',
+                    borderRadius: 4,
+                    border: '1px solid var(--border-color)',
+                    backgroundColor: 'var(--bg-hover)',
+                    color: 'var(--text-secondary)',
+                    cursor: 'pointer',
+                    marginLeft: 2
+                  }}
+                  title="Restablecer al zoom óptimo (88%)"
+                >
+                  88%
+                </button>
+              )}
+            </div>
+
+            {hasTableOverflow && (
+              <div className="inventory-desktop-scroll-nav" style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 4
+              }}>
+                <button
+                  type="button"
+                  onClick={() => scrollTableBy(-320)}
+                  disabled={!canScrollLeft}
+                  className="btn"
+                  style={{
+                    padding: '5px 9px',
+                    height: 34,
+                    boxSizing: 'border-box',
+                    fontSize: '0.74rem',
+                    backgroundColor: 'var(--bg-card)',
+                    border: '1px solid var(--border-color)',
+                    color: canScrollLeft ? 'var(--text-primary)' : 'var(--text-secondary)',
+                    opacity: canScrollLeft ? 1 : 0.4,
+                    cursor: canScrollLeft ? 'pointer' : 'default'
+                  }}
+                  title="Desplazar tabla a la izquierda"
+                >
+                  ◀ Izq
+                </button>
+                <button
+                  type="button"
+                  onClick={() => scrollTableBy(320)}
+                  disabled={!canScrollRight}
+                  className="btn"
+                  style={{
+                    padding: '5px 9px',
+                    height: 34,
+                    boxSizing: 'border-box',
+                    fontSize: '0.74rem',
+                    backgroundColor: canScrollRight ? 'rgba(59, 130, 246, 0.15)' : 'var(--bg-card)',
+                    border: canScrollRight ? '1px solid var(--accent-blue)' : '1px solid var(--border-color)',
+                    color: canScrollRight ? 'var(--accent-blue)' : 'var(--text-secondary)',
+                    opacity: canScrollRight ? 1 : 0.4,
+                    cursor: canScrollRight ? 'pointer' : 'default',
+                    fontWeight: canScrollRight ? 700 : 'normal'
+                  }}
+                  title="Desplazar tabla a la derecha (ver columnas ocultas)"
+                >
+                  Der ▶
+                </button>
+              </div>
+            )}
           </div>
           <div className="control-buttons" style={{display: 'flex', gap: 10, flexWrap: 'wrap'}}>
             {modifiedCount > 0 && (
@@ -2316,7 +2566,12 @@ export default function Inventory() {
       <div className="card table-card">
         {loading ? <p>Cargando...</p> : (
           isReadingMode ? (
-            <div className="data-table-wrapper reading-mode-table-wrapper">
+            <div 
+              className="data-table-wrapper reading-mode-table-wrapper"
+              ref={isReadingMode ? tableWrapperRef : null}
+              onWheel={handleTableWheel}
+              style={{ zoom: isMobile ? 1 : desktopZoom }}
+            >
               <table className="data-table reading-mode-table">
                 <thead>
                   <tr>
@@ -2379,12 +2634,18 @@ export default function Inventory() {
               </table>
             </div>
           ) : (
-            <div className="data-table-wrapper">
+            <div 
+              className={`data-table-wrapper ${canScrollRight ? 'has-overflow-right' : ''}`}
+              ref={!isReadingMode ? tableWrapperRef : null}
+              onWheel={handleTableWheel}
+              style={{ zoom: isMobile ? 1 : desktopZoom }}
+            >
+              {canScrollRight && <div className="table-scroll-hint-right" />}
               <table className="data-table">
                 <thead>
                   {viewMode === 'compact' ? (
                     <tr>
-                      <th style={{width: 35, textAlign: 'center'}}>
+                      <th className="sticky-col-left-1" style={{width: 35, textAlign: 'center'}}>
                         <input 
                           type="checkbox" 
                           checked={isAllVisibleSelected}
@@ -2394,7 +2655,7 @@ export default function Inventory() {
                           title="Seleccionar / Deseleccionar todos los visibles"
                         />
                       </th>
-                      <th style={{width: 45}}>IMG</th>
+                      <th className="sticky-col-left-2" style={{width: 45}}>IMG</th>
                       <th onClick={() => requestSort('title')} style={{cursor: 'pointer', userSelect: 'none', minWidth: 220}}>Detalle{getSortIcon('title')}</th>
                       <th onClick={() => requestSort('status')} style={{cursor: 'pointer', userSelect: 'none', width: 95}} title="Ordenar por Estado de Mercado Libre">Estado ML{getSortIcon('status')}</th>
                       <th onClick={() => requestSort('quality')} style={{cursor: 'pointer', userSelect: 'none', width: 85, textAlign: 'center'}} title="Objetivos de calidad pendientes. Ordenar dos veces para ver las peores primero.">Calidad{getSortIcon('quality')}</th>
@@ -2409,7 +2670,7 @@ export default function Inventory() {
                     </tr>
                   ) : (
                     <tr>
-                      <th style={{width: 35, textAlign: 'center'}}>
+                      <th className="sticky-col-left-1" style={{width: 35, textAlign: 'center'}}>
                         <input 
                           type="checkbox" 
                           checked={isAllVisibleSelected}
@@ -2419,7 +2680,7 @@ export default function Inventory() {
                           title="Seleccionar / Deseleccionar todos los visibles"
                         />
                       </th>
-                      <th>IMG</th>
+                      <th className="sticky-col-left-2">IMG</th>
                       <th onClick={() => requestSort('title')} style={{cursor: 'pointer', userSelect: 'none'}}>Detalle{getSortIcon('title')}</th>
                       <th onClick={() => requestSort('status')} style={{cursor: 'pointer', userSelect: 'none'}}>Estado ML{getSortIcon('status')}</th>
                       <th onClick={() => requestSort('stock')} style={{cursor: 'pointer', userSelect: 'none'}}>Stock & Precios{getSortIcon('stock')}</th>
@@ -2454,6 +2715,56 @@ export default function Inventory() {
               </table>
             </div>
           )
+        )}
+
+        {/* Sticky Horizontal Scrollbar Bar (Always visible at the bottom of the viewport on desktop) */}
+        {hasTableOverflow && (
+          <div className="inventory-sticky-scrollbar-bar">
+            <div className="sticky-scroll-controls-left">
+              <button 
+                type="button"
+                className="sticky-scroll-btn"
+                onClick={() => scrollTableBy(-320)}
+                disabled={!canScrollLeft}
+                title="Desplazar tabla a la izquierda"
+              >
+                ◀
+              </button>
+              <span className="sticky-scroll-label">
+                Desplazar tabla
+              </span>
+            </div>
+
+            <div 
+              className="sticky-scroll-track"
+              ref={bottomScrollbarRef}
+              onScroll={handleBottomScroll}
+              title="Arrastra para deslizar horizontalmente las columnas de la tabla"
+            >
+              <div style={{ width: tableScrollWidth, height: 1 }} />
+            </div>
+
+            <div className="sticky-scroll-controls-right">
+              <button 
+                type="button"
+                className="sticky-scroll-btn"
+                onClick={() => scrollTableBy(320)}
+                disabled={!canScrollRight}
+                title="Desplazar tabla a la derecha"
+              >
+                ▶
+              </button>
+              {canScrollRight && (
+                <span 
+                  className="sticky-scroll-more-badge" 
+                  onClick={() => scrollTableBy(320)}
+                  title="Haz clic para ver las columnas ocultas a la derecha"
+                >
+                  Más columnas ▶
+                </span>
+              )}
+            </div>
+          </div>
         )}
       </div>
 
