@@ -3585,10 +3585,10 @@ def save_meli_optimization(ml_id: str, opt_type: str, data: dict):
     status = data.get("status", "pending")
     with get_connection() as conn:
         with conn.cursor() as cursor:
-            # Upsert: si ya existe una del mismo tipo pendiente, la reemplaza
+            # Upsert: si ya existe una del mismo tipo, la reemplaza
             cursor.execute('''
                 DELETE FROM meli_optimizations
-                WHERE ml_id = %s AND opt_type = %s AND status IN ('pending', 'audit')
+                WHERE ml_id = %s AND opt_type = %s
             ''', (ml_id, opt_type))
             cursor.execute('''
                 INSERT INTO meli_optimizations (ml_id, opt_type, data_json, status)

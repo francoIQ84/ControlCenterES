@@ -478,9 +478,141 @@ def audit_all_items(status: str = None) -> dict:
 # ───────────────────────────────────────────────────────────────────────
 # Optimización con Gemini AI
 # ───────────────────────────────────────────────────────────────────────
+# LLM & Robust JSON Parser
+# ───────────────────────────────────────────────────────────────────────
 
-def _call_gemini(prompt: str, temperature: float = 0.3) -> str:
-    """Llama a Gemini AI con fallback de modelos."""
+def _repair_truncated_json(text: str) -> str:
+    """Intenta reparar un JSON truncado a mitad de camino por límite de tokens."""
+    s = text.rstrip()
+    s = re.sub(r'[,:\s]+$', '', s)
+
+    in_string = False
+    escape = False
+    open_brackets = []
+
+    for char in s:
+        if escape:
+            escape = False
+            continue
+        if char == '\\':
+            escape = True
+            continue
+        if char == '"':
+            in_string = not in_string
+            continue
+        if not in_string:
+            if char in ('{', '['):
+                open_brackets.append(char)
+            elif char == '}':
+                if open_brackets and open_brackets[-1] == '{':
+                    open_brackets.pop()
+            elif char == ']':
+                if open_brackets and open_brackets[-1] == '[':
+                    open_brackets.pop()
+
+    if in_string:
+        s += '"'
+
+    s = re.sub(r'[,:\s]+$', '', s)
+
+    for bracket in reversed(open_brackets):
+        if bracket == '{':
+            s += '}'
+        elif bracket == '[':
+            s += ']'
+
+    return s
+
+
+def _regex_extract_fields(text: str) -> dict:
+    """Extrae campos conocidos mediante regex como último recurso ante JSON malformado."""
+    res = {
+        "optimized_title": None,
+        "optimized_description": None,
+        "suggested_attributes": [],
+        "manual_suggestions": [],
+    }
+
+    # Título
+    m_title = re.search(r'"optimized_title"\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)"', text)
+    if m_title:
+        try:
+            res["optimized_title"] = m_title.group(1).encode().decode('unicode_escape', 'ignore')
+        except Exception:
+            res["optimized_title"] = m_title.group(1)
+
+    # Descripción
+    m_desc = re.search(r'"optimized_description"\s*:\s*"([\s\S]*?)(?:"\s*,\s*"[a-zA-Z_]+"|\s*"$|\s*"\s*\})', text)
+    if m_desc:
+        res["optimized_description"] = m_desc.group(1).replace('\\"', '"').replace('\\n', '\n')
+
+    # Atributos sugeridos
+    for m_attr in re.finditer(r'\{\s*"id"\s*:\s*"([^"]+)"\s*,\s*"value_name"\s*:\s*"([^"]+)"\s*\}', text):
+        res["suggested_attributes"].append({
+            "id": m_attr.group(1),
+            "value_name": m_attr.group(2)
+        })
+
+    # Sugerencias manuales
+    m_sug = re.search(r'"manual_suggestions"\s*:\s*\[([\s\S]*?)\]', text)
+    if m_sug:
+        for item in re.finditer(r'"([^"\\]*(?:\\.[^"\\]*)*)"', m_sug.group(1)):
+            res["manual_suggestions"].append(item.group(1))
+
+    return res
+
+
+def _clean_and_parse_json(raw: str) -> dict:
+    """Parsea respuestas JSON de Gemini de forma ultra-robusta contra truncamiento y caracteres de control."""
+    if not raw or not raw.strip():
+        raise ValueError("Respuesta vacía de Gemini AI")
+
+    text = raw.strip()
+
+    # 1. Quitar bloques markdown si existen
+    if "```" in text:
+        match = re.search(r'```(?:json)?\s*([\s\S]*?)\s*```', text)
+        if match:
+            text = match.group(1).strip()
+        else:
+            text = re.sub(r'^```(?:json)?\s*', '', text).strip()
+
+    # 2. Localizar el primer '{'
+    start_idx = text.find('{')
+    if start_idx != -1:
+        text = text[start_idx:]
+
+    # 3. Intento directo con strict=False (soporta saltos de línea literales en strings)
+    try:
+        return json.loads(text, strict=False)
+    except Exception:
+        pass
+
+    # 4. Limpiar trailing commas
+    cleaned = re.sub(r',\s*([\]\}])', r'\1', text)
+    try:
+        return json.loads(cleaned, strict=False)
+    except Exception:
+        pass
+
+    # 5. Reparación de JSON truncado por tokens
+    repaired = _repair_truncated_json(cleaned)
+    try:
+        return json.loads(repaired, strict=False)
+    except Exception:
+        pass
+
+    # 6. Extracción regex como último recurso
+    fallback = _regex_extract_fields(text)
+    if fallback and (fallback.get("optimized_title") or fallback.get("optimized_description") or fallback.get("suggested_attributes")):
+        return fallback
+
+    # Si todo falla, intentar json.loads para generar el error exacto
+    return json.loads(text, strict=False)
+
+
+def _call_gemini(prompt: str, temperature: float = 0.25) -> str:
+    """Llama a Gemini AI con fallback de modelos, 8192 tokens y responseMimeType."""
     import requests
 
     gemini_key = database.get_setting("gemini_api_key", "").strip()
@@ -491,7 +623,8 @@ def _call_gemini(prompt: str, temperature: float = 0.3) -> str:
         "contents": [{"parts": [{"text": prompt}]}],
         "generationConfig": {
             "temperature": temperature,
-            "maxOutputTokens": 2048,
+            "maxOutputTokens": 8192,
+            "responseMimeType": "application/json",
         },
     }
     headers = {"Content-Type": "application/json"}
@@ -499,7 +632,7 @@ def _call_gemini(prompt: str, temperature: float = 0.3) -> str:
     for model_name in GEMINI_MODELS:
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={gemini_key}"
         try:
-            res = requests.post(url, headers=headers, json=payload, timeout=20)
+            res = requests.post(url, headers=headers, json=payload, timeout=25)
             if res.status_code == 200:
                 data = res.json()
                 candidates = data.get("candidates", [])
@@ -507,6 +640,18 @@ def _call_gemini(prompt: str, temperature: float = 0.3) -> str:
                     answer = candidates[0]["content"]["parts"][0].get("text", "").strip()
                     if answer:
                         return answer
+            elif res.status_code == 400 and "responseMimeType" in (res.text or ""):
+                # Fallback sin responseMimeType si un modelo específico no lo acepta
+                p2 = dict(payload)
+                p2["generationConfig"] = {"temperature": temperature, "maxOutputTokens": 8192}
+                res2 = requests.post(url, headers=headers, json=p2, timeout=25)
+                if res2.status_code == 200:
+                    data2 = res2.json()
+                    candidates2 = data2.get("candidates", [])
+                    if candidates2 and candidates2[0].get("content", {}).get("parts"):
+                        answer2 = candidates2[0]["content"]["parts"][0].get("text", "").strip()
+                        if answer2:
+                            return answer2
             else:
                 print(f"[Optimizer AI] Modelo {model_name} devolvió {res.status_code}: {res.text[:150]}")
         except Exception as e:
@@ -637,43 +782,55 @@ Respondé EXCLUSIVAMENTE en formato JSON válido (sin texto antes ni después, s
 
 {{
   "optimized_title": "Título optimizado (máx 60 chars, formato: Producto + Marca + Modelo + Atributo clave. Sin palabras como oferta, descuento, envío gratis, cuotas. Sin emojis. Sin repetir palabras.)",
-  "optimized_description": "Descripción profesional en texto plano (sin HTML). Incluí: qué es el producto, para qué sirve, especificaciones técnicas, beneficios clave, garantía, información de envío. Usá saltos de línea para separar secciones. Mínimo 400 caracteres, máximo 2000.",
+  "optimized_description": "Descripción profesional en texto plano (sin HTML). Incluí: qué es el producto, para qué sirve, especificaciones técnicas, beneficios clave, garantía, información de envío. Mínimo 300 caracteres, máximo 1200.",
   "suggested_attributes": [
     {{"id": "BRAND", "value_name": "Valor inferido del producto"}},
     {{"id": "MODEL", "value_name": "Valor inferido"}}
   ],
   "manual_suggestions": [
-    "Sugerencia 1 para acciones que requieren intervención manual (ej: agregar fotos, crear video, etc.)"
+    "Sugerencia 1 para acciones manuales (fotos, video, precio)"
   ]
 }}
 
 REGLAS:
 - Si el título actual ya es bueno (score > 80) o es de catálogo/tiene ventas, dejá el mismo título actual.
-- Para los atributos sugeridos, solo incluí los que puedas inferir con alta confianza del título y descripción existentes.
+- Para los atributos sugeridos, solo incluí los que puedas inferir con alta confianza del título y descripción existentes (máximo 8 atributos).
 - La descripción debe ser persuasiva pero informativa, sin frases prohibidas por ML.
 - Responder SOLO con JSON válido, sin explicaciones adicionales.
 """
 
     try:
         raw = _call_gemini(prompt, temperature=0.25)
-
-        # Limpiar la respuesta (puede venir con ```json ... ```)
-        cleaned = raw.strip()
-        if cleaned.startswith("```"):
-            lines = cleaned.split("\n")
-            json_lines = []
-            in_block = False
-            for line in lines:
-                if line.strip().startswith("```"):
-                    in_block = not in_block
-                    continue
-                json_lines.append(line)
-            cleaned = "\n".join(json_lines).strip()
-
-        result = json.loads(cleaned)
+        result = _clean_and_parse_json(raw)
 
         opt_title = title if (is_catalog or sold_quantity > 0) else result.get("optimized_title", title)
         opt_desc = description if is_catalog else result.get("optimized_description", "")
+
+        # Proyección de calidad tras aplicar cambios
+        proj_details = dict(details)
+        if opt_title:
+            p_title_score, _, _ = _audit_title(opt_title, item_data)
+            proj_details["title"] = {"score": p_title_score, "current": opt_title}
+        if opt_desc:
+            p_desc_score, _, _ = _audit_description(opt_desc)
+            proj_details["description"] = {"score": p_desc_score, "current_length": len(opt_desc)}
+        elif is_catalog:
+            proj_details["description"] = {"score": 100, "current_length": 0, "catalog_managed": True}
+
+        sug_attrs = result.get("suggested_attributes", [])
+        if sug_attrs:
+            merged_attrs = list(attributes)
+            for sa in sug_attrs:
+                merged_attrs.append({"id": sa.get("id"), "value_name": sa.get("value_name")})
+            p_attrs_score, _, _, _ = _audit_attributes(merged_attrs, category_attrs)
+            proj_details["attributes"] = {"score": p_attrs_score, "filled": len(merged_attrs)}
+
+        proj_total_score = 0
+        for area, weight in SCORE_WEIGHTS.items():
+            area_score = proj_details.get(area, {}).get("score", 0)
+            proj_total_score += (area_score * weight) / 100
+        proj_score = min(100, max(0, round(proj_total_score)))
+        proj_score = max(score, proj_score)
 
         optimization = {
             "ml_id": ml_id,
@@ -684,10 +841,13 @@ REGLAS:
             "suggested_attributes": result.get("suggested_attributes", []),
             "manual_suggestions": result.get("manual_suggestions", []),
             "score_before": score,
+            "projected_score": proj_score,
+            "projected_details": proj_details,
             "catalog_listing": is_catalog,
             "has_sales": sold_quantity > 0,
             "status": "pending",
             "generated_at": datetime.now().isoformat(),
+            "updated_audit": audit_result,
         }
 
         # Guardar en DB
@@ -840,6 +1000,8 @@ def apply_optimization(ml_id: str, optimization: dict = None) -> dict:
             errors.append(f"Excepción actualizando atributos: {e}")
 
     # Re-auditar inmediatamente para reflejar nuevo score y datos actualizados
+    if applied:
+        time.sleep(1.0)
     updated_audit = audit_single_item(ml_id)
 
     # Actualizar estado en DB

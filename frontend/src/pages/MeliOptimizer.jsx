@@ -199,6 +199,33 @@ export default function MeliOptimizer() {
     setAuditing(false)
   }
 
+  const [refreshingQuality, setRefreshingQuality] = useState(false)
+
+  const refreshItemQuality = async (ml_id) => {
+    if (!ml_id) return
+    setRefreshingQuality(true)
+    try {
+      const res = await fetch(`/api/meli-optimizer/audit/${ml_id}`)
+      if (res.ok) {
+        const updatedAudit = await res.json()
+        setSelectedItem(updatedAudit)
+        setAuditData(prev => {
+          if (!prev || !prev.results) return prev
+          const newResults = prev.results.map(r => r.ml_id === ml_id ? updatedAudit : r)
+          const scores = newResults.map(r => r.score || 0)
+          const avg = scores.length ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : 0
+          return { ...prev, results: newResults, avg_score: avg }
+        })
+        showNotif(`¡Calidad actualizada!: ${updatedAudit.score}/100`)
+      } else {
+        showNotif('Error al refrescar calidad', 'error')
+      }
+    } catch (e) {
+      showNotif('Error de conexión', 'error')
+    }
+    setRefreshingQuality(false)
+  }
+
   const optimizeItem = async (ml_id) => {
     setOptimizing(ml_id)
     try {
@@ -206,7 +233,19 @@ export default function MeliOptimizer() {
       if (res.ok) {
         const data = await res.json()
         setOptimizationResult(data)
-        showNotif('Optimización generada por IA exitosamente')
+        if (data.updated_audit) {
+          setSelectedItem(data.updated_audit)
+          setAuditData(prev => {
+            if (!prev || !prev.results) return prev
+            const newResults = prev.results.map(r => r.ml_id === ml_id ? data.updated_audit : r)
+            const scores = newResults.map(r => r.score || 0)
+            const avg = scores.length ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : 0
+            return { ...prev, results: newResults, avg_score: avg }
+          })
+        }
+        const proj = data.projected_score || data.score_before
+        const diff = proj - (data.score_before || 0)
+        showNotif(`¡Optimización generada! Calidad proyectada: ${proj}/100${diff > 0 ? ` (+${diff} pts)` : ''}`)
       } else {
         const err = await res.json().catch(() => ({}))
         showNotif(err.detail || 'Error al optimizar', 'error')
@@ -245,6 +284,8 @@ export default function MeliOptimizer() {
               const avg = scores.length ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : 0
               return { ...prev, results: updatedResults, avg_score: avg }
             })
+          } else {
+            await refreshItemQuality(ml_id)
           }
         } else {
           showNotif(`Error: ${data.errors?.join('; ') || 'No se pudieron aplicar los cambios'}`, 'error')
@@ -889,11 +930,28 @@ export default function MeliOptimizer() {
                   </div>
                 </div>
               </div>
-              <button onClick={() => setSelectedItem(null)} style={{
-                padding: 4, borderRadius: 6, border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--text-secondary)',
-              }}>
-                <X size={18} />
-              </button>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <button
+                  onClick={() => refreshItemQuality(selectedItem.ml_id)}
+                  disabled={refreshingQuality}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px',
+                    borderRadius: 8, border: '1px solid var(--border-color)',
+                    background: 'var(--card-bg)', color: 'var(--text-primary)',
+                    fontSize: '0.74rem', fontWeight: 600, cursor: refreshingQuality ? 'wait' : 'pointer',
+                    boxShadow: '0 1px 3px rgba(0,0,0,0.06)'
+                  }}
+                  title="Re-auditar y refrescar calidad de esta publicación desde Mercado Libre"
+                >
+                  <RefreshCw size={13} className={refreshingQuality ? 'animate-spin' : ''} style={{ color: '#8b5cf6' }} />
+                  {refreshingQuality ? 'Refrescando...' : 'Refrescar Calidad'}
+                </button>
+                <button onClick={() => setSelectedItem(null)} style={{
+                  padding: 6, borderRadius: 6, border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--text-secondary)',
+                }}>
+                  <X size={18} />
+                </button>
+              </div>
             </div>
 
             {/* Catalog Info Banner */}
@@ -1019,6 +1077,49 @@ export default function MeliOptimizer() {
                     }}>✅ Aplicado</span>
                   )}
                 </h4>
+
+                {/* Projected Quality Improvement Card */}
+                <div style={{
+                  marginBottom: 18,
+                  padding: '14px 18px',
+                  borderRadius: 12,
+                  background: 'linear-gradient(135deg, rgba(139,92,246,0.1) 0%, rgba(16,185,129,0.08) 100%)',
+                  border: '1px solid rgba(139,92,246,0.25)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: 16,
+                  flexWrap: 'wrap'
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+                    <div style={{ textAlign: 'center' }}>
+                      <div style={{ fontSize: '0.68rem', color: 'var(--text-secondary)', fontWeight: 600 }}>CALIDAD ACTUAL</div>
+                      <div style={{ fontSize: '1.35rem', fontWeight: 800, color: selectedItem.score >= 75 ? '#10b981' : selectedItem.score >= 50 ? '#f59e0b' : '#ef4444' }}>
+                        {selectedItem.score}/100
+                      </div>
+                    </div>
+                    <ArrowRight size={18} style={{ color: '#8b5cf6' }} />
+                    <div style={{ textAlign: 'center' }}>
+                      <div style={{ fontSize: '0.68rem', color: '#10b981', fontWeight: 700 }}>PROYECTADA CON IA</div>
+                      <div style={{ fontSize: '1.35rem', fontWeight: 800, color: '#10b981' }}>
+                        {optimizationResult.projected_score || Math.min(100, (selectedItem.score || 60) + 20)}/100
+                      </div>
+                    </div>
+                    <div style={{
+                      padding: '4px 10px', borderRadius: 8, fontSize: '0.78rem', fontWeight: 700,
+                      backgroundColor: 'rgba(16,185,129,0.15)', color: '#10b981'
+                    }}>
+                      +{Math.max(0, (optimizationResult.projected_score || (selectedItem.score + 20)) - selectedItem.score)} pts
+                    </div>
+                  </div>
+                  <div style={{ fontSize: '0.76rem', color: 'var(--text-secondary)' }}>
+                    {optimizationResult.status === 'applied' ? (
+                      <span style={{ color: '#10b981', fontWeight: 700 }}>✅ Cambios aplicados en Mercado Libre</span>
+                    ) : (
+                      <span>Hacé clic en <strong>"Aplicar Cambios en ML"</strong> para guardar esta calidad</span>
+                    )}
+                  </div>
+                </div>
 
                 {/* Title Diff */}
                 {optimizationResult.optimized_title && (
