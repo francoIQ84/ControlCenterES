@@ -57,6 +57,7 @@ export default function Login() {
           localStorage.setItem('adminToken', data.token)
           localStorage.setItem('adminUsername', data.username)
           localStorage.setItem('adminFullName', data.full_name)
+          if (data.permissions !== undefined) localStorage.setItem('adminPermissions', data.permissions || "")
           localStorage.setItem('justLoggedIn', 'true')
           window.location.href = '/'
         }
@@ -93,6 +94,7 @@ export default function Login() {
         localStorage.setItem('adminToken', data.token)
         localStorage.setItem('adminUsername', data.username)
         localStorage.setItem('adminFullName', data.full_name)
+        if (data.permissions !== undefined) localStorage.setItem('adminPermissions', data.permissions || "")
         localStorage.setItem('justLoggedIn', 'true')
         window.location.href = '/'
       } else {

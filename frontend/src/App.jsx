@@ -111,6 +111,12 @@ function PermissionRoute({ permission, children }) {
   }
   
   const perms = permsStr.split(',').map(p => p.trim());
+  if (permission === 'inpi' && (perms.includes('inpi') || perms.includes('settings'))) {
+    return children;
+  }
+  if (permission === 'meli_optimizer' && (perms.includes('meli_optimizer') || perms.includes('settings'))) {
+    return children;
+  }
   if (!perms.includes(permission)) {
     return <Navigate to="/" replace />;
   }
@@ -140,7 +146,7 @@ function App() {
             <Route path="expenses" element={<PermissionRoute permission="expenses"><Expenses /></PermissionRoute>} />
             <Route path="inpi" element={<PermissionRoute permission="inpi"><IndustrialProperty /></PermissionRoute>} />
             <Route path="marketing" element={<PermissionRoute permission="marketing"><Marketing /></PermissionRoute>} />
-            <Route path="meli-optimizer" element={<PermissionRoute permission="inventory"><MeliOptimizer /></PermissionRoute>} />
+            <Route path="meli-optimizer" element={<PermissionRoute permission="meli_optimizer"><MeliOptimizer /></PermissionRoute>} />
             <Route path="mercadolibre/preguntas" element={<Navigate to="/customers?tab=meli_questions" replace />} />
             {/* Administración de la plataforma. La página se autoprotege y el
                 backend exige require_platform_admin de todas formas. */}

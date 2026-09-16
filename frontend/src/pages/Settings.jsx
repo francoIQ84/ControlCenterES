@@ -416,7 +416,8 @@ export default function Settings() {
     settings: true,
     inpi: true,
     marketing: true,
-    blog: true
+    blog: true,
+    meli_optimizer: true
   })
   
   // Change Password / Permissions Form State
@@ -434,7 +435,8 @@ export default function Settings() {
     settings: false,
     inpi: false,
     marketing: false,
-    blog: false
+    blog: false,
+    meli_optimizer: false
   })
 
   // Web Config State
@@ -1355,7 +1357,8 @@ export default function Settings() {
           settings: true,
           inpi: true,
           marketing: true,
-          blog: true
+          blog: true,
+          meli_optimizer: true
         })
         fetchUsers()
       } else {
@@ -1425,7 +1428,8 @@ export default function Settings() {
       settings: list.includes('settings'),
       inpi: list.includes('inpi'),
       marketing: list.includes('marketing'),
-      blog: list.includes('blog')
+      blog: list.includes('blog'),
+      meli_optimizer: list.includes('meli_optimizer')
     })
   }
 
@@ -2955,6 +2959,10 @@ export default function Settings() {
                       <input type="checkbox" checked={newPerms.blog} onChange={e => setNewPerms(prev => ({...prev, blog: e.target.checked}))} />
                       Blog & Web
                     </label>
+                    <label style={{display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer'}}>
+                      <input type="checkbox" checked={newPerms.meli_optimizer} onChange={e => setNewPerms(prev => ({...prev, meli_optimizer: e.target.checked}))} />
+                      Optimizador IA ML
+                    </label>
                   </div>
                 </div>
 
@@ -3115,6 +3123,10 @@ export default function Settings() {
                     <label style={{display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer'}}>
                       <input type="checkbox" checked={editPerms.blog} onChange={e => setEditPerms(prev => ({...prev, blog: e.target.checked}))} />
                       Blog & Web
+                    </label>
+                    <label style={{display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer'}}>
+                      <input type="checkbox" checked={editPerms.meli_optimizer} onChange={e => setEditPerms(prev => ({...prev, meli_optimizer: e.target.checked}))} />
+                      Optimizador IA ML
                     </label>
                   </div>
                   <div style={{display: 'flex', gap: 10, marginTop: 5}}>

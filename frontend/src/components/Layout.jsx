@@ -324,6 +324,7 @@ export default function Layout() {
     if (permsStr === null || permsStr === "") return true; // default allowed during loading
     const perms = permsStr.split(',').map(p => p.trim());
     if (perm === 'inpi' && (perms.includes('inpi') || perms.includes('settings'))) return true;
+    if (perm === 'meli_optimizer' && (perms.includes('meli_optimizer') || perms.includes('settings'))) return true;
     return perms.includes(perm);
   };
 
@@ -671,7 +672,7 @@ export default function Layout() {
               <span className="nav-text">Marketing & Redes</span>
             </NavLink>
           )}
-          {canShow('inventory') && isChannelEnabled('meli') && (
+          {canShow('meli_optimizer', 'inventory') && isChannelEnabled('meli') && (
             <NavLink to="/meli-optimizer" className={({isActive}) => `nav-link ${isActive ? 'active' : ''}`}>
               <Sparkles size={20} style={{ minWidth: 20 }} />
               <span className="nav-text">Optimizador IA ML</span>

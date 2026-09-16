@@ -159,6 +159,8 @@ def require_permission(permission: str):
         if not permissions_str:
             return
         allowed_list = [p.strip() for p in permissions_str.split(",") if p.strip()]
+        if permission == "meli_optimizer" and ("meli_optimizer" in allowed_list or "settings" in allowed_list):
+            return
         if permission not in allowed_list:
             raise HTTPException(
                 status_code=403, 
