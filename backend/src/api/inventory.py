@@ -1,7 +1,8 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from typing import Optional
 from pydantic import BaseModel
 from src import database, meli_api
+from src.api.auth import get_current_user
 import random
 import time
 
@@ -66,7 +67,8 @@ def sync_product_costs():
         raise HTTPException(status_code=500, detail=f"Error al actualizar costos: {count}")
 
 @router.post("/")
-def create_product(payload: CreateProductRequest):
+def create_product(payload: CreateProductRequest, current_user: dict = Depends(get_current_user)):
+    operator = current_user.get('full_name') or current_user.get('username') or 'Admin'
     # Determine ml_id based on publish_to_meli and demo mode
     is_demo = meli_api.is_demo_mode()
     
@@ -105,7 +107,9 @@ def create_product(payload: CreateProductRequest):
         "category_id": payload.category_id,
         "sync_meli": payload.sync_meli,
         "min_stock": payload.min_stock,
-        "cash_discount_pct": payload.cash_discount_pct or 0.0
+        "cash_discount_pct": payload.cash_discount_pct or 0.0,
+        "created_by_user": operator,
+        "updated_by_user": operator
     }
 
     try:
@@ -165,7 +169,8 @@ def set_featured_products_order(payload: FeaturedOrderRequest):
         raise HTTPException(status_code=500, detail=f"Error al actualizar orden de destacados: {str(e)}")
 
 @router.put("/bulk")
-def bulk_update_products(payload: BulkUpdateRequest):
+def bulk_update_products(payload: BulkUpdateRequest, current_user: dict = Depends(get_current_user)):
+    operator = current_user.get('full_name') or current_user.get('username') or 'Admin'
     warnings = []
     for item in payload.items:
         db_status = "active"
@@ -179,8 +184,8 @@ def bulk_update_products(payload: BulkUpdateRequest):
         except Exception:
             pass
 
-        database.update_product_cost(item.ml_id, item.cost, item.cost_meli)
-        database.update_product_stock_price(item.ml_id, item.qty, item.price)
+        database.update_product_cost(item.ml_id, item.cost, item.cost_meli, updated_by_user=operator)
+        database.update_product_stock_price(item.ml_id, item.qty, item.price, updated_by_user=operator)
         database.update_product_web_details(
             item.ml_id, 
             item.price_web, 
@@ -193,7 +198,8 @@ def bulk_update_products(payload: BulkUpdateRequest):
             item.featured_order,
             item.use_meli_description,
             item.description_meli,
-            item.cash_discount_pct
+            item.cash_discount_pct,
+            updated_by_user=operator
         )
 
         # Sync to Tiendanube if linked and sync_tn is enabled
@@ -351,7 +357,8 @@ def apply_dispatch_schedule_now(payload: Optional[ApplyDispatchScheduleNowReques
     return {"success": True, "message": message}
 
 @router.put("/{ml_id}")
-def update_product(ml_id: str, payload: UpdateProductRequest):
+def update_product(ml_id: str, payload: UpdateProductRequest, current_user: dict = Depends(get_current_user)):
+    operator = current_user.get('full_name') or current_user.get('username') or 'Admin'
     # Get current product status from local cache
     db_status = "active"
     try:
@@ -365,8 +372,8 @@ def update_product(ml_id: str, payload: UpdateProductRequest):
         pass
 
     # Update locally (stock, ML price, cost)
-    database.update_product_cost(ml_id, payload.cost, payload.cost_meli)
-    database.update_product_stock_price(ml_id, payload.qty, payload.price)
+    database.update_product_cost(ml_id, payload.cost, payload.cost_meli, updated_by_user=operator)
+    database.update_product_stock_price(ml_id, payload.qty, payload.price, updated_by_user=operator)
     
     # Update web details
     database.update_product_web_details(
@@ -381,7 +388,8 @@ def update_product(ml_id: str, payload: UpdateProductRequest):
         payload.featured_order,
         payload.use_meli_description,
         payload.description_meli,
-        payload.cash_discount_pct
+        payload.cash_discount_pct,
+        updated_by_user=operator
     )
     
     # Sync to Tiendanube if linked and sync_tn is enabled
@@ -446,7 +454,8 @@ def scan_product_by_code(code: str):
     return {"product": product}
 
 @router.post("/quick-stock")
-def quick_adjust_stock(payload: QuickStockRequest):
+def quick_adjust_stock(payload: QuickStockRequest, current_user: dict = Depends(get_current_user)):
+    operator = current_user.get('full_name') or current_user.get('username') or 'Admin'
     # Fetch product first
     product = database.get_product_by_ml_id(payload.ml_id)
     if not product:
@@ -465,7 +474,7 @@ def quick_adjust_stock(payload: QuickStockRequest):
     new_price_web = float(payload.price_web) if payload.price_web is not None else float(product.get('price_web', 0.0))
     
     # Update local DB stock and price
-    database.update_product_stock_price(payload.ml_id, new_qty, new_price)
+    database.update_product_stock_price(payload.ml_id, new_qty, new_price, updated_by_user=operator)
     
     if payload.price_web is not None:
         database.update_product_web_details(
@@ -476,8 +485,11 @@ def quick_adjust_stock(payload: QuickStockRequest):
             product.get('is_web_active', 1),
             product.get('category_id'),
             product.get('sync_meli', 1),
-            product.get('min_stock', 0)
+            product.get('min_stock', 0),
+            updated_by_user=operator
         )
+    else:
+        database.set_product_updated_by(payload.ml_id, operator)
     
     # Sync with Mercado Libre if applicable
     db_status = product.get('status', 'active')

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { ShoppingBag, Globe, Store, Check, Clock, Plus, Trash2, ShoppingCart, DollarSign, Link, MessageSquare, Send, ExternalLink, FileText, UserCheck, Search, X, Filter, CheckSquare, Square, Layers, CheckCircle2, AlertCircle, Loader2, RefreshCw, Package } from 'lucide-react'
+import { ShoppingBag, Globe, Store, Check, Clock, Plus, Trash2, ShoppingCart, DollarSign, Link, MessageSquare, Send, ExternalLink, FileText, UserCheck, User, Search, X, Filter, CheckSquare, Square, Layers, CheckCircle2, AlertCircle, Loader2, RefreshCw, Package } from 'lucide-react'
 import { useTenant } from '../TenantContext'
 
 export default function Sales() {
@@ -1478,7 +1478,32 @@ export default function Sales() {
                       </div>
                     </td>
                   <td data-label="Orden ID" style={{fontFamily: 'monospace', fontSize: '0.8rem'}}>{o.order_id}</td>
-                  <td data-label="Canal">{renderPlatformBadge(o.source_platform)}</td>
+                  <td data-label="Canal">
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-start' }}>
+                      {renderPlatformBadge(o.source_platform)}
+                      {o.created_by_user && (
+                        <div 
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 4,
+                            fontSize: '0.72rem',
+                            color: 'var(--text-secondary)',
+                            backgroundColor: 'var(--bg-hover)',
+                            border: '1px solid var(--border-color)',
+                            padding: '1px 6px',
+                            borderRadius: 4,
+                            width: 'fit-content',
+                            cursor: 'default'
+                          }}
+                          title={`Venta registrada por ${o.created_by_user}`}
+                        >
+                          <User size={10} style={{ color: '#38bdf8', opacity: 0.85 }} />
+                          <span>{o.created_by_user}</span>
+                        </div>
+                      )}
+                    </div>
+                  </td>
                   <td data-label="Comprador">
                     <div style={{display: 'flex', flexDirection: 'column', gap: 4}}>
                       <div>
@@ -2688,7 +2713,7 @@ export default function Sales() {
             </div>
 
             <div style={{marginBottom: 15, fontSize: '0.9rem', color: 'var(--text-secondary)'}}>
-              Pedido: <strong>#{invoiceModalOrder.order_id}</strong> | Plataforma: <strong>{invoiceModalOrder.source_platform}</strong> | Total: <strong>${invoiceModalOrder.total_amount?.toLocaleString()}</strong>
+              Pedido: <strong>#{invoiceModalOrder.order_id}</strong> | Plataforma: <strong>{invoiceModalOrder.source_platform}</strong> | Total: <strong>${invoiceModalOrder.total_amount?.toLocaleString()}</strong>{invoiceModalOrder.created_by_user && <span> | Registrado por: <strong style={{color: '#38bdf8'}}>{invoiceModalOrder.created_by_user}</strong></span>}
             </div>
 
             {/* Mercado Libre / Customer Billing Info Banner */}

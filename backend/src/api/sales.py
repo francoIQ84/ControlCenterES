@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from fastapi.responses import FileResponse
 import os
 from pydantic import BaseModel
@@ -7,6 +7,7 @@ import datetime
 import time
 import random
 from src import database, meli_api
+from src.api.auth import get_current_user
 
 router = APIRouter()
 
@@ -213,9 +214,10 @@ def update_payment_status(order_id: int, req: UpdatePaymentStatusRequest):
     return {"success": True}
 
 @router.post("/")
-def create_order(req: ManualOrderRequest):
+def create_order(req: ManualOrderRequest, current_user: dict = Depends(get_current_user)):
     order_id = int(time.time() * 1000) + random.randint(1, 999)
     date_created = datetime.datetime.now().isoformat()
+    creator = current_user.get('full_name') or current_user.get('username') or 'Admin'
     
     items_list = []
     total_cost = 0.0
@@ -275,7 +277,8 @@ def create_order(req: ManualOrderRequest):
         payment_method=req.payment_method,
         payment_status=pay_status,
         cost_amount=total_cost,
-        inventory_linked=1 if any_linked else 0
+        inventory_linked=1 if any_linked else 0,
+        created_by_user=creator
     )
     return {"success": True, "order_id": order_id}
 

@@ -156,11 +156,12 @@ def copy_previous_fixed_expenses(month: int = Query(...), year: int = Query(...)
 
 @router.post("/fixed")
 def create_fixed_expense(expense: FixedExpenseCreate, current_user: dict = Depends(get_current_user)):
+    operator = current_user.get('full_name') or current_user.get('username') or 'Admin'
     with database.get_connection() as conn:
         with conn.cursor() as cursor:
             cursor.execute(
-                "INSERT INTO fixed_expenses (description, amount, category, month, year, is_paid) VALUES (%s, %s, %s, %s, %s, %s) RETURNING *",
-                (expense.description, expense.amount, expense.category, expense.month, expense.year, expense.is_paid)
+                "INSERT INTO fixed_expenses (description, amount, category, month, year, is_paid, created_by_user) VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING *",
+                (expense.description, expense.amount, expense.category, expense.month, expense.year, expense.is_paid, operator)
             )
             return cursor.fetchone()
 
@@ -214,11 +215,12 @@ def get_variable_expenses(month: Optional[str] = None, year: Optional[str] = Non
 
 @router.post("/variable")
 def create_variable_expense(expense: VariableExpenseCreate, current_user: dict = Depends(get_current_user)):
+    operator = current_user.get('full_name') or current_user.get('username') or 'Admin'
     with database.get_connection() as conn:
         with conn.cursor() as cursor:
             cursor.execute(
-                "INSERT INTO variable_expenses (date, description, amount, category) VALUES (%s, %s, %s, %s) RETURNING *",
-                (expense.date, expense.description, expense.amount, expense.category)
+                "INSERT INTO variable_expenses (date, description, amount, category, created_by_user) VALUES (%s, %s, %s, %s, %s) RETURNING *",
+                (expense.date, expense.description, expense.amount, expense.category, operator)
             )
             row = cursor.fetchone()
             if row and row.get('date'):
@@ -276,11 +278,12 @@ def get_incomes(month: Optional[str] = None, year: Optional[str] = None, current
 
 @router.post("/incomes")
 def create_income(income: IncomeCreate, current_user: dict = Depends(get_current_user)):
+    operator = current_user.get('full_name') or current_user.get('username') or 'Admin'
     with database.get_connection() as conn:
         with conn.cursor() as cursor:
             cursor.execute(
-                "INSERT INTO incomes (date, description, amount, category) VALUES (%s, %s, %s, %s) RETURNING *",
-                (income.date, income.description, income.amount, income.category)
+                "INSERT INTO incomes (date, description, amount, category, created_by_user) VALUES (%s, %s, %s, %s, %s) RETURNING *",
+                (income.date, income.description, income.amount, income.category, operator)
             )
             row = cursor.fetchone()
             if row and row.get('date'):

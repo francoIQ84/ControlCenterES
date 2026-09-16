@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
-import { Package, CloudOff, Cloud, RefreshCw, Save, QrCode, Camera, ExternalLink, Eye, EyeOff, Store, Search, X, Gauge, SlidersHorizontal, Plus } from 'lucide-react'
+import { Package, CloudOff, Cloud, RefreshCw, Save, QrCode, Camera, ExternalLink, Eye, EyeOff, Store, Search, X, Gauge, SlidersHorizontal, Plus, User } from 'lucide-react'
 import { Html5QrcodeScanner } from 'html5-qrcode'
 import MediaBrowser from '../components/MediaBrowser'
 import { useTenant } from '../TenantContext'
@@ -4040,6 +4040,26 @@ function ProductRow({ p, onSave, onOpenGallery, onDraftChange, categories, categ
                   ⚠️ Sin Categoría
                 </span>
               )}
+              {(p.updated_by_user || p.created_by_user) && (
+                <span 
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 4,
+                    padding: '2px 7px',
+                    fontSize: '0.74rem',
+                    borderRadius: 4,
+                    backgroundColor: 'var(--bg-hover)',
+                    color: 'var(--text-secondary)',
+                    border: '1px solid var(--border-color)',
+                    cursor: 'default'
+                  }}
+                  title={`Registrado por: ${p.created_by_user || 'Sistema'}${p.updated_by_user ? ` • Última edición: ${p.updated_by_user}` : ''}${p.last_modified ? ` (${new Date(p.last_modified).toLocaleDateString()} ${new Date(p.last_modified).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})})` : ''}`}
+                >
+                  <User size={10} style={{ color: '#0ea5e9' }} />
+                  <span>{p.updated_by_user || p.created_by_user}</span>
+                </span>
+              )}
               {p.is_hidden === 1 && (
                 <span style={{
                   display: 'inline-flex',
@@ -4354,6 +4374,19 @@ function ProductRow({ p, onSave, onOpenGallery, onDraftChange, categories, categ
                   )}
                 </div>
               </div>
+              {(p.created_by_user || p.updated_by_user) && (
+                <div style={{display: 'flex', alignItems: 'center', gap: 12, fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: 6, flexWrap: 'wrap'}}>
+                  {p.created_by_user && (
+                    <span style={{display: 'inline-flex', alignItems: 'center', gap: 4}}>
+                      <User size={10} style={{color: '#0ea5e9'}} />
+                      <span>Ingresado por: <strong style={{color: 'var(--text-primary)'}}>{p.created_by_user}</strong></span>
+                    </span>
+                  )}
+                  {p.updated_by_user && (
+                    <span>✏️ Última edición: <strong style={{color: 'var(--text-primary)'}}>{p.updated_by_user}</strong></span>
+                  )}
+                </div>
+              )}
               <div style={{display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', color: 'var(--text-secondary)', borderTop: '1px solid var(--border-color)', paddingTop: 8, marginTop: 8}}>
                 <div style={{fontSize: '0.75rem', fontWeight: 600, display: 'flex', gap: 15, flexWrap: 'wrap'}}>
                   {p.status !== 'local' && (
@@ -4504,8 +4537,27 @@ function ProductRow({ p, onSave, onOpenGallery, onDraftChange, categories, categ
               </a>
             )}
           </div>
-          <div style={{color: 'var(--text-secondary)', fontSize: '0.68rem', marginTop: 4}}>
-            🕒 Modificado: {p.last_modified ? new Date(p.last_modified).toLocaleString('es-AR', { dateStyle: 'short', timeStyle: 'short' }) : 'Sin cambios'}
+          <div style={{color: 'var(--text-secondary)', fontSize: '0.68rem', marginTop: 4, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap'}}>
+            <span>🕒 Modificado: {p.last_modified ? new Date(p.last_modified).toLocaleString('es-AR', { dateStyle: 'short', timeStyle: 'short' }) : 'Sin cambios'}</span>
+            {(p.updated_by_user || p.created_by_user) && (
+              <span 
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 3,
+                  padding: '1px 5px',
+                  fontSize: '0.68rem',
+                  borderRadius: 3,
+                  backgroundColor: 'var(--bg-hover)',
+                  border: '1px solid var(--border-color)',
+                  color: 'var(--text-secondary)'
+                }}
+                title={`Registrado por: ${p.created_by_user || 'Sistema'}${p.updated_by_user ? ` • Última edición por: ${p.updated_by_user}` : ''}`}
+              >
+                <User size={9} style={{ color: '#0ea5e9' }} />
+                <span>{p.updated_by_user || p.created_by_user}</span>
+              </span>
+            )}
           </div>
         </td>
         <td data-label="Estado ML">
@@ -4746,6 +4798,22 @@ function ProductRow({ p, onSave, onOpenGallery, onDraftChange, categories, categ
                 )}
               </div>
             </div>
+            {(p.created_by_user || p.updated_by_user) && (
+              <div style={{display: 'flex', alignItems: 'center', gap: 14, fontSize: '0.74rem', color: 'var(--text-secondary)', marginTop: 12, borderTop: '1px solid var(--border-color)', paddingTop: 8, flexWrap: 'wrap'}}>
+                {p.created_by_user && (
+                  <span style={{display: 'inline-flex', alignItems: 'center', gap: 4}}>
+                    <User size={11} style={{color: '#0ea5e9'}} />
+                    <span>Ingresado por: <strong style={{color: 'var(--text-primary)'}}>{p.created_by_user}</strong></span>
+                  </span>
+                )}
+                {p.updated_by_user && (
+                  <span>✏️ Última edición por: <strong style={{color: 'var(--text-primary)'}}>{p.updated_by_user}</strong></span>
+                )}
+                {p.last_modified && (
+                  <span>🕒 {new Date(p.last_modified).toLocaleString()}</span>
+                )}
+              </div>
+            )}
           </td>
         </tr>
       )}

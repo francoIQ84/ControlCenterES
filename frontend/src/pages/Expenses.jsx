@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { Plus, Trash2, Wallet, Calendar, DollarSign, Tag, TrendingDown, TrendingUp, PieChart, ArrowUpRight, ArrowDownRight, Layers, FileText, CheckCircle2, AlertTriangle, Search, ChevronDown, ChevronUp, Pencil, RefreshCw, Clock, ExternalLink, Copy, Check, Link2, CreditCard } from 'lucide-react'
+import { Plus, Trash2, Wallet, Calendar, DollarSign, Tag, TrendingDown, TrendingUp, PieChart, ArrowUpRight, ArrowDownRight, Layers, FileText, CheckCircle2, AlertTriangle, Search, ChevronDown, ChevronUp, Pencil, RefreshCw, Clock, ExternalLink, Copy, Check, Link2, CreditCard, User } from 'lucide-react'
 import { useTenant } from '../TenantContext'
 
 export default function Expenses() {
@@ -1274,7 +1274,15 @@ export default function Expenses() {
                       {fixedExpenses.length === 0 && <tr><td colSpan="4" style={{textAlign: 'center', color: 'var(--text-secondary)'}}>No hay gastos fijos para este mes.</td></tr>}
                       {fixedExpenses.map(exp => (
                         <tr key={exp.id}>
-                          <td data-label="Descripción">{exp.description}</td>
+                          <td data-label="Descripción">
+                            <div>{exp.description}</div>
+                            {exp.created_by_user && (
+                              <div style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: 2 }}>
+                                <User size={10} style={{ color: '#0ea5e9', opacity: 0.8 }} />
+                                <span>{exp.created_by_user}</span>
+                              </div>
+                            )}
+                          </td>
                           <td data-label="Categoría"><span className="badge" style={{backgroundColor: 'var(--bg-hover)', color: 'var(--text-primary)'}}>{exp.category}</span></td>
                           <td data-label="Monto" style={{textAlign: 'right', fontWeight: 'bold'}}>${Math.round(exp.amount).toLocaleString()}</td>
                           <td data-label="Pagado" style={{textAlign: 'center'}}>
@@ -1373,7 +1381,15 @@ export default function Expenses() {
                       {variableExpenses.map(exp => (
                         <tr key={exp.id}>
                           <td data-label="Fecha" style={{whiteSpace: 'nowrap'}}>{exp.date}</td>
-                          <td data-label="Descripción">{exp.description}</td>
+                          <td data-label="Descripción">
+                            <div>{exp.description}</div>
+                            {exp.created_by_user && (
+                              <div style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: 2 }}>
+                                <User size={10} style={{ color: '#0ea5e9', opacity: 0.8 }} />
+                                <span>{exp.created_by_user}</span>
+                              </div>
+                            )}
+                          </td>
                           <td data-label="Categoría"><span className="badge" style={{backgroundColor: 'var(--bg-hover)', color: 'var(--text-primary)'}}>{exp.category}</span></td>
                           <td data-label="Monto" style={{textAlign: 'right', fontWeight: 'bold'}}>${Math.round(exp.amount).toLocaleString()}</td>
                           <td data-label="Acciones" style={{textAlign: 'center', whiteSpace: 'nowrap'}}>
@@ -1622,7 +1638,15 @@ export default function Expenses() {
                     {manualIncomes.map(inc => (
                       <tr key={inc.id}>
                         <td data-label="Fecha" style={{whiteSpace: 'nowrap'}}>{inc.date}</td>
-                        <td data-label="Descripción">{inc.description}</td>
+                        <td data-label="Descripción">
+                          <div>{inc.description}</div>
+                          {inc.created_by_user && (
+                            <div style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: 2 }}>
+                              <User size={10} style={{ color: '#0ea5e9', opacity: 0.8 }} />
+                              <span>{inc.created_by_user}</span>
+                            </div>
+                          )}
+                        </td>
                         <td data-label="Categoría"><span className="badge" style={{backgroundColor: 'rgba(16,185,129,0.1)', color: '#10b981'}}>{inc.category}</span></td>
                         <td data-label="Monto" style={{textAlign: 'right', fontWeight: 'bold', color: '#10b981'}}>${Math.round(inc.amount).toLocaleString()}</td>
                         <td data-label="Acciones" style={{textAlign: 'center', whiteSpace: 'nowrap'}}>

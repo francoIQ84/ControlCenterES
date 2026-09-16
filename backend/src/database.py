@@ -145,6 +145,8 @@ def init_db():
             cursor.execute('ALTER TABLE products_cache ADD COLUMN IF NOT EXISTS last_sync_tn TEXT;')
             cursor.execute('ALTER TABLE categories ADD COLUMN IF NOT EXISTS tn_id VARCHAR(100);')
             cursor.execute('ALTER TABLE products_cache ADD COLUMN IF NOT EXISTS cash_discount_pct REAL DEFAULT 0.0;')
+            cursor.execute('ALTER TABLE products_cache ADD COLUMN IF NOT EXISTS created_by_user TEXT;')
+            cursor.execute('ALTER TABLE products_cache ADD COLUMN IF NOT EXISTS updated_by_user TEXT;')
 
             # Orders cache table
             cursor.execute('''
@@ -177,6 +179,7 @@ def init_db():
             cursor.execute('ALTER TABLE orders_cache ADD COLUMN IF NOT EXISTS mp_fee_amount REAL DEFAULT 0.0;')
             cursor.execute('ALTER TABLE orders_cache ADD COLUMN IF NOT EXISTS inventory_linked INTEGER DEFAULT 1;')
             cursor.execute('ALTER TABLE orders_cache ADD COLUMN IF NOT EXISTS cost_amount REAL DEFAULT 0.0;')
+            cursor.execute('ALTER TABLE orders_cache ADD COLUMN IF NOT EXISTS created_by_user TEXT;')
 
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS deleted_mp_expenses (
@@ -272,6 +275,7 @@ def init_db():
                 )
             ''')
             cursor.execute('ALTER TABLE fixed_expenses ADD COLUMN IF NOT EXISTS is_paid BOOLEAN DEFAULT FALSE;')
+            cursor.execute('ALTER TABLE fixed_expenses ADD COLUMN IF NOT EXISTS created_by_user TEXT;')
 
             # Variable Expenses table
             cursor.execute('''
@@ -286,6 +290,7 @@ def init_db():
             ''')
             cursor.execute('ALTER TABLE variable_expenses ADD COLUMN IF NOT EXISTS mp_payment_id BIGINT;')
             cursor.execute('ALTER TABLE variable_expenses ADD COLUMN IF NOT EXISTS is_auto_mp INTEGER DEFAULT 0;')
+            cursor.execute('ALTER TABLE variable_expenses ADD COLUMN IF NOT EXISTS created_by_user TEXT;')
 
             # Incomes table
             cursor.execute('''
@@ -298,6 +303,7 @@ def init_db():
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             ''')
+            cursor.execute('ALTER TABLE incomes ADD COLUMN IF NOT EXISTS created_by_user TEXT;')
 
             # Service Payments / Vencimientos table
             cursor.execute('''
@@ -631,12 +637,14 @@ def get_product_by_id(ml_id):
 
 def create_product(product_data):
     now = datetime.now().isoformat()
+    creator = product_data.get('created_by_user')
+    updater = product_data.get('updated_by_user') or creator
     with get_connection() as conn:
         with conn.cursor() as cursor:
             cursor.execute('''
                 INSERT INTO products_cache 
-                (ml_id, title, price, available_quantity, cost_price, cost_meli, permalink, thumbnail, status, last_sync, price_web, images, description, description_meli, use_meli_description, is_web_active, visits_meli, visits_web, category_id, sync_meli, min_stock, featured_order, cash_discount_pct, last_modified)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                (ml_id, title, price, available_quantity, cost_price, cost_meli, permalink, thumbnail, status, last_sync, price_web, images, description, description_meli, use_meli_description, is_web_active, visits_meli, visits_web, category_id, sync_meli, min_stock, featured_order, cash_discount_pct, last_modified, created_by_user, updated_by_user)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             ''', (
                 product_data['ml_id'],
                 product_data['title'],
@@ -661,10 +669,12 @@ def create_product(product_data):
                 product_data.get('min_stock', 0),
                 product_data.get('featured_order', 0),
                 product_data.get('cash_discount_pct', 0.0),
-                now
+                now,
+                creator,
+                updater
             ))
 
-def update_product_cost(ml_id, cost_price, cost_meli):
+def update_product_cost(ml_id, cost_price, cost_meli, updated_by_user=None):
     now = datetime.now().isoformat()
     with get_connection() as conn:
         with conn.cursor() as cursor:
@@ -677,9 +687,12 @@ def update_product_cost(ml_id, cost_price, cost_meli):
                     p_cost = row['cost_price']
                 if float(cost_meli) != float(row['cost_meli'] or 0.0):
                     p_meli = row['cost_meli']
-            cursor.execute("UPDATE products_cache SET cost_price = %s, cost_meli = %s, prev_cost_price = %s, prev_cost_meli = %s, last_modified = %s WHERE ml_id = %s", (cost_price, cost_meli, p_cost, p_meli, now, ml_id))
+            if updated_by_user:
+                cursor.execute("UPDATE products_cache SET cost_price = %s, cost_meli = %s, prev_cost_price = %s, prev_cost_meli = %s, last_modified = %s, updated_by_user = %s WHERE ml_id = %s", (cost_price, cost_meli, p_cost, p_meli, now, updated_by_user, ml_id))
+            else:
+                cursor.execute("UPDATE products_cache SET cost_price = %s, cost_meli = %s, prev_cost_price = %s, prev_cost_meli = %s, last_modified = %s WHERE ml_id = %s", (cost_price, cost_meli, p_cost, p_meli, now, ml_id))
 
-def update_product_stock_price(ml_id, quantity, price):
+def update_product_stock_price(ml_id, quantity, price, updated_by_user=None):
     now = datetime.now().isoformat()
     with get_connection() as conn:
         with conn.cursor() as cursor:
@@ -692,9 +705,12 @@ def update_product_stock_price(ml_id, quantity, price):
                     p_stock = row['available_quantity']
                 if float(price) != float(row['price'] or 0.0):
                     p_price = row['price']
-            cursor.execute("UPDATE products_cache SET available_quantity = %s, price = %s, prev_stock = %s, prev_price = %s, last_modified = %s WHERE ml_id = %s", (quantity, price, p_stock, p_price, now, ml_id))
+            if updated_by_user:
+                cursor.execute("UPDATE products_cache SET available_quantity = %s, price = %s, prev_stock = %s, prev_price = %s, last_modified = %s, updated_by_user = %s WHERE ml_id = %s", (quantity, price, p_stock, p_price, now, updated_by_user, ml_id))
+            else:
+                cursor.execute("UPDATE products_cache SET available_quantity = %s, price = %s, prev_stock = %s, prev_price = %s, last_modified = %s WHERE ml_id = %s", (quantity, price, p_stock, p_price, now, ml_id))
 
-def update_product_web_details(ml_id, price_web, images, description, is_web_active, category_id=None, sync_meli=1, min_stock=0, featured_order=0, use_meli_description=1, description_meli=None, cash_discount_pct=None):
+def update_product_web_details(ml_id, price_web, images, description, is_web_active, category_id=None, sync_meli=1, min_stock=0, featured_order=0, use_meli_description=1, description_meli=None, cash_discount_pct=None, updated_by_user=None):
     now = datetime.now().isoformat()
     with get_connection() as conn:
         with conn.cursor() as cursor:
@@ -707,15 +723,21 @@ def update_product_web_details(ml_id, price_web, images, description, is_web_act
             if description_meli is not None:
                 cursor.execute('''
                     UPDATE products_cache 
-                    SET price_web = %s, images = %s, description = %s, is_web_active = %s, category_id = %s, sync_meli = %s, min_stock = %s, featured_order = %s, use_meli_description = %s, description_meli = %s, prev_price_web = %s, cash_discount_pct = COALESCE(%s, cash_discount_pct, 0.0), last_modified = %s
+                    SET price_web = %s, images = %s, description = %s, is_web_active = %s, category_id = %s, sync_meli = %s, min_stock = %s, featured_order = %s, use_meli_description = %s, description_meli = %s, prev_price_web = %s, cash_discount_pct = COALESCE(%s, cash_discount_pct, 0.0), last_modified = %s, updated_by_user = COALESCE(%s, updated_by_user)
                     WHERE ml_id = %s
-                ''', (price_web, images, description, is_web_active, category_id, sync_meli, min_stock, featured_order, use_meli_description, description_meli, p_web, cash_discount_pct, now, ml_id))
+                ''', (price_web, images, description, is_web_active, category_id, sync_meli, min_stock, featured_order, use_meli_description, description_meli, p_web, cash_discount_pct, now, updated_by_user, ml_id))
             else:
                 cursor.execute('''
                     UPDATE products_cache 
-                    SET price_web = %s, images = %s, description = %s, is_web_active = %s, category_id = %s, sync_meli = %s, min_stock = %s, featured_order = %s, use_meli_description = %s, prev_price_web = %s, cash_discount_pct = COALESCE(%s, cash_discount_pct, 0.0), last_modified = %s
+                    SET price_web = %s, images = %s, description = %s, is_web_active = %s, category_id = %s, sync_meli = %s, min_stock = %s, featured_order = %s, use_meli_description = %s, prev_price_web = %s, cash_discount_pct = COALESCE(%s, cash_discount_pct, 0.0), last_modified = %s, updated_by_user = COALESCE(%s, updated_by_user)
                     WHERE ml_id = %s
-                ''', (price_web, images, description, is_web_active, category_id, sync_meli, min_stock, featured_order, use_meli_description, p_web, cash_discount_pct, now, ml_id))
+                ''', (price_web, images, description, is_web_active, category_id, sync_meli, min_stock, featured_order, use_meli_description, p_web, cash_discount_pct, now, updated_by_user, ml_id))
+
+def set_product_updated_by(ml_id: str, updated_by_user: str):
+    now = datetime.now().isoformat()
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute("UPDATE products_cache SET updated_by_user = %s, last_modified = %s WHERE ml_id = %s", (updated_by_user, now, ml_id))
 
 def update_product_description_meli(ml_id: str, description_meli: str):
     now = datetime.now().isoformat()
@@ -854,6 +876,7 @@ def get_all_products(query=None, status_filter=None, is_web_active=None, categor
                        COALESCE(p.manufacturing_time, 0) as manufacturing_time, p.description_meli, COALESCE(p.use_meli_description, 1) as use_meli_description,
                        p.tn_id, p.tn_variant_id, COALESCE(p.sync_tn, 1) as sync_tn, p.last_sync_tn,
                        COALESCE(p.cash_discount_pct, 0.0) as cash_discount_pct,
+                       p.created_by_user, p.updated_by_user,
                        c.name as category_name, c.slug as category_slug
                  FROM products_cache p
                  LEFT JOIN categories c ON p.category_id = c.id
@@ -914,6 +937,7 @@ def get_product_by_ml_id(ml_id: str):
                        COALESCE(p.manufacturing_time, 0) as manufacturing_time, p.description_meli, COALESCE(p.use_meli_description, 1) as use_meli_description,
                        p.tn_id, p.tn_variant_id, COALESCE(p.sync_tn, 1) as sync_tn, p.last_sync_tn,
                        COALESCE(p.cash_discount_pct, 0.0) as cash_discount_pct,
+                       p.created_by_user, p.updated_by_user,
                        c.name as category_name, c.slug as category_slug
                  FROM products_cache p
                  LEFT JOIN categories c ON p.category_id = c.id
@@ -1139,7 +1163,8 @@ def get_order_by_id(order_id):
             cursor.execute("""
                 SELECT o.order_id, o.date_created, o.buyer_id, o.buyer_nickname, o.buyer_name, o.total_amount, o.currency_id, o.status, 
                        o.payment_status, o.shipping_status, o.items_json, o.invoice_generated, o.source_platform, o.payment_method, 
-                       o.invoice_number, o.afip_cae, o.afip_cae_exp, o.meli_invoice_attached, c.document_type, c.document_number, c.address 
+                       o.invoice_number, o.afip_cae, o.afip_cae_exp, o.meli_invoice_attached, o.created_by_user,
+                       c.document_type, c.document_number, c.address 
                 FROM orders_cache o
                 LEFT JOIN customers c ON o.buyer_id = c.buyer_id
                 WHERE o.order_id = %s
@@ -1170,7 +1195,8 @@ def get_order_by_id(order_id):
                 'invoice_number': r.get('invoice_number', ''),
                 'afip_cae': r.get('afip_cae', ''),
                 'afip_cae_exp': r.get('afip_cae_exp', ''),
-                'meli_invoice_attached': bool(r.get('meli_invoice_attached', 0))
+                'meli_invoice_attached': bool(r.get('meli_invoice_attached', 0)),
+                'created_by_user': r.get('created_by_user')
             }
 
 def get_last_invoice_number_for_pto(pto_vta, cbte_tipo):
@@ -1182,11 +1208,10 @@ def get_last_invoice_number_for_pto(pto_vta, cbte_tipo):
             for r in rows:
                 if r['invoice_number'] and '-' in r['invoice_number']:
                     try:
-                        num_str = r['invoice_number'].split('-')[1]
-                        num = int(num_str)
+                        num = int(r['invoice_number'].split('-')[1])
                         if num > max_num:
                             max_num = num
-                    except (IndexError, ValueError):
+                    except ValueError:
                         pass
             return max_num
 
@@ -1199,13 +1224,16 @@ def save_order_afip_details(order_id, invoice_number, cae, cae_exp):
                 WHERE order_id = %s
             ''', (invoice_number, cae, cae_exp, order_id))
 
+update_order_afip_invoice = save_order_afip_details
+
 def get_all_orders(source_platform=None, search=None):
     with get_connection() as conn:
         with conn.cursor() as cursor:
             query = """
                 SELECT o.order_id, o.date_created, o.buyer_id, o.buyer_nickname, o.buyer_name, o.total_amount, o.currency_id, o.status, 
                        o.payment_status, o.shipping_status, o.items_json, o.invoice_generated, o.source_platform, o.payment_method,
-                       o.invoice_number, o.afip_cae, o.afip_cae_exp, o.meli_invoice_attached, c.document_type, c.document_number, c.address
+                       o.invoice_number, o.afip_cae, o.afip_cae_exp, o.meli_invoice_attached, o.created_by_user,
+                       c.document_type, c.document_number, c.address
                 FROM orders_cache o
                 LEFT JOIN customers c ON o.buyer_id = c.buyer_id
             """
@@ -1266,7 +1294,8 @@ def get_all_orders(source_platform=None, search=None):
                     'invoice_number': r.get('invoice_number', ''),
                     'afip_cae': r.get('afip_cae', ''),
                     'afip_cae_exp': r.get('afip_cae_exp', ''),
-                    'meli_invoice_attached': bool(r.get('meli_invoice_attached', 0))
+                    'meli_invoice_attached': bool(r.get('meli_invoice_attached', 0)),
+                    'created_by_user': r.get('created_by_user')
                 })
             return orders
 
@@ -2382,14 +2411,14 @@ def delete_order_by_id(order_id: int):
         with conn.cursor() as cursor:
             cursor.execute("DELETE FROM orders_cache WHERE order_id = %s", (order_id,))
 
-def create_manual_order(order_id: int, date_created: str, buyer_nickname: str, buyer_name: str, total_amount: float, status: str, shipping_status: str, items: list, source_platform: str, payment_method: str = None, payment_status: str = 'approved', cost_amount: float = 0.0, inventory_linked: int = 0):
+def create_manual_order(order_id: int, date_created: str, buyer_nickname: str, buyer_name: str, total_amount: float, status: str, shipping_status: str, items: list, source_platform: str, payment_method: str = None, payment_status: str = 'approved', cost_amount: float = 0.0, inventory_linked: int = 0, created_by_user: str = None):
     import json
     with get_connection() as conn:
         with conn.cursor() as cursor:
             cursor.execute('''
                 INSERT INTO orders_cache 
-                (order_id, date_created, buyer_id, buyer_nickname, buyer_name, total_amount, currency_id, status, payment_status, shipping_status, items_json, invoice_generated, source_platform, payment_method, cost_amount, inventory_linked)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                (order_id, date_created, buyer_id, buyer_nickname, buyer_name, total_amount, currency_id, status, payment_status, shipping_status, items_json, invoice_generated, source_platform, payment_method, cost_amount, inventory_linked, created_by_user)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             ''', (
                 order_id,
                 date_created,
@@ -2406,7 +2435,8 @@ def create_manual_order(order_id: int, date_created: str, buyer_nickname: str, b
                 source_platform,
                 payment_method,
                 cost_amount,
-                inventory_linked
+                inventory_linked,
+                created_by_user
             ))
 
 # --- WhatsApp Operations ---
