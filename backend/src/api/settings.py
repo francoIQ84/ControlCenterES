@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException, BackgroundTasks, File, UploadFile,
 from pydantic import BaseModel
 import os
 from typing import Optional
-from src import database, meli_api, mp_api, config
+from src import database, meli_api, mp_api, config, tenancy
 from src.progress import get_progress, update_progress
 from src.api.auth import require_permission
 
@@ -241,6 +241,18 @@ def get_web_config(_=Depends(require_permission("settings"))):
 def save_web_config(req: WebConfigModel, _=Depends(require_permission("settings"))):
     import json
     database.set_setting("web_config", json.dumps(req.dict()))
+    if req.logo_url:
+        tenant = tenancy.get_current_tenant() or tenancy.get_master_tenant()
+        if tenant:
+            try:
+                with database.get_connection() as conn:
+                    with conn.cursor() as cursor:
+                        cursor.execute(
+                            "UPDATE tenant_settings SET logo_url = %s, updated_at = CURRENT_TIMESTAMP WHERE tenant_id = %s",
+                            (req.logo_url, tenant["id"])
+                        )
+            except Exception:
+                pass
     return {"success": True}
 
 class CmsConfigModel(BaseModel):

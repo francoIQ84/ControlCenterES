@@ -167,6 +167,24 @@ const PAGE_HELP = {
   }
 }
 
+function formatLogoUrl(url) {
+  if (!url) return ''
+  return url.replace(/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?\/uploads\//, '/uploads/')
+}
+
+function getInitials(name) {
+  if (!name) return 'CC'
+  const clean = name.replace(/[^\w\s]/gi, '').trim()
+  const parts = clean.split(/\s+/).filter(Boolean)
+  if (parts.length >= 2) {
+    return (parts[0][0] + parts[1][0]).toUpperCase()
+  }
+  if (parts.length === 1 && parts[0].length >= 2) {
+    return parts[0].slice(0, 2).toUpperCase()
+  }
+  return name.slice(0, 2).toUpperCase()
+}
+
 export default function Layout() {
   const navigate = useNavigate()
   const location = useLocation()
@@ -174,6 +192,29 @@ export default function Layout() {
   const [lightMode, setLightMode] = useState(true)
   const [syncing, setSyncing] = useState(false)
   const [collapsed, setCollapsed] = useState(typeof window !== 'undefined' ? window.innerWidth < 768 : false)
+  
+  // Brand Logo state (aspect-ratio detection and fallback)
+  const logoUrl = formatLogoUrl(tenant?.settings?.logo_url)
+  const [isWideLogo, setIsWideLogo] = useState(false)
+  const [logoError, setLogoError] = useState(false)
+
+  useEffect(() => {
+    if (!logoUrl) {
+      setIsWideLogo(false)
+      setLogoError(false)
+      return
+    }
+    setLogoError(false)
+    const img = new window.Image()
+    img.src = logoUrl
+    img.onload = () => {
+      const ratio = img.naturalWidth / (img.naturalHeight || 1)
+      setIsWideLogo(ratio >= 1.8)
+    }
+    img.onerror = () => {
+      setLogoError(true)
+    }
+  }, [logoUrl])
   
   // New Mercado Libre status & progress states
   const [meliStatus, setMeliStatus] = useState(null)
@@ -604,15 +645,54 @@ export default function Layout() {
       )}
       <aside className={`sidebar ${collapsed ? 'collapsed' : ''}`}>
         <div className="sidebar-header">
-          {tenant?.settings?.logo_url ? (
-            <img src={tenant.settings.logo_url} alt={tenant.name}
-                 style={{ width: 22, height: 22, minWidth: 22, objectFit: 'contain', borderRadius: 4 }} />
-          ) : (
-            <Zap className="text-blue-500" style={{ minWidth: 20 }} />
-          )}
-          <span className="logo-text" title={tenant?.name || 'ControlCenterES'}>
-            {tenant?.name || 'ControlCenterES'}
-          </span>
+          <NavLink to="/" className="sidebar-brand-link" title={tenant?.name || 'ControlCenterES'}>
+            {collapsed ? (
+              // Vista Colapsada (ancho 65px)
+              logoUrl && !logoError && !isWideLogo ? (
+                <img
+                  src={logoUrl}
+                  alt={tenant?.name || 'Logo'}
+                  className="sidebar-brand-logo-square"
+                />
+              ) : (
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%' }} title={tenant?.name || 'ControlCenterES'}>
+                  <Zap size={20} style={{ color: 'var(--accent-blue)' }} />
+                </div>
+              )
+            ) : (
+              // Vista Expandida (ancho 250px)
+              logoUrl && !logoError ? (
+                isWideLogo ? (
+                  <div className="sidebar-brand-wide-wrapper">
+                    <img
+                      src={logoUrl}
+                      alt={tenant?.name || 'Logo'}
+                      className="sidebar-brand-logo-wide"
+                    />
+                  </div>
+                ) : (
+                  <>
+                    <img
+                      src={logoUrl}
+                      alt={tenant?.name || 'Logo'}
+                      className="sidebar-brand-logo-square"
+                    />
+                    <span className="logo-text" title={tenant?.name || 'ControlCenterES'}>
+                      {tenant?.name || 'ControlCenterES'}
+                    </span>
+                  </>
+                )
+              ) : (
+                // Sin logo / Por default: Nombre en texto del negocio con ícono
+                <>
+                  <Zap size={20} style={{ color: 'var(--accent-blue)', minWidth: 20, flexShrink: 0 }} />
+                  <span className="logo-text" title={tenant?.name || 'ControlCenterES'}>
+                    {tenant?.name || 'ControlCenterES'}
+                  </span>
+                </>
+              )
+            )}
+          </NavLink>
         </div>
         {tenant && tenant.status === 'trial' && (
           <div className="nav-text" style={{

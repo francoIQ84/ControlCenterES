@@ -142,15 +142,40 @@ def get_my_tenant(current_user: dict = Depends(get_current_user)):
                 "SELECT logo_url, primary_color, currency, timezone, active_modules "
                 "FROM tenant_settings WHERE tenant_id = %s", (tenant_id,))
             settings_row = cursor.fetchone()
+    settings_dict = dict(settings_row) if settings_row else {}
+    if not settings_dict.get("logo_url"):
+        cfg_str = database.get_setting("web_config")
+        if cfg_str:
+            try:
+                cfg = json.loads(cfg_str)
+                web_logo = cfg.get("logo_url")
+                if web_logo:
+                    settings_dict["logo_url"] = web_logo
+                    # Persistir en tenant_settings para mantener sincronizada la base de datos
+                    try:
+                        with database.get_connection() as conn:
+                            with conn.cursor() as cursor:
+                                cursor.execute(
+                                    "UPDATE tenant_settings SET logo_url = %s, updated_at = CURRENT_TIMESTAMP WHERE tenant_id = %s AND (logo_url IS NULL OR logo_url = '')",
+                                    (web_logo, tenant_id)
+                                )
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+
+    tenant_name = tenant.get("name")
+    if not tenant_name:
+        tenant_name = database.get_setting("merchant_name") or "ControlCenterES"
 
     return {
         "id": tenant_id,
         "slug": tenant.get("slug"),
-        "name": tenant.get("name"),
+        "name": tenant_name,
         "status": tenant.get("status"),
         "plan_id": tenant.get("plan_id"),
         "is_master": tenant_id == tenancy.MASTER_TENANT_ID,
-        "settings": dict(settings_row) if settings_row else None,
+        "settings": settings_dict if settings_dict else None,
     }
 
 

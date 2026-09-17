@@ -5,7 +5,7 @@ import LeadMagnetSettings from '../components/LeadMagnetSettings'
 import { useTenant } from '../TenantContext'
 
 export default function Settings() {
-  const { isSimpleView, channels, isChannelEnabled, updateChannels } = useTenant()
+  const { isSimpleView, channels, isChannelEnabled, updateChannels, refresh: refreshTenant } = useTenant()
   const [config, setConfig] = useState({ 
     client_id: '', 
     client_secret: '', 
@@ -1517,6 +1517,9 @@ export default function Settings() {
         body: JSON.stringify(webConfig)
       })
       if (res.ok) {
+        if (refreshTenant) {
+          try { await refreshTenant() } catch {}
+        }
         alert("Configuración de la tienda web guardada con éxito")
       } else {
         const errorData = await res.json()
