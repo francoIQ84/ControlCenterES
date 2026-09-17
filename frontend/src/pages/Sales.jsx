@@ -72,6 +72,7 @@ export default function Sales() {
     buyer_nickname: "",
     buyer_name: "",
     source_platform: "LOCAL", // "LOCAL" or "WEB"
+    price_source: "web", // "web", "mercadolibre", "cash_discount", "tiendanube"
     shipping_status: "delivered", // "pending" or "delivered"
     payment_method: "Efectivo",
     payment_status: "paid", // "paid" or "pending"
@@ -580,15 +581,56 @@ export default function Sales() {
     })
   }
 
-  const getProductPriceForOrder = (product, platform, paymentMethod) => {
+  const getProductPriceForOrder = (product, platform, paymentMethod, explicitSource = null) => {
     if (!product) return 0
+    const source = explicitSource || newOrder.price_source || 'web'
+
+    if (source === 'mercadolibre') {
+      return Math.round(Number(product.price) || 0)
+    }
+    if (source === 'web') {
+      const pWeb = Number(product.price_web) || 0
+      return Math.round(pWeb > 0 ? pWeb : (Number(product.price) || 0))
+    }
+    if (source === 'cash_discount') {
+      const pWeb = Number(product.price_web) || 0
+      const base = pWeb > 0 ? pWeb : (Number(product.price) || 0)
+      const disc = Number(product.cash_discount_pct) || 0
+      return disc > 0 ? Math.round(base * (1 - disc / 100)) : Math.round(base)
+    }
+    if (source === 'tiendanube') {
+      const pTn = Number(product.price_tn) || 0
+      const pWeb = Number(product.price_web) || 0
+      return Math.round(pTn > 0 ? pTn : (pWeb > 0 ? pWeb : (Number(product.price) || 0)))
+    }
+
     let price = platform === 'LOCAL' 
-      ? (product.price || 0)
-      : (product.price_web || product.price || 0)
+      ? (Number(product.price) || 0)
+      : (Number(product.price_web) || Number(product.price) || 0)
     if (paymentMethod === 'Efectivo' && (product.cash_discount_pct || 0) > 0) {
       price = Math.round(price * (1 - (product.cash_discount_pct / 100)))
     }
-    return price
+    return Math.round(price)
+  }
+
+  const handlePriceSourceChange = (newSource) => {
+    setNewOrder(prev => {
+      const updatedItems = prev.items.map(item => {
+        const selectedProduct = inventory.find(p => p.ml_id === item.id)
+        if (selectedProduct) {
+          return {
+            ...item,
+            price: getProductPriceForOrder(selectedProduct, prev.source_platform, prev.payment_method, newSource)
+          }
+        }
+        return item
+      })
+      return {
+        ...prev,
+        price_source: newSource,
+        items: updatedItems
+      }
+    })
   }
 
   const filterInventoryProducts = (query, list) => {
@@ -608,7 +650,7 @@ export default function Sales() {
     setNewOrder(prev => {
       const updatedItems = [...prev.items]
       if (selectedProduct) {
-        const price = getProductPriceForOrder(selectedProduct, prev.source_platform, prev.payment_method)
+        const price = getProductPriceForOrder(selectedProduct, prev.source_platform, prev.payment_method, prev.price_source)
         updatedItems[index] = {
           ...updatedItems[index],
           id: prodId,
@@ -729,7 +771,7 @@ export default function Sales() {
         if (selectedProduct) {
           return {
             ...item,
-            price: getProductPriceForOrder(selectedProduct, prev.source_platform, newMethod)
+            price: getProductPriceForOrder(selectedProduct, prev.source_platform, newMethod, prev.price_source)
           }
         }
         return item
@@ -750,7 +792,7 @@ export default function Sales() {
         if (selectedProduct) {
           return {
             ...item,
-            price: getProductPriceForOrder(selectedProduct, newPlatform, prev.payment_method)
+            price: getProductPriceForOrder(selectedProduct, newPlatform, prev.payment_method, prev.price_source)
           }
         }
         return item
@@ -1797,8 +1839,8 @@ export default function Sales() {
             </div>
 
             <form onSubmit={handleCreateManualOrder} style={{flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 14, paddingRight: 4}}>
-              {/* Canal, Medio de Pago, Estado de Pago, Entrega */}
-              <div className="sale-fields-grid">
+              {/* Canal, Lista de Precios, Medio de Pago, Estado de Pago, Entrega */}
+              <div className="sale-fields-grid" style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 10}}>
                 <label style={{margin: 0, fontSize: '0.8rem'}}>
                   <span style={{color: 'var(--text-secondary)'}}>Canal de Venta</span>
                   <select 
@@ -1808,6 +1850,26 @@ export default function Sales() {
                   >
                     <option value="LOCAL">Local Comercial</option>
                     <option value="WEB">Tienda Web</option>
+                  </select>
+                </label>
+
+                <label style={{margin: 0, fontSize: '0.8rem'}}>
+                  <span style={{color: 'var(--accent-blue, #2563eb)', fontWeight: 600}}>🏷️ Tomar Precios de</span>
+                  <select 
+                    value={newOrder.price_source || 'web'}
+                    onChange={e => handlePriceSourceChange(e.target.value)}
+                    style={{
+                      width: '100%', 
+                      marginTop: 4, 
+                      fontWeight: 600,
+                      borderColor: 'rgba(37, 99, 235, 0.4)',
+                      backgroundColor: 'rgba(37, 99, 235, 0.05)'
+                    }}
+                  >
+                    <option value="web">🌐 Tienda Web</option>
+                    <option value="mercadolibre">🟡 Mercado Libre</option>
+                    <option value="cash_discount">💵 Descuento Efectivo</option>
+                    <option value="tiendanube">🛍️ Tienda Nube</option>
                   </select>
                 </label>
 
@@ -1835,7 +1897,7 @@ export default function Sales() {
                     onChange={e => setNewOrder({ ...newOrder, payment_status: e.target.value })}
                     style={{
                       width: '100%', 
-                      marginTop: 4,
+                      marginTop: 4, 
                       fontWeight: 600,
                       color: newOrder.payment_status === 'paid' ? '#10b981' : '#d97706'
                     }}

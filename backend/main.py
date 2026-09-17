@@ -19,6 +19,7 @@ scheduler.start_scheduler()
 os.makedirs('invoices', exist_ok=True)
 os.makedirs('uploads', exist_ok=True)
 os.makedirs('backups', exist_ok=True)
+os.makedirs('quotes', exist_ok=True)
 
 # Create FastAPI app
 app = FastAPI(title="ControlCenterES - API")
@@ -63,6 +64,7 @@ app.add_middleware(
 # Mount static files for invoices and uploads
 app.mount("/invoices", StaticFiles(directory="invoices"), name="invoices")
 app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
+app.mount("/quotes", StaticFiles(directory="quotes"), name="quotes")
 
 # Include API routes
 app.include_router(api_router, prefix="/api")

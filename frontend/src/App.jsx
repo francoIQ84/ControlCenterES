@@ -16,6 +16,7 @@ import Marketing from './pages/Marketing'
 import Tenants from './pages/Tenants'
 import MeliQuestions from './pages/MeliQuestions'
 import MeliOptimizer from './pages/MeliOptimizer'
+import Quotes from './pages/Quotes'
 import { TenantProvider } from './TenantContext'
 
 // Global fetch interceptor to append authorization token
@@ -138,6 +139,7 @@ function App() {
             <Route index element={<PermissionRoute permission="dashboard"><Dashboard /></PermissionRoute>} />
             <Route path="inventory" element={<PermissionRoute permission="inventory"><Inventory /></PermissionRoute>} />
             <Route path="sales" element={<PermissionRoute permission="sales"><Sales /></PermissionRoute>} />
+            <Route path="presupuestos" element={<PermissionRoute permission="sales"><Quotes /></PermissionRoute>} />
             <Route path="billing" element={<PermissionRoute permission="billing"><Billing /></PermissionRoute>} />
             <Route path="customers" element={<PermissionRoute permission="customers"><Customers /></PermissionRoute>} />
             <Route path="settings" element={<PermissionRoute permission="settings"><Settings /></PermissionRoute>} />

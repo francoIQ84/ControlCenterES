@@ -65,12 +65,15 @@ def main():
     upload_directory(sftp, frontend_dist, '/var/www/controlcenter/admin')
     print("[OK] Frontend subido exitosamente")
 
-    # 3. Subir Backend (src/ y migrations/)
-    print("\n3. Subiendo código Backend (src/ y migrations/)...")
+    # 3. Subir Backend (src/, migrations/ y main.py)
+    print("\n3. Subiendo código Backend (src/, migrations/ y main.py)...")
     backend_src = os.path.join(LOCAL_DIR, 'backend', 'src')
     backend_migrations = os.path.join(LOCAL_DIR, 'backend', 'migrations')
+    backend_main = os.path.join(LOCAL_DIR, 'backend', 'main.py')
     upload_directory(sftp, backend_src, '/var/www/controlcenter/backend/src')
     upload_directory(sftp, backend_migrations, '/var/www/controlcenter/backend/migrations')
+    if os.path.exists(backend_main):
+        sftp.put(backend_main, '/var/www/controlcenter/backend/main.py')
     print("[OK] Backend subido exitosamente")
     sftp.close()
 

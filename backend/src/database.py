@@ -145,6 +145,7 @@ def init_db():
             cursor.execute('ALTER TABLE products_cache ADD COLUMN IF NOT EXISTS last_sync_tn TEXT;')
             cursor.execute('ALTER TABLE categories ADD COLUMN IF NOT EXISTS tn_id VARCHAR(100);')
             cursor.execute('ALTER TABLE products_cache ADD COLUMN IF NOT EXISTS cash_discount_pct REAL DEFAULT 0.0;')
+            cursor.execute('ALTER TABLE products_cache ADD COLUMN IF NOT EXISTS price_tn REAL DEFAULT 0.0;')
             cursor.execute('ALTER TABLE products_cache ADD COLUMN IF NOT EXISTS created_by_user TEXT;')
             cursor.execute('ALTER TABLE products_cache ADD COLUMN IF NOT EXISTS updated_by_user TEXT;')
 
@@ -532,6 +533,33 @@ def init_db():
             cursor.execute('ALTER TABLE whatsapp_chat_history ADD COLUMN IF NOT EXISTS total_tokens INT DEFAULT 0;')
             cursor.execute('ALTER TABLE whatsapp_product_inquiries ADD COLUMN IF NOT EXISTS customer_name TEXT;')
 
+            # Quotes (Presupuestos) table
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS quotes (
+                    id SERIAL PRIMARY KEY,
+                    quote_number VARCHAR(50) NOT NULL,
+                    customer_name VARCHAR(255) NOT NULL,
+                    customer_doc VARCHAR(50),
+                    customer_email VARCHAR(255),
+                    customer_phone VARCHAR(100),
+                    customer_address TEXT,
+                    price_source VARCHAR(50) DEFAULT 'web',
+                    items_json TEXT NOT NULL,
+                    total_amount REAL NOT NULL DEFAULT 0.0,
+                    valid_days INTEGER NOT NULL DEFAULT 7,
+                    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+                    valid_until TIMESTAMP WITH TIME ZONE,
+                    completed_at TIMESTAMP WITH TIME ZONE,
+                    status VARCHAR(50) NOT NULL DEFAULT 'pending',
+                    notes TEXT,
+                    created_by_user VARCHAR(255),
+                    order_id BIGINT
+                )
+            ''')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_quotes_status ON quotes(status);')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_quotes_created_at ON quotes(created_at DESC);')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_quotes_order_id ON quotes(order_id);')
+
             # Seed default admin user if no users exist
             cursor.execute("SELECT COUNT(*) as count FROM users")
             if cursor.fetchone()['count'] == 0:
@@ -876,6 +904,7 @@ def get_all_products(query=None, status_filter=None, is_web_active=None, categor
                        COALESCE(p.manufacturing_time, 0) as manufacturing_time, p.description_meli, COALESCE(p.use_meli_description, 1) as use_meli_description,
                        p.tn_id, p.tn_variant_id, COALESCE(p.sync_tn, 1) as sync_tn, p.last_sync_tn,
                        COALESCE(p.cash_discount_pct, 0.0) as cash_discount_pct,
+                       COALESCE(p.price_tn, 0.0) as price_tn,
                        p.created_by_user, p.updated_by_user,
                        c.name as category_name, c.slug as category_slug
                  FROM products_cache p
@@ -937,6 +966,7 @@ def get_product_by_ml_id(ml_id: str):
                        COALESCE(p.manufacturing_time, 0) as manufacturing_time, p.description_meli, COALESCE(p.use_meli_description, 1) as use_meli_description,
                        p.tn_id, p.tn_variant_id, COALESCE(p.sync_tn, 1) as sync_tn, p.last_sync_tn,
                        COALESCE(p.cash_discount_pct, 0.0) as cash_discount_pct,
+                       COALESCE(p.price_tn, 0.0) as price_tn,
                        p.created_by_user, p.updated_by_user,
                        c.name as category_name, c.slug as category_slug
                  FROM products_cache p
@@ -4008,3 +4038,193 @@ def delete_pending_suggestions(ml_id: str, field: str) -> int:
                 "WHERE ml_id = %s AND field = %s AND status <> 'applied'",
                 (ml_id, field))
             return cursor.rowcount
+
+
+# ---------------------------------------------------------------------------
+# Presupuestos / Quotes Operations
+# ---------------------------------------------------------------------------
+
+def get_next_quote_number() -> str:
+    """Genera el siguiente número secuencial de presupuesto, e.g. PRES-2026-0001."""
+    year = datetime.now().year
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute("SELECT COUNT(*) as cnt FROM quotes")
+            row = cursor.fetchone()
+            count = (row['cnt'] if row else 0) + 1
+            return f"PRES-{year}-{count:04d}"
+
+
+def create_quote(
+    quote_number: str,
+    customer_name: str,
+    customer_doc: str = "",
+    customer_email: str = "",
+    customer_phone: str = "",
+    customer_address: str = "",
+    price_source: str = "web",
+    items: list = None,
+    total_amount: float = 0.0,
+    valid_days: int = 7,
+    notes: str = None,
+    created_by_user: str = None
+) -> dict:
+    import json
+    now = datetime.now()
+    valid_until = now + timedelta(days=int(valid_days or 7))
+    items_json_str = json.dumps(items or [])
+
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute('''
+                INSERT INTO quotes (
+                    quote_number, customer_name, customer_doc, customer_email, customer_phone,
+                    customer_address, price_source, items_json, total_amount, valid_days,
+                    created_at, valid_until, status, notes, created_by_user
+                ) VALUES (
+                    %s, %s, %s, %s, %s,
+                    %s, %s, %s, %s, %s,
+                    %s, %s, 'pending', %s, %s
+                ) RETURNING *
+            ''', (
+                quote_number, customer_name, customer_doc or "", customer_email or "", customer_phone or "",
+                customer_address or "", price_source or "web", items_json_str, float(total_amount or 0.0), int(valid_days or 7),
+                now, valid_until, notes or "", created_by_user or "Admin"
+            ))
+            row = cursor.fetchone()
+            res = dict(row)
+            try:
+                res['items'] = json.loads(res.get('items_json') or '[]')
+            except Exception:
+                res['items'] = []
+            return res
+
+
+def get_all_quotes(status: str = None, search: str = None, limit: int = 100, offset: int = 0) -> list:
+    import json
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            sql = "SELECT * FROM quotes WHERE 1=1"
+            params = []
+            if status and status != 'all':
+                if status == 'expired':
+                    sql += " AND status = 'pending' AND valid_until < CURRENT_TIMESTAMP"
+                elif status == 'pending':
+                    sql += " AND status = 'pending' AND (valid_until IS NULL OR valid_until >= CURRENT_TIMESTAMP)"
+                else:
+                    sql += " AND status = %s"
+                    params.append(status)
+
+            if search:
+                sql += " AND (customer_name ILIKE %s OR quote_number ILIKE %s OR customer_phone ILIKE %s OR customer_doc ILIKE %s)"
+                s_param = f"%{search}%"
+                params.extend([s_param, s_param, s_param, s_param])
+
+            sql += " ORDER BY created_at DESC LIMIT %s OFFSET %s"
+            params.extend([limit, offset])
+
+            cursor.execute(sql, params)
+            rows = cursor.fetchall()
+            now = datetime.now()
+
+            results = []
+            for r in rows:
+                item = dict(r)
+                try:
+                    item['items'] = json.loads(item.get('items_json') or '[]')
+                except Exception:
+                    item['items'] = []
+
+                if item.get('status') == 'pending' and item.get('valid_until'):
+                    v_until = item['valid_until']
+                    if hasattr(v_until, 'tzinfo') and v_until.tzinfo:
+                        from datetime import timezone
+                        now_tz = datetime.now(timezone.utc)
+                        item['is_expired'] = (v_until < now_tz)
+                    else:
+                        item['is_expired'] = (v_until < now)
+                else:
+                    item['is_expired'] = False
+
+                results.append(item)
+            return results
+
+
+def get_quote_by_id(quote_id: int) -> dict:
+    import json
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute("SELECT * FROM quotes WHERE id = %s", (quote_id,))
+            row = cursor.fetchone()
+            if not row:
+                return None
+            res = dict(row)
+            try:
+                res['items'] = json.loads(res.get('items_json') or '[]')
+            except Exception:
+                res['items'] = []
+            return res
+
+
+def update_quote(quote_id: int, data: dict) -> dict:
+    import json
+    fields = []
+    params = []
+
+    for k, v in data.items():
+        if k == 'items':
+            fields.append("items_json = %s")
+            params.append(json.dumps(v))
+        elif k in ('customer_name', 'customer_doc', 'customer_email', 'customer_phone',
+                    'customer_address', 'price_source', 'total_amount', 'valid_days',
+                    'valid_until', 'completed_at', 'status', 'notes', 'created_by_user', 'order_id'):
+            fields.append(f"{k} = %s")
+            params.append(v)
+
+    if not fields:
+        return get_quote_by_id(quote_id)
+
+    params.append(quote_id)
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            sql = f"UPDATE quotes SET {', '.join(fields)} WHERE id = %s RETURNING *"
+            cursor.execute(sql, params)
+            row = cursor.fetchone()
+            if not row:
+                return None
+            res = dict(row)
+            try:
+                res['items'] = json.loads(res.get('items_json') or '[]')
+            except Exception:
+                res['items'] = []
+            return res
+
+
+def delete_quote(quote_id: int) -> bool:
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute("DELETE FROM quotes WHERE id = %s", (quote_id,))
+            return cursor.rowcount > 0
+
+
+def mark_quote_completed(quote_id: int, order_id: int, completed_at=None) -> dict:
+    import json
+    now = completed_at or datetime.now()
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute("""
+                UPDATE quotes 
+                SET status = 'approved', order_id = %s, completed_at = %s 
+                WHERE id = %s 
+                RETURNING *
+            """, (order_id, now, quote_id))
+            row = cursor.fetchone()
+            if not row:
+                return None
+            res = dict(row)
+            try:
+                res['items'] = json.loads(res.get('items_json') or '[]')
+            except Exception:
+                res['items'] = []
+            return res
+

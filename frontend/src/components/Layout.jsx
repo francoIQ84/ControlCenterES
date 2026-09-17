@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom'
-import { LayoutDashboard, Package, Receipt, Users, Settings, Sun, Moon, RefreshCw, Zap, Image, LogOut, Menu, FileText, Wallet, BookOpen, ShieldCheck, Bell, CheckCircle2, X, Megaphone, UserCheck, MessageSquare, Building2, HelpCircle, Eye, Layers, Sparkles } from 'lucide-react'
+import { LayoutDashboard, Package, Receipt, Users, Settings, Sun, Moon, RefreshCw, Zap, Image, LogOut, Menu, FileText, Wallet, BookOpen, ShieldCheck, Bell, CheckCircle2, X, Megaphone, UserCheck, MessageSquare, Building2, HelpCircle, Eye, Layers, Sparkles, ClipboardList } from 'lucide-react'
 import { useTenant } from '../TenantContext'
 
 // Mapa de ayuda contextual por ruta — se muestra al pulsar el botón "?"
@@ -38,6 +38,17 @@ const PAGE_HELP = {
       'Facturar ventas con AFIP directamente',
       'Vincular ventas con productos del inventario',
       'Filtrar por plataforma, estado y buscar por nombre'
+    ]
+  },
+  '/presupuestos': {
+    title: '📋 Presupuestos & Cotizaciones',
+    description: 'Armado de presupuestos con validez por días y conversión a venta.',
+    features: [
+      'Crear presupuestos con listas de precios (Web, ML, Efectivo, Tienda Nube)',
+      'Fijar validez en días y controlar cotizaciones vigentes o vencidas',
+      'Descargar PDF corporativo profesional listo para imprimir o enviar',
+      'Compartir cotización rápidamente por WhatsApp al cliente',
+      'Confirmar como venta abonada descontando inventario automáticamente'
     ]
   },
   '/billing': {
@@ -628,6 +639,12 @@ export default function Layout() {
             <NavLink to="/sales" className={({isActive}) => `nav-link ${isActive ? 'active' : ''}`}>
               <Receipt size={20} style={{ minWidth: 20 }} />
               <span className="nav-text">Ventas</span>
+            </NavLink>
+          )}
+          {canShow('sales') && (
+            <NavLink to="/presupuestos" className={({isActive}) => `nav-link ${isActive ? 'active' : ''}`}>
+              <ClipboardList size={20} style={{ minWidth: 20 }} />
+              <span className="nav-text">Presupuestos</span>
             </NavLink>
           )}
           {!isSimpleView && canShow('billing') && isChannelEnabled('arca') && (

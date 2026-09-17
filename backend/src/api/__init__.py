@@ -22,6 +22,7 @@ from .meli_questions import router as meli_questions_router
 from .tiendanube import router as tiendanube_router
 from .meli_optimizer import router as meli_optimizer_router
 from .listing_optimizer import router as listing_optimizer_router
+from .quotes import router as quotes_router
 
 api_router = APIRouter()
 
@@ -32,6 +33,7 @@ api_router.include_router(auth_router, prefix="/auth", tags=["auth"])
 # Protected admin panel endpoints
 api_router.include_router(inventory_router, prefix="/inventory", tags=["inventory"], dependencies=[Depends(verify_session), Depends(require_permission("inventory"))])
 api_router.include_router(sales_router, prefix="/sales", tags=["sales"], dependencies=[Depends(verify_session), Depends(require_permission("sales"))])
+api_router.include_router(quotes_router, prefix="/quotes", tags=["quotes"], dependencies=[Depends(verify_session), Depends(require_permission("sales"))])
 api_router.include_router(customers_router, prefix="/customers", tags=["customers"], dependencies=[Depends(verify_session), Depends(require_permission("customers"))])
 api_router.include_router(dashboard_router, prefix="/dashboard", tags=["dashboard"], dependencies=[Depends(verify_session), Depends(require_permission("dashboard"))])
 api_router.include_router(settings_router, prefix="/settings", tags=["settings"], dependencies=[Depends(verify_session)])
