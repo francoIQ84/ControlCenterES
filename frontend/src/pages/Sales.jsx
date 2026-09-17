@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react'
 import { ShoppingBag, Globe, Store, Check, Clock, Plus, Trash2, ShoppingCart, DollarSign, Link, MessageSquare, Send, ExternalLink, FileText, UserCheck, User, Search, X, Filter, CheckSquare, Square, Layers, CheckCircle2, AlertCircle, Loader2, RefreshCw, Package, Calendar, Edit2, Eye } from 'lucide-react'
 import { useTenant } from '../TenantContext'
 import { getCachedData, setCachedData, invalidateCache, CacheKeys } from '../utils/cache'
+import { matchesQuery, matchesPhoneOrDoc } from '../utils/searchUtils'
 
 const getLocalDateTimeLocal = (d = new Date()) => {
   const dateObj = typeof d === 'string' ? new Date(d) : (d || new Date())
@@ -705,13 +706,9 @@ export default function Sales() {
 
   const filterInventoryProducts = (query, list) => {
     if (!query || !query.trim()) return (list || []).slice(0, 60)
-    const cleanQ = query.trim().toLowerCase()
-    const words = cleanQ.split(/\s+/).filter(Boolean)
     return (list || []).filter(p => {
-      const title = (p.title || "").toLowerCase()
-      const id = String(p.ml_id || "").toLowerCase()
-      const sku = String(p.sku || "").toLowerCase()
-      return words.every(w => title.includes(w) || id.includes(w) || sku.includes(w))
+      const catName = p.category_name || ''
+      return matchesQuery([p.title, p.ml_id, p.sku, catName], query)
     }).slice(0, 60)
   }
 
@@ -913,44 +910,35 @@ export default function Sales() {
         if (shippingFilter === 'ready_to_ship' && !['ready_to_ship', 'handling'].includes(sStatus)) return false
       }
 
-      // 3. Search Query filter
+      // 3. Search Query filter (multi-word, accent-insensitive, flexible phone/doc)
       if (!searchQuery || !searchQuery.trim()) return true
 
-      const q = searchQuery.toLowerCase().trim()
+      const buyerTargets = [
+        o.buyer?.nickname,
+        o.buyer?.name,
+        o.buyer?.document_number,
+        o.buyer?.id,
+        o.buyer?.phone,
+        o.buyer?.email,
+        o.order_id,
+        o.invoice_number,
+        o.afip_cae,
+        o.payment_method,
+        o.status,
+        o.source_platform,
+        o.shipping_status,
+        o.total_amount
+      ]
 
-      // Buyer details
-      const nickname = (o.buyer?.nickname || '').toLowerCase()
-      const name = (o.buyer?.name || '').toLowerCase()
-      const docNum = (o.buyer?.document_number || '').toLowerCase()
-      const buyerId = String(o.buyer?.id || '').toLowerCase()
+      const itemTitles = (o.items || []).map(item => `${item.title || ''} ${item.id || ''}`)
+      const allTargets = [...buyerTargets, ...itemTitles]
 
-      // Order details
-      const orderId = String(o.order_id || '').toLowerCase()
-      const invoiceNum = (o.invoice_number || '').toLowerCase()
-      const cae = (o.afip_cae || '').toLowerCase()
-      const payMethod = (o.payment_method || '').toLowerCase()
-      const status = (o.status || '').toLowerCase()
-      const platform = (o.source_platform || '').toLowerCase()
-      const total = String(o.total_amount || '')
+      if (matchesQuery(allTargets, searchQuery)) return true
+      if (matchesPhoneOrDoc(o.buyer?.phone, searchQuery)) return true
+      if (matchesPhoneOrDoc(o.buyer?.document_number, searchQuery)) return true
+      if (matchesPhoneOrDoc(o.order_id, searchQuery)) return true
 
-      // Items details
-      const itemsMatch = (o.items || []).some(item =>
-        (item.title || '').toLowerCase().includes(q) ||
-        String(item.id || '').toLowerCase().includes(q)
-      )
-
-      return nickname.includes(q) ||
-        name.includes(q) ||
-        docNum.includes(q) ||
-        buyerId.includes(q) ||
-        orderId.includes(q) ||
-        invoiceNum.includes(q) ||
-        cae.includes(q) ||
-        payMethod.includes(q) ||
-        status.includes(q) ||
-        platform.includes(q) ||
-        total.includes(q) ||
-        itemsMatch
+      return false
     })
   }, [orders, platformFilter, shippingFilter, searchQuery])
 

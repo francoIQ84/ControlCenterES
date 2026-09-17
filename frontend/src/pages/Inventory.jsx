@@ -4,10 +4,14 @@ import { Html5QrcodeScanner } from 'html5-qrcode'
 import MediaBrowser from '../components/MediaBrowser'
 import { useTenant } from '../TenantContext'
 import { getCachedData, setCachedData, invalidateCache, CacheKeys } from '../utils/cache'
+import { matchesQuery } from '../utils/searchUtils'
 
 export default function Inventory() {
   const cachedInitial = getCachedData(CacheKeys.INVENTORY)
   const [products, setProducts] = useState(() => cachedInitial || [])
+  const allProductsRef = useRef(cachedInitial || [])
+  const activeReqIdRef = useRef(0)
+  const searchTimeoutRef = useRef(null)
   // Calidad de publicaciones: mapa ml_id -> diagnostico, y el detalle abierto
   const [listingHealth, setListingHealth] = useState({})
   const [auditing, setAuditing] = useState(false)
@@ -422,11 +426,14 @@ export default function Inventory() {
   };
 
 
-  const fetchProducts = (forceSpinner = false) => {
+  const fetchProducts = (forceSpinner = false, customQuery = null) => {
+    const qToFetch = customQuery !== null ? customQuery : query
     if (forceSpinner || (!getCachedData(CacheKeys.INVENTORY) && products.length === 0)) {
       setLoading(true)
     }
-    let url = `/api/inventory/?query=${encodeURIComponent(query)}`
+    const currentReqId = ++activeReqIdRef.current
+
+    let url = `/api/inventory/?query=${encodeURIComponent(qToFetch || '')}`
     if (hiddenFilter === 'all') {
       url += `&show_hidden=true`
     } else if (hiddenFilter === 'hidden') {
@@ -440,17 +447,25 @@ export default function Inventory() {
     fetch(url)
       .then(res => res.json())
       .then(data => {
+        // Discard if a newer request was dispatched (prevents race condition)
+        if (currentReqId !== activeReqIdRef.current) return
+
         const fetched = data.products || []
         setProducts(fetched)
-        if (!query && hiddenFilter === 'visible' && !outOfStockDays) {
+        if (!qToFetch && hiddenFilter === 'visible' && !outOfStockDays) {
+          allProductsRef.current = fetched
           setCachedData(CacheKeys.INVENTORY, fetched)
+        } else if (!qToFetch && fetched.length > allProductsRef.current.length) {
+          allProductsRef.current = fetched
         }
         setDrafts({})
         setLoading(false)
       })
       .catch(err => {
-        console.error(err)
-        setLoading(false)
+        if (currentReqId === activeReqIdRef.current) {
+          console.error(err)
+          setLoading(false)
+        }
       })
   }
 
@@ -519,8 +534,24 @@ export default function Inventory() {
   }
 
   useEffect(() => {
-    fetchProducts()
     fetchCategories()
+  }, [])
+
+  useEffect(() => {
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current)
+    }
+    // Debounce server query by 250ms when typing, or immediately when query is cleared
+    const delay = query ? 250 : 0
+    searchTimeoutRef.current = setTimeout(() => {
+      fetchProducts(false, query)
+    }, delay)
+
+    return () => {
+      if (searchTimeoutRef.current) {
+        clearTimeout(searchTimeoutRef.current)
+      }
+    }
   }, [query, hiddenFilter, outOfStockDays])
 
   useEffect(() => {
@@ -788,17 +819,30 @@ export default function Inventory() {
   }, [products, drafts])
 
   const sortedProducts = React.useMemo(() => {
-    let sortableItems = products.filter(p => {
+    const source = (allProductsRef.current && allProductsRef.current.length > products.length)
+      ? allProductsRef.current
+      : products
+
+    let sortableItems = source.filter(p => {
       const draftCat = drafts[p.ml_id]?.category_id
       const catId = draftCat !== undefined ? draftCat : p.category_id
 
+      // 1. Instant multi-word and accent-insensitive query match
+      if (query && query.trim()) {
+        const catObj = categories.find(c => String(c.id) === String(catId))
+        const catName = catObj ? catObj.name : (p.category_name || '')
+        const matched = matchesQuery([p.title, p.ml_id, p.sku, catName], query)
+        if (!matched) return false
+      }
+
+      // 2. Category Filter
       if (categoryFilter === 'UNCATEGORIZED') {
         if (catId && catId !== 0 && String(catId) !== '0' && String(catId) !== '') return false
       } else if (categoryFilter !== 'ALL') {
         if (String(catId) !== String(categoryFilter)) return false
       }
 
-      // Stock Level Filter
+      // 3. Stock Level Filter
       const draftQty = drafts[p.ml_id]?.qty
       const qty = draftQty !== undefined ? draftQty : (p.available_quantity || 0)
       const minStock = p.min_stock || 0
@@ -845,7 +889,7 @@ export default function Inventory() {
       })
     }
     return sortableItems
-  }, [products, drafts, categoryFilter, stockFilter, sortConfig, listingHealth])
+  }, [products, drafts, categoryFilter, stockFilter, sortConfig, listingHealth, query, categories])
 
   const handleToggleSelectProduct = (ml_id) => {
     setSelectedIds(prev => 
@@ -1788,14 +1832,37 @@ export default function Inventory() {
           {/* Desktop Inventory Controls */}
           <div className="inventory-desktop-controls inventory-controls" style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, gap: 15, flexWrap: 'wrap'}}>
           <div style={{display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap'}}>
-            <input 
-              type="text" 
-              placeholder="Buscar por nombre o ID..." 
-              value={query} 
-              onChange={e => setQuery(e.target.value)} 
-              className="search-input"
-              style={{width: 220, marginBottom: 0}}
-            />
+            <div style={{position: 'relative', width: 260}}>
+              <Search size={15} style={{position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-secondary)'}} />
+              <input 
+                type="text" 
+                placeholder="Buscar por nombre o ID..." 
+                value={query} 
+                onChange={e => setQuery(e.target.value)} 
+                className="search-input"
+                style={{width: '100%', paddingLeft: 32, paddingRight: query ? 28 : 10, marginBottom: 0}}
+              />
+              {query && (
+                <button
+                  type="button"
+                  onClick={() => setQuery('')}
+                  style={{
+                    position: 'absolute',
+                    right: 8,
+                    top: '50%',
+                    transform: 'translateY(-50%)',
+                    background: 'transparent',
+                    border: 'none',
+                    color: 'var(--text-secondary)',
+                    cursor: 'pointer',
+                    padding: 4
+                  }}
+                  title="Limpiar búsqueda"
+                >
+                  <X size={14} />
+                </button>
+              )}
+            </div>
             {!isSimpleView && (
             <select
               value={categoryFilter}

@@ -3,10 +3,11 @@ import { useSearchParams } from 'react-router-dom'
 import { 
   Users, MessageSquare, TrendingUp, RefreshCw, Sparkles, Filter, Search, Plus, 
   Trash2, Edit2, Download, ExternalLink, Mail, Phone, ShoppingBag, UserCheck, 
-  CheckCircle2, AlertTriangle, Layers, HelpCircle, Upload, FileText
+  CheckCircle2, AlertTriangle, Layers, HelpCircle, Upload, FileText, X
 } from 'lucide-react'
 import MeliQuestions from './MeliQuestions'
 import { useTenant } from '../TenantContext'
+import { matchesQuery, matchesPhoneOrDoc } from '../utils/searchUtils'
 
 export default function Customers() {
   const [searchParams] = useSearchParams()
@@ -23,6 +24,8 @@ export default function Customers() {
   const [syncingMetaLeads, setSyncingMetaLeads] = useState(false)
   const [analyzingInquiries, setAnalyzingInquiries] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
+  const [leadsSearch, setLeadsSearch] = useState('')
+  const [waSearch, setWaSearch] = useState('')
   const [platformFilter, setPlatformFilter] = useState('ALL')
   const [syncNotice, setSyncNotice] = useState(null)
 
@@ -290,7 +293,7 @@ export default function Customers() {
 
   const [sortConfig, setSortConfig] = useState({ key: 'total_spent', direction: 'desc' })
 
-  // Filtering for Customers
+  // Filtering for Customers (Instant, multi-word, accent-insensitive, flexible phone/doc)
   const filteredCustomers = useMemo(() => {
     let items = crmData.customers || []
     if (platformFilter !== 'ALL') {
@@ -309,15 +312,38 @@ export default function Customers() {
       })
     }
     if (!searchQuery.trim()) return items
-    const q = searchQuery.toLowerCase().trim()
-    return items.filter(c =>
-      (c.nickname || '').toLowerCase().includes(q) ||
-      (c.full_name || '').toLowerCase().includes(q) ||
-      (c.email || '').toLowerCase().includes(q) ||
-      (c.phone || '').toLowerCase().includes(q) ||
-      (c.document_number || '').toLowerCase().includes(q)
-    )
+    return items.filter(c => {
+      const targets = [
+        c.nickname,
+        c.full_name,
+        c.email,
+        c.phone,
+        c.document_number,
+        c.address,
+        c.city,
+        c.province,
+        c.notes
+      ]
+      if (matchesQuery(targets, searchQuery)) return true
+      if (matchesPhoneOrDoc(c.phone, searchQuery)) return true
+      if (matchesPhoneOrDoc(c.document_number, searchQuery)) return true
+      return false
+    })
   }, [crmData.customers, platformFilter, searchQuery])
+
+  // Filtering for Leads & Web Subscribers
+  const filteredLeads = useMemo(() => {
+    let items = crmData.leads || []
+    if (!leadsSearch.trim()) return items
+    return items.filter(l => matchesQuery([l.name, l.email, l.country, l.source, l.pdf_sent], leadsSearch))
+  }, [crmData.leads, leadsSearch])
+
+  // Filtering for WhatsApp Extractor
+  const filteredWaChats = useMemo(() => {
+    let items = crmData.whatsapp_chats || []
+    if (!waSearch.trim()) return items
+    return items.filter(w => matchesQuery([w.sender], waSearch) || matchesPhoneOrDoc(w.sender, waSearch))
+  }, [crmData.whatsapp_chats, waSearch])
 
   // Sorting for Customers
   const handleRequestSort = (key) => {
@@ -690,11 +716,31 @@ export default function Customers() {
                 <Search size={18} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-secondary)' }} />
                 <input
                   type="text"
-                  placeholder="Buscar por nombre, teléfono, email, DNI..."
+                  placeholder="Buscar por nombre, teléfono, email, DNI, dirección..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  style={{ paddingLeft: '38px', width: '100%', borderRadius: '8px', border: '1px solid var(--border-color)', height: '40px' }}
+                  style={{ paddingLeft: '38px', paddingRight: searchQuery ? '36px' : '12px', width: '100%', borderRadius: '8px', border: '1px solid var(--border-color)', height: '40px' }}
                 />
+                {searchQuery && (
+                  <button
+                    type="button"
+                    onClick={() => setSearchQuery('')}
+                    style={{
+                      position: 'absolute',
+                      right: '10px',
+                      top: '50%',
+                      transform: 'translateY(-50%)',
+                      background: 'none',
+                      border: 'none',
+                      color: 'var(--text-secondary)',
+                      cursor: 'pointer',
+                      padding: 4
+                    }}
+                    title="Limpiar búsqueda"
+                  >
+                    <X size={16} />
+                  </button>
+                )}
               </div>
             </div>
 
@@ -988,12 +1034,29 @@ export default function Customers() {
       {/* TAB 3: Leads & Suscriptores Web */}
       {activeTab === 'leads' && (
         <div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
-            <span style={{ color: 'var(--text-secondary)', fontSize: '14px' }}>
-              Prospectos registrados desde el pop-up web y formulario de guía/boletín.
-            </span>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px', flexWrap: 'wrap', gap: '12px' }}>
+            <div style={{ position: 'relative', width: '300px' }}>
+              <Search size={16} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-secondary)' }} />
+              <input
+                type="text"
+                placeholder="Buscar prospectos por nombre, email..."
+                value={leadsSearch}
+                onChange={(e) => setLeadsSearch(e.target.value)}
+                className="search-input"
+                style={{ paddingLeft: '34px', paddingRight: leadsSearch ? '30px' : '10px', width: '100%', height: '38px', marginBottom: 0 }}
+              />
+              {leadsSearch && (
+                <button
+                  type="button"
+                  onClick={() => setLeadsSearch('')}
+                  style={{ position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', padding: 2 }}
+                >
+                  <X size={14} />
+                </button>
+              )}
+            </div>
             <button onClick={exportLeadsCSV} className="btn btn-secondary" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <Download size={16} /> Exportar CSV
+              <Download size={16} /> Exportar CSV ({filteredLeads.length})
             </button>
           </div>
 
@@ -1010,10 +1073,10 @@ export default function Customers() {
                 </tr>
               </thead>
               <tbody>
-                {crmData.leads.length === 0 ? (
-                  <tr><td colSpan="6" style={{ textAlign: 'center', padding: '30px', color: 'var(--text-secondary)' }}>No hay leads registrados.</td></tr>
+                {filteredLeads.length === 0 ? (
+                  <tr><td colSpan="6" style={{ textAlign: 'center', padding: '30px', color: 'var(--text-secondary)' }}>{leadsSearch ? `No se encontraron prospectos con "${leadsSearch}".` : 'No hay leads registrados.'}</td></tr>
                 ) : (
-                  crmData.leads.map(l => (
+                  filteredLeads.map(l => (
                     <tr key={l.id}>
                       <td data-label="Nombre" style={{ fontWeight: '600' }}>{l.name || 'Sin especificar'}</td>
                       <td data-label="Email">
@@ -1037,10 +1100,27 @@ export default function Customers() {
       {/* TAB 4: Extractor de WhatsApp */}
       {activeTab === 'whatsapp' && (
         <div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
-            <span style={{ color: 'var(--text-secondary)', fontSize: '14px' }}>
-              Listado de números únicos detectados en la cuenta de WhatsApp conectada.
-            </span>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px', flexWrap: 'wrap', gap: '12px' }}>
+            <div style={{ position: 'relative', width: '300px' }}>
+              <Search size={16} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-secondary)' }} />
+              <input
+                type="text"
+                placeholder="Buscar por número o remitente..."
+                value={waSearch}
+                onChange={(e) => setWaSearch(e.target.value)}
+                className="search-input"
+                style={{ paddingLeft: '34px', paddingRight: waSearch ? '30px' : '10px', width: '100%', height: '38px', marginBottom: 0 }}
+              />
+              {waSearch && (
+                <button
+                  type="button"
+                  onClick={() => setWaSearch('')}
+                  style={{ position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', padding: 2 }}
+                >
+                  <X size={14} />
+                </button>
+              )}
+            </div>
             <button onClick={handleSyncWhatsApp} className="btn btn-primary" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
               <RefreshCw size={16} className={syncingWa ? 'spin' : ''} /> Ejecutar Extractor
             </button>
@@ -1057,10 +1137,10 @@ export default function Customers() {
                 </tr>
               </thead>
               <tbody>
-                {crmData.whatsapp_chats.length === 0 ? (
-                  <tr><td colSpan="4" style={{ textAlign: 'center', padding: '30px', color: 'var(--text-secondary)' }}>No hay chats de WhatsApp registrados en la base de datos.</td></tr>
+                {filteredWaChats.length === 0 ? (
+                  <tr><td colSpan="4" style={{ textAlign: 'center', padding: '30px', color: 'var(--text-secondary)' }}>{waSearch ? `No se encontraron chats con "${waSearch}".` : 'No hay chats de WhatsApp registrados en la base de datos.'}</td></tr>
                 ) : (
-                  crmData.whatsapp_chats.map((w, idx) => {
+                  filteredWaChats.map((w, idx) => {
                     const cleanPhone = (w.sender || '').replace(/[^0-9]/g, '')
                     return (
                       <tr key={idx}>

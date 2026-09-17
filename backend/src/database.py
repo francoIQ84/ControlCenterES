@@ -949,9 +949,12 @@ def get_all_products(query=None, status_filter=None, is_web_active=None, categor
                            )"""
                 params.extend([cutoff_date, cutoff_date])
 
-            if query:
-                sql += " AND (p.title ILIKE %s OR p.ml_id ILIKE %s)"
-                params.extend([f"%{query}%", f"%{query}%"])
+            if query and str(query).strip():
+                words = [w.strip() for w in str(query).split() if w.strip()]
+                for w in words:
+                    sql += " AND (p.title ILIKE %s OR p.ml_id ILIKE %s OR COALESCE(c.name, '') ILIKE %s)"
+                    w_param = f"%{w}%"
+                    params.extend([w_param, w_param, w_param])
                 
             if status_filter:
                 sql += " AND p.status = %s"
@@ -1290,23 +1293,25 @@ def get_all_orders(source_platform=None, search=None):
                 conditions.append("o.source_platform = %s")
                 params.append(source_platform)
                 
-            if search and search.strip():
-                pattern = f"%{search.strip()}%"
-                conditions.append("""(
-                    o.order_id ILIKE %s OR 
-                    o.buyer_nickname ILIKE %s OR 
-                    o.buyer_name ILIKE %s OR 
-                    c.document_number ILIKE %s OR 
-                    c.full_name ILIKE %s OR 
-                    c.nickname ILIKE %s OR 
-                    o.invoice_number ILIKE %s OR 
-                    o.afip_cae ILIKE %s OR 
-                    o.items_json ILIKE %s OR 
-                    o.payment_method ILIKE %s OR
-                    o.status ILIKE %s OR
-                    o.shipping_status ILIKE %s
-                )""")
-                params.extend([pattern] * 12)
+            if search and str(search).strip():
+                words = [w.strip() for w in str(search).split() if w.strip()]
+                for w in words:
+                    w_pattern = f"%{w}%"
+                    conditions.append("""(
+                        o.order_id ILIKE %s OR 
+                        o.buyer_nickname ILIKE %s OR 
+                        o.buyer_name ILIKE %s OR 
+                        c.document_number ILIKE %s OR 
+                        c.full_name ILIKE %s OR 
+                        c.nickname ILIKE %s OR 
+                        o.invoice_number ILIKE %s OR 
+                        o.afip_cae ILIKE %s OR 
+                        o.items_json ILIKE %s OR 
+                        o.payment_method ILIKE %s OR
+                        o.status ILIKE %s OR
+                        o.shipping_status ILIKE %s
+                    )""")
+                    params.extend([w_pattern] * 12)
                 
             if conditions:
                 query += " WHERE " + " AND ".join(conditions)
@@ -4136,10 +4141,12 @@ def get_all_quotes(status: str = None, search: str = None, limit: int = 100, off
                     sql += " AND status = %s"
                     params.append(status)
 
-            if search:
-                sql += " AND (customer_name ILIKE %s OR quote_number ILIKE %s OR customer_phone ILIKE %s OR customer_doc ILIKE %s)"
-                s_param = f"%{search}%"
-                params.extend([s_param, s_param, s_param, s_param])
+            if search and str(search).strip():
+                words = [w.strip() for w in str(search).split() if w.strip()]
+                for w in words:
+                    sql += " AND (customer_name ILIKE %s OR quote_number ILIKE %s OR customer_phone ILIKE %s OR customer_doc ILIKE %s)"
+                    s_param = f"%{w}%"
+                    params.extend([s_param, s_param, s_param, s_param])
 
             sql += " ORDER BY created_at DESC LIMIT %s OFFSET %s"
             params.extend([limit, offset])
