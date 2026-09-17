@@ -37,6 +37,10 @@ class ManualOrderRequest(BaseModel):
     items: List[ManualOrderProduct]
     payment_method: Optional[str] = None
     payment_status: Optional[str] = "paid"
+    date_created: Optional[str] = None
+
+class UpdateDateRequest(BaseModel):
+    date_created: str
 
 @router.get("/")
 def get_sales(search: Optional[str] = None, source_platform: Optional[str] = None):
@@ -213,10 +217,30 @@ def update_payment_status(order_id: int, req: UpdatePaymentStatusRequest):
     database.update_order_payment_status(order_id, status_val, pay_status_val)
     return {"success": True}
 
+@router.put("/{order_id}/date")
+def update_order_date_endpoint(order_id: int, req: UpdateDateRequest):
+    if not req.date_created:
+        raise HTTPException(status_code=400, detail="date_created es requerida")
+    try:
+        dt = datetime.datetime.fromisoformat(req.date_created)
+        formatted_date = dt.isoformat()
+    except Exception:
+        formatted_date = req.date_created
+
+    database.update_order_date(order_id, formatted_date)
+    return {"success": True, "date_created": formatted_date}
+
 @router.post("/")
 def create_order(req: ManualOrderRequest, current_user: dict = Depends(get_current_user)):
     order_id = int(time.time() * 1000) + random.randint(1, 999)
-    date_created = datetime.datetime.now().isoformat()
+    if req.date_created:
+        try:
+            dt = datetime.datetime.fromisoformat(req.date_created)
+            date_created = dt.isoformat()
+        except Exception:
+            date_created = req.date_created
+    else:
+        date_created = datetime.datetime.now().isoformat()
     creator = current_user.get('full_name') or current_user.get('username') or 'Admin'
     
     items_list = []

@@ -2452,6 +2452,11 @@ def update_order_payment_status(order_id: int, status: str, payment_status: str 
         with conn.cursor() as cursor:
             cursor.execute("UPDATE orders_cache SET status = %s, payment_status = %s WHERE order_id = %s", (status, payment_status, order_id))
 
+def update_order_date(order_id: int, date_created: str):
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute("UPDATE orders_cache SET date_created = %s WHERE order_id = %s", (date_created, order_id))
+
 def delete_order_by_id(order_id: int):
     with get_connection() as conn:
         with conn.cursor() as cursor:

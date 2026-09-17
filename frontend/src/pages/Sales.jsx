@@ -1,7 +1,25 @@
 import React, { useState, useEffect } from 'react'
-import { ShoppingBag, Globe, Store, Check, Clock, Plus, Trash2, ShoppingCart, DollarSign, Link, MessageSquare, Send, ExternalLink, FileText, UserCheck, User, Search, X, Filter, CheckSquare, Square, Layers, CheckCircle2, AlertCircle, Loader2, RefreshCw, Package } from 'lucide-react'
+import { ShoppingBag, Globe, Store, Check, Clock, Plus, Trash2, ShoppingCart, DollarSign, Link, MessageSquare, Send, ExternalLink, FileText, UserCheck, User, Search, X, Filter, CheckSquare, Square, Layers, CheckCircle2, AlertCircle, Loader2, RefreshCw, Package, Calendar, Edit2, Eye } from 'lucide-react'
 import { useTenant } from '../TenantContext'
 import { getCachedData, setCachedData, invalidateCache, CacheKeys } from '../utils/cache'
+
+const getLocalDateTimeLocal = (d = new Date()) => {
+  const dateObj = typeof d === 'string' ? new Date(d) : (d || new Date())
+  if (isNaN(dateObj.getTime())) return ''
+  const pad = n => String(n).padStart(2, '0')
+  const year = dateObj.getFullYear()
+  const month = pad(dateObj.getMonth() + 1)
+  const day = pad(dateObj.getDate())
+  const hours = pad(dateObj.getHours())
+  const mins = pad(dateObj.getMinutes())
+  return `${year}-${month}-${day}T${hours}:${mins}`
+}
+
+const getDateDaysAgo = (days) => {
+  const d = new Date()
+  d.setDate(d.getDate() - days)
+  return getLocalDateTimeLocal(d)
+}
 
 export default function Sales() {
   const cachedOrders = getCachedData(CacheKeys.SALES)
@@ -81,8 +99,15 @@ export default function Sales() {
     payment_status: "paid", // "paid" or "pending"
     auto_invoice: false,
     invoice_type: "B",
+    date_created: getLocalDateTimeLocal(),
     items: [{ id: "manual-1", title: "", quantity: 1, price: 0 }]
   })
+
+  // Sale Detail Modal & Date Editing State
+  const [selectedDetailOrder, setSelectedDetailOrder] = useState(null)
+  const [isEditingDate, setIsEditingDate] = useState(false)
+  const [editDateValue, setEditDateValue] = useState('')
+  const [savingDate, setSavingDate] = useState(false)
 
   const [invoicingStates, setInvoicingStates] = useState({})
 
@@ -571,6 +596,35 @@ export default function Sales() {
     }
   }
 
+  const handleUpdateOrderDate = async (orderId, newDateStr) => {
+    if (!newDateStr) return
+    setSavingDate(true)
+    try {
+      const res = await fetch(`/api/sales/${orderId}/date`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ date_created: newDateStr })
+      })
+      const data = await res.json()
+      if (res.ok) {
+        const updatedDate = data.date_created || newDateStr
+        setOrders(prev => prev.map(o => o.order_id === orderId ? { ...o, date_created: updatedDate } : o))
+        invalidateCache('sales')
+        if (selectedDetailOrder && selectedDetailOrder.order_id === orderId) {
+          setSelectedDetailOrder(prev => ({ ...prev, date_created: updatedDate }))
+        }
+        setIsEditingDate(false)
+        alert("Fecha de la venta actualizada con éxito.")
+      } else {
+        alert("Error al actualizar la fecha: " + (data.detail || "Error desconocido"))
+      }
+    } catch(err) {
+      alert("Error de conexión al actualizar la fecha: " + err.message)
+    } finally {
+      setSavingDate(false)
+    }
+  }
+
   const handleAddItem = () => {
     setNewOrder(prev => ({
       ...prev,
@@ -760,11 +814,13 @@ export default function Sales() {
           buyer_nickname: "",
           buyer_name: "",
           source_platform: "LOCAL",
+          price_source: "web",
           shipping_status: "delivered",
           payment_method: "Efectivo",
           payment_status: "paid",
           auto_invoice: false,
           invoice_type: "B",
+          date_created: getLocalDateTimeLocal(),
           items: [{ id: "manual-1", title: "", quantity: 1, price: 0 }]
         })
         invalidateCache('sales')
@@ -1534,9 +1590,60 @@ export default function Sales() {
                             ✨ NUEVA
                           </span>
                         )}
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            setSelectedDetailOrder(o)
+                            setIsEditingDate(true)
+                            setEditDateValue(getLocalDateTimeLocal(o.date_created))
+                          }}
+                          title="Editar fecha de esta venta"
+                          style={{
+                            background: 'transparent',
+                            border: '1px solid var(--border-color)',
+                            color: 'var(--text-secondary)',
+                            cursor: 'pointer',
+                            padding: '2px 5px',
+                            borderRadius: 4,
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 3,
+                            fontSize: '0.68rem'
+                          }}
+                        >
+                          <Edit2 size={10} /> Editar
+                        </button>
                       </div>
                     </td>
-                  <td data-label="Orden ID" style={{fontFamily: 'monospace', fontSize: '0.8rem'}}>{o.order_id}</td>
+                  <td data-label="Orden ID" style={{fontFamily: 'monospace', fontSize: '0.8rem'}}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedDetailOrder(o)
+                        setIsEditingDate(false)
+                      }}
+                      title="Ver detalle completo de esta venta"
+                      style={{
+                        background: 'transparent',
+                        border: 'none',
+                        color: 'var(--accent-blue)',
+                        fontWeight: 700,
+                        cursor: 'pointer',
+                        padding: 0,
+                        fontFamily: 'monospace',
+                        fontSize: '0.8rem',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 4,
+                        textDecoration: 'underline',
+                        textUnderlineOffset: 3
+                      }}
+                    >
+                      <Eye size={12} />
+                      {o.order_id}
+                    </button>
+                  </td>
                   <td data-label="Canal">
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-start' }}>
                       {renderPlatformBadge(o.source_platform)}
@@ -1612,11 +1719,54 @@ export default function Sales() {
                     </div>
                   </td>
                   <td data-label="Items">
-                    <ul style={{margin: 0, paddingLeft: 15, fontSize: '0.8rem', color: 'var(--text-secondary)'}}>
-                      {(o.items || []).map(i => (
-                        <li key={i.id || i.ml_id || Math.random()}>{i.quantity}x {(i.title || '').substring(0,30)}{(i.title || '').length > 30 ? '...' : ''}</li>
-                      ))}
-                    </ul>
+                    <div style={{display: 'flex', flexDirection: 'column', gap: 4}}>
+                      <ul style={{margin: 0, paddingLeft: 14, fontSize: '0.8rem', color: 'var(--text-secondary)'}}>
+                        {(o.items || []).slice(0, 3).map((i, idx) => {
+                          const unitP = i.price ?? i.unit_price
+                          return (
+                            <li key={i.id || i.ml_id || idx} title={i.title || ''} style={{marginBottom: 2}}>
+                              <strong>{i.quantity}x</strong> {(i.title || '').substring(0, 32)}{(i.title || '').length > 32 ? '...' : ''}
+                              {unitP != null && unitP > 0 && (
+                                <span style={{color: 'var(--text-primary)', marginLeft: 4, fontSize: '0.75rem', fontWeight: 500}}>
+                                  (${Number(unitP).toLocaleString()})
+                                </span>
+                              )}
+                            </li>
+                          )
+                        })}
+                      </ul>
+                      {(o.items || []).length > 3 && (
+                        <small style={{color: 'var(--text-secondary)', fontSize: '0.72rem', fontStyle: 'italic', paddingLeft: 14}}>
+                          + {(o.items.length - 3)} producto{(o.items.length - 3) > 1 ? 's' : ''} más...
+                        </small>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedDetailOrder(o)
+                          setIsEditingDate(false)
+                        }}
+                        className="btn"
+                        title="Ver detalle completo de los productos y precios"
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: 4,
+                          fontSize: '0.72rem',
+                          padding: '3px 7px',
+                          backgroundColor: 'rgba(37, 99, 235, 0.1)',
+                          color: 'var(--accent-blue)',
+                          border: '1px solid rgba(37, 99, 235, 0.3)',
+                          borderRadius: 4,
+                          cursor: 'pointer',
+                          marginTop: 3,
+                          width: 'fit-content'
+                        }}
+                      >
+                        <Eye size={12} />
+                        Ver detalle ({(o.items || []).length} {(o.items || []).length === 1 ? 'ítem' : 'ítems'})
+                      </button>
+                    </div>
                     {o.inventory_linked === 0 && (
                       <div style={{marginTop: 6}}>
                         <span style={{fontSize: '0.7rem', color: '#d97706', display: 'block', marginBottom: 3, fontWeight: 600}}>
@@ -1780,7 +1930,30 @@ export default function Sales() {
                         )}
                       </div>
                     )}
-                    <div style={{display: 'flex', justifyContent: 'center', marginTop: 4}}>
+                    <div style={{display: 'flex', justifyContent: 'center', gap: 4, marginTop: 4, flexWrap: 'wrap'}}>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedDetailOrder(o)
+                          setIsEditingDate(false)
+                        }}
+                        className="btn"
+                        title="Ver detalle completo de la venta"
+                        style={{
+                          padding: '2px 8px',
+                          fontSize: '0.7rem',
+                          backgroundColor: 'var(--bg-hover)',
+                          color: 'var(--text-primary)',
+                          border: '1px solid var(--border-color)',
+                          borderRadius: 4,
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: 4,
+                          cursor: 'pointer'
+                        }}
+                      >
+                        <Eye size={11} /> Detalle
+                      </button>
                       <button 
                         onClick={() => handleDeleteOrder(o.order_id)} 
                         className="btn" 
@@ -1856,6 +2029,68 @@ export default function Sales() {
             </div>
 
             <form onSubmit={handleCreateManualOrder} style={{flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 14, paddingRight: 4}}>
+              {/* Fecha y Hora de la Venta con accesos rápidos */}
+              <div style={{
+                backgroundColor: 'var(--bg-hover)',
+                border: '1px solid var(--border-color)',
+                borderRadius: 10,
+                padding: '10px 12px',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 8
+              }}>
+                <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 6}}>
+                  <label style={{margin: 0, fontSize: '0.8rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6, color: 'var(--text-primary)'}}>
+                    <Calendar size={15} style={{color: 'var(--accent-blue)'}} />
+                    <span>Fecha y Hora de la Venta</span>
+                  </label>
+                  <div style={{display: 'flex', gap: 5, flexWrap: 'wrap'}}>
+                    <button 
+                      type="button" 
+                      className="date-quick-btn"
+                      onClick={() => setNewOrder(prev => ({ ...prev, date_created: getLocalDateTimeLocal() }))}
+                    >
+                      Hoy / Ahora
+                    </button>
+                    <button 
+                      type="button" 
+                      className="date-quick-btn"
+                      onClick={() => setNewOrder(prev => ({ ...prev, date_created: getDateDaysAgo(1) }))}
+                    >
+                      Ayer
+                    </button>
+                    <button 
+                      type="button" 
+                      className="date-quick-btn"
+                      onClick={() => setNewOrder(prev => ({ ...prev, date_created: getDateDaysAgo(3) }))}
+                    >
+                      Hace 3 días
+                    </button>
+                    <button 
+                      type="button" 
+                      className="date-quick-btn"
+                      onClick={() => setNewOrder(prev => ({ ...prev, date_created: getDateDaysAgo(7) }))}
+                    >
+                      Hace 1 semana
+                    </button>
+                  </div>
+                </div>
+                <input 
+                  type="datetime-local"
+                  value={newOrder.date_created || ''}
+                  onChange={e => setNewOrder(prev => ({ ...prev, date_created: e.target.value }))}
+                  style={{
+                    width: '100%',
+                    padding: '7px 10px',
+                    fontSize: '0.85rem',
+                    borderRadius: 6,
+                    border: '1px solid var(--border-color)',
+                    backgroundColor: 'var(--bg-card)',
+                    color: 'var(--text-primary)'
+                  }}
+                />
+              </div>
+
               {/* Canal, Lista de Precios, Medio de Pago, Estado de Pago, Entrega */}
               <div className="sale-fields-grid" style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 10}}>
                 <label style={{margin: 0, fontSize: '0.8rem'}}>
@@ -3580,6 +3815,588 @@ export default function Sales() {
                   </>
                 )}
               </div>
+            </div>
+          </div>
+        )
+      })()}
+
+      {/* Modal de Detalle Completo de la Venta */}
+      {selectedDetailOrder && (() => {
+        const order = selectedDetailOrder
+        const isNew = isNewOrder(order.date_created)
+        const invoiced = isOrderInvoiced(order)
+        const buyer = order.buyer || {}
+        const buyerName = buyer.name || order.buyer_name || 'Consumidor Final'
+        const buyerNickname = buyer.nickname || order.buyer_nickname || '-'
+        const buyerDoc = buyer.document_number ? `${buyer.document_type || 'Doc'}: ${buyer.document_number}` : (order.document_number ? `${order.document_type || 'Doc'}: ${order.document_number}` : null)
+        const buyerAddress = buyer.address || order.address || null
+
+        // Safe items extraction
+        let itemsList = []
+        if (Array.isArray(order.items)) {
+          itemsList = order.items
+        } else if (typeof order.items === 'string') {
+          try {
+            itemsList = JSON.parse(order.items)
+          } catch {
+            itemsList = []
+          }
+        }
+
+        const itemsSubtotal = itemsList.reduce((acc, it) => {
+          const uPrice = Number(it.price ?? it.unit_price ?? 0)
+          const qty = Number(it.quantity ?? 1)
+          return acc + (uPrice * qty)
+        }, 0)
+
+        const totalAmount = Number(order.total_amount ?? itemsSubtotal)
+        const diff = Math.round((totalAmount - itemsSubtotal) * 100) / 100
+
+        return (
+          <div 
+            className="sale-modal-overlay" 
+            style={{ zIndex: 1100 }}
+            onClick={e => { if (e.target === e.currentTarget) setSelectedDetailOrder(null) }}
+          >
+            <div className="sale-detail-card" onClick={e => e.stopPropagation()}>
+              
+              {/* Header */}
+              <div className="sale-detail-header">
+                <div style={{display: 'flex', flexDirection: 'column', gap: 6}}>
+                  <div style={{display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap'}}>
+                    <h3 style={{margin: 0, fontSize: '1.2rem', fontFamily: 'monospace', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 6}}>
+                      <ShoppingCart size={20} style={{color: 'var(--accent-blue)'}} />
+                      Orden #{order.order_id}
+                    </h3>
+                    {renderPlatformBadge(order.source_platform)}
+                    {isNew && (
+                      <span style={{
+                        padding: '2px 8px',
+                        borderRadius: 10,
+                        fontSize: '0.7rem',
+                        fontWeight: 700,
+                        backgroundColor: '#10b981',
+                        color: '#ffffff'
+                      }}>
+                        ✨ NUEVA
+                      </span>
+                    )}
+                  </div>
+                  {order.created_by_user && (
+                    <span style={{fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: 4}}>
+                      <User size={12} style={{color: '#38bdf8'}} />
+                      Venta cargada manualmente por: <strong style={{color: 'var(--text-primary)'}}>{order.created_by_user}</strong>
+                    </span>
+                  )}
+                </div>
+
+                <button 
+                  type="button"
+                  className="btn" 
+                  style={{backgroundColor: 'var(--bg-dark)', color: 'var(--text-secondary)', padding: '6px 14px', fontSize: '0.85rem', cursor: 'pointer', borderRadius: 6}}
+                  onClick={() => setSelectedDetailOrder(null)}
+                >
+                  ✕ Cerrar
+                </button>
+              </div>
+
+              {/* Body */}
+              <div className="sale-detail-body">
+
+                {/* Fecha de la Venta con Editor */}
+                <div style={{
+                  backgroundColor: 'var(--bg-hover)',
+                  border: '1px solid var(--border-color)',
+                  borderRadius: 10,
+                  padding: '12px 16px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 8
+                }}>
+                  <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8}}>
+                    <div style={{display: 'flex', alignItems: 'center', gap: 8}}>
+                      <Calendar size={17} style={{color: 'var(--accent-blue)'}} />
+                      <div>
+                        <span style={{fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'block'}}>Fecha de Realización de la Venta:</span>
+                        <strong style={{fontSize: '0.95rem', color: 'var(--text-primary)'}}>
+                          {order.date_created ? new Date(order.date_created).toLocaleString('es-AR', {
+                            weekday: 'long',
+                            year: 'numeric',
+                            month: 'long',
+                            day: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit',
+                            second: '2-digit'
+                          }) : '-'}
+                        </strong>
+                      </div>
+                    </div>
+
+                    {!isEditingDate ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsEditingDate(true)
+                          setEditDateValue(getLocalDateTimeLocal(order.date_created))
+                        }}
+                        className="btn"
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: 5,
+                          padding: '5px 12px',
+                          fontSize: '0.78rem',
+                          backgroundColor: 'rgba(37, 99, 235, 0.12)',
+                          color: 'var(--accent-blue)',
+                          border: '1px solid rgba(37, 99, 235, 0.3)',
+                          borderRadius: 6,
+                          cursor: 'pointer',
+                          fontWeight: 600
+                        }}
+                      >
+                        <Edit2 size={12} /> Modificar Fecha
+                      </button>
+                    ) : null}
+                  </div>
+
+                  {isEditingDate && (
+                    <div style={{
+                      marginTop: 4,
+                      padding: 12,
+                      background: 'var(--bg-card)',
+                      border: '1px solid var(--border-color)',
+                      borderRadius: 8,
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: 10
+                    }}>
+                      <div style={{display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap'}}>
+                        <span style={{fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 600}}>Accesos rápidos:</span>
+                        <button 
+                          type="button" 
+                          className="date-quick-btn"
+                          onClick={() => setEditDateValue(getLocalDateTimeLocal())}
+                        >
+                          Hoy / Ahora
+                        </button>
+                        <button 
+                          type="button" 
+                          className="date-quick-btn"
+                          onClick={() => setEditDateValue(getDateDaysAgo(1))}
+                        >
+                          Ayer
+                        </button>
+                        <button 
+                          type="button" 
+                          className="date-quick-btn"
+                          onClick={() => setEditDateValue(getDateDaysAgo(3))}
+                        >
+                          Hace 3 días
+                        </button>
+                        <button 
+                          type="button" 
+                          className="date-quick-btn"
+                          onClick={() => setEditDateValue(getDateDaysAgo(7))}
+                        >
+                          Hace 1 semana
+                        </button>
+                      </div>
+
+                      <div style={{display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap'}}>
+                        <input 
+                          type="datetime-local"
+                          value={editDateValue}
+                          onChange={e => setEditDateValue(e.target.value)}
+                          style={{
+                            padding: '7px 10px',
+                            fontSize: '0.85rem',
+                            borderRadius: 6,
+                            border: '1px solid var(--border-color)',
+                            backgroundColor: 'var(--bg-dark)',
+                            color: 'var(--text-primary)',
+                            flex: '1 1 230px'
+                          }}
+                        />
+                        <button
+                          type="button"
+                          disabled={savingDate || !editDateValue}
+                          onClick={() => handleUpdateOrderDate(order.order_id, editDateValue)}
+                          className="btn"
+                          style={{
+                            backgroundColor: 'var(--accent-emerald)',
+                            color: '#fff',
+                            padding: '7px 16px',
+                            fontSize: '0.82rem',
+                            borderRadius: 6,
+                            fontWeight: 600,
+                            cursor: savingDate ? 'not-allowed' : 'pointer',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 6
+                          }}
+                        >
+                          {savingDate ? 'Guardando...' : '✓ Guardar Fecha'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setIsEditingDate(false)}
+                          className="btn"
+                          style={{
+                            backgroundColor: 'transparent',
+                            color: 'var(--text-secondary)',
+                            border: '1px solid var(--border-color)',
+                            padding: '7px 12px',
+                            fontSize: '0.82rem',
+                            borderRadius: 6,
+                            cursor: 'pointer'
+                          }}
+                        >
+                          Cancelar
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Grid con Datos del Comprador y Estado Comercial */}
+                <div className="sale-detail-grid">
+                  
+                  {/* Tarjeta 1: Comprador */}
+                  <div className="sale-detail-section">
+                    <h4 style={{margin: '0 0 10px 0', fontSize: '0.9rem', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: 6}}>
+                      <User size={15} style={{color: 'var(--accent-blue)'}} />
+                      Datos del Comprador
+                    </h4>
+                    <div style={{display: 'flex', flexDirection: 'column', gap: 6, fontSize: '0.85rem'}}>
+                      <div>
+                        <span style={{color: 'var(--text-secondary)'}}>Nombre: </span>
+                        <strong style={{color: 'var(--text-primary)'}}>{buyerName}</strong>
+                      </div>
+                      <div>
+                        <span style={{color: 'var(--text-secondary)'}}>Usuario / Apodo: </span>
+                        <span style={{color: 'var(--text-primary)'}}>{buyerNickname}</span>
+                      </div>
+                      {buyerDoc && (
+                        <div>
+                          <span style={{color: 'var(--text-secondary)'}}>Documento: </span>
+                          <span style={{color: 'var(--text-primary)', fontFamily: 'monospace'}}>{buyerDoc}</span>
+                        </div>
+                      )}
+                      <div>
+                        <span style={{color: 'var(--text-secondary)'}}>Dirección: </span>
+                        <span style={{color: 'var(--text-primary)'}}>{buyerAddress || 'Retiro en mostrador / local'}</span>
+                      </div>
+                      {order.source_platform === 'MERCADOLIBRE' && (
+                        <div style={{marginTop: 6}}>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedDetailOrder(null)
+                              handleOpenChatModal(order)
+                            }}
+                            className="btn"
+                            style={{
+                              padding: '4px 10px',
+                              fontSize: '0.75rem',
+                              backgroundColor: 'rgba(255, 230, 0, 0.15)',
+                              color: '#b39200',
+                              border: '1px solid #b39200',
+                              borderRadius: 4,
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 6,
+                              fontWeight: 600,
+                              cursor: 'pointer'
+                            }}
+                          >
+                            <MessageSquare size={13} /> Abrir Chat Post-Venta ML
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Tarjeta 2: Pago, Logística y Factura */}
+                  <div className="sale-detail-section">
+                    <h4 style={{margin: '0 0 10px 0', fontSize: '0.9rem', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: 6}}>
+                      <DollarSign size={15} style={{color: 'var(--accent-emerald)'}} />
+                      Estado de Pago y Facturación
+                    </h4>
+                    <div style={{display: 'flex', flexDirection: 'column', gap: 8, fontSize: '0.85rem'}}>
+                      <div style={{display: 'flex', alignItems: 'center', justifyContent: 'space-between'}}>
+                        <span style={{color: 'var(--text-secondary)'}}>Estado de Pago:</span>
+                        {order.status === 'pending' || order.payment_status === 'pending' ? (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              handleConfirmPayment(order.order_id)
+                              setSelectedDetailOrder(null)
+                            }}
+                            style={{
+                              padding: '3px 8px',
+                              borderRadius: 4,
+                              fontSize: '0.72rem',
+                              fontWeight: 600,
+                              backgroundColor: 'rgba(245, 158, 11, 0.15)',
+                              color: '#d97706',
+                              border: '1px solid rgba(245, 158, 11, 0.4)',
+                              cursor: 'pointer',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 4
+                            }}
+                          >
+                            <Clock size={12} /> Confirmar Pago
+                          </button>
+                        ) : (
+                          <span style={{
+                            padding: '2px 7px',
+                            borderRadius: 4,
+                            fontSize: '0.72rem',
+                            fontWeight: 700,
+                            backgroundColor: 'rgba(16, 185, 129, 0.15)',
+                            color: '#10b981'
+                          }}>
+                            ✓ APROBADO
+                          </span>
+                        )}
+                      </div>
+
+                      <div style={{display: 'flex', alignItems: 'center', justifyContent: 'space-between'}}>
+                        <span style={{color: 'var(--text-secondary)'}}>Medio de Pago:</span>
+                        <strong style={{color: 'var(--text-primary)'}}>{order.payment_method || 'No especificado'}</strong>
+                      </div>
+
+                      {order.mp_payment_id && (
+                        <div style={{display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.78rem'}}>
+                          <span style={{color: 'var(--text-secondary)'}}>Mercado Pago ID:</span>
+                          <span style={{fontFamily: 'monospace', color: '#009ee3'}}>#{order.mp_payment_id}</span>
+                        </div>
+                      )}
+
+                      <div style={{display: 'flex', alignItems: 'center', justifyContent: 'space-between'}}>
+                        <span style={{color: 'var(--text-secondary)'}}>Entrega:</span>
+                        {renderShippingBadge(order)}
+                      </div>
+
+                      <div style={{display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: 6, borderTop: '1px solid rgba(255,255,255,0.06)'}}>
+                        <span style={{color: 'var(--text-secondary)'}}>Facturación AFIP:</span>
+                        {invoiced ? (
+                          <div style={{textAlign: 'right'}}>
+                            <span style={{color: 'var(--accent-blue)', fontWeight: 700, fontSize: '0.8rem', display: 'block'}}>
+                              {order.invoice_number || 'Facturado'}
+                            </span>
+                            {order.afip_cae && (
+                              <small style={{fontSize: '0.68rem', color: 'var(--text-secondary)', fontFamily: 'monospace'}}>
+                                CAE: {order.afip_cae}
+                              </small>
+                            )}
+                          </div>
+                        ) : (
+                          <span style={{color: 'var(--text-secondary)', fontSize: '0.8rem'}}>Sin facturar</span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                </div>
+
+                {/* Detalle Ítem por Ítem de los Productos Vendidos */}
+                <div className="sale-detail-section" style={{padding: '16px'}}>
+                  <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12}}>
+                    <h4 style={{margin: 0, display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.98rem', color: 'var(--text-primary)'}}>
+                      <Package size={18} style={{color: 'var(--accent-blue)'}} />
+                      Productos Vendidos ({itemsList.length})
+                    </h4>
+                    {order.inventory_linked === 0 && (
+                      <button
+                        type="button"
+                        className="btn"
+                        style={{fontSize: '0.72rem', padding: '3px 8px', backgroundColor: '#f59e0b', color: '#fff', border: 'none', borderRadius: 4, cursor: 'pointer', fontWeight: 600}}
+                        onClick={() => {
+                          setLinkModalOrder(order)
+                          setSelectedDetailOrder(null)
+                        }}
+                      >
+                        🔗 Vincular a Inventario
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="sale-detail-table-wrapper">
+                    <table className="sale-detail-table">
+                      <thead>
+                        <tr>
+                          <th style={{width: 38, textAlign: 'center'}}>#</th>
+                          <th style={{width: 140}}>Código / ID</th>
+                          <th>Descripción del Producto</th>
+                          <th style={{width: 70, textAlign: 'center'}}>Cant.</th>
+                          <th style={{width: 120, textAlign: 'right'}}>Precio Unit.</th>
+                          <th style={{width: 130, textAlign: 'right'}}>Subtotal</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {itemsList.map((item, idx) => {
+                          const uPrice = Number(item.price ?? item.unit_price ?? 0)
+                          const qty = Number(item.quantity ?? 1)
+                          const lineSubtotal = uPrice * qty
+                          return (
+                            <tr key={item.id || item.ml_id || idx}>
+                              <td style={{textAlign: 'center', color: 'var(--text-secondary)', fontSize: '0.8rem'}}>
+                                {idx + 1}
+                              </td>
+                              <td style={{fontFamily: 'monospace', fontSize: '0.78rem', color: 'var(--text-secondary)'}}>
+                                {item.id || item.ml_id || '-'}
+                              </td>
+                              <td>
+                                <div style={{fontWeight: 600, color: 'var(--text-primary)', lineHeight: 1.35}}>
+                                  {item.title || 'Producto sin título'}
+                                </div>
+                              </td>
+                              <td style={{textAlign: 'center', fontWeight: 700}}>
+                                {qty}
+                              </td>
+                              <td style={{textAlign: 'right', fontFamily: 'monospace'}}>
+                                ${uPrice.toLocaleString()}
+                              </td>
+                              <td style={{textAlign: 'right', fontWeight: 700, fontFamily: 'monospace', color: 'var(--text-primary)'}}>
+                                ${lineSubtotal.toLocaleString()}
+                              </td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* Resumen de Totales */}
+                  <div className="sale-detail-totals-box">
+                    <div style={{display: 'flex', justifyContent: 'space-between', width: '100%', maxWidth: 340, fontSize: '0.85rem', color: 'var(--text-secondary)'}}>
+                      <span>Subtotal Productos:</span>
+                      <strong style={{fontFamily: 'monospace'}}>${itemsSubtotal.toLocaleString()}</strong>
+                    </div>
+                    {diff !== 0 && (
+                      <div style={{display: 'flex', justifyContent: 'space-between', width: '100%', maxWidth: 340, fontSize: '0.85rem', color: 'var(--text-secondary)'}}>
+                        <span>{diff > 0 ? 'Envío / Otros cargos:' : 'Descuento / Ajuste:'}</span>
+                        <strong style={{fontFamily: 'monospace'}}>{diff > 0 ? '+' : ''}${diff.toLocaleString()}</strong>
+                      </div>
+                    )}
+                    <div style={{
+                      display: 'flex', 
+                      justifyContent: 'space-between', 
+                      width: '100%', 
+                      maxWidth: 340, 
+                      fontSize: '1.2rem', 
+                      color: '#10b981', 
+                      paddingTop: 8, 
+                      borderTop: '1px solid rgba(16, 185, 129, 0.35)',
+                      marginTop: 2
+                    }}>
+                      <span style={{fontWeight: 700}}>PRECIO TOTAL:</span>
+                      <strong style={{fontFamily: 'monospace', fontWeight: 800}}>${totalAmount.toLocaleString()}</strong>
+                    </div>
+                  </div>
+                </div>
+
+              </div>
+
+              {/* Footer Actions */}
+              <div style={{
+                display: 'flex', 
+                justifyContent: 'space-between', 
+                alignItems: 'center', 
+                paddingTop: 14, 
+                borderTop: '1px solid var(--border-color)',
+                marginTop: 4,
+                flexWrap: 'wrap',
+                gap: 8
+              }}>
+                <div style={{display: 'flex', gap: 8, flexWrap: 'wrap'}}>
+                  {invoiced ? (
+                    <>
+                      <a 
+                        href={`/api/sales/${order.order_id}/invoice/pdf?token=${localStorage.getItem('adminToken')}`} 
+                        target="_blank" 
+                        rel="noopener noreferrer" 
+                        className="btn" 
+                        style={{
+                          padding: '6px 14px',
+                          fontSize: '0.82rem',
+                          backgroundColor: 'rgba(37, 99, 235, 0.12)',
+                          color: 'var(--accent-blue)',
+                          border: '1px solid var(--accent-blue)',
+                          borderRadius: '6px',
+                          textDecoration: 'none',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: 6
+                        }}
+                      >
+                        <FileText size={14} /> Ver Factura AFIP (PDF)
+                      </a>
+                      <button 
+                        onClick={() => handleRegenerateInvoice(order.order_id)}
+                        disabled={invoicingStates[order.order_id]}
+                        className="btn" 
+                        style={{
+                          padding: '6px 12px',
+                          fontSize: '0.8rem',
+                          backgroundColor: 'transparent',
+                          color: 'var(--text-secondary)',
+                          border: '1px solid var(--border-color)',
+                          borderRadius: '6px',
+                          cursor: invoicingStates[order.order_id] ? 'not-allowed' : 'pointer'
+                        }}
+                      >
+                        {invoicingStates[order.order_id] ? '⏳...' : '🔄 Regenerar PDF'}
+                      </button>
+                    </>
+                  ) : (
+                    <button 
+                      onClick={() => {
+                        setSelectedDetailOrder(null)
+                        handleCreateInvoice(order.order_id)
+                      }}
+                      disabled={invoicingStates[order.order_id]}
+                      className="btn" 
+                      style={{
+                        padding: '6px 16px',
+                        fontSize: '0.82rem',
+                        backgroundColor: invoicingStates[order.order_id] ? 'var(--bg-dark)' : 'var(--accent-emerald)',
+                        color: '#fff',
+                        borderRadius: '6px',
+                        border: 'none',
+                        cursor: invoicingStates[order.order_id] ? 'not-allowed' : 'pointer',
+                        fontWeight: 600,
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 6
+                      }}
+                    >
+                      <CheckCircle2 size={14} />
+                      {invoicingStates[order.order_id] ? 'Facturando...' : 'Facturar (AFIP)'}
+                    </button>
+                  )}
+                </div>
+
+                <button
+                  type="button"
+                  className="btn"
+                  style={{
+                    backgroundColor: 'var(--bg-dark)',
+                    color: 'var(--text-primary)',
+                    border: '1px solid var(--border-color)',
+                    padding: '6px 18px',
+                    fontSize: '0.85rem',
+                    borderRadius: 6,
+                    cursor: 'pointer'
+                  }}
+                  onClick={() => setSelectedDetailOrder(null)}
+                >
+                  Cerrar Detalle
+                </button>
+              </div>
+
             </div>
           </div>
         )
