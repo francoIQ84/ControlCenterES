@@ -2,6 +2,7 @@ import os
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 import uvicorn
 
 from src import database, scheduler
@@ -50,6 +51,9 @@ app.add_middleware(
     TenantResolverMiddleware,
     trust_header=os.environ.get("TENANT_TRUST_HEADER", "0") == "1",
 )
+
+# Gzip compression for all JSON / API payloads >= 1KB
+app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 # Setup CORS
 app.add_middleware(

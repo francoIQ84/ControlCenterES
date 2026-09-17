@@ -23,7 +23,7 @@ router = APIRouter()
 DEFAULT_MODULES = ["dashboard", "inventory", "sales", "customers", "expenses",
                    "media", "settings"]
 ALL_MODULES = DEFAULT_MODULES + ["billing", "inpi", "marketing", "whatsapp",
-                                 "storefront", "blog"]
+                                 "storefront", "blog", "quotes"]
 
 SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9-]{1,62}$")
 

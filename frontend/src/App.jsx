@@ -118,6 +118,9 @@ function PermissionRoute({ permission, children }) {
   if (permission === 'meli_optimizer' && (perms.includes('meli_optimizer') || perms.includes('settings'))) {
     return children;
   }
+  if (permission === 'quotes' && (perms.includes('quotes') || perms.includes('sales') || perms.includes('settings'))) {
+    return children;
+  }
   if (!perms.includes(permission)) {
     return <Navigate to="/" replace />;
   }
@@ -139,7 +142,7 @@ function App() {
             <Route index element={<PermissionRoute permission="dashboard"><Dashboard /></PermissionRoute>} />
             <Route path="inventory" element={<PermissionRoute permission="inventory"><Inventory /></PermissionRoute>} />
             <Route path="sales" element={<PermissionRoute permission="sales"><Sales /></PermissionRoute>} />
-            <Route path="presupuestos" element={<PermissionRoute permission="sales"><Quotes /></PermissionRoute>} />
+            <Route path="presupuestos" element={<PermissionRoute permission="quotes"><Quotes /></PermissionRoute>} />
             <Route path="billing" element={<PermissionRoute permission="billing"><Billing /></PermissionRoute>} />
             <Route path="customers" element={<PermissionRoute permission="customers"><Customers /></PermissionRoute>} />
             <Route path="settings" element={<PermissionRoute permission="settings"><Settings /></PermissionRoute>} />

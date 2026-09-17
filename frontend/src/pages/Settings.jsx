@@ -409,6 +409,7 @@ export default function Settings() {
     dashboard: true,
     inventory: true,
     sales: true,
+    quotes: true,
     billing: true,
     expenses: true,
     customers: true,
@@ -428,6 +429,7 @@ export default function Settings() {
     dashboard: false,
     inventory: false,
     sales: false,
+    quotes: false,
     billing: false,
     expenses: false,
     customers: false,
@@ -1350,6 +1352,7 @@ export default function Settings() {
           dashboard: true,
           inventory: true,
           sales: true,
+          quotes: true,
           billing: true,
           expenses: true,
           customers: true,
@@ -1421,6 +1424,7 @@ export default function Settings() {
       dashboard: list.includes('dashboard'),
       inventory: list.includes('inventory'),
       sales: list.includes('sales'),
+      quotes: list.includes('quotes') || list.includes('sales'),
       billing: list.includes('billing'),
       expenses: list.includes('expenses'),
       customers: list.includes('customers'),
@@ -2928,6 +2932,10 @@ export default function Settings() {
                       Ventas
                     </label>
                     <label style={{display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer'}}>
+                      <input type="checkbox" checked={newPerms.quotes} onChange={e => setNewPerms(prev => ({...prev, quotes: e.target.checked}))} />
+                      Presupuestos
+                    </label>
+                    <label style={{display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer'}}>
                       <input type="checkbox" checked={newPerms.billing} onChange={e => setNewPerms(prev => ({...prev, billing: e.target.checked}))} />
                       Facturación
                     </label>
@@ -3091,6 +3099,10 @@ export default function Settings() {
                     <label style={{display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer'}}>
                       <input type="checkbox" checked={editPerms.sales} onChange={e => setEditPerms(prev => ({...prev, sales: e.target.checked}))} />
                       Ventas
+                    </label>
+                    <label style={{display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer'}}>
+                      <input type="checkbox" checked={editPerms.quotes} onChange={e => setEditPerms(prev => ({...prev, quotes: e.target.checked}))} />
+                      Presupuestos
                     </label>
                     <label style={{display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer'}}>
                       <input type="checkbox" checked={editPerms.billing} onChange={e => setEditPerms(prev => ({...prev, billing: e.target.checked}))} />

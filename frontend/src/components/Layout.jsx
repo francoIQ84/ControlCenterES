@@ -336,6 +336,7 @@ export default function Layout() {
     const perms = permsStr.split(',').map(p => p.trim());
     if (perm === 'inpi' && (perms.includes('inpi') || perms.includes('settings'))) return true;
     if (perm === 'meli_optimizer' && (perms.includes('meli_optimizer') || perms.includes('settings'))) return true;
+    if (perm === 'quotes' && (perms.includes('quotes') || perms.includes('sales') || perms.includes('settings'))) return true;
     return perms.includes(perm);
   };
 
@@ -641,7 +642,7 @@ export default function Layout() {
               <span className="nav-text">Ventas</span>
             </NavLink>
           )}
-          {canShow('sales') && (
+          {canShow('quotes', 'sales') && (
             <NavLink to="/presupuestos" className={({isActive}) => `nav-link ${isActive ? 'active' : ''}`}>
               <ClipboardList size={20} style={{ minWidth: 20 }} />
               <span className="nav-text">Presupuestos</span>

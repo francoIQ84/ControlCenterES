@@ -319,5 +319,7 @@ def is_module_active(module: str, tenant_id: Optional[str] = None) -> bool:
     Mientras `tenant_settings` no esté poblado devuelve True, para no apagar
     funcionalidad que hoy está en uso.
     """
+    if module == "quotes":
+        return is_module_active("sales", tenant_id)
     modules = get_active_modules(tenant_id)
     return module in modules if modules else True

@@ -890,27 +890,43 @@ def bulk_adjust_prices(ml_ids: list, target: str, adjustment_type: str, value: f
                 ''', (new_price, new_price_web, new_cash_desc, curr_price, curr_price_web, now, ml_id))
 
 
-def get_all_products(query=None, status_filter=None, is_web_active=None, category_slug=None, include_hidden=False, is_hidden=None, out_of_stock_30d=False, out_of_stock_days=None):
+def get_all_products(query=None, status_filter=None, is_web_active=None, category_slug=None, include_hidden=False, is_hidden=None, out_of_stock_30d=False, out_of_stock_days=None, summary=False):
     if out_of_stock_days is None and out_of_stock_30d:
         out_of_stock_days = 30
 
     with get_connection() as conn:
         with conn.cursor() as cursor:
-            sql = """
-                SELECT p.ml_id, p.title, p.price, p.available_quantity, p.cost_price, p.cost_meli, p.permalink, p.thumbnail, 
-                       p.status, p.last_sync, p.price_web, p.images, p.description, p.is_web_active, 
-                       p.visits_meli, p.visits_web, p.category_id, p.sync_meli, p.min_stock, p.featured_order, p.last_modified,
-                       p.prev_stock, p.prev_price, p.prev_cost_price, p.prev_cost_meli, p.prev_price_web, COALESCE(p.is_hidden, 0) as is_hidden,
-                       COALESCE(p.manufacturing_time, 0) as manufacturing_time, p.description_meli, COALESCE(p.use_meli_description, 1) as use_meli_description,
-                       p.tn_id, p.tn_variant_id, COALESCE(p.sync_tn, 1) as sync_tn, p.last_sync_tn,
-                       COALESCE(p.cash_discount_pct, 0.0) as cash_discount_pct,
-                       COALESCE(p.price_tn, 0.0) as price_tn,
-                       p.created_by_user, p.updated_by_user,
-                       c.name as category_name, c.slug as category_slug
-                 FROM products_cache p
-                 LEFT JOIN categories c ON p.category_id = c.id
-                 WHERE 1=1
-             """
+            if summary:
+                sql = """
+                    SELECT p.ml_id, p.title, p.price, p.available_quantity, p.cost_price, p.cost_meli, p.permalink, p.thumbnail, 
+                           p.status, p.last_sync, p.price_web, p.is_web_active, 
+                           p.visits_meli, p.visits_web, p.category_id, p.sync_meli, p.min_stock, p.featured_order, p.last_modified,
+                           COALESCE(p.is_hidden, 0) as is_hidden,
+                           p.tn_id, p.tn_variant_id, COALESCE(p.sync_tn, 1) as sync_tn,
+                           COALESCE(p.cash_discount_pct, 0.0) as cash_discount_pct,
+                           COALESCE(p.price_tn, 0.0) as price_tn,
+                           p.created_by_user, p.updated_by_user,
+                           c.name as category_name, c.slug as category_slug
+                     FROM products_cache p
+                     LEFT JOIN categories c ON p.category_id = c.id
+                     WHERE 1=1
+                """
+            else:
+                sql = """
+                    SELECT p.ml_id, p.title, p.price, p.available_quantity, p.cost_price, p.cost_meli, p.permalink, p.thumbnail, 
+                           p.status, p.last_sync, p.price_web, p.images, p.description, p.is_web_active, 
+                           p.visits_meli, p.visits_web, p.category_id, p.sync_meli, p.min_stock, p.featured_order, p.last_modified,
+                           p.prev_stock, p.prev_price, p.prev_cost_price, p.prev_cost_meli, p.prev_price_web, COALESCE(p.is_hidden, 0) as is_hidden,
+                           COALESCE(p.manufacturing_time, 0) as manufacturing_time, p.description_meli, COALESCE(p.use_meli_description, 1) as use_meli_description,
+                           p.tn_id, p.tn_variant_id, COALESCE(p.sync_tn, 1) as sync_tn, p.last_sync_tn,
+                           COALESCE(p.cash_discount_pct, 0.0) as cash_discount_pct,
+                           COALESCE(p.price_tn, 0.0) as price_tn,
+                           p.created_by_user, p.updated_by_user,
+                           c.name as category_name, c.slug as category_slug
+                     FROM products_cache p
+                     LEFT JOIN categories c ON p.category_id = c.id
+                     WHERE 1=1
+                """
             params = []
             
             if is_hidden is not None:

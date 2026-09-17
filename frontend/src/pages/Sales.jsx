@@ -1,11 +1,13 @@
 import React, { useState, useEffect } from 'react'
 import { ShoppingBag, Globe, Store, Check, Clock, Plus, Trash2, ShoppingCart, DollarSign, Link, MessageSquare, Send, ExternalLink, FileText, UserCheck, User, Search, X, Filter, CheckSquare, Square, Layers, CheckCircle2, AlertCircle, Loader2, RefreshCw, Package } from 'lucide-react'
 import { useTenant } from '../TenantContext'
+import { getCachedData, setCachedData, invalidateCache, CacheKeys } from '../utils/cache'
 
 export default function Sales() {
-  const [orders, setOrders] = useState([])
+  const cachedOrders = getCachedData(CacheKeys.SALES)
+  const [orders, setOrders] = useState(() => cachedOrders || [])
   const { isSimpleView, isChannelEnabled } = useTenant()
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(() => !cachedOrders)
   const [sortConfig, setSortConfig] = useState({ key: 'date_created', direction: 'desc' })
 
   // Bulk Selection & Invoicing State
@@ -22,7 +24,8 @@ export default function Sales() {
 
   // Modal State
   const [showModal, setShowModal] = useState(false)
-  const [inventory, setInventory] = useState([])
+  const cachedInv = getCachedData(CacheKeys.INVENTORY_SUMMARY) || getCachedData(CacheKeys.INVENTORY)
+  const [inventory, setInventory] = useState(() => cachedInv || [])
   const [meliEnableManualMsg, setMeliEnableManualMsg] = useState(false)
 
   // Inventory Linking Modal State
@@ -92,13 +95,16 @@ export default function Sales() {
   const [sendingMessage, setSendingMessage] = useState(false)
   const [unreadMap, setUnreadMap] = useState({})
 
-  const fetchOrders = () => {
-    setLoading(true)
+  const fetchOrders = (forceSpinner = false) => {
+    if (forceSpinner || (!getCachedData(CacheKeys.SALES) && orders.length === 0)) {
+      setLoading(true)
+    }
     fetch('/api/sales/')
       .then(res => res.json())
       .then(data => {
         const fetchedOrders = data.orders || []
         setOrders(fetchedOrders)
+        setCachedData(CacheKeys.SALES, fetchedOrders)
         setLoading(false)
         
         // Auto-mark first 2 Mercado Libre sales with an unread badge notification
@@ -353,7 +359,8 @@ export default function Sales() {
         if (res.ok) {
           const data = await res.json()
           alert(`Factura generada con éxito: ${data.invoice_number}`)
-          fetchOrders()
+          invalidateCache('sales')
+          fetchOrders(true)
         } else {
           const err = await res.json()
           alert("Error al facturar: " + (err.detail || "Error desconocido"))
@@ -416,7 +423,8 @@ export default function Sales() {
         } else {
           setSelectedOrderIds([])
         }
-        fetchOrders()
+        invalidateCache('sales')
+        fetchOrders(true)
       } else {
         alert("Error al procesar facturación masiva: " + (data.detail || "Error desconocido"))
       }
@@ -451,7 +459,8 @@ export default function Sales() {
       const res = await fetch(`/api/sales/${orderId}`, { method: 'DELETE' })
       if (res.ok) {
         alert(`Venta #${orderId} eliminada con éxito.`)
-        fetchOrders()
+        invalidateCache('sales')
+        fetchOrders(true)
       } else {
         const data = await res.json()
         alert("Error al eliminar venta: " + (data.detail || "Error desconocido"))
@@ -483,10 +492,17 @@ export default function Sales() {
   }
 
   const fetchInventory = () => {
-    fetch('/api/inventory/')
+    const existing = getCachedData(CacheKeys.INVENTORY_SUMMARY) || getCachedData(CacheKeys.INVENTORY)
+    if (existing && existing.length > 0) {
+      setInventory(existing)
+      return
+    }
+    fetch('/api/inventory/?summary=true')
       .then(res => res.json())
       .then(data => {
-        setInventory(data.products || [])
+        const prods = data.products || []
+        setInventory(prods)
+        setCachedData(CacheKeys.INVENTORY_SUMMARY, prods)
       })
       .catch(err => console.error(err))
   }
@@ -751,7 +767,8 @@ export default function Sales() {
           invoice_type: "B",
           items: [{ id: "manual-1", title: "", quantity: 1, price: 0 }]
         })
-        fetchOrders()
+        invalidateCache('sales')
+        fetchOrders(true)
 
         if (shouldInvoice && createdOrderId) {
           handleCreateInvoice(createdOrderId)

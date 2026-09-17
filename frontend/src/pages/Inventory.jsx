@@ -3,9 +3,11 @@ import { Package, CloudOff, Cloud, RefreshCw, Save, QrCode, Camera, ExternalLink
 import { Html5QrcodeScanner } from 'html5-qrcode'
 import MediaBrowser from '../components/MediaBrowser'
 import { useTenant } from '../TenantContext'
+import { getCachedData, setCachedData, invalidateCache, CacheKeys } from '../utils/cache'
 
 export default function Inventory() {
-  const [products, setProducts] = useState([])
+  const cachedInitial = getCachedData(CacheKeys.INVENTORY)
+  const [products, setProducts] = useState(() => cachedInitial || [])
   // Calidad de publicaciones: mapa ml_id -> diagnostico, y el detalle abierto
   const [listingHealth, setListingHealth] = useState({})
   const [auditing, setAuditing] = useState(false)
@@ -13,7 +15,7 @@ export default function Inventory() {
   const [resolviendo, setResolviendo] = useState(null)   // progreso de la generacion en lote
   const [revisionLote, setRevisionLote] = useState(null) // ml_ids a revisar cuando termina
   const { isSimpleView, isChannelEnabled } = useTenant()
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(() => !cachedInitial)
   const [query, setQuery] = useState("")
   const [sortConfig, setSortConfig] = useState({ key: null, direction: 'asc' })
   const [drafts, setDrafts] = useState({})
@@ -281,8 +283,9 @@ export default function Inventory() {
         } else {
           alert("Todos los cambios guardados correctamente")
         }
+        invalidateCache('inventory')
         setDrafts({})
-        fetchProducts()
+        fetchProducts(true)
       } else {
         const errText = await res.text()
         alert("Error al guardar cambios en lote: " + errText)
@@ -419,8 +422,10 @@ export default function Inventory() {
   };
 
 
-  const fetchProducts = () => {
-    setLoading(true)
+  const fetchProducts = (forceSpinner = false) => {
+    if (forceSpinner || (!getCachedData(CacheKeys.INVENTORY) && products.length === 0)) {
+      setLoading(true)
+    }
     let url = `/api/inventory/?query=${encodeURIComponent(query)}`
     if (hiddenFilter === 'all') {
       url += `&show_hidden=true`
@@ -435,8 +440,16 @@ export default function Inventory() {
     fetch(url)
       .then(res => res.json())
       .then(data => {
-        setProducts(data.products || [])
+        const fetched = data.products || []
+        setProducts(fetched)
+        if (!query && hiddenFilter === 'visible' && !outOfStockDays) {
+          setCachedData(CacheKeys.INVENTORY, fetched)
+        }
         setDrafts({})
+        setLoading(false)
+      })
+      .catch(err => {
+        console.error(err)
         setLoading(false)
       })
   }
@@ -455,7 +468,8 @@ export default function Inventory() {
         body: JSON.stringify({ is_hidden: newStatus })
       })
       if (res.ok) {
-        fetchProducts()
+        invalidateCache('inventory')
+        fetchProducts(true)
       } else {
         alert("Error al cambiar la visibilidad del producto")
         setLoading(false)
@@ -473,7 +487,8 @@ export default function Inventory() {
       if (res.ok) {
         const data = await res.json()
         alert(data.message || "Costos de Mercado Libre actualizados correctamente desde la API")
-        fetchProducts()
+        invalidateCache('inventory')
+        fetchProducts(true)
       } else {
         const err = await res.json()
         alert("Error al actualizar costos MeLi: " + (err.detail || 'Ocurrió un error'))

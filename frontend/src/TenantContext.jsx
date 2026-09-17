@@ -143,6 +143,7 @@ export function TenantProvider({ children }) {
   const hasModule = (name) => {
     const modules = tenant?.settings?.active_modules
     if (!Array.isArray(modules) || modules.length === 0) return true
+    if (name === 'quotes') return modules.includes('sales') || modules.includes('quotes')
     return modules.includes(name)
   }
 
