@@ -63,6 +63,10 @@ class CommercialConfigRequest(BaseModel):
     merchant_commercial_address: Optional[str] = ""
     merchant_phone: Optional[str] = ""
     merchant_email: Optional[str] = ""
+    show_legal_name: Optional[bool] = False
+    legal_name: Optional[str] = ""
+    show_cuit: Optional[bool] = False
+    cuit: Optional[str] = ""
 
 
 @router.get("/config", dependencies=[Depends(require_permission("quotes"))])
@@ -87,14 +91,22 @@ def get_quote_commercial_config():
         commercial_address = "Zeballos 1726, Rosario, Santa Fe, Argentina"
 
     has_configured = bool(database.get_setting('merchant_commercial_address') or database.get_setting('web_config'))
+    
+    show_legal_name = database.get_setting('quote_show_legal_name', 'false').lower() in ('true', '1', 'yes')
+    legal_name = database.get_setting('quote_legal_name') or database.get_setting('merchant_name', 'GENTILI FRANCO AGUSTIN')
+    
+    show_cuit = database.get_setting('quote_show_cuit', 'false').lower() in ('true', '1', 'yes')
+    cuit = database.get_setting('quote_cuit') or database.get_setting('afip_cuit', '20-31383248-2')
 
     return {
         "merchant_commercial_name": commercial_name,
         "merchant_commercial_address": commercial_address,
-        "merchant_name": database.get_setting('merchant_name', 'GENTILI FRANCO AGUSTIN'),
-        "merchant_address": database.get_setting('merchant_address', ''),
         "merchant_phone": database.get_setting('merchant_phone', '+54 9 3412 59-0161'),
         "merchant_email": database.get_setting('merchant_email', ''),
+        "show_legal_name": show_legal_name,
+        "legal_name": legal_name,
+        "show_cuit": show_cuit,
+        "cuit": cuit,
         "has_commercial_address": has_configured
     }
 
@@ -109,7 +121,15 @@ def save_quote_commercial_config(req: CommercialConfigRequest):
         database.set_setting('merchant_phone', req.merchant_phone.strip())
     if req.merchant_email is not None:
         database.set_setting('merchant_email', req.merchant_email.strip())
-    return {"success": True, "message": "Datos comerciales guardados con éxito"}
+    if req.show_legal_name is not None:
+        database.set_setting('quote_show_legal_name', 'true' if req.show_legal_name else 'false')
+    if req.legal_name is not None:
+        database.set_setting('quote_legal_name', req.legal_name.strip())
+    if req.show_cuit is not None:
+        database.set_setting('quote_show_cuit', 'true' if req.show_cuit else 'false')
+    if req.cuit is not None:
+        database.set_setting('quote_cuit', req.cuit.strip())
+    return {"success": True, "message": "Datos de presupuesto guardados con éxito"}
 
 
 @router.get("/next-number", dependencies=[Depends(require_permission("quotes"))])

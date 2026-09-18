@@ -51,12 +51,16 @@ export default function Quotes() {
     invoice_type: 'B'
   })
 
-  // Commercial config state (Nombre comercial y dirección del local para presupuestos)
+  // Commercial config state (Nombre comercial, dirección y datos para presupuestos)
   const [commercialConfig, setCommercialConfig] = useState({
     merchant_commercial_name: 'Experiencia Sustentable',
     merchant_commercial_address: 'Zeballos 1726, Rosario, Santa Fe, Argentina',
     merchant_phone: '+54 9 3412 59-0161',
     merchant_email: '',
+    show_legal_name: false,
+    legal_name: 'GENTILI FRANCO AGUSTIN',
+    show_cuit: false,
+    cuit: '20-31383248-2',
     has_commercial_address: true
   })
   const [showCommercialModal, setShowCommercialModal] = useState(false)
@@ -64,7 +68,11 @@ export default function Quotes() {
     merchant_commercial_name: 'Experiencia Sustentable',
     merchant_commercial_address: 'Zeballos 1726, Rosario, Santa Fe, Argentina',
     merchant_phone: '+54 9 3412 59-0161',
-    merchant_email: ''
+    merchant_email: '',
+    show_legal_name: false,
+    legal_name: 'GENTILI FRANCO AGUSTIN',
+    show_cuit: false,
+    cuit: '20-31383248-2'
   })
   const [savingCommercial, setSavingCommercial] = useState(false)
   const [pendingPdfQuoteId, setPendingPdfQuoteId] = useState(null)
@@ -80,7 +88,11 @@ export default function Quotes() {
           merchant_commercial_name: data.merchant_commercial_name || 'Experiencia Sustentable',
           merchant_commercial_address: data.merchant_commercial_address || 'Zeballos 1726, Rosario, Santa Fe, Argentina',
           merchant_phone: data.merchant_phone || '+54 9 3412 59-0161',
-          merchant_email: data.merchant_email || ''
+          merchant_email: data.merchant_email || '',
+          show_legal_name: Boolean(data.show_legal_name),
+          legal_name: data.legal_name || 'GENTILI FRANCO AGUSTIN',
+          show_cuit: Boolean(data.show_cuit),
+          cuit: data.cuit || '20-31383248-2'
         })
       }
     } catch (err) {
@@ -108,7 +120,7 @@ export default function Quotes() {
           has_commercial_address: true
         })
         setShowCommercialModal(false)
-        alert('¡Datos comerciales guardados con éxito!')
+        alert('¡Datos de presupuesto guardados con éxito!')
         
         if (pendingPdfQuoteId) {
           const token = encodeURIComponent(localStorage.getItem('adminToken') || '')
@@ -523,7 +535,7 @@ export default function Quotes() {
               setPendingOpenCreate(false)
               setShowCommercialModal(true)
             }}
-            title="Configurar Nombre Comercial y Dirección Comercial para el membrete de Presupuestos"
+            title="Configurar Nombre Comercial, Dirección y Datos para el membrete de Presupuestos"
             style={{
               display: 'flex', 
               alignItems: 'center', 
@@ -535,7 +547,7 @@ export default function Quotes() {
               color: 'var(--text-primary)'
             }}
           >
-            <Building size={16} color="var(--accent-blue)" /> Membrete Comercial
+            <Building size={16} color="var(--accent-blue)" /> Membrete de Presupuesto
           </button>
 
           <button 
@@ -1113,6 +1125,45 @@ export default function Quotes() {
             {/* Modal Body */}
             <div style={{flex: 1, overflowY: 'auto', padding: '18px 20px', display: 'flex', flexDirection: 'column', gap: 16}}>
               
+              {/* Membrete Emisor Bar */}
+              <div style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                backgroundColor: 'rgba(59, 130, 246, 0.07)',
+                border: '1px solid rgba(59, 130, 246, 0.25)',
+                borderRadius: 8,
+                padding: '8px 12px',
+                fontSize: '0.8rem',
+                flexWrap: 'wrap',
+                gap: 8
+              }}>
+                <div style={{display: 'flex', alignItems: 'center', gap: 8, color: 'var(--text-primary)'}}>
+                  <Building size={16} color="var(--accent-blue)" />
+                  <span>
+                    <b>Membrete PDF:</b> {commercialConfig.merchant_commercial_name} · {commercialConfig.merchant_commercial_address || 'Sin dirección'}
+                    {commercialConfig.show_legal_name ? ` · R. Social: ${commercialConfig.legal_name}` : ''}
+                    {commercialConfig.show_cuit ? ` · CUIT: ${commercialConfig.cuit}` : ''}
+                    {!commercialConfig.show_legal_name && !commercialConfig.show_cuit ? ' · (Razón Social y CUIT desactivados)' : ''}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowCommercialModal(true)}
+                  style={{
+                    backgroundColor: 'transparent',
+                    border: 'none',
+                    color: 'var(--accent-blue)',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    fontSize: '0.78rem',
+                    textDecoration: 'underline'
+                  }}
+                >
+                  Configurar membrete
+                </button>
+              </div>
+
               {/* Row 1: Lista de Precios & Validez */}
               <div style={{
                 display: 'grid', 
@@ -1740,6 +1791,70 @@ export default function Quotes() {
                   style={{padding: '8px 12px', borderRadius: 6, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-dark)', color: 'var(--text-primary)'}}
                 />
               </label>
+
+              {/* Opciones de Razón Social y CUIT (Filtro / Inclusión en Presupuestos) */}
+              <div style={{
+                backgroundColor: 'var(--bg-hover)',
+                border: '1px solid var(--border-color)',
+                borderRadius: 8,
+                padding: '12px 14px',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 10
+              }}>
+                <div style={{fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 6}}>
+                  📑 Datos Fiscales en Presupuestos (AFIP/ARCA)
+                </div>
+                <div style={{fontSize: '0.76rem', color: 'var(--text-secondary)', lineHeight: 1.35}}>
+                  Por defecto, la Razón Social y el CUIT están ocultos para que el presupuesto sea 100% comercial con tu marca de fantasía. Puedes activarlos aquí si necesitas cotizaciones con datos impositivos.
+                </div>
+
+                <div style={{display: 'flex', flexDirection: 'column', gap: 10}}>
+                  {/* Toggle Razón Social */}
+                  <div>
+                    <label style={{display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: '0.82rem', fontWeight: 600}}>
+                      <input
+                        type="checkbox"
+                        checked={commercialForm.show_legal_name}
+                        onChange={e => setCommercialForm({...commercialForm, show_legal_name: e.target.checked})}
+                        style={{width: 16, height: 16, cursor: 'pointer'}}
+                      />
+                      Mostrar Razón Social en el Presupuesto
+                    </label>
+                    {commercialForm.show_legal_name && (
+                      <input
+                        type="text"
+                        placeholder="Razón Social (ej. GENTILI FRANCO AGUSTIN)"
+                        value={commercialForm.legal_name}
+                        onChange={e => setCommercialForm({...commercialForm, legal_name: e.target.value})}
+                        style={{marginTop: 6, width: '100%', padding: '7px 10px', borderRadius: 6, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-dark)', color: 'var(--text-primary)', fontSize: '0.82rem'}}
+                      />
+                    )}
+                  </div>
+
+                  {/* Toggle CUIT */}
+                  <div>
+                    <label style={{display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: '0.82rem', fontWeight: 600}}>
+                      <input
+                        type="checkbox"
+                        checked={commercialForm.show_cuit}
+                        onChange={e => setCommercialForm({...commercialForm, show_cuit: e.target.checked})}
+                        style={{width: 16, height: 16, cursor: 'pointer'}}
+                      />
+                      Mostrar CUIT en el Presupuesto
+                    </label>
+                    {commercialForm.show_cuit && (
+                      <input
+                        type="text"
+                        placeholder="CUIT (ej. 20-31383248-2)"
+                        value={commercialForm.cuit}
+                        onChange={e => setCommercialForm({...commercialForm, cuit: e.target.value})}
+                        style={{marginTop: 6, width: '100%', padding: '7px 10px', borderRadius: 6, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-dark)', color: 'var(--text-primary)', fontSize: '0.82rem'}}
+                      />
+                    )}
+                  </div>
+                </div>
+              </div>
 
               <div style={{display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 10}}>
                 <button

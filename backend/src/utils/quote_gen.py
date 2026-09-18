@@ -97,8 +97,12 @@ def generate_quote_pdf(quote: dict) -> str:
     if not commercial_address:
         commercial_address = 'Zeballos 1726, Rosario, Santa Fe, Argentina'
 
-    legal_name = (database.get_setting('merchant_name') or '').strip()
-    merchant_cuit = (database.get_setting('afip_cuit') or '').strip()
+    show_legal_name = database.get_setting('quote_show_legal_name', 'false').lower() in ('true', '1', 'yes')
+    legal_name = (database.get_setting('quote_legal_name') or database.get_setting('merchant_name') or '').strip()
+
+    show_cuit = database.get_setting('quote_show_cuit', 'false').lower() in ('true', '1', 'yes')
+    merchant_cuit = (database.get_setting('quote_cuit') or database.get_setting('afip_cuit') or '').strip()
+
     merchant_phone = (database.get_setting('merchant_phone') or '').strip()
     merchant_email = (database.get_setting('merchant_email') or '').strip()
     merchant_bank_cbu = database.get_setting('merchant_bank_cbu', '')
@@ -115,12 +119,12 @@ def generate_quote_pdf(quote: dict) -> str:
     merchant_lines = [
         f"<b><font size='13' color='#0f172a'>{commercial_name.upper()}</font></b>"
     ]
-    if legal_name and legal_name.lower() != commercial_name.lower():
+    if show_legal_name and legal_name:
         merchant_lines.append(f"<font color='#64748b'>Razón Social:</font> {legal_name}")
-    if merchant_cuit:
+    if show_cuit and merchant_cuit:
         merchant_lines.append(f"<font color='#64748b'>CUIT:</font> {merchant_cuit}")
     if commercial_address:
-        merchant_lines.append(f"<font color='#64748b'>Dirección Comercial:</font> {commercial_address}")
+        merchant_lines.append(f"<font color='#64748b'>Dirección:</font> {commercial_address}")
     if merchant_phone:
         merchant_lines.append(f"<font color='#64748b'>Tel / WhatsApp:</font> {merchant_phone}")
     if merchant_email:
@@ -326,7 +330,7 @@ def generate_quote_pdf(quote: dict) -> str:
     # 6. Corporate Footer
     # -------------------------------------------------------------------------
     emitter_name = commercial_name
-    if legal_name and legal_name.lower() != commercial_name.lower():
+    if show_legal_name and legal_name and legal_name.lower() != commercial_name.lower():
         emitter_name += f" ({legal_name})"
     footer_text = f"Documento de cotización emitido por <b>{emitter_name}</b> · No válido como factura fiscal conforme a las normativas de AFIP/ARCA."
     story.append(Paragraph(footer_text, ParagraphStyle('QFoot', fontName='Helvetica', fontSize=7.5, leading=10, textColor=colors.HexColor('#94a3b8'), alignment=TA_CENTER)))
