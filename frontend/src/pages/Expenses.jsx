@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { Plus, Trash2, Wallet, Calendar, DollarSign, Tag, TrendingDown, TrendingUp, PieChart, ArrowUpRight, ArrowDownRight, Layers, FileText, CheckCircle2, AlertTriangle, Search, ChevronDown, ChevronUp, Pencil, RefreshCw, Clock, ExternalLink, Copy, Check, Link2, CreditCard, User } from 'lucide-react'
+import { Plus, Trash2, Wallet, Calendar, DollarSign, Tag, TrendingDown, TrendingUp, PieChart, ArrowUpRight, ArrowDownRight, Layers, FileText, CheckCircle2, AlertTriangle, Search, ChevronDown, ChevronUp, Pencil, RefreshCw, Clock, ExternalLink, Copy, Check, Link2, CreditCard, User, Store, ShoppingBag, Globe } from 'lucide-react'
 import { useTenant } from '../TenantContext'
 
 export default function Expenses() {
@@ -21,6 +21,7 @@ export default function Expenses() {
   const [sendingTestAlert, setSendingTestAlert] = useState(false)
   const [showSalesDetails, setShowSalesDetails] = useState(true)
   const [salesSearch, setSalesSearch] = useState('')
+  const [salesPlatformFilter, setSalesPlatformFilter] = useState('ALL')
   const [summary, setSummary] = useState({
     total_sales: 0,
     total_manual_incomes: 0,
@@ -78,6 +79,116 @@ export default function Expenses() {
   const variableCategories = ['Insumos', 'Logística', 'Mantenimiento', 'Marketing', 'Otros Variables']
   const incomeCategories = ['Venta Directa / Extra', 'Aporte de Capital', 'Reembolso', 'Inversión', 'Otros Ingresos']
   const serviceCategories = ['Servicios', 'Impuestos', 'Alquiler', 'Software/Suscripciones', 'Otros']
+
+  const renderPlatformBadge = (platform) => {
+    const p = (platform || 'MERCADOPAGO').toUpperCase()
+    if (p === 'LOCAL') {
+      return (
+        <span style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: 4,
+          padding: '3px 8px',
+          borderRadius: 6,
+          fontSize: '0.75rem',
+          fontWeight: 600,
+          backgroundColor: 'rgba(168, 85, 247, 0.15)',
+          color: '#8b5cf6',
+          border: '1px solid rgba(168, 85, 247, 0.3)'
+        }}>
+          <Store size={12} /> Local Comercial
+        </span>
+      )
+    }
+    if (p === 'WEB') {
+      return (
+        <span style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: 4,
+          padding: '3px 8px',
+          borderRadius: 6,
+          fontSize: '0.75rem',
+          fontWeight: 600,
+          backgroundColor: 'rgba(59, 130, 246, 0.15)',
+          color: '#3b82f6',
+          border: '1px solid rgba(59, 130, 246, 0.3)'
+        }}>
+          <Globe size={12} /> Tienda Web
+        </span>
+      )
+    }
+    if (p === 'MERCADOLIBRE') {
+      return (
+        <span style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: 4,
+          padding: '3px 8px',
+          borderRadius: 6,
+          fontSize: '0.75rem',
+          fontWeight: 600,
+          backgroundColor: 'rgba(234, 179, 8, 0.15)',
+          color: '#ca8a04',
+          border: '1px solid rgba(234, 179, 8, 0.3)'
+        }}>
+          <ShoppingBag size={12} /> Mercado Libre
+        </span>
+      )
+    }
+    if (p === 'TIENDANUBE') {
+      return (
+        <span style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: 4,
+          padding: '3px 8px',
+          borderRadius: 6,
+          fontSize: '0.75rem',
+          fontWeight: 600,
+          backgroundColor: 'rgba(0, 128, 255, 0.15)',
+          color: '#0080FF',
+          border: '1px solid rgba(0, 128, 255, 0.3)'
+        }}>
+          <ShoppingBag size={12} /> Tiendanube
+        </span>
+      )
+    }
+    if (p === 'PRESUPUESTO') {
+      return (
+        <span style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: 4,
+          padding: '3px 8px',
+          borderRadius: 6,
+          fontSize: '0.75rem',
+          fontWeight: 600,
+          backgroundColor: 'rgba(99, 102, 241, 0.15)',
+          color: '#6366f1',
+          border: '1px solid rgba(99, 102, 241, 0.3)'
+        }}>
+          <FileText size={12} /> Presupuesto
+        </span>
+      )
+    }
+    return (
+      <span style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 4,
+        padding: '3px 8px',
+        borderRadius: 6,
+        fontSize: '0.75rem',
+        fontWeight: 600,
+        backgroundColor: 'rgba(6, 182, 212, 0.15)',
+        color: '#0891b2',
+        border: '1px solid rgba(6, 182, 212, 0.3)'
+      }}>
+        <CreditCard size={12} /> {p === 'MERCADOPAGO_TRANSFER' ? 'MP Transferencia' : 'Mercado Pago'}
+      </span>
+    )
+  }
 
   const fetchSummary = async () => {
     try {
@@ -1429,7 +1540,7 @@ export default function Expenses() {
                 Ingresos por Ventas Registradas (Sistema)
               </h3>
               <p className="page-subtitle" style={{ margin: '5px 0 0 0', fontSize: '0.85rem' }}>
-                Suma total de ventas confirmadas en MercadoPago y Tienda durante este mes.
+                Suma total de ventas confirmadas (Mercado Libre, Mercado Pago, Tienda Nube y Local Comercial / Manual) durante este mes.
               </p>
             </div>
             <div style={{ fontSize: '1.6rem', fontWeight: 'bold', color: '#10b981' }}>
@@ -1446,7 +1557,25 @@ export default function Expenses() {
             })
             const duplicateSalesIds = Object.keys(salesIdCounts).filter(id => salesIdCounts[id] > 1)
 
+            const platformCounts = {
+              ALL: salesList.length,
+              LOCAL: salesList.filter(s => (s.source_platform || '').toUpperCase() === 'LOCAL').length,
+              MERCADOLIBRE: salesList.filter(s => (s.source_platform || '').toUpperCase() === 'MERCADOLIBRE').length,
+              MERCADOPAGO: salesList.filter(s => (s.source_platform || '').toUpperCase().startsWith('MERCADOPAGO')).length,
+              TIENDANUBE: salesList.filter(s => (s.source_platform || '').toUpperCase() === 'TIENDANUBE').length,
+              WEB: salesList.filter(s => (s.source_platform || '').toUpperCase() === 'WEB').length,
+              PRESUPUESTO: salesList.filter(s => (s.source_platform || '').toUpperCase() === 'PRESUPUESTO').length
+            }
+
             const filteredSalesList = salesList.filter(s => {
+              const plat = (s.source_platform || 'MERCADOPAGO').toUpperCase()
+              if (salesPlatformFilter === 'LOCAL' && plat !== 'LOCAL') return false
+              if (salesPlatformFilter === 'MERCADOLIBRE' && plat !== 'MERCADOLIBRE') return false
+              if (salesPlatformFilter === 'MERCADOPAGO' && !plat.startsWith('MERCADOPAGO')) return false
+              if (salesPlatformFilter === 'TIENDANUBE' && plat !== 'TIENDANUBE') return false
+              if (salesPlatformFilter === 'WEB' && plat !== 'WEB') return false
+              if (salesPlatformFilter === 'PRESUPUESTO' && plat !== 'PRESUPUESTO') return false
+
               if (!salesSearch.trim()) return true
               const q = salesSearch.toLowerCase()
               return String(s.order_id).toLowerCase().includes(q) ||
@@ -1497,11 +1626,117 @@ export default function Expenses() {
                   </div>
                 </div>
 
+                {/* Quick Platform Filter Chips */}
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 12, borderTop: '1px solid var(--border-color)', paddingTop: 10 }}>
+                  <button
+                    type="button"
+                    onClick={() => setSalesPlatformFilter('ALL')}
+                    style={{
+                      padding: '3px 10px',
+                      borderRadius: 16,
+                      fontSize: '0.78rem',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      border: salesPlatformFilter === 'ALL' ? '1px solid #10b981' : '1px solid var(--border-color)',
+                      backgroundColor: salesPlatformFilter === 'ALL' ? 'rgba(16, 185, 129, 0.15)' : 'var(--bg-card)',
+                      color: salesPlatformFilter === 'ALL' ? '#10b981' : 'var(--text-secondary)'
+                    }}
+                  >
+                    Todas ({salesList.length})
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setSalesPlatformFilter('LOCAL')}
+                    style={{
+                      padding: '3px 10px',
+                      borderRadius: 16,
+                      fontSize: '0.78rem',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 4,
+                      border: salesPlatformFilter === 'LOCAL' ? '1px solid #8b5cf6' : '1px solid var(--border-color)',
+                      backgroundColor: salesPlatformFilter === 'LOCAL' ? 'rgba(168, 85, 247, 0.2)' : 'var(--bg-card)',
+                      color: salesPlatformFilter === 'LOCAL' ? '#8b5cf6' : 'var(--text-secondary)'
+                    }}
+                  >
+                    <Store size={12} /> Local Comercial ({platformCounts.LOCAL})
+                  </button>
+
+                  {platformCounts.MERCADOLIBRE > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setSalesPlatformFilter('MERCADOLIBRE')}
+                      style={{
+                        padding: '3px 10px',
+                        borderRadius: 16,
+                        fontSize: '0.78rem',
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 4,
+                        border: salesPlatformFilter === 'MERCADOLIBRE' ? '1px solid #eab308' : '1px solid var(--border-color)',
+                        backgroundColor: salesPlatformFilter === 'MERCADOLIBRE' ? 'rgba(234, 179, 8, 0.2)' : 'var(--bg-card)',
+                        color: salesPlatformFilter === 'MERCADOLIBRE' ? '#ca8a04' : 'var(--text-secondary)'
+                      }}
+                    >
+                      <ShoppingBag size={12} /> Mercado Libre ({platformCounts.MERCADOLIBRE})
+                    </button>
+                  )}
+
+                  {platformCounts.MERCADOPAGO > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setSalesPlatformFilter('MERCADOPAGO')}
+                      style={{
+                        padding: '3px 10px',
+                        borderRadius: 16,
+                        fontSize: '0.78rem',
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 4,
+                        border: salesPlatformFilter === 'MERCADOPAGO' ? '1px solid #06b6d4' : '1px solid var(--border-color)',
+                        backgroundColor: salesPlatformFilter === 'MERCADOPAGO' ? 'rgba(6, 182, 212, 0.2)' : 'var(--bg-card)',
+                        color: salesPlatformFilter === 'MERCADOPAGO' ? '#0891b2' : 'var(--text-secondary)'
+                      }}
+                    >
+                      <CreditCard size={12} /> Mercado Pago ({platformCounts.MERCADOPAGO})
+                    </button>
+                  )}
+
+                  {platformCounts.TIENDANUBE > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setSalesPlatformFilter('TIENDANUBE')}
+                      style={{
+                        padding: '3px 10px',
+                        borderRadius: 16,
+                        fontSize: '0.78rem',
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 4,
+                        border: salesPlatformFilter === 'TIENDANUBE' ? '1px solid #0080FF' : '1px solid var(--border-color)',
+                        backgroundColor: salesPlatformFilter === 'TIENDANUBE' ? 'rgba(0, 128, 255, 0.2)' : 'var(--bg-card)',
+                        color: salesPlatformFilter === 'TIENDANUBE' ? '#0080FF' : 'var(--text-secondary)'
+                      }}
+                    >
+                      <ShoppingBag size={12} /> Tiendanube ({platformCounts.TIENDANUBE})
+                    </button>
+                  )}
+                </div>
+
                 {showSalesDetails && (
                   <div style={{ marginTop: 15 }}>
                     {filteredSalesList.length === 0 ? (
                       <div style={{ padding: '20px 0', textAlign: 'center', color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
-                        No se encontraron ventas registradas para el período seleccionado.
+                        No se encontraron ventas registradas para el período o filtro seleccionado.
                       </div>
                     ) : (
                       <div style={{ overflowX: 'auto', maxHeight: '420px', overflowY: 'auto' }}>
@@ -1527,12 +1762,12 @@ export default function Expenses() {
                                     #{s.order_id} {isDup && <span style={{ fontSize: '0.75rem', color: '#ef4444' }}>(Duplicado)</span>}
                                   </td>
                                   <td data-label="Origen" style={{ padding: '8px 10px' }}>
-                                    <span className="badge" style={{ backgroundColor: 'var(--bg-dark)', padding: '2px 8px', borderRadius: 4, border: '1px solid var(--border-color)', fontSize: '0.78rem' }}>
-                                      {s.source_platform || 'MERCADOPAGO'}
-                                    </span>
+                                    {renderPlatformBadge(s.source_platform)}
                                   </td>
                                   <td data-label="Medio de Pago" style={{ padding: '8px 10px', color: 'var(--text-secondary)' }}>{s.payment_method || '-'}</td>
-                                  <td data-label="Cliente" style={{ padding: '8px 10px' }}>{s.buyer_name || s.buyer_nickname || 'Cliente MP'}</td>
+                                  <td data-label="Cliente" style={{ padding: '8px 10px' }}>
+                                    {s.buyer_name || s.buyer_nickname || ((s.source_platform || '').toUpperCase() === 'LOCAL' ? 'Consumidor Final' : 'Cliente MP')}
+                                  </td>
                                   <td data-label="Estado" style={{ padding: '8px 10px' }}>
                                     <span style={{ color: '#10b981', fontWeight: 500 }}>{s.status || 'approved'}</span>
                                   </td>

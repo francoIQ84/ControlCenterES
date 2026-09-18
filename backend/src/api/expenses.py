@@ -355,7 +355,7 @@ def get_financial_summary(month: int, year: int, current_user: dict = Depends(ge
             """
             sales_params = [month, year]
             if meli_user_id:
-                sales_query += " AND (buyer_id::text != %s)"
+                sales_query += " AND (buyer_id IS NULL OR buyer_id::text != %s)"
                 sales_params.append(meli_user_id)
             if excluded_accounts:
                 sales_query += " AND (LOWER(COALESCE(buyer_nickname, '')) NOT IN %s AND LOWER(COALESCE(buyer_name, '')) NOT IN %s)"
@@ -401,7 +401,7 @@ def get_expenses_sales(month: int, year: int, current_user: dict = Depends(get_c
             """
             sales_params = [month, year]
             if meli_user_id:
-                sales_query += " AND (buyer_id::text != %s)"
+                sales_query += " AND (buyer_id IS NULL OR buyer_id::text != %s)"
                 sales_params.append(meli_user_id)
             if excluded_accounts:
                 sales_query += " AND (LOWER(COALESCE(buyer_nickname, '')) NOT IN %s AND LOWER(COALESCE(buyer_name, '')) NOT IN %s)"
@@ -649,7 +649,7 @@ def get_cashflow_forecast(current_user: dict = Depends(get_current_user)):
             """
             forecast_params = []
             if meli_user_id:
-                forecast_query += " AND (buyer_id::text != %s)"
+                forecast_query += " AND (buyer_id IS NULL OR buyer_id::text != %s)"
                 forecast_params.append(meli_user_id)
             if excluded_accounts:
                 forecast_query += " AND (LOWER(COALESCE(buyer_nickname, '')) NOT IN %s AND LOWER(COALESCE(buyer_name, '')) NOT IN %s)"
