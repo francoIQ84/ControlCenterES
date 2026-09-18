@@ -1168,7 +1168,7 @@ export default function Inventory() {
   }, [])
 
   const handleSetZoom = (newZoom) => {
-    const clamped = Math.max(0.70, Math.min(1.15, Math.round(newZoom * 100) / 100))
+    const clamped = Math.max(0.70, Math.min(1.25, Math.round(newZoom * 100) / 100))
     setDesktopZoom(clamped)
     localStorage.setItem('inventory_desktop_zoom', String(clamped))
   }
@@ -2096,7 +2096,10 @@ export default function Inventory() {
                 }}
                 title="Seleccionar escala ajustada"
               >
+                <option value="120">120% (Muy Grande)</option>
+                <option value="110">110% (Grande)</option>
                 <option value="100">100% (Normal)</option>
+                <option value="95">95% (Cómodo)</option>
                 <option value="92">92% (Equilibrado)</option>
                 <option value="88">88% (Ajustado ⭐)</option>
                 <option value="82">82% (Compacto)</option>
@@ -2105,7 +2108,7 @@ export default function Inventory() {
               <button
                 type="button"
                 onClick={() => handleSetZoom(desktopZoom + 0.05)}
-                disabled={desktopZoom >= 1.15}
+                disabled={desktopZoom >= 1.25}
                 style={{
                   width: 22,
                   height: 22,
@@ -2117,8 +2120,8 @@ export default function Inventory() {
                   border: '1px solid var(--border-color)',
                   backgroundColor: 'var(--bg-dark)',
                   color: 'var(--text-primary)',
-                  cursor: desktopZoom >= 1.15 ? 'not-allowed' : 'pointer',
-                  opacity: desktopZoom >= 1.15 ? 0.35 : 1,
+                  cursor: desktopZoom >= 1.25 ? 'not-allowed' : 'pointer',
+                  opacity: desktopZoom >= 1.25 ? 0.35 : 1,
                   fontWeight: 'bold',
                   fontSize: '0.85rem'
                 }}
@@ -2742,14 +2745,14 @@ export default function Inventory() {
                       <th onClick={() => requestSort('title')} style={{cursor: 'pointer', userSelect: 'none', minWidth: 220}}>Detalle{getSortIcon('title')}</th>
                       <th onClick={() => requestSort('status')} style={{cursor: 'pointer', userSelect: 'none', width: 95}} title="Ordenar por Estado de Mercado Libre">Estado ML{getSortIcon('status')}</th>
                       <th onClick={() => requestSort('quality')} style={{cursor: 'pointer', userSelect: 'none', width: 85, textAlign: 'center'}} title="Objetivos de calidad pendientes. Ordenar dos veces para ver las peores primero.">Calidad{getSortIcon('quality')}</th>
-                      <th onClick={() => requestSort('stock')} style={{cursor: 'pointer', userSelect: 'none', width: 60}} title="Ordenar por Stock">Stock{getSortIcon('stock')}</th>
-                      <th style={{width: 75}}>P. ML</th>
-                      <th style={{width: 75}}>P. Web</th>
-                      <th style={{width: 75}}>C. Base</th>
-                      <th style={{width: 75}}>C. ML ⓘ</th>
-                      <th style={{width: 95, textAlign: 'center'}} title="Precio y descuento para cobro en efectivo en el local físico (No visible en la web)">💵 P. Efectivo</th>
-                      <th onClick={() => requestSort('is_web_active')} style={{cursor: 'pointer', userSelect: 'none', width: 85, textAlign: 'center'}} title="Ordenar por Estado de Tienda Web (Activo/Desactivo)">Estado Web{getSortIcon('is_web_active')}</th>
-                      <th style={{width: 100}}>Acciones</th>
+                      <th onClick={() => requestSort('stock')} style={{cursor: 'pointer', userSelect: 'none', width: 80, textAlign: 'center'}} title="Ordenar por Stock">Stock{getSortIcon('stock')}</th>
+                      <th style={{width: 105, textAlign: 'center'}}>P. ML</th>
+                      <th style={{width: 105, textAlign: 'center'}}>P. Web</th>
+                      <th style={{width: 105, textAlign: 'center'}}>C. Base</th>
+                      <th style={{width: 100, textAlign: 'center'}}>C. ML ⓘ</th>
+                      <th style={{width: 130, textAlign: 'center'}} title="Precio y descuento para cobro en efectivo en el local físico (No visible en la web)">💵 P. Efectivo</th>
+                      <th onClick={() => requestSort('is_web_active')} style={{cursor: 'pointer', userSelect: 'none', width: 90, textAlign: 'center'}} title="Ordenar por Estado de Tienda Web (Activo/Desactivo)">Estado Web{getSortIcon('is_web_active')}</th>
+                      <th style={{width: 105, textAlign: 'center'}}>Acciones</th>
                     </tr>
                   ) : (
                     <tr>
@@ -4275,43 +4278,129 @@ function ProductRow({ p, onSave, onOpenGallery, onDraftChange, categories, categ
           <td data-label="Calidad" className="cell-quality" style={{padding: '5px 8px', textAlign: 'center'}}>
             <QualityBadge health={health} onClick={() => onOpenQuality && onOpenQuality(p, health)} />
           </td>
-          <td data-label="Stock" className="cell-stock" style={{padding: '5px 8px'}}>
-            <input type="number" value={qty} onChange={e => setQty(e.target.value)} style={{width: 60, padding: '4px 6px', fontSize: '0.88rem', border: '1px solid var(--border-color)', borderRadius: 6, backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)'}}/>
+          <td data-label="Stock" className="cell-stock" style={{padding: '5px 8px', textAlign: 'center'}}>
+            <input 
+              type="number" 
+              value={qty} 
+              onChange={e => setQty(e.target.value)} 
+              style={{
+                width: 72, 
+                padding: '5px 6px', 
+                fontSize: '1.08rem', 
+                fontWeight: 700, 
+                textAlign: 'center', 
+                border: '1px solid var(--border-color)', 
+                borderRadius: 6, 
+                backgroundColor: 'var(--bg-card)', 
+                color: 'var(--text-primary)'
+              }}
+            />
             {p.prev_stock !== null && p.prev_stock !== undefined && (
-              <div style={{fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: 2}}>ant: {p.prev_stock}</div>
+              <div style={{fontSize: '0.80rem', fontWeight: 600, color: 'var(--text-secondary)', marginTop: 3, textAlign: 'center'}}>
+                ant: {p.prev_stock}
+              </div>
             )}
           </td>
           <td data-label="P. ML" className="cell-price-ml" style={{padding: '5px 8px'}}>
-            <input type="number" value={price} onChange={e => setPrice(e.target.value)} style={{width: 80, padding: '4px 6px', fontSize: '0.88rem', border: '1px solid var(--border-color)', borderRadius: 6, backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)'}} disabled={p.status === 'local'}/>
+            <input 
+              type="number" 
+              value={price} 
+              onChange={e => setPrice(e.target.value)} 
+              style={{
+                width: 96, 
+                padding: '5px 8px', 
+                fontSize: '1.08rem', 
+                fontWeight: 700, 
+                textAlign: 'right', 
+                border: '1px solid var(--border-color)', 
+                borderRadius: 6, 
+                backgroundColor: 'var(--bg-card)', 
+                color: 'var(--text-primary)'
+              }} 
+              disabled={p.status === 'local'}
+            />
             {p.prev_price !== null && p.prev_price !== undefined && (
-              <div style={{fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: 2}}>ant: ${p.prev_price.toLocaleString('es-AR')}</div>
+              <div style={{fontSize: '0.80rem', fontWeight: 600, color: 'var(--text-secondary)', marginTop: 3, textAlign: 'right'}}>
+                ant: ${p.prev_price.toLocaleString('es-AR')}
+              </div>
             )}
           </td>
           <td data-label="P. Web" className="cell-price-web" style={{padding: '5px 8px'}}>
-            <input type="number" value={priceWeb} onChange={e => setPriceWeb(e.target.value)} style={{width: 80, padding: '4px 6px', fontSize: '0.88rem', border: '1px solid var(--border-color)', borderRadius: 6, backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)'}}/>
+            <input 
+              type="number" 
+              value={priceWeb} 
+              onChange={e => setPriceWeb(e.target.value)} 
+              style={{
+                width: 96, 
+                padding: '5px 8px', 
+                fontSize: '1.08rem', 
+                fontWeight: 700, 
+                textAlign: 'right', 
+                border: '1px solid var(--border-color)', 
+                borderRadius: 6, 
+                backgroundColor: 'var(--bg-card)', 
+                color: 'var(--text-primary)'
+              }}
+            />
             {p.prev_price_web !== null && p.prev_price_web !== undefined && (
-              <div style={{fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: 2}}>ant: ${p.prev_price_web.toLocaleString('es-AR')}</div>
+              <div style={{fontSize: '0.80rem', fontWeight: 600, color: 'var(--text-secondary)', marginTop: 3, textAlign: 'right'}}>
+                ant: ${p.prev_price_web.toLocaleString('es-AR')}
+              </div>
             )}
           </td>
           <td data-label="C. Base" className="cell-cost-base" style={{padding: '5px 8px'}}>
-            <input type="number" value={cost} onChange={e => setCost(e.target.value)} style={{width: 80, padding: '4px 6px', fontSize: '0.88rem', border: '1px solid var(--border-color)', borderRadius: 6, backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)'}}/>
+            <input 
+              type="number" 
+              value={cost} 
+              onChange={e => setCost(e.target.value)} 
+              style={{
+                width: 96, 
+                padding: '5px 8px', 
+                fontSize: '1.08rem', 
+                fontWeight: 700, 
+                textAlign: 'right', 
+                border: '1px solid var(--border-color)', 
+                borderRadius: 6, 
+                backgroundColor: 'var(--bg-card)', 
+                color: 'var(--text-primary)'
+              }}
+            />
             {p.prev_cost_price !== null && p.prev_cost_price !== undefined && (
-              <div style={{fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: 2}}>ant: ${p.prev_cost_price.toLocaleString('es-AR')}</div>
+              <div style={{fontSize: '0.80rem', fontWeight: 600, color: 'var(--text-secondary)', marginTop: 3, textAlign: 'right'}}>
+                ant: ${p.prev_cost_price.toLocaleString('es-AR')}
+              </div>
             )}
           </td>
           <td data-label="C. ML" className="cell-cost-ml" style={{padding: '5px 8px'}}>
-            <input type="number" value={costMeli} onChange={e => setCostMeli(e.target.value)} style={{width: 70, padding: '4px 6px', fontSize: '0.88rem', border: '1px solid var(--border-color)', borderRadius: 6, backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)'}}/>
+            <input 
+              type="number" 
+              value={costMeli} 
+              onChange={e => setCostMeli(e.target.value)} 
+              style={{
+                width: 90, 
+                padding: '5px 8px', 
+                fontSize: '1.08rem', 
+                fontWeight: 700, 
+                textAlign: 'right', 
+                border: '1px solid var(--border-color)', 
+                borderRadius: 6, 
+                backgroundColor: 'var(--bg-card)', 
+                color: 'var(--text-primary)'
+              }}
+            />
             {p.prev_cost_meli !== null && p.prev_cost_meli !== undefined && (
-              <div style={{fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: 2}}>ant: ${p.prev_cost_meli.toLocaleString('es-AR')}</div>
+              <div style={{fontSize: '0.80rem', fontWeight: 600, color: 'var(--text-secondary)', marginTop: 3, textAlign: 'right'}}>
+                ant: ${p.prev_cost_meli.toLocaleString('es-AR')}
+              </div>
             )}
           </td>
           <td data-label="P. Efectivo" className="cell-price-cash" style={{padding: '5px 8px', textAlign: 'center'}}>
-            <div className="cash-pricing-box" style={{display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, padding: '6px 8px', borderRadius: 6, backgroundColor: 'rgba(16, 185, 129, 0.08)', border: '1px solid rgba(16, 185, 129, 0.25)'}}>
-              <div className="cash-price-val" style={{fontWeight: 700, fontSize: '0.96rem', color: '#10b981', whiteSpace: 'nowrap', lineHeight: 1.1}} title="Precio a cobrar en efectivo en el local físico">
+            <div className="cash-pricing-box" style={{display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, padding: '6px 10px', borderRadius: 8, backgroundColor: 'rgba(16, 185, 129, 0.09)', border: '1px solid rgba(16, 185, 129, 0.3)'}}>
+              <div className="cash-price-val" style={{fontWeight: 800, fontSize: '1.2rem', color: '#10b981', whiteSpace: 'nowrap', lineHeight: 1.1, letterSpacing: '-0.3px'}} title="Precio a cobrar en efectivo en el local físico">
                 ${finalCashPrice.toLocaleString('es-AR')}
               </div>
-              <div className="cash-discount-row" style={{display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 3}}>
-                <span style={{fontSize: '0.72rem', color: 'var(--text-secondary)', fontWeight: 600}}>%</span>
+              <div className="cash-discount-row" style={{display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4}}>
+                <span style={{fontSize: '0.82rem', color: 'var(--text-secondary)', fontWeight: 700}}>%</span>
                 <input 
                   type="number" 
                   step="1" 
@@ -4322,18 +4411,18 @@ function ProductRow({ p, onSave, onOpenGallery, onDraftChange, categories, categ
                   placeholder="0"
                   title="% Descuento efectivo sobre precio de lista"
                   style={{
-                    width: 48, 
-                    padding: '2px 4px', 
-                    fontSize: '0.82rem', 
-                    fontWeight: 600,
-                    textAlign: 'center',
+                    width: 52, 
+                    padding: '3px 4px', 
+                    fontSize: '0.92rem', 
+                    fontWeight: 700, 
+                    textAlign: 'center', 
                     border: '1px solid var(--border-color)', 
-                    borderRadius: 4, 
+                    borderRadius: 5, 
                     backgroundColor: 'var(--bg-card)', 
                     color: 'var(--text-primary)'
                   }}
                 />
-                <span style={{fontSize: '0.72rem', color: 'var(--text-secondary)'}}>desc</span>
+                <span style={{fontSize: '0.80rem', color: 'var(--text-secondary)', fontWeight: 600}}>desc</span>
               </div>
             </div>
           </td>
@@ -4660,23 +4749,23 @@ function ProductRow({ p, onSave, onOpenGallery, onDraftChange, categories, categ
         }}>
           <div style={{display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center'}}>
             <label style={{fontSize: '0.85rem', color: 'var(--text-secondary)'}}>Stock:
-              <input type="number" value={qty} onChange={e => setQty(e.target.value)} style={{width: 65, marginLeft: 5, padding: '4px 6px', fontSize: '0.88rem'}}/>
-              {p.prev_stock !== null && p.prev_stock !== undefined && <div style={{fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: 2, textAlign: 'center'}}>ant: {p.prev_stock}</div>}
+              <input type="number" value={qty} onChange={e => setQty(e.target.value)} style={{width: 72, marginLeft: 5, padding: '5px 6px', fontSize: '1.08rem', fontWeight: 700, textAlign: 'center'}}/>
+              {p.prev_stock !== null && p.prev_stock !== undefined && <div style={{fontSize: '0.80rem', fontWeight: 600, color: 'var(--text-secondary)', marginTop: 3, textAlign: 'center'}}>ant: {p.prev_stock}</div>}
             </label>
             <label style={{fontSize: '0.85rem', color: 'var(--text-secondary)'}}>Precio ML:
-              <input type="number" value={price} onChange={e => setPrice(e.target.value)} style={{width: 85, marginLeft: 5, padding: '4px 6px', fontSize: '0.88rem'}} disabled={p.status === 'local'}/>
-              {p.prev_price !== null && p.prev_price !== undefined && <div style={{fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: 2, textAlign: 'center'}}>ant: ${p.prev_price.toLocaleString('es-AR')}</div>}
+              <input type="number" value={price} onChange={e => setPrice(e.target.value)} style={{width: 96, marginLeft: 5, padding: '5px 8px', fontSize: '1.08rem', fontWeight: 700, textAlign: 'right'}} disabled={p.status === 'local'}/>
+              {p.prev_price !== null && p.prev_price !== undefined && <div style={{fontSize: '0.80rem', fontWeight: 600, color: 'var(--text-secondary)', marginTop: 3, textAlign: 'center'}}>ant: ${p.prev_price.toLocaleString('es-AR')}</div>}
             </label>
             <label style={{fontSize: '0.85rem', color: 'var(--text-secondary)'}}>Costo Base:
-              <input type="number" value={cost} onChange={e => setCost(e.target.value)} style={{width: 85, marginLeft: 5, padding: '4px 6px', fontSize: '0.88rem'}}/>
-              {p.prev_cost_price !== null && p.prev_cost_price !== undefined && <div style={{fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: 2, textAlign: 'center'}}>ant: ${p.prev_cost_price.toLocaleString('es-AR')}</div>}
+              <input type="number" value={cost} onChange={e => setCost(e.target.value)} style={{width: 96, marginLeft: 5, padding: '5px 8px', fontSize: '1.08rem', fontWeight: 700, textAlign: 'right'}}/>
+              {p.prev_cost_price !== null && p.prev_cost_price !== undefined && <div style={{fontSize: '0.80rem', fontWeight: 600, color: 'var(--text-secondary)', marginTop: 3, textAlign: 'center'}}>ant: ${p.prev_cost_price.toLocaleString('es-AR')}</div>}
             </label>
             <label style={{fontSize: '0.85rem', color: 'var(--text-secondary)'}} title="Costo total de Mercado Libre obtenido desde la API (Comisión de venta + Envío gratis si aplica)">Costo ML ⓘ:
-              <input type="number" value={costMeli} onChange={e => setCostMeli(e.target.value)} style={{width: 75, marginLeft: 5, padding: '4px 6px', fontSize: '0.88rem'}}/>
-              {p.prev_cost_meli !== null && p.prev_cost_meli !== undefined && <div style={{fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: 2, textAlign: 'center'}}>ant: ${p.prev_cost_meli.toLocaleString('es-AR')}</div>}
+              <input type="number" value={costMeli} onChange={e => setCostMeli(e.target.value)} style={{width: 90, marginLeft: 5, padding: '5px 8px', fontSize: '1.08rem', fontWeight: 700, textAlign: 'right'}}/>
+              {p.prev_cost_meli !== null && p.prev_cost_meli !== undefined && <div style={{fontSize: '0.80rem', fontWeight: 600, color: 'var(--text-secondary)', marginTop: 3, textAlign: 'center'}}>ant: ${p.prev_cost_meli.toLocaleString('es-AR')}</div>}
             </label>
             <label style={{fontSize: '0.85rem', color: 'var(--text-secondary)'}}>Alerta Mín:
-              <input type="number" value={minStock} onChange={e => setMinStock(e.target.value)} style={{width: 55, marginLeft: 5, padding: '4px 6px', fontSize: '0.88rem'}}/>
+              <input type="number" value={minStock} onChange={e => setMinStock(e.target.value)} style={{width: 55, marginLeft: 5, padding: '4px 6px', fontSize: '0.95rem', fontWeight: 600}}/>
             </label>
           </div>
           {(p.available_quantity <= (p.min_stock || 3) && p.status === 'active') && (
@@ -4697,21 +4786,21 @@ function ProductRow({ p, onSave, onOpenGallery, onDraftChange, categories, categ
               Mostrar en Web
             </label>
             <label style={{fontSize: '0.85rem', color: 'var(--text-secondary)'}}>Precio Web:
-              <input type="number" value={priceWeb} onChange={e => setPriceWeb(e.target.value)} style={{width: 85, marginLeft: 5, padding: '4px 6px', fontSize: '0.88rem'}}/>
-              {p.prev_price_web !== null && p.prev_price_web !== undefined && <div style={{fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: 2}}>ant: ${p.prev_price_web.toLocaleString('es-AR')}</div>}
+              <input type="number" value={priceWeb} onChange={e => setPriceWeb(e.target.value)} style={{width: 96, marginLeft: 5, padding: '5px 8px', fontSize: '1.08rem', fontWeight: 700, textAlign: 'right'}}/>
+              {p.prev_price_web !== null && p.prev_price_web !== undefined && <div style={{fontSize: '0.80rem', fontWeight: 600, color: 'var(--text-secondary)', marginTop: 3}}>ant: ${p.prev_price_web.toLocaleString('es-AR')}</div>}
             </label>
             {numPriceWeb > 0 && (
               <div style={{fontSize: '0.75rem', color: profitWeb >= 0 ? 'var(--accent-emerald)' : 'var(--accent-red)', marginTop: 2, fontWeight: 600}}>
                 Margen Web: {marginWeb.toFixed(1)}% (Beneficio: ${profitWeb.toFixed(2)})
               </div>
             )}
-            <div style={{marginTop: 6, padding: '5px 8px', borderRadius: 6, backgroundColor: 'rgba(16, 185, 129, 0.08)', border: '1px solid rgba(16, 185, 129, 0.25)'}}>
-              <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.8rem'}}>
+            <div style={{marginTop: 6, padding: '6px 10px', borderRadius: 8, backgroundColor: 'rgba(16, 185, 129, 0.09)', border: '1px solid rgba(16, 185, 129, 0.3)'}}>
+              <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.85rem'}}>
                 <span style={{color: 'var(--text-secondary)', fontWeight: 600}}>💵 Efectivo:</span>
-                <span style={{color: '#10b981', fontWeight: 700, fontSize: '0.85rem'}}>${finalCashPrice.toLocaleString('es-AR')}</span>
+                <span style={{color: '#10b981', fontWeight: 800, fontSize: '1.2rem'}}>${finalCashPrice.toLocaleString('es-AR')}</span>
               </div>
               <div style={{display: 'flex', alignItems: 'center', gap: 5, marginTop: 4}}>
-                <span style={{fontSize: '0.72rem', color: 'var(--text-secondary)'}}>% Desc. Efectivo:</span>
+                <span style={{fontSize: '0.78rem', color: 'var(--text-secondary)', fontWeight: 600}}>% Desc. Efectivo:</span>
                 <input 
                   type="number" 
                   step="1" 
@@ -4719,7 +4808,8 @@ function ProductRow({ p, onSave, onOpenGallery, onDraftChange, categories, categ
                   max="100" 
                   value={cashDiscountPct} 
                   onChange={e => setCashDiscountPct(e.target.value)} 
-                  style={{width: 50, padding: '2px 4px', fontSize: '0.75rem', textAlign: 'center'}}
+                  placeholder="0"
+                  style={{width: 52, padding: '3px 4px', fontSize: '0.92rem', fontWeight: 700, textAlign: 'center'}}
                 />
               </div>
             </div>
