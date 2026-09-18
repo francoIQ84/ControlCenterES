@@ -3,7 +3,8 @@ import {
   FileText, Plus, Search, Download, CheckCircle2, Clock, 
   AlertTriangle, XCircle, MessageCircle, User, Trash2, 
   Edit3, DollarSign, Package, ExternalLink, Calendar, 
-  TrendingUp, RefreshCw, ChevronRight, X, ArrowRight, Check
+  TrendingUp, RefreshCw, ChevronRight, X, ArrowRight, Check,
+  Building, MapPin
 } from 'lucide-react'
 import { getCachedData, setCachedData, invalidateCache, CacheKeys } from '../utils/cache'
 import { matchesQuery, matchesPhoneOrDoc } from '../utils/searchUtils'
@@ -50,6 +51,86 @@ export default function Quotes() {
     invoice_type: 'B'
   })
 
+  // Commercial config state (Nombre comercial y dirección del local para presupuestos)
+  const [commercialConfig, setCommercialConfig] = useState({
+    merchant_commercial_name: 'Experiencia Sustentable',
+    merchant_commercial_address: 'Zeballos 1726, Rosario, Santa Fe, Argentina',
+    merchant_phone: '+54 9 3412 59-0161',
+    merchant_email: '',
+    has_commercial_address: true
+  })
+  const [showCommercialModal, setShowCommercialModal] = useState(false)
+  const [commercialForm, setCommercialForm] = useState({
+    merchant_commercial_name: 'Experiencia Sustentable',
+    merchant_commercial_address: 'Zeballos 1726, Rosario, Santa Fe, Argentina',
+    merchant_phone: '+54 9 3412 59-0161',
+    merchant_email: ''
+  })
+  const [savingCommercial, setSavingCommercial] = useState(false)
+  const [pendingPdfQuoteId, setPendingPdfQuoteId] = useState(null)
+  const [pendingOpenCreate, setPendingOpenCreate] = useState(false)
+
+  const fetchCommercialConfig = async () => {
+    try {
+      const res = await fetch('/api/quotes/config')
+      if (res.ok) {
+        const data = await res.json()
+        setCommercialConfig(data)
+        setCommercialForm({
+          merchant_commercial_name: data.merchant_commercial_name || 'Experiencia Sustentable',
+          merchant_commercial_address: data.merchant_commercial_address || 'Zeballos 1726, Rosario, Santa Fe, Argentina',
+          merchant_phone: data.merchant_phone || '+54 9 3412 59-0161',
+          merchant_email: data.merchant_email || ''
+        })
+      }
+    } catch (err) {
+      console.error('Error fetching commercial config:', err)
+    }
+  }
+
+  const handleSaveCommercialConfig = async (e) => {
+    if (e) e.preventDefault()
+    if (!commercialForm.merchant_commercial_address?.trim()) {
+      alert('Por favor ingresa la Dirección Comercial.')
+      return
+    }
+    setSavingCommercial(true)
+    try {
+      const res = await fetch('/api/quotes/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(commercialForm)
+      })
+      if (res.ok) {
+        setCommercialConfig({
+          ...commercialConfig,
+          ...commercialForm,
+          has_commercial_address: true
+        })
+        setShowCommercialModal(false)
+        alert('¡Datos comerciales guardados con éxito!')
+        
+        if (pendingPdfQuoteId) {
+          const token = encodeURIComponent(localStorage.getItem('adminToken') || '')
+          window.open(`/api/quotes/${pendingPdfQuoteId}/pdf?token=${token}`, '_blank')
+          setPendingPdfQuoteId(null)
+        } else if (pendingOpenCreate) {
+          setPendingOpenCreate(false)
+          setEditingQuote(null)
+          setFormData(initialQuoteForm)
+          setShowCreateModal(true)
+        }
+      } else {
+        const err = await res.json().catch(() => ({}))
+        alert('Error al guardar datos comerciales: ' + (err.detail || 'Error del servidor'))
+      }
+    } catch (err) {
+      alert('Error de conexión: ' + err.message)
+    } finally {
+      setSavingCommercial(false)
+    }
+  }
+
   const fetchQuotes = async (forceSpinner = false) => {
     if (forceSpinner || (!getCachedData(CacheKeys.QUOTES) && quotes.length === 0)) {
       setLoading(true)
@@ -91,6 +172,7 @@ export default function Quotes() {
   useEffect(() => {
     fetchQuotes()
     fetchInventory()
+    fetchCommercialConfig()
   }, [])
 
   // KPI Calculations
@@ -291,8 +373,13 @@ export default function Quotes() {
         await fetchQuotes(true)
 
         if (downloadAfter && savedQuote?.id) {
-          const token = encodeURIComponent(localStorage.getItem('adminToken') || '')
-          window.open(`/api/quotes/${savedQuote.id}/pdf?token=${token}`, '_blank')
+          if (!commercialConfig.merchant_commercial_address?.trim()) {
+            setPendingPdfQuoteId(savedQuote.id)
+            setShowCommercialModal(true)
+          } else {
+            const token = encodeURIComponent(localStorage.getItem('adminToken') || '')
+            window.open(`/api/quotes/${savedQuote.id}/pdf?token=${token}`, '_blank')
+          }
         }
       } else {
         const err = await res.json().catch(() => ({}))
@@ -430,8 +517,35 @@ export default function Quotes() {
           </button>
 
           <button 
+            className="btn" 
+            onClick={() => {
+              setPendingPdfQuoteId(null)
+              setPendingOpenCreate(false)
+              setShowCommercialModal(true)
+            }}
+            title="Configurar Nombre Comercial y Dirección Comercial para el membrete de Presupuestos"
+            style={{
+              display: 'flex', 
+              alignItems: 'center', 
+              gap: 6, 
+              padding: '9px 14px', 
+              fontWeight: 600,
+              backgroundColor: 'var(--bg-card)',
+              border: '1px solid var(--border-color)',
+              color: 'var(--text-primary)'
+            }}
+          >
+            <Building size={16} color="var(--accent-blue)" /> Membrete Comercial
+          </button>
+
+          <button 
             className="btn btn-primary" 
             onClick={() => {
+              if (!commercialConfig.merchant_commercial_address?.trim()) {
+                setPendingOpenCreate(true)
+                setShowCommercialModal(true)
+                return
+              }
               setEditingQuote(null)
               setFormData(initialQuoteForm)
               setShowCreateModal(true)
@@ -442,6 +556,41 @@ export default function Quotes() {
           </button>
         </div>
       </div>
+
+      {/* Banner de alerta si falta dirección comercial */}
+      {!commercialConfig.merchant_commercial_address?.trim() && (
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: '12px 18px',
+          marginBottom: 18,
+          borderRadius: 10,
+          backgroundColor: 'rgba(245, 158, 11, 0.12)',
+          border: '1px solid rgba(245, 158, 11, 0.35)',
+          gap: 12,
+          flexWrap: 'wrap'
+        }}>
+          <div style={{display: 'flex', alignItems: 'center', gap: 10}}>
+            <AlertTriangle size={22} color="#d97706" />
+            <div>
+              <div style={{fontWeight: 700, fontSize: '0.92rem', color: '#b45309'}}>
+                Falta configurar la Dirección Comercial para tus presupuestos
+              </div>
+              <div style={{fontSize: '0.82rem', color: 'var(--text-secondary)', marginTop: 2}}>
+                Indica la dirección del local comercial (ej. Zeballos 1726, Rosario) para que se imprima en el membrete del PDF en lugar de la dirección fiscal.
+              </div>
+            </div>
+          </div>
+          <button
+            className="btn"
+            onClick={() => setShowCommercialModal(true)}
+            style={{backgroundColor: '#d97706', color: '#fff', fontWeight: 700, fontSize: '0.84rem', padding: '7px 16px', display: 'flex', alignItems: 'center', gap: 6}}
+          >
+            <MapPin size={16} /> Configurar Dirección Ahora
+          </button>
+        </div>
+      )}
 
       {/* KPI Cards */}
       <div style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 14, marginBottom: 20}}>
@@ -809,6 +958,13 @@ export default function Quotes() {
                             target="_blank"
                             rel="noopener noreferrer"
                             title="Descargar o imprimir PDF"
+                            onClick={(e) => {
+                              if (!commercialConfig.merchant_commercial_address?.trim()) {
+                                e.preventDefault()
+                                setPendingPdfQuoteId(q.id)
+                                setShowCommercialModal(true)
+                              }
+                            }}
                             style={{
                               display: 'inline-flex',
                               alignItems: 'center',
@@ -1481,6 +1637,129 @@ export default function Quotes() {
               </button>
             </div>
 
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Configuración de Datos Comerciales para Presupuestos */}
+      {showCommercialModal && (
+        <div className="modal-overlay" style={{
+          position: 'fixed',
+          top: 0, left: 0, right: 0, bottom: 0,
+          backgroundColor: 'rgba(0,0,0,0.65)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 9999,
+          backdropFilter: 'blur(3px)',
+          padding: 16
+        }}>
+          <div className="card" style={{
+            width: '100%',
+            maxWidth: 520,
+            backgroundColor: 'var(--bg-card)',
+            border: '1px solid var(--border-color)',
+            borderRadius: 12,
+            padding: 24,
+            boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.3)'
+          }}>
+            <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16}}>
+              <div style={{display: 'flex', alignItems: 'center', gap: 10}}>
+                <div style={{
+                  width: 38, height: 38, borderRadius: 8, 
+                  backgroundColor: 'rgba(59, 130, 246, 0.12)', 
+                  display: 'flex', alignItems: 'center', justifyContent: 'center'
+                }}>
+                  <Building size={20} color="var(--accent-blue)" />
+                </div>
+                <div>
+                  <h3 style={{margin: 0, fontSize: '1.15rem'}}>Membrete Comercial de Presupuestos</h3>
+                  <span style={{fontSize: '0.78rem', color: 'var(--text-secondary)'}}>
+                    Configuración de cabecera para cotizaciones y PDF
+                  </span>
+                </div>
+              </div>
+              <button 
+                onClick={() => setShowCommercialModal(false)}
+                style={{background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)'}}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <p style={{fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: 16, lineHeight: 1.4}}>
+              Indica el <b>Nombre Comercial</b> y la <b>Dirección Comercial</b> (del local físico o showroom) que figurará en los presupuestos ante tus clientes, evitando usar la dirección fiscal de facturación.
+            </p>
+
+            <form onSubmit={handleSaveCommercialConfig} style={{display: 'flex', flexDirection: 'column', gap: 14}}>
+              <label style={{display: 'flex', flexDirection: 'column', gap: 4, fontSize: '0.85rem', fontWeight: 600}}>
+                Nombre Comercial / Marca de Fantasía *
+                <input
+                  type="text"
+                  required
+                  placeholder="ej. Experiencia Sustentable"
+                  value={commercialForm.merchant_commercial_name}
+                  onChange={e => setCommercialForm({...commercialForm, merchant_commercial_name: e.target.value})}
+                  style={{padding: '8px 12px', borderRadius: 6, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-dark)', color: 'var(--text-primary)'}}
+                />
+              </label>
+
+              <label style={{display: 'flex', flexDirection: 'column', gap: 4, fontSize: '0.85rem', fontWeight: 600}}>
+                Dirección Comercial (Local / Showroom) *
+                <input
+                  type="text"
+                  required
+                  placeholder="ej. Zeballos 1726, Rosario, Santa Fe, Argentina"
+                  value={commercialForm.merchant_commercial_address}
+                  onChange={e => setCommercialForm({...commercialForm, merchant_commercial_address: e.target.value})}
+                  style={{padding: '8px 12px', borderRadius: 6, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-dark)', color: 'var(--text-primary)'}}
+                />
+                <span style={{fontSize: '0.74rem', color: 'var(--text-secondary)', fontWeight: 400}}>
+                  Dirección donde atiendes o entregas (no la dirección fiscal de AFIP).
+                </span>
+              </label>
+
+              <label style={{display: 'flex', flexDirection: 'column', gap: 4, fontSize: '0.85rem', fontWeight: 600}}>
+                Teléfono / WhatsApp de Contacto
+                <input
+                  type="text"
+                  placeholder="ej. +54 9 3412 59-0161"
+                  value={commercialForm.merchant_phone}
+                  onChange={e => setCommercialForm({...commercialForm, merchant_phone: e.target.value})}
+                  style={{padding: '8px 12px', borderRadius: 6, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-dark)', color: 'var(--text-primary)'}}
+                />
+              </label>
+
+              <label style={{display: 'flex', flexDirection: 'column', gap: 4, fontSize: '0.85rem', fontWeight: 600}}>
+                Email Comercial (Opcional)
+                <input
+                  type="email"
+                  placeholder="ej. contacto@experienciasustentable.com"
+                  value={commercialForm.merchant_email}
+                  onChange={e => setCommercialForm({...commercialForm, merchant_email: e.target.value})}
+                  style={{padding: '8px 12px', borderRadius: 6, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-dark)', color: 'var(--text-primary)'}}
+                />
+              </label>
+
+              <div style={{display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 10}}>
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={() => setShowCommercialModal(false)}
+                  style={{backgroundColor: 'var(--bg-hover)', border: '1px solid var(--border-color)'}}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="btn btn-primary"
+                  disabled={savingCommercial}
+                  style={{display: 'flex', alignItems: 'center', gap: 6, padding: '8px 18px', fontWeight: 600}}
+                >
+                  <Check size={16} /> {savingCommercial ? 'Guardando...' : 'Guardar y Continuar'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

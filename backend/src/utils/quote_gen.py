@@ -72,12 +72,35 @@ def generate_quote_pdf(quote: dict) -> str:
     style_cell_right = ParagraphStyle('QTCR', fontName='Helvetica', fontSize=8, leading=10.5, textColor=colors.HexColor('#1e293b'), alignment=TA_RIGHT)
     style_notes = ParagraphStyle('QNotes', fontName='Helvetica', fontSize=8, leading=11, textColor=colors.HexColor('#334155'))
 
-    # Load merchant info from settings
-    merchant_name = database.get_setting('merchant_name', 'Hidroponía Rosario')
-    merchant_cuit = database.get_setting('afip_cuit', '')
-    merchant_address = database.get_setting('merchant_address', '')
-    merchant_phone = database.get_setting('merchant_phone', '')
-    merchant_email = database.get_setting('merchant_email', '')
+    # Load merchant info from settings (commercial name and address prioritized)
+    commercial_name = (database.get_setting('merchant_commercial_name') or '').strip()
+    if not commercial_name:
+        try:
+            import json
+            web_cfg = json.loads(database.get_setting('web_config', '{}') or '{}')
+            if web_cfg.get('store_name'):
+                commercial_name = web_cfg['store_name'].strip()
+        except Exception:
+            pass
+    if not commercial_name:
+        commercial_name = 'Experiencia Sustentable'
+
+    commercial_address = (database.get_setting('merchant_commercial_address') or '').strip()
+    if not commercial_address:
+        try:
+            import json
+            web_cfg = json.loads(database.get_setting('web_config', '{}') or '{}')
+            if web_cfg.get('address'):
+                commercial_address = web_cfg['address'].strip()
+        except Exception:
+            pass
+    if not commercial_address:
+        commercial_address = 'Zeballos 1726, Rosario, Santa Fe, Argentina'
+
+    legal_name = (database.get_setting('merchant_name') or '').strip()
+    merchant_cuit = (database.get_setting('afip_cuit') or '').strip()
+    merchant_phone = (database.get_setting('merchant_phone') or '').strip()
+    merchant_email = (database.get_setting('merchant_email') or '').strip()
     merchant_bank_cbu = database.get_setting('merchant_bank_cbu', '')
     merchant_bank_alias = database.get_setting('merchant_bank_alias', '')
     merchant_bank_name = database.get_setting('merchant_bank_name', '')
@@ -90,12 +113,14 @@ def generate_quote_pdf(quote: dict) -> str:
     # 1. Header: Merchant Info (Left) & Document Details (Right)
     # -------------------------------------------------------------------------
     merchant_lines = [
-        f"<b><font size='13' color='#0f172a'>{merchant_name}</font></b>"
+        f"<b><font size='13' color='#0f172a'>{commercial_name.upper()}</font></b>"
     ]
+    if legal_name and legal_name.lower() != commercial_name.lower():
+        merchant_lines.append(f"<font color='#64748b'>Razón Social:</font> {legal_name}")
     if merchant_cuit:
         merchant_lines.append(f"<font color='#64748b'>CUIT:</font> {merchant_cuit}")
-    if merchant_address:
-        merchant_lines.append(f"<font color='#64748b'>Dirección:</font> {merchant_address}")
+    if commercial_address:
+        merchant_lines.append(f"<font color='#64748b'>Dirección Comercial:</font> {commercial_address}")
     if merchant_phone:
         merchant_lines.append(f"<font color='#64748b'>Tel / WhatsApp:</font> {merchant_phone}")
     if merchant_email:
@@ -300,7 +325,10 @@ def generate_quote_pdf(quote: dict) -> str:
     # -------------------------------------------------------------------------
     # 6. Corporate Footer
     # -------------------------------------------------------------------------
-    footer_text = f"Documento de cotización emitido por <b>{merchant_name}</b> · No válido como factura fiscal conforme a las normativas de AFIP/ARCA."
+    emitter_name = commercial_name
+    if legal_name and legal_name.lower() != commercial_name.lower():
+        emitter_name += f" ({legal_name})"
+    footer_text = f"Documento de cotización emitido por <b>{emitter_name}</b> · No válido como factura fiscal conforme a las normativas de AFIP/ARCA."
     story.append(Paragraph(footer_text, ParagraphStyle('QFoot', fontName='Helvetica', fontSize=7.5, leading=10, textColor=colors.HexColor('#94a3b8'), alignment=TA_CENTER)))
 
     # Build PDF

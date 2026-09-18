@@ -58,6 +58,60 @@ class QuoteConvertRequest(BaseModel):
     notes: Optional[str] = ""
 
 
+class CommercialConfigRequest(BaseModel):
+    merchant_commercial_name: Optional[str] = ""
+    merchant_commercial_address: Optional[str] = ""
+    merchant_phone: Optional[str] = ""
+    merchant_email: Optional[str] = ""
+
+
+@router.get("/config", dependencies=[Depends(require_permission("quotes"))])
+def get_quote_commercial_config():
+    commercial_name = database.get_setting('merchant_commercial_name') or ''
+    commercial_address = database.get_setting('merchant_commercial_address') or ''
+    
+    if not commercial_name or not commercial_address:
+        try:
+            import json
+            web_cfg = json.loads(database.get_setting('web_config', '{}') or '{}')
+            if not commercial_name and web_cfg.get('store_name'):
+                commercial_name = web_cfg['store_name']
+            if not commercial_address and web_cfg.get('address'):
+                commercial_address = web_cfg['address']
+        except Exception:
+            pass
+
+    if not commercial_name:
+        commercial_name = "Experiencia Sustentable"
+    if not commercial_address:
+        commercial_address = "Zeballos 1726, Rosario, Santa Fe, Argentina"
+
+    has_configured = bool(database.get_setting('merchant_commercial_address') or database.get_setting('web_config'))
+
+    return {
+        "merchant_commercial_name": commercial_name,
+        "merchant_commercial_address": commercial_address,
+        "merchant_name": database.get_setting('merchant_name', 'GENTILI FRANCO AGUSTIN'),
+        "merchant_address": database.get_setting('merchant_address', ''),
+        "merchant_phone": database.get_setting('merchant_phone', '+54 9 3412 59-0161'),
+        "merchant_email": database.get_setting('merchant_email', ''),
+        "has_commercial_address": has_configured
+    }
+
+
+@router.post("/config", dependencies=[Depends(require_permission("quotes"))])
+def save_quote_commercial_config(req: CommercialConfigRequest):
+    if req.merchant_commercial_name is not None:
+        database.set_setting('merchant_commercial_name', req.merchant_commercial_name.strip())
+    if req.merchant_commercial_address is not None:
+        database.set_setting('merchant_commercial_address', req.merchant_commercial_address.strip())
+    if req.merchant_phone is not None:
+        database.set_setting('merchant_phone', req.merchant_phone.strip())
+    if req.merchant_email is not None:
+        database.set_setting('merchant_email', req.merchant_email.strip())
+    return {"success": True, "message": "Datos comerciales guardados con éxito"}
+
+
 @router.get("/next-number", dependencies=[Depends(require_permission("quotes"))])
 def get_next_number():
     next_num = database.get_next_quote_number()

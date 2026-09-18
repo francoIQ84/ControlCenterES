@@ -465,6 +465,8 @@ export default function Settings() {
     merchant_name: '',
     merchant_address: '',
     merchant_phone: '',
+    merchant_commercial_name: '',
+    merchant_commercial_address: '',
     merchant_iibb: '',
     merchant_iva_condition: 'Responsable Monotributo',
     merchant_start_date: '',
@@ -3586,27 +3588,77 @@ export default function Settings() {
                 </div>
               </label>
 
-              <label>Razón Social (Oficial)
-                <input 
-                  type="text" 
-                  required
-                  placeholder="ej. Hidroponia Rosario S.R.L."
-                  value={arcaConfig.merchant_name} 
-                  onChange={e => setArcaConfig({...arcaConfig, merchant_name: e.target.value})} 
-                  style={{width: '100%', marginTop: 5}}
-                />
-              </label>
+              <div style={{
+                padding: '12px 14px', 
+                borderRadius: 8, 
+                backgroundColor: 'rgba(59, 130, 246, 0.08)', 
+                border: '1px solid rgba(59, 130, 246, 0.25)',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 12
+              }}>
+                <div style={{fontWeight: 700, fontSize: '0.88rem', color: 'var(--accent-blue)', display: 'flex', alignItems: 'center', gap: 6}}>
+                  🏢 Membrete Comercial (Presupuestos, Cotizaciones y Atención al Público)
+                </div>
+                <label style={{fontSize: '0.85rem'}}>Nombre Comercial / Fantasía
+                  <input 
+                    type="text" 
+                    placeholder="ej. Experiencia Sustentable"
+                    value={arcaConfig.merchant_commercial_name || ''} 
+                    onChange={e => setArcaConfig({...arcaConfig, merchant_commercial_name: e.target.value})} 
+                    style={{width: '100%', marginTop: 5}}
+                  />
+                  <span style={{fontSize: '0.74rem', color: 'var(--text-secondary)'}}>Nombre de marca que encabeza tus presupuestos.</span>
+                </label>
 
-              <label>Dirección Comercial / Fiscal
-                <input 
-                  type="text" 
-                  required
-                  placeholder="ej. Bv. Oroño 4500, Rosario"
-                  value={arcaConfig.merchant_address} 
-                  onChange={e => setArcaConfig({...arcaConfig, merchant_address: e.target.value})} 
-                  style={{width: '100%', marginTop: 5}}
-                />
-              </label>
+                <label style={{fontSize: '0.85rem'}}>Dirección Comercial del Local / Showroom
+                  <input 
+                    type="text" 
+                    placeholder="ej. Zeballos 1726, Rosario, Santa Fe, Argentina"
+                    value={arcaConfig.merchant_commercial_address || ''} 
+                    onChange={e => setArcaConfig({...arcaConfig, merchant_commercial_address: e.target.value})} 
+                    style={{width: '100%', marginTop: 5}}
+                  />
+                  <span style={{fontSize: '0.74rem', color: 'var(--text-secondary)'}}>Dirección comercial física donde atiendes o entregas (aparece en presupuestos).</span>
+                </label>
+              </div>
+
+              <div style={{
+                padding: '12px 14px', 
+                borderRadius: 8, 
+                backgroundColor: 'var(--bg-hover)', 
+                border: '1px solid var(--border-color)',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 12,
+                marginTop: 2
+              }}>
+                <div style={{fontWeight: 700, fontSize: '0.88rem', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: 6}}>
+                  🏛️ Datos Fiscales Oficiales (Exclusivos para Facturación AFIP / ARCA)
+                </div>
+                <label style={{fontSize: '0.85rem'}}>Razón Social (Oficial ante AFIP)
+                  <input 
+                    type="text" 
+                    required
+                    placeholder="ej. GENTILI FRANCO AGUSTIN"
+                    value={arcaConfig.merchant_name} 
+                    onChange={e => setArcaConfig({...arcaConfig, merchant_name: e.target.value})} 
+                    style={{width: '100%', marginTop: 5}}
+                  />
+                </label>
+
+                <label style={{fontSize: '0.85rem'}}>Domicilio Fiscal Registrado en AFIP
+                  <input 
+                    type="text" 
+                    required
+                    placeholder="ej. COLON 824, VILLA CONSTITUCION, SANTA FE"
+                    value={arcaConfig.merchant_address} 
+                    onChange={e => setArcaConfig({...arcaConfig, merchant_address: e.target.value})} 
+                    style={{width: '100%', marginTop: 5}}
+                  />
+                  <span style={{fontSize: '0.74rem', color: 'var(--text-secondary)'}}>Domicilio fiscal legal para emisión de comprobantes electrónicos oficiales.</span>
+                </label>
+              </div>
 
               <label>Teléfono de Contacto
                 <input 

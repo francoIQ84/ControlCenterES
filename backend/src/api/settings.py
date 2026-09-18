@@ -327,6 +327,8 @@ class ArcaConfigRequest(BaseModel):
     merchant_name: str
     merchant_address: str
     merchant_phone: str
+    merchant_commercial_name: Optional[str] = ''
+    merchant_commercial_address: Optional[str] = ''
     merchant_iibb: str = ''
     merchant_iva_condition: str = 'Responsable Monotributo'
     merchant_start_date: str = ''
@@ -349,6 +351,8 @@ def get_arca_config(_=Depends(require_permission("settings"))):
         "merchant_name": database.get_setting('merchant_name', 'Hidroponia Rosario'),
         "merchant_address": database.get_setting('merchant_address', 'Bv. Oroño 4500, Rosario'),
         "merchant_phone": database.get_setting('merchant_phone', '+54 341 456-7890'),
+        "merchant_commercial_name": database.get_setting('merchant_commercial_name', 'Experiencia Sustentable'),
+        "merchant_commercial_address": database.get_setting('merchant_commercial_address', 'Zeballos 1726, Rosario, Santa Fe, Argentina'),
         "merchant_iibb": database.get_setting('merchant_iibb', ''),
         "merchant_iva_condition": database.get_setting('merchant_iva_condition', 'Responsable Monotributo'),
         "merchant_start_date": database.get_setting('merchant_start_date', '01/01/2020'),
@@ -367,6 +371,10 @@ def save_arca_config(req: ArcaConfigRequest, _=Depends(require_permission("setti
     database.set_setting('merchant_name', req.merchant_name.strip())
     database.set_setting('merchant_address', req.merchant_address.strip())
     database.set_setting('merchant_phone', req.merchant_phone.strip())
+    if req.merchant_commercial_name is not None:
+        database.set_setting('merchant_commercial_name', req.merchant_commercial_name.strip())
+    if req.merchant_commercial_address is not None:
+        database.set_setting('merchant_commercial_address', req.merchant_commercial_address.strip())
     database.set_setting('merchant_iibb', req.merchant_iibb.strip())
     database.set_setting('merchant_iva_condition', req.merchant_iva_condition.strip())
     database.set_setting('merchant_start_date', req.merchant_start_date.strip())
