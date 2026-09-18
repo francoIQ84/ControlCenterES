@@ -189,6 +189,10 @@ export default function Layout() {
   const navigate = useNavigate()
   const location = useLocation()
   const { tenant, hasModule, isPlatformAdmin, isSimpleView, toggleViewMode, isChannelEnabled } = useTenant()
+  const [currentUser, setCurrentUser] = useState(() => ({
+    username: localStorage.getItem('adminUsername') || '',
+    fullName: localStorage.getItem('adminFullName') || ''
+  }))
   const [lightMode, setLightMode] = useState(true)
   const [syncing, setSyncing] = useState(false)
   const [collapsed, setCollapsed] = useState(typeof window !== 'undefined' ? window.innerWidth < 768 : false)
@@ -300,6 +304,10 @@ export default function Layout() {
           localStorage.setItem('adminPermissions', profileData.permissions || "");
           localStorage.setItem('adminUsername', profileData.username);
           localStorage.setItem('adminFullName', profileData.full_name);
+          setCurrentUser({
+            username: profileData.username,
+            fullName: profileData.full_name
+          });
         }
 
         // 2. Obtener estado de autenticación de Meli
@@ -694,6 +702,82 @@ export default function Layout() {
             )}
           </NavLink>
         </div>
+
+        {/* Active Logged-in User Profile Badge */}
+        {currentUser.username && !collapsed && (
+          <div style={{
+            margin: '0 12px 10px',
+            padding: '8px 10px',
+            borderRadius: '10px',
+            backgroundColor: 'var(--bg-card)',
+            border: '1px solid var(--border-color)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            boxShadow: '0 1px 3px rgba(0,0,0,0.05)'
+          }}>
+            <div style={{
+              width: 28,
+              height: 28,
+              borderRadius: '50%',
+              backgroundColor: 'rgba(59, 130, 246, 0.15)',
+              color: 'var(--accent-blue)',
+              border: '1px solid rgba(59, 130, 246, 0.3)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontWeight: 800,
+              fontSize: '0.78rem',
+              flexShrink: 0
+            }}>
+              {(currentUser.fullName || currentUser.username).charAt(0).toUpperCase()}
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{
+                fontSize: '0.78rem',
+                fontWeight: 700,
+                color: 'var(--text-primary)',
+                whiteSpace: 'nowrap',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                lineHeight: 1.2
+              }}>
+                {currentUser.fullName || currentUser.username}
+              </div>
+              <div style={{
+                fontSize: '0.68rem',
+                color: 'var(--text-secondary)',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '4px',
+                marginTop: 2
+              }}>
+                <span style={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: '#10b981', display: 'inline-block' }}></span>
+                <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>@{currentUser.username}</span>
+              </div>
+            </div>
+          </div>
+        )}
+        {currentUser.username && collapsed && (
+          <div style={{ display: 'flex', justifyContent: 'center', margin: '0 0 10px' }} title={`Conectado como: ${currentUser.fullName} (@${currentUser.username})`}>
+            <div style={{
+              width: 28,
+              height: 28,
+              borderRadius: '50%',
+              backgroundColor: 'rgba(59, 130, 246, 0.15)',
+              color: 'var(--accent-blue)',
+              border: '1px solid rgba(59, 130, 246, 0.3)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontWeight: 800,
+              fontSize: '0.78rem'
+            }}>
+              {(currentUser.fullName || currentUser.username).charAt(0).toUpperCase()}
+            </div>
+          </div>
+        )}
+
         {tenant && tenant.status === 'trial' && (
           <div className="nav-text" style={{
             margin: '0 12px 10px', padding: '5px 10px', borderRadius: 10,
@@ -1086,6 +1170,51 @@ export default function Layout() {
                 </>
                 )}
               </div>
+
+              {currentUser?.username && (
+                <div 
+                  className="header-user-badge"
+                  title={`Conectado como: ${currentUser.fullName || currentUser.username} (@${currentUser.username})`}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    padding: '4px 10px',
+                    borderRadius: '20px',
+                    backgroundColor: 'var(--bg-hover)',
+                    border: '1px solid var(--border-color)',
+                    fontSize: '0.78rem',
+                    fontWeight: 600,
+                    color: 'var(--text-primary)',
+                    userSelect: 'none'
+                  }}
+                >
+                  <div style={{
+                    width: 22,
+                    height: 22,
+                    borderRadius: '50%',
+                    backgroundColor: 'var(--accent-blue)',
+                    color: '#ffffff',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: '0.68rem',
+                    fontWeight: 800
+                  }}>
+                    {(currentUser.fullName || currentUser.username).charAt(0).toUpperCase()}
+                  </div>
+                  <span style={{ maxWidth: '120px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    {currentUser.fullName || currentUser.username}
+                  </span>
+                  <span style={{
+                    width: 7,
+                    height: 7,
+                    borderRadius: '50%',
+                    backgroundColor: '#10b981',
+                    boxShadow: '0 0 6px #10b981'
+                  }} />
+                </div>
+              )}
 
               <button className="btn-icon" onClick={() => setLightMode(!lightMode)} title={lightMode ? "Modo Oscuro" : "Modo Claro"}>
                 {lightMode ? <Moon size={20} /> : <Sun size={20} />}

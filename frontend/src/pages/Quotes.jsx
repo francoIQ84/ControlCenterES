@@ -291,7 +291,8 @@ export default function Quotes() {
         await fetchQuotes(true)
 
         if (downloadAfter && savedQuote?.id) {
-          window.open(`/api/quotes/${savedQuote.id}/pdf`, '_blank')
+          const token = encodeURIComponent(localStorage.getItem('adminToken') || '')
+          window.open(`/api/quotes/${savedQuote.id}/pdf?token=${token}`, '_blank')
         }
       } else {
         const err = await res.json().catch(() => ({}))
@@ -804,7 +805,7 @@ export default function Quotes() {
 
                           {/* PDF Download */}
                           <a
-                            href={`/api/quotes/${q.id}/pdf`}
+                            href={`/api/quotes/${q.id}/pdf?token=${encodeURIComponent(localStorage.getItem('adminToken') || '')}`}
                             target="_blank"
                             rel="noopener noreferrer"
                             title="Descargar o imprimir PDF"
