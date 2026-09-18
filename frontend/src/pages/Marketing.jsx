@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react'
 import { Megaphone, Sparkles, Calendar, Settings as SettingsIcon, Send, Video, Image as ImageIcon, Trash2, CheckCircle, Clock, AlertCircle, RefreshCw, ExternalLink, MessageSquare, Users, Plus, Mail, Phone, Share2, Play, Check, Layers, UserPlus, X, Move, Maximize2, Download, DollarSign, Tag } from 'lucide-react'
 import { useTenant } from '../TenantContext'
 import MediaBrowser from '../components/MediaBrowser'
+import { formatDateTimeAR, formatDateAR, formatTimeAR } from '../utils/dateUtils'
 
 const toHighResMlImage = (url) => {
   if (!url) return ''
@@ -3643,7 +3644,7 @@ export default function Marketing() {
 
                       <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '5px' }}>
                         <Clock size={13} />
-                        <span>{p.scheduled_at ? new Date(p.scheduled_at).toLocaleString('es-AR', { dateStyle: 'short', timeStyle: 'short' }) : 'Sin fecha (Borrador)'}</span>
+                        <span>{p.scheduled_at ? formatDateTimeAR(p.scheduled_at, { dateStyle: 'short', timeStyle: 'short' }) : 'Sin fecha (Borrador)'}</span>
                       </div>
                     </div>
 
@@ -3798,7 +3799,7 @@ export default function Marketing() {
                                 {post.caption || 'Publicación sin título'}
                               </div>
                               <div style={{fontSize: '0.75rem', color: 'var(--text-secondary)'}}>
-                                {post.timestamp ? new Date(post.timestamp).toLocaleString('es-AR') : ''}
+                                {post.timestamp ? formatDateTimeAR(post.timestamp) : ''}
                               </div>
                             </div>
                             {post.permalink && (
@@ -3817,7 +3818,7 @@ export default function Marketing() {
                                     @{c.username || 'usuario'}
                                   </span>
                                   <span style={{fontSize: '0.72rem', color: 'var(--text-secondary)'}}>
-                                    {c.timestamp ? new Date(c.timestamp).toLocaleString('es-AR', { dateStyle: 'short', timeStyle: 'short' }) : ''}
+                                    {c.timestamp ? formatDateTimeAR(c.timestamp, { dateStyle: 'short', timeStyle: 'short' }) : ''}
                                   </span>
                                 </div>
                                 <div style={{fontSize: '0.85rem', marginBottom: 10, color: 'var(--text-primary)'}}>
@@ -3892,7 +3893,7 @@ export default function Marketing() {
                                 {post.message || 'Publicación de Facebook'}
                               </div>
                               <div style={{fontSize: '0.75rem', color: 'var(--text-secondary)'}}>
-                                {post.created_time ? new Date(post.created_time).toLocaleString('es-AR') : ''}
+                                {post.created_time ? formatDateTimeAR(post.created_time) : ''}
                               </div>
                             </div>
                             {post.permalink && (
@@ -3911,7 +3912,7 @@ export default function Marketing() {
                                     {c.from?.name || 'Usuario de Facebook'}
                                   </span>
                                   <span style={{fontSize: '0.72rem', color: 'var(--text-secondary)'}}>
-                                    {c.created_time ? new Date(c.created_time).toLocaleString('es-AR', { dateStyle: 'short', timeStyle: 'short' }) : ''}
+                                    {c.created_time ? formatDateTimeAR(c.created_time, { dateStyle: 'short', timeStyle: 'short' }) : ''}
                                   </span>
                                 </div>
                                 <div style={{fontSize: '0.85rem', marginBottom: 10, color: 'var(--text-primary)'}}>
@@ -4380,7 +4381,7 @@ export default function Marketing() {
                     {diffusionCampaigns.map(c => (
                       <tr key={c.id} style={{borderBottom: '1px solid var(--border-color)'}}>
                         <td data-label="Fecha" style={{padding: 10, color: 'var(--text-secondary)'}}>
-                          {new Date(c.created_at).toLocaleString('es-AR')}
+                          {formatDateTimeAR(c.created_at)}
                         </td>
                         <td data-label="Título" style={{padding: 10, fontWeight: 600}}>{c.title}</td>
                         <td data-label="Grupo" style={{padding: 10}}>{c.group_name || 'Grupo Eliminado'}</td>

@@ -32,10 +32,13 @@ def get_connection():
         with conn.cursor() as cursor:
             cursor.execute("SELECT set_config('app.current_tenant', %s, false)",
                            (tenancy.get_current_tenant_id(),))
+            cursor.execute("SET TIME ZONE 'America/Argentina/Buenos_Aires'")
     except psycopg2.Error:
-        # Migration 001 not applied yet: the setting is harmless to skip and the
-        # system keeps running exactly as it did before multi-tenancy.
-        pass
+        try:
+            with conn.cursor() as cursor:
+                cursor.execute("SET TIME ZONE 'America/Argentina/Buenos_Aires'")
+        except Exception:
+            pass
     return conn
 
 def _can_run_ddl():

@@ -5,6 +5,7 @@ import MediaBrowser from '../components/MediaBrowser'
 import { useTenant } from '../TenantContext'
 import { getCachedData, setCachedData, invalidateCache, CacheKeys } from '../utils/cache'
 import { matchesQuery } from '../utils/searchUtils'
+import { formatDateTimeAR, formatDateAR, formatTimeAR } from '../utils/dateUtils'
 
 export default function Inventory() {
   const cachedInitial = getCachedData(CacheKeys.INVENTORY)
@@ -409,7 +410,7 @@ export default function Inventory() {
         <td>${p.is_web_active ? 'Sí' : 'No'}</td>
         <td>${p.sync_meli !== 0 ? 'Sí' : 'No'}</td>
         <td>${escapeHtml(p.status)}</td>
-        <td>${p.last_modified ? new Date(p.last_modified).toLocaleString('es-AR') : ''}</td>
+        <td>${p.last_modified ? formatDateTimeAR(p.last_modified) : ''}</td>
       </tr>`;
     });
 
@@ -3197,7 +3198,7 @@ export default function Inventory() {
                 Disponibilidad: <strong>{dispatchConfig.current_mode === 'weekend' ? dispatchConfig.weekend_days : dispatchConfig.weekday_days} días</strong>.
                 {dispatchConfig.last_applied_at && (
                   <span style={{display: 'block', marginTop: 2, fontSize: '0.7rem'}}>
-                    Último cambio: {new Date(dispatchConfig.last_applied_at).toLocaleString('es-AR')}
+                    Último cambio: {formatDateTimeAR(dispatchConfig.last_applied_at)}
                   </span>
                 )}
               </div>
@@ -3335,7 +3336,7 @@ export default function Inventory() {
                 Disponibilidad configurada: <strong>{dispatchConfig.current_mode === 'weekend' ? dispatchConfig.weekend_days : dispatchConfig.weekday_days} días</strong>.
                 {dispatchConfig.last_applied_at && (
                   <span style={{display: 'block', marginTop: 2, fontSize: '0.72rem'}}>
-                    Último cambio aplicado: {new Date(dispatchConfig.last_applied_at).toLocaleString('es-AR')}
+                    Último cambio aplicado: {formatDateTimeAR(dispatchConfig.last_applied_at)}
                   </span>
                 )}
               </div>
@@ -4136,7 +4137,7 @@ function ProductRow({ p, onSave, onOpenGallery, onDraftChange, categories, categ
                     border: '1px solid var(--border-color)',
                     cursor: 'default'
                   }}
-                  title={`Registrado por: ${p.created_by_user || 'Sistema'}${p.updated_by_user ? ` • Última edición: ${p.updated_by_user}` : ''}${p.last_modified ? ` (${new Date(p.last_modified).toLocaleDateString()} ${new Date(p.last_modified).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})})` : ''}`}
+                  title={`Registrado por: ${p.created_by_user || 'Sistema'}${p.updated_by_user ? ` • Última edición: ${p.updated_by_user}` : ''}${p.last_modified ? ` (${formatDateTimeAR(p.last_modified)})` : ''}`}
                 >
                   <User size={10} style={{ color: '#0ea5e9' }} />
                   <span>{p.updated_by_user || p.created_by_user}</span>
@@ -4256,7 +4257,7 @@ function ProductRow({ p, onSave, onOpenGallery, onDraftChange, categories, categ
               )}
             </div>
             <div style={{color: 'var(--text-secondary)', fontSize: '0.68rem', marginTop: 3}}>
-              🕒 Modif: {p.last_modified ? new Date(p.last_modified).toLocaleString('es-AR', { dateStyle: 'short', timeStyle: 'short' }) : 'Sin cambios'}
+              🕒 Modif: {p.last_modified ? formatDateTimeAR(p.last_modified, { dateStyle: 'short', timeStyle: 'short' }) : 'Sin cambios'}
             </div>
           </td>
           <td data-label="Estado ML" className="cell-status-ml" style={{padding: '5px 8px'}}>
@@ -4620,7 +4621,7 @@ function ProductRow({ p, onSave, onOpenGallery, onDraftChange, categories, categ
             )}
           </div>
           <div style={{color: 'var(--text-secondary)', fontSize: '0.68rem', marginTop: 4, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap'}}>
-            <span>🕒 Modificado: {p.last_modified ? new Date(p.last_modified).toLocaleString('es-AR', { dateStyle: 'short', timeStyle: 'short' }) : 'Sin cambios'}</span>
+            <span>🕒 Modificado: {p.last_modified ? formatDateTimeAR(p.last_modified, { dateStyle: 'short', timeStyle: 'short' }) : 'Sin cambios'}</span>
             {(p.updated_by_user || p.created_by_user) && (
               <span 
                 style={{
@@ -4892,7 +4893,7 @@ function ProductRow({ p, onSave, onOpenGallery, onDraftChange, categories, categ
                   <span>✏️ Última edición por: <strong style={{color: 'var(--text-primary)'}}>{p.updated_by_user}</strong></span>
                 )}
                 {p.last_modified && (
-                  <span>🕒 {new Date(p.last_modified).toLocaleString()}</span>
+                  <span>🕒 {formatDateTimeAR(p.last_modified)}</span>
                 )}
               </div>
             )}

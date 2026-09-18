@@ -7,6 +7,7 @@ import zipfile
 import subprocess
 import platform
 from datetime import datetime
+from src.utils.dates import ARGENTINA_TZ, get_now_ar, get_now_ar_iso
 from fastapi import APIRouter, HTTPException, File, UploadFile
 from fastapi.responses import FileResponse
 
@@ -111,7 +112,7 @@ def prune_old_auto_backups(max_keep: int = 12):
 
 def run_backup_dump(is_auto: bool = False):
     os.makedirs(BACKUP_DIR, exist_ok=True)
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    timestamp = get_now_ar().strftime("%Y%m%d_%H%M%S")
     prefix = "backup_auto_" if is_auto else "backup_"
     backup_filename = f"{prefix}{timestamp}.zip"
     backup_path = os.path.join(BACKUP_DIR, backup_filename)
@@ -161,7 +162,7 @@ def run_backup_dump(is_auto: bool = False):
         # 4) Build and embed the manifest
         manifest = {
             "version": "2.0",
-            "created_at": datetime.now().isoformat(),
+            "created_at": get_now_ar_iso(),
             "type": "auto" if is_auto else "manual",
             "system": {
                 "python": platform.python_version(),
@@ -241,14 +242,14 @@ def check_and_run_monthly_auto_backup():
     """Checks if a monthly automatic backup is due and runs it if needed."""
     try:
         os.makedirs(BACKUP_DIR, exist_ok=True)
-        now = datetime.now()
+        now = get_now_ar()
 
         auto_backups = []
         for f in os.listdir(BACKUP_DIR):
             if f.startswith("backup_auto_") and f.endswith(".zip"):
                 filepath = os.path.join(BACKUP_DIR, f)
                 stat = os.stat(filepath)
-                auto_backups.append(datetime.fromtimestamp(stat.st_ctime))
+                auto_backups.append(datetime.fromtimestamp(stat.st_ctime, tz=ARGENTINA_TZ))
 
         needs_backup = False
         if not auto_backups:
@@ -293,26 +294,31 @@ def list_backups():
             group_id = f.replace('.zip', '').replace('_media', '')
             is_media = f.endswith('_media.zip')
             b_type = "auto" if "auto_" in f else "manual"
+            file_created_at = datetime.fromtimestamp(stat.st_ctime, tz=ARGENTINA_TZ).isoformat()
 
-            if group_id not in groups:
-                groups[group_id] = {
-                    "id": group_id,
-                    "created_at": datetime.fromtimestamp(stat.st_ctime).isoformat(),
-                    "type": b_type,
-                    "main_file": None,
-                    "media_file": None,
-                }
-
-            # Try to read manifest for contents summary
+            # Try to read manifest for contents summary and original timestamp
             contents = None
+            manifest_created_at = None
             try:
                 with zipfile.ZipFile(filepath, 'r') as zf:
                     if "backup_manifest.json" in zf.namelist():
                         manifest = json.loads(zf.read("backup_manifest.json"))
                         contents = manifest.get("contents")
+                        manifest_created_at = manifest.get("created_at")
             except Exception:
                 pass
-                
+
+            effective_created_at = manifest_created_at or file_created_at
+
+            if group_id not in groups:
+                groups[group_id] = {
+                    "id": group_id,
+                    "created_at": effective_created_at,
+                    "type": b_type,
+                    "main_file": None,
+                    "media_file": None,
+                }
+
             file_data = {
                 "filename": f,
                 "size_bytes": stat.st_size,
@@ -323,7 +329,7 @@ def list_backups():
                 groups[group_id]["media_file"] = file_data
             else:
                 groups[group_id]["main_file"] = file_data
-                groups[group_id]["created_at"] = datetime.fromtimestamp(stat.st_ctime).isoformat()
+                groups[group_id]["created_at"] = effective_created_at
 
     backups = list(groups.values())
     backups.sort(key=lambda x: x["created_at"], reverse=True)

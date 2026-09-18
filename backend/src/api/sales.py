@@ -8,6 +8,7 @@ import time
 import random
 from src import database, meli_api
 from src.api.auth import get_current_user
+from src.utils.dates import get_now_ar_iso, ARGENTINA_TZ
 
 router = APIRouter()
 
@@ -236,11 +237,13 @@ def create_order(req: ManualOrderRequest, current_user: dict = Depends(get_curre
     if req.date_created:
         try:
             dt = datetime.datetime.fromisoformat(req.date_created)
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=ARGENTINA_TZ)
             date_created = dt.isoformat()
         except Exception:
             date_created = req.date_created
     else:
-        date_created = datetime.datetime.now().isoformat()
+        date_created = get_now_ar_iso()
     creator = current_user.get('full_name') or current_user.get('username') or 'Admin'
     
     items_list = []

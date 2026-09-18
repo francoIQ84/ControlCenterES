@@ -3,6 +3,7 @@ import { RefreshCw, ShieldCheck, Mail, Edit2 } from 'lucide-react'
 import MediaBrowser from '../components/MediaBrowser'
 import LeadMagnetSettings from '../components/LeadMagnetSettings'
 import { useTenant } from '../TenantContext'
+import { formatDateTimeAR, formatDateAR } from '../utils/dateUtils'
 
 export default function Settings() {
   const { isSimpleView, channels, isChannelEnabled, updateChannels, refresh: refreshTenant } = useTenant()
@@ -2806,7 +2807,7 @@ export default function Settings() {
                         )}
                       </td>
                       <td data-label="Fecha" style={{padding: '12px 10px', fontSize: '0.85rem'}}>
-                        {u.created_at ? new Date(u.created_at).toLocaleDateString() : 'N/A'}
+                        {u.created_at ? formatDateAR(u.created_at) : 'N/A'}
                       </td>
                       <td data-label="Acciones" style={{padding: '12px 10px', fontSize: '0.85rem', display: 'flex', gap: 6}}>
                         <button 
@@ -3491,7 +3492,7 @@ export default function Settings() {
                   history.map(item => (
                     <tr key={item.id} style={{borderBottom: '1px solid var(--border-color)'}}>
                       <td data-label="Fecha" style={{padding: '12px 10px', fontSize: '0.85rem'}}>
-                        {new Date(item.timestamp).toLocaleString()}
+                        {formatDateTimeAR(item.timestamp)}
                       </td>
                       <td data-label="Usuario" style={{padding: '12px 10px', fontSize: '0.85rem', fontWeight: 600}}>
                         {item.username || 'Desconocido'}
@@ -4024,7 +4025,7 @@ export default function Settings() {
                           </div>
                         </td>
                         <td data-label="Fecha" style={{padding: '12px 10px', fontSize: '0.82rem'}}>
-                          {new Date(b.created_at).toLocaleString()}
+                          {formatDateTimeAR(b.created_at)}
                         </td>
                         <td data-label="Tamaño" style={{padding: '12px 10px', fontSize: '0.82rem', whiteSpace: 'nowrap'}}>
                           {b.main_file && <div>Sis: {(b.main_file.size_bytes / (1024 * 1024)).toFixed(2)} MB</div>}
@@ -4658,7 +4659,7 @@ export default function Settings() {
                               {c.reason === 'intervencion_operador' ? '👤 Respuesta de Vendedor' : '🤖 Solicitud de Cliente'}
                             </span>
                           </td>
-                          <td data-label="Pausado Hasta" style={{padding: '8px'}}>{new Date(c.paused_until).toLocaleString()}</td>
+                          <td data-label="Pausado Hasta" style={{padding: '8px'}}>{formatDateTimeAR(c.paused_until)}</td>
                           <td data-label="Acción" style={{padding: '8px', textAlign: 'right'}}>
                             <button
                               type="button"
@@ -5256,7 +5257,7 @@ export default function Settings() {
                             return (
                               <tr key={idx} style={{borderBottom: '1px solid var(--border-color)'}}>
                                 <td data-label="Fecha / Hora" style={{padding: '10px 12px', color: 'var(--text-secondary)', fontSize: '0.78rem', whiteSpace: 'nowrap'}}>
-                                  {inq.created_at ? new Date(inq.created_at).toLocaleString() : 'Reciente'}
+                                  {inq.created_at ? formatDateTimeAR(inq.created_at) : 'Reciente'}
                                 </td>
                                 <td data-label="Cliente" style={{padding: '10px 12px', fontWeight: 600}}>
                                   {inq.customer_name || 'Cliente WhatsApp'}

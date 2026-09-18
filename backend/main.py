@@ -1,4 +1,13 @@
 import os
+import time
+
+# Force process timezone to Argentina (Buenos Aires)
+os.environ['TZ'] = 'America/Argentina/Buenos_Aires'
+try:
+    time.tzset()
+except AttributeError:
+    pass
+
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware

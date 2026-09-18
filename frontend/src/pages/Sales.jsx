@@ -3,17 +3,27 @@ import { ShoppingBag, Globe, Store, Check, Clock, Plus, Trash2, ShoppingCart, Do
 import { useTenant } from '../TenantContext'
 import { getCachedData, setCachedData, invalidateCache, CacheKeys } from '../utils/cache'
 import { matchesQuery, matchesPhoneOrDoc } from '../utils/searchUtils'
+import { formatDateTimeAR, formatDateAR, formatTimeAR } from '../utils/dateUtils'
 
 const getLocalDateTimeLocal = (d = new Date()) => {
-  const dateObj = typeof d === 'string' ? new Date(d) : (d || new Date())
-  if (isNaN(dateObj.getTime())) return ''
-  const pad = n => String(n).padStart(2, '0')
-  const year = dateObj.getFullYear()
-  const month = pad(dateObj.getMonth() + 1)
-  const day = pad(dateObj.getDate())
-  const hours = pad(dateObj.getHours())
-  const mins = pad(dateObj.getMinutes())
-  return `${year}-${month}-${day}T${hours}:${mins}`
+  try {
+    const dateObj = typeof d === 'string' ? new Date(d) : (d || new Date())
+    if (isNaN(dateObj.getTime())) return ''
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'America/Argentina/Buenos_Aires',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      hourCycle: 'h23'
+    }).formatToParts(dateObj)
+    const map = {}
+    parts.forEach(p => { map[p.type] = p.value })
+    return `${map.year}-${map.month}-${map.day}T${map.hour}:${map.minute}`
+  } catch (e) {
+    return ''
+  }
 }
 
 const getDateDaysAgo = (days) => {
@@ -1153,7 +1163,7 @@ export default function Sales() {
     const headers = ["Fecha", "Orden ID", "Canal", "Comprador (Nickname)", "Comprador (Nombre)", "Monto Total", "Estado Pago", "Método Pago", "Entrega"];
     
     const rows = sortedOrders.map(o => [
-      new Date(o.date_created).toLocaleString(),
+      formatDateTimeAR(o.date_created),
       o.order_id,
       o.source_platform,
       o.buyer?.nickname || '',
@@ -1560,7 +1570,7 @@ export default function Sales() {
                     </td>
                     <td data-label="Fecha">
                       <div style={{display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap'}}>
-                        <span>{new Date(o.date_created).toLocaleString()}</span>
+                        <span>{formatDateTimeAR(o.date_created)}</span>
                         {isNew && (
                           <span style={{
                             display: 'inline-flex',
@@ -3354,7 +3364,7 @@ export default function Sales() {
                       {msg.text}
                     </div>
                     <div style={{fontSize: '0.65rem', color: 'var(--text-secondary)', textAlign: 'right', marginTop: 4}}>
-                      {msg.created_at ? new Date(msg.created_at).toLocaleString() : ''}
+                      {msg.created_at ? formatDateTimeAR(msg.created_at) : ''}
                     </div>
                   </div>
                 ))
@@ -3907,7 +3917,7 @@ export default function Sales() {
                       <div>
                         <span style={{fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'block'}}>Fecha de Realización de la Venta:</span>
                         <strong style={{fontSize: '0.95rem', color: 'var(--text-primary)'}}>
-                          {order.date_created ? new Date(order.date_created).toLocaleString('es-AR', {
+                          {order.date_created ? formatDateTimeAR(order.date_created, {
                             weekday: 'long',
                             year: 'numeric',
                             month: 'long',

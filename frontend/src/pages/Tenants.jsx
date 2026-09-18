@@ -7,6 +7,7 @@ import {
 } from 'lucide-react'
 import { useTenant } from '../TenantContext'
 import BrandLogo from '../components/BrandLogo'
+import { formatDateAR } from '../utils/dateUtils'
 
 const ALL_MODULES = [
   { id: 'dashboard', label: 'Métricas', desc: 'Panel principal y estadísticas de ventas' },
@@ -1278,7 +1279,7 @@ export default function Tenants() {
                       <tbody>
                         {paymentHistory.map(p => (
                           <tr key={p.id}>
-                            <td data-label="Fecha">{new Date(p.created_at).toLocaleDateString('es-AR')}</td>
+                            <td data-label="Fecha">{formatDateAR(p.created_at)}</td>
                             <td data-label="Monto"><strong>${p.amount?.toLocaleString('es-AR')} {p.currency}</strong></td>
                             <td data-label="Período Cubierto" style={{ fontSize: '0.78rem' }}>
                               {p.period_start} al {p.period_end}
