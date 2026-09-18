@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react'
-import { Megaphone, Sparkles, Calendar, Settings as SettingsIcon, Send, Video, Image as ImageIcon, Trash2, CheckCircle, Clock, AlertCircle, RefreshCw, ExternalLink, MessageSquare, Users, Plus, Mail, Phone, Share2, Play, Check, Layers, UserPlus, X, Move } from 'lucide-react'
+import { Megaphone, Sparkles, Calendar, Settings as SettingsIcon, Send, Video, Image as ImageIcon, Trash2, CheckCircle, Clock, AlertCircle, RefreshCw, ExternalLink, MessageSquare, Users, Plus, Mail, Phone, Share2, Play, Check, Layers, UserPlus, X, Move, Maximize2, Download, DollarSign, Tag } from 'lucide-react'
 import { useTenant } from '../TenantContext'
 import MediaBrowser from '../components/MediaBrowser'
 
@@ -67,6 +67,49 @@ export default function Marketing() {
   const previewContainerRef = useRef(null)
   const logoCacheRef = useRef(new Map())
   const imgCacheRef = useRef(new Map())
+
+  // Price Selection States
+  const [priceSource, setPriceSource] = useState('web') // 'web', 'meli', 'cash', 'custom'
+  const [customPriceValue, setCustomPriceValue] = useState('')
+  const [cashDiscountPctInput, setCashDiscountPctInput] = useState(10)
+  const [lightboxMedia, setLightboxMedia] = useState(null)
+  const [lightboxZoom, setLightboxZoom] = useState(false)
+
+  const selectedProductObj = React.useMemo(() => {
+    return products.find(p => p.ml_id === selectedProduct) || null
+  }, [products, selectedProduct])
+
+  useEffect(() => {
+    if (selectedProductObj && selectedProductObj.cash_discount_pct && Number(selectedProductObj.cash_discount_pct) > 0) {
+      setCashDiscountPctInput(Number(selectedProductObj.cash_discount_pct))
+    }
+  }, [selectedProductObj])
+
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        setLightboxMedia(null)
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [])
+
+  const effectivePrice = React.useMemo(() => {
+    if (!selectedProductObj) return 0
+    const pMeli = Number(selectedProductObj.price) || 0
+    const pWeb = Number(selectedProductObj.price_web > 0 ? selectedProductObj.price_web : pMeli) || 0
+    if (priceSource === 'meli') return pMeli
+    if (priceSource === 'web') return pWeb
+    if (priceSource === 'cash') {
+      const pct = Number(cashDiscountPctInput || 10)
+      return Math.round(pWeb * (1 - pct / 100))
+    }
+    if (priceSource === 'custom') {
+      return Number(customPriceValue) || 0
+    }
+    return pWeb
+  }, [selectedProductObj, priceSource, customPriceValue, cashDiscountPctInput])
 
   const [canvasTheme, setCanvasTheme] = useState('emerald')
   const [canvasBadgeText, setCanvasBadgeText] = useState('')
@@ -174,7 +217,8 @@ export default function Marketing() {
     canvasBadgeText, canvasBadgeColor, canvasShowPrice,
     canvasCustomTitle, canvasFooterText, canvasTextColor, canvasShowBorder,
     canvasImgFit, canvasImgScale, canvasImgOffsetY,
-    canvasLogoX, canvasLogoY, canvasLogoScale, canvasLogoBg
+    canvasLogoX, canvasLogoY, canvasLogoScale, canvasLogoBg,
+    effectivePrice
   ])
   const [scheduledAt, setScheduledAt] = useState('')
   const [submitting, setSubmitting] = useState(false)
@@ -757,7 +801,9 @@ export default function Marketing() {
           product_ml_id: selectedProduct,
           objective,
           tone,
-          selected_image: selectedProductImage || mediaUrl
+          selected_image: selectedProductImage || mediaUrl,
+          selected_price: effectivePrice,
+          price_type: priceSource
         })
       })
       const data = await res.json()
@@ -1156,6 +1202,7 @@ export default function Marketing() {
         const badgeTxt = canvasBadgeText.trim() || currentScene.badge_text
         const headlineTxt = canvasCustomTitle.trim() || currentScene.main_headline
         const footerTxt = canvasFooterText.trim() || `📱 Comprá en ${storeName}`
+        const activePrice = (effectivePrice > 0) ? effectivePrice : (script.product_price || 0)
 
         if (canvasLayout === 'modern_split') {
           // --- SPLIT EDITORIAL REEL ---
@@ -1216,7 +1263,7 @@ export default function Marketing() {
             ctx.fillText(currentScene.sub_text, width / 2, 1340)
           }
 
-          if (canvasShowPrice && script.product_price) {
+          if (canvasShowPrice && activePrice) {
             const barY = 1440
             ctx.fillStyle = theme.accent
             ctx.beginPath()
@@ -1226,7 +1273,7 @@ export default function Marketing() {
             ctx.fillStyle = '#ffffff'
             ctx.font = `bold 42px ${fontFamily}`
             ctx.textAlign = 'center'
-            ctx.fillText(`$ ${script.product_price.toLocaleString('es-AR')}  •  COMPRAR`, width / 2, barY + 63)
+            ctx.fillText(`$ ${activePrice.toLocaleString('es-AR')}  •  COMPRAR`, width / 2, barY + 63)
           }
 
           ctx.fillStyle = (isCleanWhite || canvasTheme === 'white') && (canvasTextColor === 'auto' || canvasTextColor === '#0f172a') ? '#059669' : mainTextColor
@@ -1272,7 +1319,7 @@ export default function Marketing() {
             ctx.restore()
 
             // Corner Price Explosive Badge
-            if (canvasShowPrice && script.product_price) {
+            if (canvasShowPrice && activePrice) {
               const badgeX = imgX + imgSize - 50
               const badgeY = imgY + 50
               ctx.fillStyle = canvasBadgeColor || '#ef4444'
@@ -1288,9 +1335,9 @@ export default function Marketing() {
               ctx.textAlign = 'center'
               ctx.fillText('¡OFERTA!', badgeX, badgeY - 32)
               ctx.font = `bold 38px ${fontFamily}`
-              ctx.fillText(`$${script.product_price.toLocaleString('es-AR')}`, badgeX, badgeY + 16)
-              ctx.font = `bold 22px ${fontFamily}`
-              ctx.fillText('EN STOCK', badgeX, badgeY + 52)
+              ctx.fillText(`$${activePrice.toLocaleString('es-AR')}`, badgeX, badgeY + 16)
+              ctx.font = `bold 20px ${fontFamily}`
+              ctx.fillText('EN STOCK', badgeX, badgeY + 48)
             }
           }
 
@@ -1454,7 +1501,7 @@ export default function Marketing() {
             ctx.fillText(currentScene.sub_text, width / 2, cardY + 1110)
           }
 
-          if (canvasShowPrice && script.product_price) {
+          if (canvasShowPrice && activePrice) {
             const pillY = cardY + 1200
             const pillWidth = 520
             ctx.fillStyle = theme.accent
@@ -1464,7 +1511,7 @@ export default function Marketing() {
             ctx.fill()
             ctx.fillStyle = '#ffffff'
             ctx.font = `bold 40px ${fontFamily}`
-            ctx.fillText(`$ ${script.product_price.toLocaleString('es-AR')}`, width / 2, pillY + 56)
+            ctx.fillText(`$ ${activePrice.toLocaleString('es-AR')}`, width / 2, pillY + 56)
           }
 
           ctx.fillStyle = mainTextColor
@@ -1558,7 +1605,7 @@ export default function Marketing() {
             ctx.fillText(currentScene.sub_text, width / 2, 1450)
           }
 
-          if (canvasShowPrice && script.product_price) {
+          if (canvasShowPrice && activePrice) {
             const pillY = 1540
             const pillWidth = 560
             ctx.fillStyle = theme.accent
@@ -1568,7 +1615,7 @@ export default function Marketing() {
             ctx.fill()
             ctx.fillStyle = '#ffffff'
             ctx.font = `bold 44px ${fontFamily}`
-            ctx.fillText(`$ ${script.product_price.toLocaleString('es-AR')}`, width / 2, pillY + 63)
+            ctx.fillText(`$ ${activePrice.toLocaleString('es-AR')}`, width / 2, pillY + 63)
           }
 
           ctx.fillStyle = (isCleanWhite || canvasTheme === 'white') && (canvasTextColor === 'auto' || canvasTextColor === '#0f172a') ? '#059669' : mainTextColor
@@ -1626,6 +1673,7 @@ export default function Marketing() {
     const imagesList = rawImagesList
     const loadedImgs = await Promise.all(imagesList.map(src => loadCachedImage(src)))
     const validImgs = loadedImgs.filter(Boolean)
+    const activePrice = (effectivePrice > 0) ? effectivePrice : (script.product_price || 0)
     const scene = (script.scenes && script.scenes[0]) || { badge_text: 'PROMO EXCLUSIVA', main_headline: script.product_title || activeStoreName, sub_text: '¡Conocé el stock!' }
     const activeImg = validImgs[0]
     const badgeTxt = canvasBadgeText.trim() || scene.badge_text
@@ -1706,7 +1754,7 @@ export default function Marketing() {
         ctx.fillText(scene.sub_text, size / 2, 760)
       }
 
-      if (canvasShowPrice && script.product_price) {
+      if (canvasShowPrice && activePrice) {
         const barY = 820
         ctx.fillStyle = theme.accent
         ctx.beginPath()
@@ -1717,7 +1765,7 @@ export default function Marketing() {
         ctx.fillStyle = '#ffffff'
         ctx.font = `bold 36px ${fontFamily}`
         ctx.textAlign = 'center'
-        ctx.fillText(`$ ${script.product_price.toLocaleString('es-AR')}  •  COMPRAR`, size / 2, barY + 53)
+        ctx.fillText(`$ ${activePrice.toLocaleString('es-AR')}  •  COMPRAR`, size / 2, barY + 53)
       }
 
       ctx.fillStyle = (isCleanWhite || canvasTheme === 'white') && (canvasTextColor === 'auto' || canvasTextColor === '#0f172a') ? '#059669' : mainTextColor
@@ -1765,7 +1813,7 @@ export default function Marketing() {
         ctx.drawImage(activeImg, drawX, drawY, drawW, drawH)
         ctx.restore()
 
-        if (canvasShowPrice && script.product_price) {
+        if (canvasShowPrice && activePrice) {
           const badgeX = imgX + imgSize - 40
           const badgeY = imgY + 40
           const radius = 95
@@ -1783,7 +1831,7 @@ export default function Marketing() {
           ctx.textAlign = 'center'
           ctx.fillText('¡OFERTA!', badgeX, badgeY - 26)
           ctx.font = `bold 32px ${fontFamily}`
-          ctx.fillText(`$${script.product_price.toLocaleString('es-AR')}`, badgeX, badgeY + 14)
+          ctx.fillText(`$${activePrice.toLocaleString('es-AR')}`, badgeX, badgeY + 14)
           ctx.font = `bold 18px ${fontFamily}`
           ctx.fillText('EN STOCK', badgeX, badgeY + 42)
         }
@@ -1945,7 +1993,7 @@ export default function Marketing() {
         ctx.fillText(scene.sub_text, size / 2, cardY + 725)
       }
 
-      if (canvasShowPrice && script.product_price) {
+      if (canvasShowPrice && activePrice) {
         const pillY = cardY + 760
         const pillWidth = 400
         ctx.fillStyle = theme.accent
@@ -1955,7 +2003,7 @@ export default function Marketing() {
         ctx.fill()
         ctx.fillStyle = '#ffffff'
         ctx.font = `bold 34px ${fontFamily}`
-        ctx.fillText(`$ ${script.product_price.toLocaleString('es-AR')}`, size / 2, pillY + 44)
+        ctx.fillText(`$ ${activePrice.toLocaleString('es-AR')}`, size / 2, pillY + 44)
       }
 
       ctx.fillStyle = mainTextColor
@@ -2053,7 +2101,7 @@ export default function Marketing() {
         ctx.fillText(scene.sub_text, size / 2, 890)
       }
 
-      if (canvasShowPrice && script.product_price) {
+      if (canvasShowPrice && activePrice) {
         const pillY = 920
         const pillWidth = 420
         ctx.fillStyle = theme.accent
@@ -2063,7 +2111,7 @@ export default function Marketing() {
         ctx.fill()
         ctx.fillStyle = '#ffffff'
         ctx.font = `bold 36px ${fontFamily}`
-        ctx.fillText(`$ ${script.product_price.toLocaleString('es-AR')}`, size / 2, pillY + 50)
+        ctx.fillText(`$ ${activePrice.toLocaleString('es-AR')}`, size / 2, pillY + 50)
       }
 
       ctx.fillStyle = (isCleanWhite || canvasTheme === 'white') && (canvasTextColor === 'auto' || canvasTextColor === '#0f172a') ? '#059669' : mainTextColor
@@ -2125,7 +2173,9 @@ export default function Marketing() {
           prompt: videoPrompt,
           generator_type: videoEngine,
           post_type: postType,
-          selected_image: selectedProductImage || mediaUrl
+          selected_image: selectedProductImage || mediaUrl,
+          selected_price: effectivePrice,
+          price_type: priceSource
         })
       })
       const data = await res.json()
@@ -2134,6 +2184,9 @@ export default function Marketing() {
           setGeneratedVideoUrl(data.video_url)
           setMediaUrl(data.video_url)
         } else if (data.script) {
+          if (effectivePrice > 0) {
+            data.script.product_price = effectivePrice
+          }
           setVideoScriptData(data.script)
           if (data.script.full_caption) {
             setCaption(data.script.full_caption)
@@ -2545,6 +2598,153 @@ export default function Marketing() {
                 </div>
               )}
 
+              {/* Selector de Precio del Producto (Web, Mercado Libre, Descuento o Personalizado) */}
+              {selectedProductObj && (
+                <div style={{
+                  marginTop: 2,
+                  marginBottom: 8,
+                  backgroundColor: 'rgba(16, 185, 129, 0.05)',
+                  border: '1px solid rgba(16, 185, 129, 0.3)',
+                  borderRadius: 10,
+                  padding: '10px 12px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 8
+                }}>
+                  <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 6}}>
+                    <span style={{fontSize: '0.8rem', fontWeight: 700, color: 'var(--accent-emerald)', display: 'flex', alignItems: 'center', gap: 6}}>
+                      <Tag size={15} /> Precio a promocionar y mostrar en la imagen:
+                    </span>
+                    <span style={{fontSize: '0.92rem', fontWeight: 800, color: '#10b981', backgroundColor: 'rgba(16, 185, 129, 0.15)', padding: '2px 8px', borderRadius: 6}}>
+                      $ {effectivePrice.toLocaleString('es-AR')} ARS
+                    </span>
+                  </div>
+
+                  {/* Botones de Selección Rápida de Precio */}
+                  <div style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 6}}>
+                    {/* Opción 1: Tienda Web */}
+                    <button
+                      type="button"
+                      onClick={() => setPriceSource('web')}
+                      style={{
+                        padding: '6px 8px',
+                        borderRadius: 6,
+                        border: priceSource === 'web' ? '2px solid #10b981' : '1px solid var(--border-color)',
+                        backgroundColor: priceSource === 'web' ? 'rgba(16, 185, 129, 0.22)' : 'var(--bg-dark)',
+                        color: priceSource === 'web' ? '#10b981' : 'var(--text-primary)',
+                        cursor: 'pointer',
+                        textAlign: 'left',
+                        transition: 'all 0.15s ease'
+                      }}
+                    >
+                      <div style={{fontSize: '0.72rem', fontWeight: 700}}>🌐 Tienda Web</div>
+                      <div style={{fontSize: '0.84rem', fontWeight: 800, marginTop: 2}}>
+                        ${(selectedProductObj.price_web > 0 ? selectedProductObj.price_web : selectedProductObj.price || 0).toLocaleString('es-AR')}
+                      </div>
+                    </button>
+
+                    {/* Opción 2: Mercado Libre */}
+                    <button
+                      type="button"
+                      onClick={() => setPriceSource('meli')}
+                      style={{
+                        padding: '6px 8px',
+                        borderRadius: 6,
+                        border: priceSource === 'meli' ? '2px solid #3b82f6' : '1px solid var(--border-color)',
+                        backgroundColor: priceSource === 'meli' ? 'rgba(59, 130, 246, 0.22)' : 'var(--bg-dark)',
+                        color: priceSource === 'meli' ? '#60a5fa' : 'var(--text-primary)',
+                        cursor: 'pointer',
+                        textAlign: 'left',
+                        transition: 'all 0.15s ease'
+                      }}
+                    >
+                      <div style={{fontSize: '0.72rem', fontWeight: 700}}>📦 Mercado Libre</div>
+                      <div style={{fontSize: '0.84rem', fontWeight: 800, marginTop: 2}}>
+                        ${(selectedProductObj.price || 0).toLocaleString('es-AR')}
+                      </div>
+                    </button>
+
+                    {/* Opción 3: Descuento en Efectivo / Transferencia */}
+                    {(() => {
+                      const baseWeb = Number(selectedProductObj.price_web > 0 ? selectedProductObj.price_web : selectedProductObj.price) || 0
+                      const cashPct = Number(cashDiscountPctInput || 10)
+                      const cashVal = Math.round(baseWeb * (1 - cashPct / 100))
+                      return (
+                        <button
+                          type="button"
+                          onClick={() => setPriceSource('cash')}
+                          style={{
+                            padding: '6px 8px',
+                            borderRadius: 6,
+                            border: priceSource === 'cash' ? '2px solid #f59e0b' : '1px solid var(--border-color)',
+                            backgroundColor: priceSource === 'cash' ? 'rgba(245, 158, 11, 0.22)' : 'var(--bg-dark)',
+                            color: priceSource === 'cash' ? '#fbbf24' : 'var(--text-primary)',
+                            cursor: 'pointer',
+                            textAlign: 'left',
+                            transition: 'all 0.15s ease'
+                          }}
+                        >
+                          <div style={{fontSize: '0.72rem', fontWeight: 700}}>💸 Efectivo ({cashPct}% OFF)</div>
+                          <div style={{fontSize: '0.84rem', fontWeight: 800, marginTop: 2}}>
+                            ${cashVal.toLocaleString('es-AR')}
+                          </div>
+                        </button>
+                      )
+                    })()}
+
+                    {/* Opción 4: Personalizado */}
+                    <button
+                      type="button"
+                      onClick={() => setPriceSource('custom')}
+                      style={{
+                        padding: '6px 8px',
+                        borderRadius: 6,
+                        border: priceSource === 'custom' ? '2px solid #a855f7' : '1px solid var(--border-color)',
+                        backgroundColor: priceSource === 'custom' ? 'rgba(168, 85, 247, 0.22)' : 'var(--bg-dark)',
+                        color: priceSource === 'custom' ? '#c084fc' : 'var(--text-primary)',
+                        cursor: 'pointer',
+                        textAlign: 'left',
+                        transition: 'all 0.15s ease'
+                      }}
+                    >
+                      <div style={{fontSize: '0.72rem', fontWeight: 700}}>✏️ Personalizado</div>
+                      <div style={{fontSize: '0.84rem', fontWeight: 800, marginTop: 2}}>
+                        {customPriceValue ? `$${Number(customPriceValue).toLocaleString('es-AR')}` : 'Manual...'}
+                      </div>
+                    </button>
+                  </div>
+
+                  {/* Subpanel de ajuste fino según la opción */}
+                  {priceSource === 'custom' && (
+                    <div style={{display: 'flex', alignItems: 'center', gap: 8, marginTop: 2}}>
+                      <label style={{fontSize: '0.76rem', fontWeight: 600}}>Monto exacto a publicar ($):</label>
+                      <input 
+                        type="number"
+                        value={customPriceValue}
+                        onChange={e => setCustomPriceValue(e.target.value)}
+                        placeholder="Ej: 49999"
+                        style={{maxWidth: 160, padding: '4px 8px', borderRadius: 6, border: '1px solid var(--accent-purple)', backgroundColor: 'var(--bg-dark)', color: 'var(--text-primary)', fontSize: '0.82rem', fontWeight: 700}}
+                      />
+                    </div>
+                  )}
+
+                  {priceSource === 'cash' && (
+                    <div style={{display: 'flex', alignItems: 'center', gap: 8, marginTop: 2, fontSize: '0.74rem', color: 'var(--text-secondary)'}}>
+                      <span>Ajustar % descuento:</span>
+                      <input 
+                        type="number"
+                        min="1"
+                        max="90"
+                        value={cashDiscountPctInput}
+                        onChange={e => setCashDiscountPctInput(Math.max(1, Math.min(90, Number(e.target.value))))}
+                        style={{width: 55, padding: '3px 6px', borderRadius: 6, border: '1px solid var(--accent-orange)', backgroundColor: 'var(--bg-dark)', color: 'var(--text-primary)', fontSize: '0.76rem', fontWeight: 700}}
+                      />
+                      <span>% OFF</span>
+                    </div>
+                  )}
+                </div>
+              )}
+
               <div style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12}}>
                 <label style={{fontSize: '0.85rem'}}>Objetivo Campaña
                   <select value={objective} onChange={e => setObjective(e.target.value)} style={{width: '100%', marginTop: 5, padding: '6px 10px', borderRadius: 6, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-dark)', color: 'var(--text-primary)'}}>
@@ -2917,7 +3117,12 @@ export default function Marketing() {
                           onChange={e => setCanvasShowPrice(e.target.checked)}
                           style={{width: 'auto'}}
                         />
-                        Mostrar Precio del Producto
+                        Mostrar Precio en la Imagen
+                        {effectivePrice > 0 && (
+                          <span style={{color: '#10b981', fontWeight: 800, fontSize: '0.76rem'}}>
+                            (${effectivePrice.toLocaleString('es-AR')})
+                          </span>
+                        )}
                       </label>
 
                       <label style={{fontSize: '0.78rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer'}}>
@@ -3084,7 +3289,7 @@ export default function Marketing() {
                       )}
                     </div>
 
-                    <div style={{display: 'flex', gap: 8, width: '100%', marginTop: 5}}>
+                    <div style={{display: 'flex', gap: 8, width: '100%', marginTop: 5, flexWrap: 'wrap'}}>
                       <button 
                         className="btn" 
                         onClick={() => {
@@ -3096,26 +3301,42 @@ export default function Marketing() {
                             alert("El archivo aún se está procesando y subiendo al servidor. Aguarda unos segundos y vuelve a presionar el botón.")
                           }
                         }}
-                        style={{flex: 1, padding: '6px 10px', fontSize: '0.75rem', backgroundColor: 'var(--accent-emerald)', color: '#fff', fontWeight: 600}}
+                        style={{flex: 1.2, padding: '6px 10px', fontSize: '0.75rem', backgroundColor: 'var(--accent-emerald)', color: '#fff', fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5}}
                       >
                         ✨ Usar en la Publicación
                       </button>
+
+                      <button 
+                        type="button"
+                        className="btn" 
+                        onClick={() => setLightboxMedia({
+                          url: generatedVideoUrl,
+                          isVideo: postType !== 'post',
+                          title: postTitle || 'Imagen Generada HD'
+                        })}
+                        style={{padding: '6px 10px', fontSize: '0.75rem', backgroundColor: 'var(--bg-dark)', color: 'var(--accent-emerald)', border: '1px solid var(--accent-emerald)', display: 'flex', alignItems: 'center', gap: 5, fontWeight: 600}}
+                        title="Ver en pantalla completa con alta resolución (HD)"
+                      >
+                        <Maximize2 size={13} /> Ver HD
+                      </button>
+
                       <button 
                         className="btn" 
                         onClick={handleGenerateAIVideo}
-                        style={{flex: 1, padding: '6px 10px', fontSize: '0.75rem', backgroundColor: 'var(--bg-dark)', color: 'var(--text-primary)', border: '1px solid var(--border-color)'}}
+                        style={{padding: '6px 10px', fontSize: '0.75rem', backgroundColor: 'var(--bg-dark)', color: 'var(--text-primary)', border: '1px solid var(--border-color)'}}
                       >
-                        🔄 Probar Otra Opción
+                        🔄 Probar Otra
                       </button>
-                      <a 
-                        href={generatedVideoUrl} 
-                        target="_blank"
-                        rel="noreferrer"
+
+                      <button 
+                        type="button"
+                        onClick={() => window.open(generatedVideoUrl, '_blank')}
                         className="btn" 
-                        style={{padding: '6px 10px', fontSize: '0.75rem', backgroundColor: 'var(--bg-dark)', color: 'var(--accent-blue)', border: '1px solid var(--border-color)', textDecoration: 'none', display: 'flex', alignItems: 'center'}}
+                        style={{padding: '6px 10px', fontSize: '0.75rem', backgroundColor: 'var(--bg-dark)', color: 'var(--accent-blue)', border: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', gap: 5}}
+                        title="Abrir en pestaña nueva"
                       >
-                        📥 Abrir
-                      </a>
+                        <ExternalLink size={13} /> Abrir
+                      </button>
                     </div>
                   </div>
                 )}
@@ -3197,22 +3418,79 @@ export default function Marketing() {
               </div>
 
               {mediaUrl && (
-                <div style={{padding: 10, borderRadius: 8, backgroundColor: 'var(--bg-dark)', border: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', alignItems: 'center'}}>
-                  <div style={{fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: 6, width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
-                    <span>🖼️ Vista Previa del Medio:</span>
-                    {mediaUrl.includes('-O.') && <span style={{color: 'var(--accent-emerald)', fontWeight: 600, fontSize: '0.72rem'}}>✨ Calidad HD MercadoLibre (-O.jpg)</span>}
-                    {mediaUrl.startsWith('/uploads/') && <span style={{color: 'var(--accent-blue)', fontWeight: 600, fontSize: '0.72rem'}}>📁 Archivo Subido de la PC</span>}
+                <div style={{padding: 12, borderRadius: 10, backgroundColor: 'var(--bg-dark)', border: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', alignItems: 'center'}}>
+                  <div style={{fontSize: '0.78rem', color: 'var(--text-secondary)', marginBottom: 8, width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
+                    <span style={{fontWeight: 700, color: 'var(--text-primary)'}}>🖼️ Vista Previa del Medio:</span>
+                    <div style={{display: 'flex', gap: 6, alignItems: 'center'}}>
+                      {mediaUrl.includes('-O.') && <span style={{color: 'var(--accent-emerald)', fontWeight: 600, fontSize: '0.72rem'}}>✨ HD ML (-O.jpg)</span>}
+                      {mediaUrl.startsWith('/uploads/') && <span style={{color: 'var(--accent-blue)', fontWeight: 600, fontSize: '0.72rem'}}>📁 Archivo Subido</span>}
+                    </div>
                   </div>
-                  {isVideoUrl(mediaUrl) ? (
-                    <video src={mediaUrl} controls style={{maxHeight: 180, maxWidth: '100%', borderRadius: 6}} />
-                  ) : (
-                    <img 
-                      src={toHighResMlImage(mediaUrl)} 
-                      alt="Previsualización de la publicación" 
-                      onError={(e) => { e.target.onerror = null; e.target.src = mediaUrl; }}
-                      style={{maxHeight: 180, maxWidth: '100%', objectFit: 'contain', borderRadius: 6, backgroundColor: '#111'}} 
-                    />
-                  )}
+
+                  <div 
+                    onClick={() => setLightboxMedia({ url: toHighResMlImage(mediaUrl), isVideo: isVideoUrl(mediaUrl), title: postTitle || 'Vista Previa del Medio' })}
+                    style={{
+                      position: 'relative',
+                      width: '100%',
+                      display: 'flex',
+                      justifyContent: 'center',
+                      alignItems: 'center',
+                      cursor: 'zoom-in',
+                      borderRadius: 8,
+                      overflow: 'hidden',
+                      backgroundColor: '#0a0a0a',
+                      border: '1px solid rgba(255,255,255,0.08)'
+                    }}
+                    title="Haz clic para ver en pantalla completa y alta resolución"
+                  >
+                    {isVideoUrl(mediaUrl) ? (
+                      <video src={mediaUrl} controls style={{maxHeight: 320, maxWidth: '100%', borderRadius: 8}} />
+                    ) : (
+                      <img 
+                        src={toHighResMlImage(mediaUrl)} 
+                        alt="Previsualización de la publicación" 
+                        onError={(e) => { e.target.onerror = null; e.target.src = mediaUrl; }}
+                        style={{maxHeight: 320, maxWidth: '100%', objectFit: 'contain', borderRadius: 8, display: 'block'}} 
+                      />
+                    )}
+                    <div style={{
+                      position: 'absolute',
+                      bottom: 8,
+                      backgroundColor: 'rgba(0, 0, 0, 0.75)',
+                      backdropFilter: 'blur(6px)',
+                      color: '#ffffff',
+                      padding: '4px 10px',
+                      borderRadius: 20,
+                      fontSize: '0.72rem',
+                      fontWeight: 600,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 5,
+                      pointerEvents: 'none',
+                      boxShadow: '0 2px 8px rgba(0,0,0,0.5)'
+                    }}>
+                      <Maximize2 size={12} style={{color: '#34d399'}} /> Clic para pantalla completa HD
+                    </div>
+                  </div>
+
+                  <div style={{display: 'flex', gap: 8, width: '100%', marginTop: 8}}>
+                    <button
+                      type="button"
+                      onClick={() => setLightboxMedia({ url: toHighResMlImage(mediaUrl), isVideo: isVideoUrl(mediaUrl), title: postTitle || 'Vista Previa del Medio' })}
+                      className="btn"
+                      style={{flex: 1, padding: '6px 10px', fontSize: '0.76rem', backgroundColor: 'rgba(16, 185, 129, 0.12)', color: '#10b981', border: '1px solid rgba(16, 185, 129, 0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, fontWeight: 600}}
+                    >
+                      <Maximize2 size={13} /> Ver Grande (HD)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => window.open(toHighResMlImage(mediaUrl), '_blank')}
+                      className="btn"
+                      style={{flex: 1, padding: '6px 10px', fontSize: '0.76rem', backgroundColor: 'var(--bg-dark)', color: 'var(--accent-blue)', border: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5}}
+                    >
+                      <ExternalLink size={13} /> Abrir Pestaña
+                    </button>
+                  </div>
                 </div>
               )}
 
@@ -4616,6 +4894,163 @@ export default function Marketing() {
               setCampaignMediaUrl(url)
               setShowCampaignGalleryModal(false)
             }} />
+          </div>
+        </div>
+      )}
+
+      {/* MODAL LIGHTBOX: VISOR DE IMAGEN / VIDEO EN ALTA RESOLUCIÓN (HD 1080x1080) */}
+      {lightboxMedia && (
+        <div 
+          onClick={() => setLightboxMedia(null)}
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(0, 0, 0, 0.94)',
+            backdropFilter: 'blur(12px)',
+            zIndex: 999999,
+            display: 'flex',
+            flexDirection: 'column',
+            padding: 20,
+            boxSizing: 'border-box'
+          }}
+        >
+          {/* Header Bar */}
+          <div 
+            onClick={e => e.stopPropagation()}
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              padding: '10px 18px',
+              backgroundColor: 'rgba(15, 23, 42, 0.90)',
+              border: '1px solid rgba(255, 255, 255, 0.15)',
+              borderRadius: 12,
+              marginBottom: 14,
+              color: '#ffffff',
+              boxShadow: '0 4px 20px rgba(0,0,0,0.5)'
+            }}
+          >
+            <div style={{display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap'}}>
+              <span style={{fontSize: '0.92rem', fontWeight: 800, color: 'var(--accent-emerald)', display: 'flex', alignItems: 'center', gap: 6}}>
+                <Sparkles size={16} /> Vista en Alta Resolución HD (1080 × 1080)
+              </span>
+              {lightboxMedia.title && (
+                <span style={{fontSize: '0.8rem', color: 'var(--text-secondary)'}}>
+                  — {lightboxMedia.title}
+                </span>
+              )}
+            </div>
+
+            <div style={{display: 'flex', alignItems: 'center', gap: 10}}>
+              {!lightboxMedia.isVideo && (
+                <button
+                  type="button"
+                  onClick={() => setLightboxZoom(!lightboxZoom)}
+                  className="btn"
+                  style={{padding: '6px 12px', fontSize: '0.78rem', backgroundColor: lightboxZoom ? 'rgba(16, 185, 129, 0.2)' : 'var(--bg-dark)', color: lightboxZoom ? '#10b981' : 'var(--text-primary)', border: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', gap: 5}}
+                >
+                  <Maximize2 size={13} /> {lightboxZoom ? 'Ajustar a Pantalla' : 'Zoom 100%'}
+                </button>
+              )}
+
+              <button
+                type="button"
+                onClick={() => window.open(lightboxMedia.url, '_blank')}
+                className="btn"
+                style={{padding: '6px 12px', fontSize: '0.78rem', backgroundColor: 'var(--bg-dark)', color: 'var(--accent-blue)', border: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', gap: 5}}
+              >
+                <ExternalLink size={13} /> Abrir Pestaña
+              </button>
+
+              {!lightboxMedia.isVideo && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const a = document.createElement('a')
+                    a.href = lightboxMedia.url
+                    a.download = `publicacion_hd_${Date.now()}.jpg`
+                    document.body.appendChild(a)
+                    a.click()
+                    document.body.removeChild(a)
+                  }}
+                  className="btn"
+                  style={{padding: '6px 12px', fontSize: '0.78rem', backgroundColor: 'var(--accent-emerald)', color: '#fff', border: 'none', display: 'flex', alignItems: 'center', gap: 5, fontWeight: 600}}
+                >
+                  <Download size={13} /> Descargar HD
+                </button>
+              )}
+
+              <button
+                type="button"
+                onClick={() => setLightboxMedia(null)}
+                style={{
+                  background: 'rgba(239, 68, 68, 0.2)',
+                  border: '1px solid rgba(239, 68, 68, 0.4)',
+                  color: '#ef4444',
+                  fontSize: '1.2rem',
+                  fontWeight: 700,
+                  borderRadius: '50%',
+                  width: 32,
+                  height: 32,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: 'pointer',
+                  lineHeight: 1
+                }}
+                title="Cerrar (Esc)"
+              >
+                ✕
+              </button>
+            </div>
+          </div>
+
+          {/* Media Viewport */}
+          <div 
+            onClick={e => e.stopPropagation()}
+            style={{
+              flex: 1,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              overflow: 'auto',
+              padding: 10
+            }}
+          >
+            {lightboxMedia.isVideo ? (
+              <video 
+                src={lightboxMedia.url} 
+                controls 
+                autoPlay 
+                loop 
+                style={{
+                  maxHeight: '84vh',
+                  maxWidth: '92vw',
+                  borderRadius: 12,
+                  boxShadow: '0 12px 40px rgba(0, 0, 0, 0.9)'
+                }} 
+              />
+            ) : (
+              <img 
+                src={lightboxMedia.url} 
+                alt="Alta resolución HD" 
+                style={{
+                  maxHeight: lightboxZoom ? 'none' : '84vh',
+                  maxWidth: lightboxZoom ? 'none' : '92vw',
+                  width: lightboxZoom ? '1080px' : 'auto',
+                  height: lightboxZoom ? '1080px' : 'auto',
+                  objectFit: 'contain',
+                  borderRadius: 12,
+                  boxShadow: '0 12px 40px rgba(0, 0, 0, 0.9)',
+                  border: '2px solid rgba(255, 255, 255, 0.2)',
+                  backgroundColor: '#050505',
+                  display: 'block'
+                }} 
+              />
+            )}
           </div>
         </div>
       )}

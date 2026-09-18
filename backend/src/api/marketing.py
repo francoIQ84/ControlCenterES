@@ -17,6 +17,8 @@ class GeneratePostRequest(BaseModel):
     objective: Optional[str] = "promocional"  # promocional, educativo, oferta
     tone: Optional[str] = "entusiasta"        # profesional, entusiasta, divertido
     selected_image: Optional[str] = None
+    selected_price: Optional[float] = None
+    price_type: Optional[str] = None          # web, meli, cash, custom
 
 class GenerateVideoRequest(BaseModel):
     product_ml_id: str
@@ -24,6 +26,8 @@ class GenerateVideoRequest(BaseModel):
     generator_type: Optional[str] = "gemini_canvas" # gemini_canvas, google_veo, flux, imagen3, pollinations
     post_type: Optional[str] = "reel"                # post, reel
     selected_image: Optional[str] = None
+    selected_price: Optional[float] = None
+    price_type: Optional[str] = None
 
 
 class CreatePostRequest(BaseModel):
@@ -191,15 +195,26 @@ def generate_ai_post_copy(req: GeneratePostRequest, _=Depends(verify_session)):
         )
 
     title = product.get("title", "")
-    price = product.get("price_web") or product.get("price") or 0
+    if req.selected_price is not None and req.selected_price > 0:
+        price = req.selected_price
+    else:
+        price = product.get("price_web") or product.get("price") or 0
     desc = product.get("description", "")
     category = product.get("category_name", "Insumos para cultivo e hidroponía")
+
+    price_detail = f"${price:,.2f} ARS"
+    if req.price_type == "cash":
+        price_detail += " (Promoción especial por pago en Efectivo / Transferencia)"
+    elif req.price_type == "web":
+        price_detail += " (Precio exclusivo de la Tienda Web)"
+    elif req.price_type == "meli":
+        price_detail += " (Precio en Mercado Libre)"
 
     prompt = f"""
     Eres un experto en Marketing Digital y Community Management especializado en e-commerce y cultivo hidropónico/tradicional en Argentina.
     Crea un post para redes sociales (Instagram/Facebook/Reels) promocionando este producto de la tienda "Hidroponía Rosario":
     - Producto: {title}
-    - Precio: ${price:,.2f} ARS
+    - Precio a promocionar: {price_detail}
     - Categoría: {category}
     - Detalles/Descripción: {desc}
     - Objetivo de la campaña: {req.objective}
@@ -258,8 +273,11 @@ def generate_ai_video(req: GenerateVideoRequest, _=Depends(verify_session)):
     if not product:
         raise HTTPException(status_code=404, detail="Producto no encontrado")
 
+    product = dict(product)
+    if req.selected_price is not None and req.selected_price > 0:
+        product["price_selected"] = req.selected_price
+
     if req.selected_image:
-        product = dict(product)
         raw_imgs = [i.strip() for i in (product.get("images") or product.get("thumbnail") or "").split(",") if i.strip()]
         sel = req.selected_image.strip()
         if sel:

@@ -15,7 +15,7 @@ def generate_video_script_with_gemini(product_data: dict, user_prompt: str = "")
         raise Exception("Se requiere una API Key de Gemini configurada en Ajustes para generar videos por IA.")
 
     title = product_data.get("title", "")
-    price = product_data.get("price_web") or product_data.get("price") or 0
+    price = product_data.get("price_selected") or product_data.get("price_web") or product_data.get("price") or 0
     category = product_data.get("category_name", "E-commerce")
     desc = product_data.get("description", "")
     images_str = product_data.get("images") or product_data.get("thumbnail") or ""
