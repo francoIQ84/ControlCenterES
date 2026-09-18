@@ -289,19 +289,13 @@ def generate_ai_video(req: GenerateVideoRequest, _=Depends(verify_session)):
             res = generate_video_with_imagen3(req.prompt or f"{product.get('title')} hydroponic product photography", post_type=req.post_type)
             return res
 
-        else: # gemini_canvas
-            # For posts: use Gemini native image generation (prompt-driven, real AI image)
-            # For reels: use canvas video script (template-based video)
-            if is_post:
-                res = generate_image_with_gemini_native(req.prompt, product, post_type=req.post_type)
-                return res
-            else:
-                script = generate_video_script_with_gemini(product, req.prompt)
-                return {
-                    "success": True,
-                    "engine": "gemini_canvas",
-                    "script": script
-                }
+        else: # gemini_canvas (Plantilla Comercial HD personalizable)
+            script = generate_video_script_with_gemini(product, req.prompt)
+            return {
+                "success": True,
+                "engine": "gemini_canvas",
+                "script": script
+            }
     except HTTPException:
         raise
     except Exception as e:

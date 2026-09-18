@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { Megaphone, Sparkles, Calendar, Settings as SettingsIcon, Send, Video, Image as ImageIcon, Trash2, CheckCircle, Clock, AlertCircle, RefreshCw, ExternalLink, MessageSquare, Users, Plus, Mail, Phone, Share2, Play, Check, Layers, UserPlus, X } from 'lucide-react'
 import { useTenant } from '../TenantContext'
 import MediaBrowser from '../components/MediaBrowser'
@@ -79,27 +79,31 @@ export default function Marketing() {
       .catch(() => {})
   }, [])
 
-  // Auto update post image preview live when canvas controls change
-  useEffect(() => {
-    if (videoScriptData && postType === 'post') {
-      const timer = setTimeout(async () => {
-        const imageBlobUrl = await renderPostCanvasImage(videoScriptData)
-        setGeneratedVideoUrl(imageBlobUrl)
-      }, 150)
-      return () => clearTimeout(timer)
-    }
-  }, [
-    canvasLayout, canvasFont, canvasLogoUrl, canvasTheme,
-    canvasBadgeText, canvasBadgeColor, canvasShowPrice,
-    canvasCustomTitle, canvasFooterText, canvasTextColor, canvasShowBorder,
-    canvasImgFit, canvasImgScale, canvasImgOffsetY
-  ])
-  
+  const canvasRenderSeqRef = useRef(0)
   const [postTitle, setPostTitle] = useState('')
   const [postType, setPostType] = useState('post') // 'post', 'reel', 'story'
   const [platforms, setPlatforms] = useState({ instagram: true, facebook: true })
   const [caption, setCaption] = useState('')
   const [mediaUrl, setMediaUrl] = useState('')
+
+  // Auto update post image preview live when canvas controls change
+  useEffect(() => {
+    if (videoScriptData && postType === 'post') {
+      const timer = setTimeout(async () => {
+        const imageBlobUrl = await renderPostCanvasImage(videoScriptData)
+        if (imageBlobUrl) {
+          setGeneratedVideoUrl(imageBlobUrl)
+        }
+      }, 150)
+      return () => clearTimeout(timer)
+    }
+  }, [
+    videoScriptData, postType, selectedProductImage,
+    canvasLayout, canvasFont, canvasLogoUrl, canvasTheme,
+    canvasBadgeText, canvasBadgeColor, canvasShowPrice,
+    canvasCustomTitle, canvasFooterText, canvasTextColor, canvasShowBorder,
+    canvasImgFit, canvasImgScale, canvasImgOffsetY
+  ])
   const [scheduledAt, setScheduledAt] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [editingPostId, setEditingPostId] = useState(null)
@@ -683,6 +687,112 @@ export default function Marketing() {
     return '"Outfit", "Plus Jakarta Sans", "Montserrat", system-ui, sans-serif'
   }
 
+  const getCanvasThemeConfig = (key) => {
+    switch (key) {
+      case 'blue':
+        return {
+          bg: ['#1d4ed8', '#1e3a8a', '#0f172a'],
+          accent: '#3b82f6',
+          header: 'rgba(59, 130, 246, 0.35)',
+          border: '#3b82f6',
+          defaultText: '#ffffff',
+          defaultSubtext: '#bfdbfe',
+          glassOverlay: ['rgba(30, 58, 138, 0.75)', 'rgba(15, 23, 42, 0.90)'],
+          glassCard: ['rgba(30, 58, 138, 0.86)', 'rgba(15, 23, 42, 0.92)'],
+          glassBorder: 'rgba(96, 165, 250, 0.45)',
+          isDark: true
+        }
+      case 'purple':
+        return {
+          bg: ['#6b21a8', '#4c1d95', '#1e0533'],
+          accent: '#c084fc',
+          header: 'rgba(168, 85, 247, 0.35)',
+          border: '#a855f7',
+          defaultText: '#ffffff',
+          defaultSubtext: '#e9d5ff',
+          glassOverlay: ['rgba(88, 28, 135, 0.75)', 'rgba(46, 16, 101, 0.90)'],
+          glassCard: ['rgba(88, 28, 135, 0.86)', 'rgba(46, 16, 101, 0.92)'],
+          glassBorder: 'rgba(192, 132, 252, 0.45)',
+          isDark: true
+        }
+      case 'red':
+        return {
+          bg: ['#991b1b', '#7f1d1d', '#450a0a'],
+          accent: '#ef4444',
+          header: 'rgba(239, 68, 68, 0.35)',
+          border: '#ef4444',
+          defaultText: '#ffffff',
+          defaultSubtext: '#fecaca',
+          glassOverlay: ['rgba(153, 27, 27, 0.75)', 'rgba(69, 10, 10, 0.90)'],
+          glassCard: ['rgba(153, 27, 27, 0.86)', 'rgba(69, 10, 10, 0.92)'],
+          glassBorder: 'rgba(248, 113, 113, 0.45)',
+          isDark: true
+        }
+      case 'dark':
+        return {
+          bg: ['#1e293b', '#0f172a', '#020617'],
+          accent: '#38bdf8',
+          header: 'rgba(148, 163, 184, 0.25)',
+          border: '#64748b',
+          defaultText: '#ffffff',
+          defaultSubtext: '#94a3b8',
+          glassOverlay: ['rgba(30, 41, 59, 0.80)', 'rgba(2, 6, 23, 0.92)'],
+          glassCard: ['rgba(15, 23, 42, 0.88)', 'rgba(2, 6, 23, 0.94)'],
+          glassBorder: 'rgba(255, 255, 255, 0.25)',
+          isDark: true
+        }
+      case 'white_clean':
+        return {
+          bg: ['#ffffff', '#ffffff', '#ffffff'],
+          accent: '#059669',
+          header: 'transparent',
+          border: 'transparent',
+          defaultText: '#0f172a',
+          defaultSubtext: '#475569',
+          glassOverlay: ['rgba(255, 255, 255, 0.92)', 'rgba(255, 255, 255, 0.96)'],
+          glassCard: ['rgba(255, 255, 255, 0.96)', 'rgba(255, 255, 255, 0.98)'],
+          glassBorder: 'rgba(0, 0, 0, 0.08)',
+          isDark: false
+        }
+      case 'white':
+        return {
+          bg: ['#ffffff', '#f8fafc', '#e2e8f0'],
+          accent: '#059669',
+          header: 'rgba(15, 23, 42, 0.06)',
+          border: '#cbd5e1',
+          defaultText: '#0f172a',
+          defaultSubtext: '#475569',
+          glassOverlay: ['rgba(255, 255, 255, 0.82)', 'rgba(241, 245, 249, 0.90)'],
+          glassCard: ['rgba(255, 255, 255, 0.92)', 'rgba(248, 250, 252, 0.95)'],
+          glassBorder: 'rgba(0, 0, 0, 0.12)',
+          isDark: false
+        }
+      case 'emerald':
+      default:
+        return {
+          bg: ['#064e3b', '#04382a', '#022c22'],
+          accent: '#10b981',
+          header: 'rgba(16, 185, 129, 0.35)',
+          border: '#10b981',
+          defaultText: '#ffffff',
+          defaultSubtext: '#a7f3d0',
+          glassOverlay: ['rgba(6, 78, 59, 0.75)', 'rgba(2, 44, 34, 0.90)'],
+          glassCard: ['rgba(6, 78, 59, 0.86)', 'rgba(2, 44, 34, 0.92)'],
+          glassBorder: 'rgba(52, 211, 153, 0.45)',
+          isDark: true
+        }
+    }
+  }
+
+  const getBadgeTextColor = (hexColor) => {
+    if (!hexColor) return '#000000'
+    const clean = hexColor.toLowerCase()
+    if (['#ef4444', '#3b82f6', '#8b5cf6', '#dc2626', '#2563eb', '#1d4ed8', '#7f1d1d'].includes(clean)) {
+      return '#ffffff'
+    }
+    return '#000000'
+  }
+
   const loadCanvasLogo = (url) => {
     if (!url) return Promise.resolve(null)
     return new Promise(res => {
@@ -829,14 +939,8 @@ export default function Marketing() {
         }
 
         // Theme colors
+        const theme = getCanvasThemeConfig(canvasTheme)
         const isCleanWhite = canvasTheme === 'white_clean'
-        const theme = (canvasTheme === 'blue') ? { bg: ['#03182e', '#08203e', '#0d2a4a'], accent: '#3b82f6', header: 'rgba(59, 130, 246, 0.25)', defaultText: '#ffffff', defaultSubtext: '#94a3b8', border: '#3b82f6' } :
-                      (canvasTheme === 'purple') ? { bg: ['#230735', '#160424', '#0e0319'], accent: '#a855f7', header: 'rgba(168, 85, 247, 0.25)', defaultText: '#ffffff', defaultSubtext: '#94a3b8', border: '#a855f7' } :
-                      (canvasTheme === 'red') ? { bg: ['#2c0b0e', '#1f0507', '#140204'], accent: '#ef4444', header: 'rgba(239, 68, 68, 0.25)', defaultText: '#ffffff', defaultSubtext: '#94a3b8', border: '#ef4444' } :
-                      (canvasTheme === 'dark') ? { bg: ['#111827', '#0f172a', '#020617'], accent: '#64748b', header: 'rgba(148, 163, 184, 0.20)', defaultText: '#ffffff', defaultSubtext: '#94a3b8', border: '#64748b' } :
-                      (canvasTheme === 'white_clean') ? { bg: ['#ffffff', '#ffffff', '#ffffff'], accent: '#059669', header: 'transparent', defaultText: '#0f172a', defaultSubtext: '#475569', border: 'transparent' } :
-                      (canvasTheme === 'white') ? { bg: ['#ffffff', '#f8fafc', '#f1f5f9'], accent: '#059669', header: 'rgba(15, 23, 42, 0.05)', defaultText: '#0f172a', defaultSubtext: '#475569', border: '#059669' } :
-                      { bg: ['#041c14', '#050c18', '#0b1926'], accent: '#10b981', header: 'rgba(16, 185, 129, 0.25)', defaultText: '#ffffff', defaultSubtext: '#94a3b8', border: '#10b981' }
 
         const mainTextColor = (canvasTextColor && canvasTextColor !== 'auto') ? canvasTextColor : theme.defaultText
         const subTextColor = (canvasTextColor && canvasTextColor !== 'auto') ? canvasTextColor : theme.defaultSubtext
@@ -910,7 +1014,7 @@ export default function Marketing() {
             if (ctx.roundRect) ctx.roundRect(650, 70, 360, 56, 28)
             else ctx.rect(650, 70, 360, 56)
             ctx.fill()
-            ctx.fillStyle = '#000000'
+            ctx.fillStyle = getBadgeTextColor(canvasBadgeColor)
             ctx.font = `bold 26px ${fontFamily}`
             ctx.textAlign = 'center'
             ctx.fillText(badgeTxt, 650 + 180, 70 + 38)
@@ -980,11 +1084,13 @@ export default function Marketing() {
             const imgX = (width - imgSize) / 2
             const imgY = 170
 
-            ctx.fillStyle = theme.accent
-            ctx.beginPath()
-            if (ctx.roundRect) ctx.roundRect(imgX + 20, imgY + 20, imgSize, imgSize, 36)
-            else ctx.rect(imgX + 20, imgY + 20, imgSize, imgSize)
-            ctx.fill()
+            if (drawBorder) {
+              ctx.fillStyle = theme.accent
+              ctx.beginPath()
+              if (ctx.roundRect) ctx.roundRect(imgX + 20, imgY + 20, imgSize, imgSize, 36)
+              else ctx.rect(imgX + 20, imgY + 20, imgSize, imgSize)
+              ctx.fill()
+            }
 
             ctx.save()
             ctx.beginPath()
@@ -1012,12 +1118,12 @@ export default function Marketing() {
               ctx.stroke()
 
               ctx.fillStyle = '#ffffff'
-              ctx.font = 'bold 24px sans-serif'
+              ctx.font = `bold 24px ${fontFamily}`
               ctx.textAlign = 'center'
               ctx.fillText('¡OFERTA!', badgeX, badgeY - 32)
-              ctx.font = 'bold 38px sans-serif'
+              ctx.font = `bold 38px ${fontFamily}`
               ctx.fillText(`$${script.product_price.toLocaleString('es-AR')}`, badgeX, badgeY + 16)
-              ctx.font = 'bold 22px sans-serif'
+              ctx.font = `bold 22px ${fontFamily}`
               ctx.fillText('EN STOCK', badgeX, badgeY + 52)
             }
           }
@@ -1026,22 +1132,32 @@ export default function Marketing() {
           if (badgeTxt) {
             ctx.fillStyle = canvasBadgeColor || '#f59e0b'
             ctx.fillRect(0, 1080, width, 72)
-            ctx.fillStyle = '#000000'
-            ctx.font = 'bold 36px sans-serif'
+            ctx.fillStyle = getBadgeTextColor(canvasBadgeColor)
+            ctx.font = `bold 36px ${fontFamily}`
             ctx.textAlign = 'center'
             ctx.fillText(badgeTxt, width / 2, 1128)
           }
 
           if (headlineTxt) {
             ctx.fillStyle = mainTextColor
-            ctx.font = 'bold 50px sans-serif'
+            let hFontSize = 50
+            ctx.font = `bold ${hFontSize}px ${fontFamily}`
+            while (ctx.measureText(headlineTxt).width > 960 && hFontSize > 28) {
+              hFontSize -= 2
+              ctx.font = `bold ${hFontSize}px ${fontFamily}`
+            }
             ctx.textAlign = 'center'
             ctx.fillText(headlineTxt, width / 2, 1260)
           }
 
           if (currentScene.sub_text) {
             ctx.fillStyle = subTextColor
-            ctx.font = '34px sans-serif'
+            let sFontSize = 34
+            ctx.font = `${sFontSize}px ${fontFamily}`
+            while (ctx.measureText(currentScene.sub_text).width > 960 && sFontSize > 22) {
+              sFontSize -= 2
+              ctx.font = `${sFontSize}px ${fontFamily}`
+            }
             ctx.textAlign = 'center'
             ctx.fillText(currentScene.sub_text, width / 2, 1340)
           }
@@ -1050,17 +1166,22 @@ export default function Marketing() {
           ctx.fillStyle = theme.accent
           ctx.fillRect(0, 1680, width, 140)
           ctx.fillStyle = '#ffffff'
-          ctx.font = 'bold 36px sans-serif'
+          ctx.font = `bold 36px ${fontFamily}`
           ctx.textAlign = 'center'
           ctx.fillText(footerTxt, width / 2, 1762)
 
         } else if (canvasLayout === 'glassmorphism') {
           // --- GLASSMORPHISM REEL ---
           if (activeImg) {
-            const scale = 1.05 + (elapsedScene / sceneDuration) * 0.05
+            ctx.save()
+            if ('filter' in ctx) {
+              ctx.filter = 'blur(22px)'
+            }
+            const scale = (1.05 + (elapsedScene / sceneDuration) * 0.05) * 1.15
             const drawW = width * scale
             const drawH = (activeImg.height / activeImg.width) * drawW
             ctx.drawImage(activeImg, (width - drawW) / 2, (height - drawH) / 2, drawW, drawH)
+            ctx.restore()
           } else {
             const grad = ctx.createLinearGradient(0, 0, 0, height)
             grad.addColorStop(0, theme.bg[0])
@@ -1069,9 +1190,11 @@ export default function Marketing() {
             ctx.fillRect(0, 0, width, height)
           }
 
-          // Overlay
-          const isDarkTheme = canvasTheme === 'dark' || canvasTheme === 'blue' || canvasTheme === 'purple' || canvasTheme === 'emerald' || canvasTheme === 'red'
-          ctx.fillStyle = isDarkTheme ? 'rgba(15, 23, 42, 0.65)' : 'rgba(255, 255, 255, 0.70)'
+          // Theme Overlay
+          const bgOverlayGrad = ctx.createLinearGradient(0, 0, 0, height)
+          bgOverlayGrad.addColorStop(0, theme.glassOverlay[0])
+          bgOverlayGrad.addColorStop(1, theme.glassOverlay[1])
+          ctx.fillStyle = bgOverlayGrad
           ctx.fillRect(0, 0, width, height)
 
           // Floating Glass Container (940x1680)
@@ -1080,14 +1203,20 @@ export default function Marketing() {
           const cardW = 940
           const cardH = 1680
 
-          ctx.fillStyle = isDarkTheme ? 'rgba(15, 23, 42, 0.88)' : 'rgba(255, 255, 255, 0.92)'
+          const cardGrad = ctx.createLinearGradient(cardX, cardY, cardX, cardY + cardH)
+          cardGrad.addColorStop(0, theme.glassCard[0])
+          cardGrad.addColorStop(1, theme.glassCard[1])
+          ctx.fillStyle = cardGrad
           ctx.beginPath()
           if (ctx.roundRect) ctx.roundRect(cardX, cardY, cardW, cardH, 44)
           else ctx.rect(cardX, cardY, cardW, cardH)
           ctx.fill()
-          ctx.lineWidth = 3
-          ctx.strokeStyle = isDarkTheme ? 'rgba(255, 255, 255, 0.2)' : 'rgba(0, 0, 0, 0.1)'
-          ctx.stroke()
+
+          if (drawBorder) {
+            ctx.lineWidth = 3
+            ctx.strokeStyle = theme.glassBorder
+            ctx.stroke()
+          }
 
           // Brand Header / Logo
           if (logoImg) {
@@ -1124,37 +1253,52 @@ export default function Marketing() {
             ctx.drawImage(activeImg, drawX, drawY, drawW, drawH)
             ctx.restore()
 
-            ctx.lineWidth = 4
-            ctx.strokeStyle = theme.accent
-            ctx.beginPath()
-            if (ctx.roundRect) ctx.roundRect(imgBoxX, imgBoxY, imgBoxSize, imgBoxSize, 32)
-            else ctx.rect(imgBoxX, imgBoxY, imgBoxSize, imgBoxSize)
-            ctx.stroke()
+            if (drawBorder) {
+              ctx.lineWidth = 4
+              ctx.strokeStyle = theme.accent
+              ctx.beginPath()
+              if (ctx.roundRect) ctx.roundRect(imgBoxX, imgBoxY, imgBoxSize, imgBoxSize, 32)
+              else ctx.rect(imgBoxX, imgBoxY, imgBoxSize, imgBoxSize)
+              ctx.stroke()
+            }
           }
 
           if (badgeTxt) {
             const badgeY = cardY + 900
+            ctx.font = `bold 28px ${fontFamily}`
+            const textMetrics = ctx.measureText(badgeTxt)
+            const badgeW = Math.max(340, Math.min(720, textMetrics.width + 60))
+            const badgeX = (width - badgeW) / 2
             ctx.fillStyle = canvasBadgeColor || '#f59e0b'
             ctx.beginPath()
-            if (ctx.roundRect) ctx.roundRect(width / 2 - 240, badgeY, 480, 56, 28)
-            else ctx.rect(width / 2 - 240, badgeY, 480, 56)
+            if (ctx.roundRect) ctx.roundRect(badgeX, badgeY, badgeW, 56, 28)
+            else ctx.rect(badgeX, badgeY, badgeW, 56)
             ctx.fill()
-            ctx.fillStyle = '#000000'
-            ctx.font = 'bold 28px sans-serif'
+            ctx.fillStyle = getBadgeTextColor(canvasBadgeColor)
             ctx.textAlign = 'center'
             ctx.fillText(badgeTxt, width / 2, badgeY + 38)
           }
 
           if (headlineTxt) {
             ctx.fillStyle = mainTextColor
-            ctx.font = 'bold 46px sans-serif'
+            let hFontSize = 46
+            ctx.font = `bold ${hFontSize}px ${fontFamily}`
+            while (ctx.measureText(headlineTxt).width > 860 && hFontSize > 26) {
+              hFontSize -= 2
+              ctx.font = `bold ${hFontSize}px ${fontFamily}`
+            }
             ctx.textAlign = 'center'
             ctx.fillText(headlineTxt, width / 2, cardY + 1040)
           }
 
           if (currentScene.sub_text) {
             ctx.fillStyle = subTextColor
-            ctx.font = '32px sans-serif'
+            let sFontSize = 32
+            ctx.font = `${sFontSize}px ${fontFamily}`
+            while (ctx.measureText(currentScene.sub_text).width > 860 && sFontSize > 20) {
+              sFontSize -= 2
+              ctx.font = `${sFontSize}px ${fontFamily}`
+            }
             ctx.textAlign = 'center'
             ctx.fillText(currentScene.sub_text, width / 2, cardY + 1110)
           }
@@ -1168,12 +1312,12 @@ export default function Marketing() {
             else ctx.rect(width / 2 - pillWidth / 2, pillY, pillWidth, 84)
             ctx.fill()
             ctx.fillStyle = '#ffffff'
-            ctx.font = 'bold 40px sans-serif'
+            ctx.font = `bold 40px ${fontFamily}`
             ctx.fillText(`$ ${script.product_price.toLocaleString('es-AR')}`, width / 2, pillY + 56)
           }
 
           ctx.fillStyle = mainTextColor
-          ctx.font = 'bold 28px sans-serif'
+          ctx.font = `bold 28px ${fontFamily}`
           ctx.textAlign = 'center'
           ctx.fillText(footerTxt, width / 2, cardY + cardH - 55)
 
@@ -1222,32 +1366,46 @@ export default function Marketing() {
           }
 
           ctx.fillStyle = mainTextColor
-          ctx.font = 'bold 36px sans-serif'
+          ctx.font = `bold 36px ${fontFamily}`
           ctx.textAlign = 'center'
           ctx.fillText(`🌱 ${storeName.toUpperCase()}`, width / 2, 158)
 
           if (badgeTxt) {
             const badgeY = 1220
+            ctx.font = `bold 32px ${fontFamily}`
+            const textMetrics = ctx.measureText(badgeTxt)
+            const badgeW = Math.max(340, Math.min(760, textMetrics.width + 60))
+            const badgeX = (width - badgeW) / 2
             ctx.fillStyle = canvasBadgeColor || '#f59e0b'
             ctx.beginPath()
-            if (ctx.roundRect) ctx.roundRect(width / 2 - 260, badgeY, 520, 64, 32)
-            else ctx.rect(width / 2 - 260, badgeY, 520, 64)
+            if (ctx.roundRect) ctx.roundRect(badgeX, badgeY, badgeW, 64, 32)
+            else ctx.rect(badgeX, badgeY, badgeW, 64)
             ctx.fill()
-            ctx.fillStyle = '#000000'
-            ctx.font = 'bold 32px sans-serif'
+            ctx.fillStyle = getBadgeTextColor(canvasBadgeColor)
+            ctx.textAlign = 'center'
             ctx.fillText(badgeTxt, width / 2, badgeY + 43)
           }
 
           if (headlineTxt) {
             ctx.fillStyle = mainTextColor
-            ctx.font = 'bold 50px sans-serif'
+            let hFontSize = 50
+            ctx.font = `bold ${hFontSize}px ${fontFamily}`
+            while (ctx.measureText(headlineTxt).width > 900 && hFontSize > 28) {
+              hFontSize -= 2
+              ctx.font = `bold ${hFontSize}px ${fontFamily}`
+            }
             ctx.textAlign = 'center'
             ctx.fillText(headlineTxt, width / 2, 1370)
           }
 
           if (currentScene.sub_text) {
             ctx.fillStyle = subTextColor
-            ctx.font = '36px sans-serif'
+            let sFontSize = 36
+            ctx.font = `${sFontSize}px ${fontFamily}`
+            while (ctx.measureText(currentScene.sub_text).width > 900 && sFontSize > 22) {
+              sFontSize -= 2
+              ctx.font = `${sFontSize}px ${fontFamily}`
+            }
             ctx.textAlign = 'center'
             ctx.fillText(currentScene.sub_text, width / 2, 1450)
           }
@@ -1261,12 +1419,13 @@ export default function Marketing() {
             else ctx.rect(width / 2 - pillWidth / 2, pillY, pillWidth, 96)
             ctx.fill()
             ctx.fillStyle = '#ffffff'
-            ctx.font = 'bold 44px sans-serif'
+            ctx.font = `bold 44px ${fontFamily}`
             ctx.fillText(`$ ${script.product_price.toLocaleString('es-AR')}`, width / 2, pillY + 63)
           }
 
           ctx.fillStyle = (isCleanWhite || canvasTheme === 'white') && (canvasTextColor === 'auto' || canvasTextColor === '#0f172a') ? '#059669' : mainTextColor
-          ctx.font = 'bold 32px sans-serif'
+          ctx.font = `bold 32px ${fontFamily}`
+          ctx.textAlign = 'center'
           ctx.fillText(footerTxt, width / 2, 1750)
         }
 
@@ -1283,6 +1442,13 @@ export default function Marketing() {
 
   // Render a static 1080x1080 post image from Gemini Canvas script
   const renderPostCanvasImage = async (script) => {
+    const renderId = ++canvasRenderSeqRef.current
+    try {
+      if (document.fonts && document.fonts.ready) {
+        await document.fonts.ready
+      }
+    } catch (e) {}
+
     const size = 1080
     const canvas = document.createElement('canvas')
     canvas.width = size
@@ -1294,14 +1460,8 @@ export default function Marketing() {
     const logoImg = await loadCanvasLogo(canvasLogoUrl)
 
     // Theme colors
+    const theme = getCanvasThemeConfig(canvasTheme)
     const isCleanWhite = canvasTheme === 'white_clean'
-    const theme = (canvasTheme === 'blue') ? { bg: ['#03182e', '#08203e', '#0d2a4a'], accent: '#3b82f6', header: 'rgba(59, 130, 246, 0.25)', defaultText: '#ffffff', defaultSubtext: '#94a3b8', border: '#3b82f6' } :
-                  (canvasTheme === 'purple') ? { bg: ['#230735', '#160424', '#0e0319'], accent: '#a855f7', header: 'rgba(168, 85, 247, 0.25)', defaultText: '#ffffff', defaultSubtext: '#94a3b8', border: '#a855f7' } :
-                  (canvasTheme === 'red') ? { bg: ['#2c0b0e', '#1f0507', '#140204'], accent: '#ef4444', header: 'rgba(239, 68, 68, 0.25)', defaultText: '#ffffff', defaultSubtext: '#94a3b8', border: '#ef4444' } :
-                  (canvasTheme === 'dark') ? { bg: ['#111827', '#0f172a', '#020617'], accent: '#64748b', header: 'rgba(148, 163, 184, 0.20)', defaultText: '#ffffff', defaultSubtext: '#94a3b8', border: '#64748b' } :
-                  (canvasTheme === 'white_clean') ? { bg: ['#ffffff', '#ffffff', '#ffffff'], accent: '#059669', header: 'transparent', defaultText: '#0f172a', defaultSubtext: '#475569', border: 'transparent' } :
-                  (canvasTheme === 'white') ? { bg: ['#ffffff', '#f8fafc', '#f1f5f9'], accent: '#059669', header: 'rgba(15, 23, 42, 0.05)', defaultText: '#0f172a', defaultSubtext: '#475569', border: '#059669' } :
-                  { bg: ['#041c14', '#050c18', '#0b1926'], accent: '#10b981', header: 'rgba(16, 185, 129, 0.25)', defaultText: '#ffffff', defaultSubtext: '#94a3b8', border: '#10b981' }
 
     const mainTextColor = (canvasTextColor && canvasTextColor !== 'auto') ? canvasTextColor : theme.defaultText
     const subTextColor = (canvasTextColor && canvasTextColor !== 'auto') ? canvasTextColor : theme.defaultSubtext
@@ -1398,7 +1558,7 @@ export default function Marketing() {
         if (ctx.roundRect) ctx.roundRect(675, 65, 340, 48, 24)
         else ctx.rect(675, 65, 340, 48)
         ctx.fill()
-        ctx.fillStyle = '#000000'
+        ctx.fillStyle = getBadgeTextColor(canvasBadgeColor)
         ctx.font = `bold 22px ${fontFamily}`
         ctx.textAlign = 'center'
         ctx.fillText(badgeTxt, 675 + 170, 65 + 32)
@@ -1406,14 +1566,24 @@ export default function Marketing() {
 
       if (headlineTxt) {
         ctx.fillStyle = mainTextColor
-        ctx.font = `bold 42px ${fontFamily}`
+        let hFontSize = 42
+        ctx.font = `bold ${hFontSize}px ${fontFamily}`
+        while (ctx.measureText(headlineTxt).width > 960 && hFontSize > 24) {
+          hFontSize -= 2
+          ctx.font = `bold ${hFontSize}px ${fontFamily}`
+        }
         ctx.textAlign = 'center'
         ctx.fillText(headlineTxt, size / 2, 705)
       }
 
       if (scene.sub_text) {
         ctx.fillStyle = subTextColor
-        ctx.font = `28px ${fontFamily}`
+        let sFontSize = 28
+        ctx.font = `${sFontSize}px ${fontFamily}`
+        while (ctx.measureText(scene.sub_text).width > 960 && sFontSize > 18) {
+          sFontSize -= 2
+          ctx.font = `${sFontSize}px ${fontFamily}`
+        }
         ctx.textAlign = 'center'
         ctx.fillText(scene.sub_text, size / 2, 760)
       }
@@ -1470,11 +1640,13 @@ export default function Marketing() {
         const imgX = (size - imgSize) / 2
         const imgY = 115
 
-        ctx.fillStyle = theme.accent
-        ctx.beginPath()
-        if (ctx.roundRect) ctx.roundRect(imgX + 16, imgY + 16, imgSize, imgSize, 28)
-        else ctx.rect(imgX + 16, imgY + 16, imgSize, imgSize)
-        ctx.fill()
+        if (drawBorder) {
+          ctx.fillStyle = theme.accent
+          ctx.beginPath()
+          if (ctx.roundRect) ctx.roundRect(imgX + 16, imgY + 16, imgSize, imgSize, 28)
+          else ctx.rect(imgX + 16, imgY + 16, imgSize, imgSize)
+          ctx.fill()
+        }
 
         ctx.save()
         ctx.beginPath()
@@ -1503,12 +1675,12 @@ export default function Marketing() {
           ctx.stroke()
 
           ctx.fillStyle = '#ffffff'
-          ctx.font = 'bold 20px sans-serif'
+          ctx.font = `bold 20px ${fontFamily}`
           ctx.textAlign = 'center'
           ctx.fillText('¡OFERTA!', badgeX, badgeY - 26)
-          ctx.font = 'bold 32px sans-serif'
+          ctx.font = `bold 32px ${fontFamily}`
           ctx.fillText(`$${script.product_price.toLocaleString('es-AR')}`, badgeX, badgeY + 14)
-          ctx.font = 'bold 18px sans-serif'
+          ctx.font = `bold 18px ${fontFamily}`
           ctx.fillText('EN STOCK', badgeX, badgeY + 42)
         }
       }
@@ -1516,22 +1688,32 @@ export default function Marketing() {
       if (badgeTxt) {
         ctx.fillStyle = canvasBadgeColor || '#f59e0b'
         ctx.fillRect(0, 690, size, 56)
-        ctx.fillStyle = '#000000'
-        ctx.font = 'bold 28px sans-serif'
+        ctx.fillStyle = getBadgeTextColor(canvasBadgeColor)
+        ctx.font = `bold 28px ${fontFamily}`
         ctx.textAlign = 'center'
         ctx.fillText(badgeTxt, size / 2, 728)
       }
 
       if (headlineTxt) {
         ctx.fillStyle = mainTextColor
-        ctx.font = 'bold 44px sans-serif'
+        let hFontSize = 44
+        ctx.font = `bold ${hFontSize}px ${fontFamily}`
+        while (ctx.measureText(headlineTxt).width > 980 && hFontSize > 24) {
+          hFontSize -= 2
+          ctx.font = `bold ${hFontSize}px ${fontFamily}`
+        }
         ctx.textAlign = 'center'
         ctx.fillText(headlineTxt, size / 2, 805)
       }
 
       if (scene.sub_text) {
         ctx.fillStyle = subTextColor
-        ctx.font = '28px sans-serif'
+        let sFontSize = 28
+        ctx.font = `${sFontSize}px ${fontFamily}`
+        while (ctx.measureText(scene.sub_text).width > 980 && sFontSize > 18) {
+          sFontSize -= 2
+          ctx.font = `${sFontSize}px ${fontFamily}`
+        }
         ctx.textAlign = 'center'
         ctx.fillText(scene.sub_text, size / 2, 860)
       }
@@ -1539,17 +1721,22 @@ export default function Marketing() {
       ctx.fillStyle = theme.accent
       ctx.fillRect(0, 970, size, 110)
       ctx.fillStyle = '#ffffff'
-      ctx.font = 'bold 30px sans-serif'
+      ctx.font = `bold 30px ${fontFamily}`
       ctx.textAlign = 'center'
       ctx.fillText(footerTxt, size / 2, 1035)
 
     } else if (canvasLayout === 'glassmorphism') {
       // --- PLANTILLA 4: GLASSMORPHISM HERO CANVA STYLE ---
       if (activeImg) {
-        const scale = Math.max(size / activeImg.width, size / activeImg.height)
+        ctx.save()
+        if ('filter' in ctx) {
+          ctx.filter = 'blur(22px)'
+        }
+        const scale = Math.max(size / activeImg.width, size / activeImg.height) * 1.15
         const drawW = activeImg.width * scale
         const drawH = activeImg.height * scale
         ctx.drawImage(activeImg, (size - drawW) / 2, (size - drawH) / 2, drawW, drawH)
+        ctx.restore()
       } else {
         const grad = ctx.createLinearGradient(0, 0, 0, size)
         grad.addColorStop(0, theme.bg[0])
@@ -1558,8 +1745,11 @@ export default function Marketing() {
         ctx.fillRect(0, 0, size, size)
       }
 
-      const isDarkTheme = canvasTheme === 'dark' || canvasTheme === 'blue' || canvasTheme === 'purple' || canvasTheme === 'emerald' || canvasTheme === 'red'
-      ctx.fillStyle = isDarkTheme ? 'rgba(15, 23, 42, 0.65)' : 'rgba(255, 255, 255, 0.70)'
+      // Theme-specific Tinted Glass Overlay
+      const bgOverlayGrad = ctx.createLinearGradient(0, 0, 0, size)
+      bgOverlayGrad.addColorStop(0, theme.glassOverlay[0])
+      bgOverlayGrad.addColorStop(1, theme.glassOverlay[1])
+      ctx.fillStyle = bgOverlayGrad
       ctx.fillRect(0, 0, size, size)
 
       const cardX = 70
@@ -1568,14 +1758,20 @@ export default function Marketing() {
       const cardH = 940
 
       ctx.save()
-      ctx.fillStyle = isDarkTheme ? 'rgba(15, 23, 42, 0.86)' : 'rgba(255, 255, 255, 0.90)'
+      const cardGrad = ctx.createLinearGradient(cardX, cardY, cardX, cardY + cardH)
+      cardGrad.addColorStop(0, theme.glassCard[0])
+      cardGrad.addColorStop(1, theme.glassCard[1])
+      ctx.fillStyle = cardGrad
       ctx.beginPath()
       if (ctx.roundRect) ctx.roundRect(cardX, cardY, cardW, cardH, 36)
       else ctx.rect(cardX, cardY, cardW, cardH)
       ctx.fill()
-      ctx.lineWidth = 3
-      ctx.strokeStyle = isDarkTheme ? 'rgba(255, 255, 255, 0.2)' : 'rgba(0, 0, 0, 0.1)'
-      ctx.stroke()
+
+      if (drawBorder) {
+        ctx.lineWidth = 3
+        ctx.strokeStyle = theme.glassBorder
+        ctx.stroke()
+      }
 
       if (logoImg) {
         const maxLogoW = 380
@@ -1609,37 +1805,52 @@ export default function Marketing() {
         ctx.drawImage(activeImg, drawX, drawY, drawW, drawH)
         ctx.restore()
 
-        ctx.lineWidth = 3
-        ctx.strokeStyle = theme.accent
-        ctx.beginPath()
-        if (ctx.roundRect) ctx.roundRect(imgBoxX, imgBoxY, imgBoxSize, imgBoxSize, 24)
-        else ctx.rect(imgBoxX, imgBoxY, imgBoxSize, imgBoxSize)
-        ctx.stroke()
+        if (drawBorder) {
+          ctx.lineWidth = 3
+          ctx.strokeStyle = theme.accent
+          ctx.beginPath()
+          if (ctx.roundRect) ctx.roundRect(imgBoxX, imgBoxY, imgBoxSize, imgBoxSize, 24)
+          else ctx.rect(imgBoxX, imgBoxY, imgBoxSize, imgBoxSize)
+          ctx.stroke()
+        }
       }
 
       if (badgeTxt) {
         const badgeY = cardY + 580
+        ctx.font = `bold 24px ${fontFamily}`
+        const textMetrics = ctx.measureText(badgeTxt)
+        const badgeW = Math.max(280, Math.min(680, textMetrics.width + 60))
+        const badgeX = (size - badgeW) / 2
         ctx.fillStyle = canvasBadgeColor || '#f59e0b'
         ctx.beginPath()
-        if (ctx.roundRect) ctx.roundRect(size / 2 - 200, badgeY, 400, 46, 23)
-        else ctx.rect(size / 2 - 200, badgeY, 400, 46)
+        if (ctx.roundRect) ctx.roundRect(badgeX, badgeY, badgeW, 46, 23)
+        else ctx.rect(badgeX, badgeY, badgeW, 46)
         ctx.fill()
-        ctx.fillStyle = '#000000'
-        ctx.font = `bold 24px ${fontFamily}`
+        ctx.fillStyle = getBadgeTextColor(canvasBadgeColor)
         ctx.textAlign = 'center'
         ctx.fillText(badgeTxt, size / 2, badgeY + 31)
       }
 
       if (headlineTxt) {
         ctx.fillStyle = mainTextColor
-        ctx.font = `bold 38px ${fontFamily}`
+        let hFontSize = 38
+        ctx.font = `bold ${hFontSize}px ${fontFamily}`
+        while (ctx.measureText(headlineTxt).width > 860 && hFontSize > 22) {
+          hFontSize -= 2
+          ctx.font = `bold ${hFontSize}px ${fontFamily}`
+        }
         ctx.textAlign = 'center'
         ctx.fillText(headlineTxt, size / 2, cardY + 675)
       }
 
       if (scene.sub_text) {
         ctx.fillStyle = subTextColor
-        ctx.font = `26px ${fontFamily}`
+        let sFontSize = 26
+        ctx.font = `${sFontSize}px ${fontFamily}`
+        while (ctx.measureText(scene.sub_text).width > 860 && sFontSize > 18) {
+          sFontSize -= 2
+          ctx.font = `${sFontSize}px ${fontFamily}`
+        }
         ctx.textAlign = 'center'
         ctx.fillText(scene.sub_text, size / 2, cardY + 725)
       }
@@ -1735,27 +1946,40 @@ export default function Marketing() {
 
       if (badgeTxt) {
         const badgeY = 730
+        ctx.font = `bold 26px ${fontFamily}`
+        const textMetrics = ctx.measureText(badgeTxt)
+        const badgeW = Math.max(300, Math.min(680, textMetrics.width + 60))
+        const badgeX = (size - badgeW) / 2
         ctx.fillStyle = canvasBadgeColor || '#f59e0b'
         ctx.beginPath()
-        if (ctx.roundRect) ctx.roundRect(size / 2 - 220, badgeY, 440, 52, 26)
-        else ctx.rect(size / 2 - 220, badgeY, 440, 52)
+        if (ctx.roundRect) ctx.roundRect(badgeX, badgeY, badgeW, 52, 26)
+        else ctx.rect(badgeX, badgeY, badgeW, 52)
         ctx.fill()
-        ctx.fillStyle = '#000000'
-        ctx.font = 'bold 26px sans-serif'
+        ctx.fillStyle = getBadgeTextColor(canvasBadgeColor)
         ctx.textAlign = 'center'
         ctx.fillText(badgeTxt, size / 2, badgeY + 36)
       }
 
       if (headlineTxt) {
         ctx.fillStyle = mainTextColor
-        ctx.font = 'bold 40px sans-serif'
+        let hFontSize = 40
+        ctx.font = `bold ${hFontSize}px ${fontFamily}`
+        while (ctx.measureText(headlineTxt).width > 960 && hFontSize > 22) {
+          hFontSize -= 2
+          ctx.font = `bold ${hFontSize}px ${fontFamily}`
+        }
         ctx.textAlign = 'center'
         ctx.fillText(headlineTxt, size / 2, 840)
       }
 
       if (scene.sub_text) {
         ctx.fillStyle = subTextColor
-        ctx.font = '28px sans-serif'
+        let sFontSize = 28
+        ctx.font = `${sFontSize}px ${fontFamily}`
+        while (ctx.measureText(scene.sub_text).width > 960 && sFontSize > 18) {
+          sFontSize -= 2
+          ctx.font = `${sFontSize}px ${fontFamily}`
+        }
         ctx.textAlign = 'center'
         ctx.fillText(scene.sub_text, size / 2, 890)
       }
@@ -1769,12 +1993,12 @@ export default function Marketing() {
         else ctx.rect(size / 2 - pillWidth / 2, pillY, pillWidth, 72)
         ctx.fill()
         ctx.fillStyle = '#ffffff'
-        ctx.font = 'bold 36px sans-serif'
+        ctx.font = `bold 36px ${fontFamily}`
         ctx.fillText(`$ ${script.product_price.toLocaleString('es-AR')}`, size / 2, pillY + 50)
       }
 
       ctx.fillStyle = (isCleanWhite || canvasTheme === 'white') && (canvasTextColor === 'auto' || canvasTextColor === '#0f172a') ? '#059669' : mainTextColor
-      ctx.font = 'bold 24px sans-serif'
+      ctx.font = `bold 24px ${fontFamily}`
       ctx.textAlign = 'center'
       ctx.fillText(footerTxt, size / 2, 1040)
     }
@@ -1793,7 +2017,7 @@ export default function Marketing() {
           formData.append('file', file)
           const uploadRes = await fetch('/api/media/upload?path=reels', { method: 'POST', body: formData })
           const uploadData = await uploadRes.json()
-          if (uploadRes.ok && uploadData.url) {
+          if (uploadRes.ok && uploadData.url && renderId === canvasRenderSeqRef.current) {
             setMediaUrl(uploadData.url)
             setGeneratedServerMediaUrl(uploadData.url)
           }
