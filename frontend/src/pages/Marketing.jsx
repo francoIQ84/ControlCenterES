@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react'
-import { Megaphone, Sparkles, Calendar, Settings as SettingsIcon, Send, Video, Image as ImageIcon, Trash2, CheckCircle, Clock, AlertCircle, RefreshCw, ExternalLink, MessageSquare, Users, Plus, Mail, Phone, Share2, Play, Check, Layers, UserPlus, X } from 'lucide-react'
+import { Megaphone, Sparkles, Calendar, Settings as SettingsIcon, Send, Video, Image as ImageIcon, Trash2, CheckCircle, Clock, AlertCircle, RefreshCw, ExternalLink, MessageSquare, Users, Plus, Mail, Phone, Share2, Play, Check, Layers, UserPlus, X, Move } from 'lucide-react'
 import { useTenant } from '../TenantContext'
 import MediaBrowser from '../components/MediaBrowser'
 
@@ -56,6 +56,17 @@ export default function Marketing() {
   const [canvasLayout, setCanvasLayout] = useState('glassmorphism') // 'glassmorphism' default
   const [canvasFont, setCanvasFont] = useState('outfit') // 'outfit', 'montserrat', 'poppins', 'jakarta'
   const [canvasLogoUrl, setCanvasLogoUrl] = useState('')
+  const [canvasLogoX, setCanvasLogoX] = useState(50) // 0 to 100% (50 = centered)
+  const [canvasLogoY, setCanvasLogoY] = useState(10) // 0 to 100% (10 = top)
+  const [canvasLogoScale, setCanvasLogoScale] = useState(100) // 40 to 200 %
+  const [canvasLogoBg, setCanvasLogoBg] = useState('none') // 'none', 'dark', 'white', 'glass'
+  const [showLogoDragGuide, setShowLogoDragGuide] = useState(true)
+  const [isDraggingLogo, setIsDraggingLogo] = useState(false)
+  const isDraggingLogoRef = useRef(false)
+  const previewContainerRef = useRef(null)
+  const logoCacheRef = useRef(new Map())
+  const imgCacheRef = useRef(new Map())
+
   const [canvasTheme, setCanvasTheme] = useState('emerald')
   const [canvasBadgeText, setCanvasBadgeText] = useState('')
   const [canvasBadgeColor, setCanvasBadgeColor] = useState('#f59e0b')
@@ -67,6 +78,64 @@ export default function Marketing() {
   const [canvasImgFit, setCanvasImgFit] = useState('contain') // 'contain' (default: sin cortar) or 'cover'
   const [canvasImgScale, setCanvasImgScale] = useState(100) // 50 to 150 %
   const [canvasImgOffsetY, setCanvasImgOffsetY] = useState(0) // -40 to 40 %
+
+  const handleContainerPointerDown = (e) => {
+    if (videoEngine !== 'gemini_canvas' || postType !== 'post') return
+    if (!previewContainerRef.current) return
+    e.preventDefault()
+    isDraggingLogoRef.current = true
+    setIsDraggingLogo(true)
+    const rect = previewContainerRef.current.getBoundingClientRect()
+    if (rect.width > 0 && rect.height > 0) {
+      const relX = ((e.clientX - rect.left) / rect.width) * 100
+      const relY = ((e.clientY - rect.top) / rect.height) * 100
+      const clampedX = Math.round(Math.max(5, Math.min(95, relX)))
+      const clampedY = Math.round(Math.max(5, Math.min(95, relY)))
+      setCanvasLogoX(clampedX)
+      setCanvasLogoY(clampedY)
+    }
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId)
+    } catch (err) {}
+  }
+
+  const handleLogoDragStart = (e) => {
+    e.preventDefault()
+    e.stopPropagation()
+    isDraggingLogoRef.current = true
+    setIsDraggingLogo(true)
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId)
+    } catch (err) {}
+  }
+
+  const handleLogoPointerMove = (e) => {
+    if (!isDraggingLogoRef.current || !previewContainerRef.current) return
+    e.preventDefault()
+    const rect = previewContainerRef.current.getBoundingClientRect()
+    if (rect.width <= 0 || rect.height <= 0) return
+    const relX = ((e.clientX - rect.left) / rect.width) * 100
+    const relY = ((e.clientY - rect.top) / rect.height) * 100
+    const clampedX = Math.round(Math.max(5, Math.min(95, relX)))
+    const clampedY = Math.round(Math.max(5, Math.min(95, relY)))
+    setCanvasLogoX(clampedX)
+    setCanvasLogoY(clampedY)
+  }
+
+  const handleLogoDragEnd = (e) => {
+    if (isDraggingLogoRef.current) {
+      isDraggingLogoRef.current = false
+      setIsDraggingLogo(false)
+      try {
+        e.currentTarget.releasePointerCapture(e.pointerId)
+      } catch (err) {}
+      if (videoScriptData && postType === 'post') {
+        renderPostCanvasImage(videoScriptData, true).then(url => {
+          if (url) setGeneratedVideoUrl(url)
+        })
+      }
+    }
+  }
 
   useEffect(() => {
     fetch('/api/settings/web-config')
@@ -90,11 +159,12 @@ export default function Marketing() {
   useEffect(() => {
     if (videoScriptData && postType === 'post') {
       const timer = setTimeout(async () => {
-        const imageBlobUrl = await renderPostCanvasImage(videoScriptData)
+        const shouldUpload = !isDraggingLogoRef.current
+        const imageBlobUrl = await renderPostCanvasImage(videoScriptData, shouldUpload)
         if (imageBlobUrl) {
           setGeneratedVideoUrl(imageBlobUrl)
         }
-      }, 150)
+      }, isDraggingLogoRef.current ? 100 : 160)
       return () => clearTimeout(timer)
     }
   }, [
@@ -102,7 +172,8 @@ export default function Marketing() {
     canvasLayout, canvasFont, canvasLogoUrl, canvasTheme,
     canvasBadgeText, canvasBadgeColor, canvasShowPrice,
     canvasCustomTitle, canvasFooterText, canvasTextColor, canvasShowBorder,
-    canvasImgFit, canvasImgScale, canvasImgOffsetY
+    canvasImgFit, canvasImgScale, canvasImgOffsetY,
+    canvasLogoX, canvasLogoY, canvasLogoScale, canvasLogoBg
   ])
   const [scheduledAt, setScheduledAt] = useState('')
   const [submitting, setSubmitting] = useState(false)
@@ -795,13 +866,107 @@ export default function Marketing() {
 
   const loadCanvasLogo = (url) => {
     if (!url) return Promise.resolve(null)
+    if (logoCacheRef.current && logoCacheRef.current.has(url)) {
+      return Promise.resolve(logoCacheRef.current.get(url))
+    }
     return new Promise(res => {
       const img = new Image()
       img.crossOrigin = 'anonymous'
-      img.onload = () => res(img)
+      img.onload = () => {
+        if (logoCacheRef.current) logoCacheRef.current.set(url, img)
+        res(img)
+      }
       img.onerror = () => res(null)
       img.src = url
     })
+  }
+
+  const loadCachedImage = (url) => {
+    if (!url) return Promise.resolve(null)
+    if (imgCacheRef.current && imgCacheRef.current.has(url)) {
+      return Promise.resolve(imgCacheRef.current.get(url))
+    }
+    return new Promise(res => {
+      const img = new Image()
+      img.crossOrigin = 'anonymous'
+      img.onload = () => {
+        if (imgCacheRef.current) imgCacheRef.current.set(url, img)
+        res(img)
+      }
+      img.onerror = () => res(null)
+      img.src = url
+    })
+  }
+
+  const computeLogoBounds = (logoImg, canvasW, canvasH, logoXPercent = 50, logoYPercent = 10, scalePercent = 100, defaultMaxW = 380, defaultMaxH = 65) => {
+    const zoom = Math.max(0.4, Math.min(2.5, (scalePercent || 100) / 100))
+    const maxW = defaultMaxW * zoom
+    const maxH = defaultMaxH * zoom
+
+    let lW = 260 * zoom
+    let lH = 48 * zoom
+    if (logoImg && logoImg.width && logoImg.height) {
+      const lScale = Math.min(maxW / logoImg.width, maxH / logoImg.height)
+      lW = logoImg.width * lScale
+      lH = logoImg.height * lScale
+    }
+
+    const centerX = (canvasW * Math.max(0, Math.min(100, logoXPercent))) / 100
+    const centerY = (canvasH * Math.max(0, Math.min(100, logoYPercent))) / 100
+
+    const margin = 20
+    const drawX = Math.round(Math.max(margin, Math.min(canvasW - lW - margin, centerX - lW / 2)))
+    const drawY = Math.round(Math.max(margin, Math.min(canvasH - lH - margin, centerY - lH / 2)))
+
+    return { drawX, drawY, lW, lH, centerX, centerY, zoom }
+  }
+
+  const drawBrandLogo = (ctx, logoImg, activeStoreName, canvasW, canvasH, fontFamily, mainTextColor, fallbackBg = null) => {
+    const { drawX, drawY, lW, lH, centerX, centerY, zoom } = computeLogoBounds(
+      logoImg, canvasW, canvasH, canvasLogoX, canvasLogoY, canvasLogoScale, 380, 65
+    )
+
+    const effectiveBg = (canvasLogoBg && canvasLogoBg !== 'none') ? canvasLogoBg : fallbackBg
+
+    if (effectiveBg && effectiveBg !== 'none') {
+      ctx.save()
+      const padX = 22
+      const padY = 10
+      const bgX = drawX - padX
+      const bgY = drawY - padY
+      const bgW = lW + padX * 2
+      const bgH = lH + padY * 2
+      const radius = Math.min(22, bgH / 2)
+
+      if (effectiveBg === 'dark' || effectiveBg === 'pill') {
+        ctx.fillStyle = 'rgba(15, 23, 42, 0.85)'
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)'
+      } else if (effectiveBg === 'white') {
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.94)'
+        ctx.strokeStyle = 'rgba(0, 0, 0, 0.12)'
+      } else if (effectiveBg === 'glass') {
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.20)'
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.35)'
+      }
+
+      ctx.beginPath()
+      if (ctx.roundRect) ctx.roundRect(bgX, bgY, bgW, bgH, radius)
+      else ctx.rect(bgX, bgY, bgW, bgH)
+      ctx.fill()
+      ctx.lineWidth = 1.5
+      ctx.stroke()
+      ctx.restore()
+    }
+
+    if (logoImg) {
+      ctx.drawImage(logoImg, drawX, drawY, lW, lH)
+    } else {
+      ctx.fillStyle = (effectiveBg === 'white') ? '#0f172a' : mainTextColor
+      const textFontSize = Math.round(28 * zoom)
+      ctx.font = `bold ${textFontSize}px ${fontFamily}`
+      ctx.textAlign = 'center'
+      ctx.fillText(`🌿 ${activeStoreName.toUpperCase()}`, centerX, centerY + Math.round(9 * zoom))
+    }
   }
 
   const computeProductImageBounds = (img, boxW, boxH, boxX, boxY, fitMode = 'contain', scalePercent = 100, offsetYPercent = 0) => {
@@ -982,31 +1147,8 @@ export default function Marketing() {
             ctx.restore()
           }
 
-          // Top Pills Overlaid
-          if (logoImg) {
-            const maxLogoW = 340
-            const maxLogoH = 50
-            const lScale = Math.min(maxLogoW / logoImg.width, maxLogoH / logoImg.height)
-            const lW = logoImg.width * lScale
-            const lH = logoImg.height * lScale
-
-            ctx.fillStyle = 'rgba(15, 23, 42, 0.85)'
-            ctx.beginPath()
-            if (ctx.roundRect) ctx.roundRect(70, 70, 360, 56, 28)
-            else ctx.rect(70, 70, 360, 56)
-            ctx.fill()
-            ctx.drawImage(logoImg, 70 + (360 - lW) / 2, 70 + (56 - lH) / 2, lW, lH)
-          } else {
-            ctx.fillStyle = 'rgba(15, 23, 42, 0.75)'
-            ctx.beginPath()
-            if (ctx.roundRect) ctx.roundRect(70, 70, 360, 56, 28)
-            else ctx.rect(70, 70, 360, 56)
-            ctx.fill()
-            ctx.fillStyle = '#ffffff'
-            ctx.font = `bold 26px ${fontFamily}`
-            ctx.textAlign = 'center'
-            ctx.fillText(`🌿 ${storeName.toUpperCase()}`, 70 + 180, 70 + 38)
-          }
+          // Brand Header / Logo
+          drawBrandLogo(ctx, logoImg, storeName, width, height, fontFamily, mainTextColor, 'dark')
 
           if (badgeTxt) {
             ctx.fillStyle = canvasBadgeColor || '#f59e0b'
@@ -1063,19 +1205,7 @@ export default function Marketing() {
           ctx.fillRect(0, 0, width, height)
 
           // Brand Header / Logo
-          if (logoImg) {
-            const maxW = 420
-            const maxH = 75
-            const lScale = Math.min(maxW / logoImg.width, maxH / logoImg.height)
-            const lW = logoImg.width * lScale
-            const lH = logoImg.height * lScale
-            ctx.drawImage(logoImg, (width - lW) / 2, 60, lW, lH)
-          } else {
-            ctx.fillStyle = mainTextColor
-            ctx.font = `bold 36px ${fontFamily}`
-            ctx.textAlign = 'center'
-            ctx.fillText(`🔥 ${storeName.toUpperCase()}`, width / 2, 110)
-          }
+          drawBrandLogo(ctx, logoImg, storeName, width, height, fontFamily, mainTextColor, null)
 
           // Product Image with Offset Pop Frame
           if (activeImg) {
@@ -1219,19 +1349,7 @@ export default function Marketing() {
           }
 
           // Brand Header / Logo
-          if (logoImg) {
-            const maxW = 480
-            const maxH = 80
-            const lScale = Math.min(maxW / logoImg.width, maxH / logoImg.height)
-            const lW = logoImg.width * lScale
-            const lH = logoImg.height * lScale
-            ctx.drawImage(logoImg, (width - lW) / 2, cardY + 30, lW, lH)
-          } else {
-            ctx.fillStyle = mainTextColor
-            ctx.font = `bold 36px ${fontFamily}`
-            ctx.textAlign = 'center'
-            ctx.fillText(`✨ ${storeName.toUpperCase()}`, width / 2, cardY + 80)
-          }
+          drawBrandLogo(ctx, logoImg, storeName, width, height, fontFamily, mainTextColor, null)
 
           // Product Image Inside Glass Box
           if (activeImg) {
@@ -1355,20 +1473,18 @@ export default function Marketing() {
             }
           }
 
-          if (theme.header !== 'transparent') {
-            ctx.fillStyle = theme.header
-            ctx.fillRect(90, 100, 900, 90)
+          if (canvasLogoX === 50 && canvasLogoY === 10) {
+            if (theme.header !== 'transparent') {
+              ctx.fillStyle = theme.header
+              ctx.fillRect(90, 100, 900, 90)
+            }
+            if (drawBorder) {
+              ctx.strokeStyle = theme.border
+              ctx.lineWidth = 2
+              ctx.strokeRect(90, 100, 900, 90)
+            }
           }
-          if (drawBorder) {
-            ctx.strokeStyle = theme.border
-            ctx.lineWidth = 2
-            ctx.strokeRect(90, 100, 900, 90)
-          }
-
-          ctx.fillStyle = mainTextColor
-          ctx.font = `bold 36px ${fontFamily}`
-          ctx.textAlign = 'center'
-          ctx.fillText(`🌱 ${storeName.toUpperCase()}`, width / 2, 158)
+          drawBrandLogo(ctx, logoImg, storeName, width, height, fontFamily, mainTextColor, null)
 
           if (badgeTxt) {
             const badgeY = 1220
@@ -1441,7 +1557,7 @@ export default function Marketing() {
   }
 
   // Render a static 1080x1080 post image from Gemini Canvas script
-  const renderPostCanvasImage = async (script) => {
+  const renderPostCanvasImage = async (script, shouldUpload = true) => {
     const renderId = ++canvasRenderSeqRef.current
     try {
       if (document.fonts && document.fonts.ready) {
@@ -1473,15 +1589,7 @@ export default function Marketing() {
       rawImagesList = [selImg, ...rawImagesList.filter(u => u !== selImg)]
     }
     const imagesList = rawImagesList
-    const loadedImgs = await Promise.all(
-      imagesList.map(src => new Promise(res => {
-        const img = new Image()
-        img.crossOrigin = 'anonymous'
-        img.onload = () => res(img)
-        img.onerror = () => res(null)
-        img.src = src
-      }))
-    )
+    const loadedImgs = await Promise.all(imagesList.map(src => loadCachedImage(src)))
     const validImgs = loadedImgs.filter(Boolean)
     const scene = (script.scenes && script.scenes[0]) || { badge_text: 'PROMO EXCLUSIVA', main_headline: script.product_title || activeStoreName, sub_text: '¡Conocé el stock!' }
     const activeImg = validImgs[0]
@@ -1527,30 +1635,7 @@ export default function Marketing() {
         }
       }
 
-      if (logoImg) {
-        const maxLogoW = 320
-        const maxLogoH = 44
-        const lScale = Math.min(maxLogoW / logoImg.width, maxLogoH / logoImg.height)
-        const lW = logoImg.width * lScale
-        const lH = logoImg.height * lScale
-
-        ctx.fillStyle = 'rgba(15, 23, 42, 0.80)'
-        ctx.beginPath()
-        if (ctx.roundRect) ctx.roundRect(65, 65, 340, 48, 24)
-        else ctx.rect(65, 65, 340, 48)
-        ctx.fill()
-        ctx.drawImage(logoImg, 65 + (340 - lW) / 2, 65 + (48 - lH) / 2, lW, lH)
-      } else {
-        ctx.fillStyle = 'rgba(15, 23, 42, 0.75)'
-        ctx.beginPath()
-        if (ctx.roundRect) ctx.roundRect(65, 65, 340, 48, 24)
-        else ctx.rect(65, 65, 340, 48)
-        ctx.fill()
-        ctx.fillStyle = '#ffffff'
-        ctx.font = `bold 22px ${fontFamily}`
-        ctx.textAlign = 'center'
-        ctx.fillText(`🌿 ${activeStoreName.toUpperCase()}`, 65 + 170, 65 + 32)
-      }
+      drawBrandLogo(ctx, logoImg, activeStoreName, size, size, fontFamily, mainTextColor, 'dark')
 
       if (badgeTxt) {
         ctx.fillStyle = canvasBadgeColor || '#f59e0b'
@@ -1621,19 +1706,7 @@ export default function Marketing() {
       ctx.arc(950, 120, 320, 0, Math.PI * 2)
       ctx.fill()
 
-      if (logoImg) {
-        const maxLogoW = 380
-        const maxLogoH = 65
-        const lScale = Math.min(maxLogoW / logoImg.width, maxLogoH / logoImg.height)
-        const lW = logoImg.width * lScale
-        const lH = logoImg.height * lScale
-        ctx.drawImage(logoImg, (size - lW) / 2, 35, lW, lH)
-      } else {
-        ctx.fillStyle = mainTextColor
-        ctx.font = `bold 32px ${fontFamily}`
-        ctx.textAlign = 'center'
-        ctx.fillText(`🔥 ${activeStoreName.toUpperCase()}`, size / 2, 75)
-      }
+      drawBrandLogo(ctx, logoImg, activeStoreName, size, size, fontFamily, mainTextColor, null)
 
       if (activeImg) {
         const imgSize = 540
@@ -1773,19 +1846,7 @@ export default function Marketing() {
         ctx.stroke()
       }
 
-      if (logoImg) {
-        const maxLogoW = 380
-        const maxLogoH = 65
-        const lScale = Math.min(maxLogoW / logoImg.width, maxLogoH / logoImg.height)
-        const lW = logoImg.width * lScale
-        const lH = logoImg.height * lScale
-        ctx.drawImage(logoImg, (size - lW) / 2, cardY + 25, lW, lH)
-      } else {
-        ctx.fillStyle = mainTextColor
-        ctx.font = `bold 30px ${fontFamily}`
-        ctx.textAlign = 'center'
-        ctx.fillText(`✨ ${activeStoreName.toUpperCase()}`, size / 2, cardY + 65)
-      }
+      drawBrandLogo(ctx, logoImg, activeStoreName, size, size, fontFamily, mainTextColor, null)
 
       if (activeImg) {
         const imgBoxSize = 460
@@ -1883,13 +1944,7 @@ export default function Marketing() {
       ctx.fillStyle = grad
       ctx.fillRect(0, 0, size, size)
 
-      if (logoImg) {
-        const maxLogoW = 380
-        const maxLogoH = 55
-        const lScale = Math.min(maxLogoW / logoImg.width, maxLogoH / logoImg.height)
-        const lW = logoImg.width * lScale
-        const lH = logoImg.height * lScale
-
+      if (canvasLogoX === 50 && canvasLogoY === 10) {
         if (theme.header !== 'transparent') {
           ctx.fillStyle = theme.header
           ctx.fillRect(60, 40, 960, 70)
@@ -1899,22 +1954,8 @@ export default function Marketing() {
           ctx.lineWidth = 2
           ctx.strokeRect(60, 40, 960, 70)
         }
-        ctx.drawImage(logoImg, (size - lW) / 2, 40 + (70 - lH) / 2, lW, lH)
-      } else {
-        if (theme.header !== 'transparent') {
-          ctx.fillStyle = theme.header
-          ctx.fillRect(60, 40, 960, 70)
-        }
-        if (drawBorder) {
-          ctx.strokeStyle = theme.border
-          ctx.lineWidth = 2
-          ctx.strokeRect(60, 40, 960, 70)
-        }
-        ctx.fillStyle = mainTextColor
-        ctx.font = `bold 30px ${fontFamily}`
-        ctx.textAlign = 'center'
-        ctx.fillText(`🌱 ${activeStoreName.toUpperCase()}`, size / 2, 85)
       }
+      drawBrandLogo(ctx, logoImg, activeStoreName, size, size, fontFamily, mainTextColor, null)
 
       if (activeImg) {
         const imgAreaSize = 560
@@ -2011,18 +2052,20 @@ export default function Marketing() {
           return
         }
         const blobUrl = URL.createObjectURL(blob)
-        try {
-          const formData = new FormData()
-          const file = new File([blob], `post_${Date.now()}.jpg`, { type: 'image/jpeg' })
-          formData.append('file', file)
-          const uploadRes = await fetch('/api/media/upload?path=reels', { method: 'POST', body: formData })
-          const uploadData = await uploadRes.json()
-          if (uploadRes.ok && uploadData.url && renderId === canvasRenderSeqRef.current) {
-            setMediaUrl(uploadData.url)
-            setGeneratedServerMediaUrl(uploadData.url)
+        if (shouldUpload) {
+          try {
+            const formData = new FormData()
+            const file = new File([blob], `post_${Date.now()}.jpg`, { type: 'image/jpeg' })
+            formData.append('file', file)
+            const uploadRes = await fetch('/api/media/upload?path=reels', { method: 'POST', body: formData })
+            const uploadData = await uploadRes.json()
+            if (uploadRes.ok && uploadData.url && renderId === canvasRenderSeqRef.current) {
+              setMediaUrl(uploadData.url)
+              setGeneratedServerMediaUrl(uploadData.url)
+            }
+          } catch (e) {
+            console.warn("Error uploading post image:", e)
           }
-        } catch (e) {
-          console.warn("Error uploading post image:", e)
         }
         resolve(blobUrl)
       }, 'image/jpeg', 0.95)
@@ -2609,6 +2652,141 @@ export default function Marketing() {
                       </div>
                     </label>
 
+                    {/* Row 0.6: Ubicación, Arrastre con Mouse y Tamaño del Logo */}
+                    <div style={{display: 'flex', flexDirection: 'column', gap: 8, padding: '10px 12px', borderRadius: 8, backgroundColor: 'rgba(255,255,255,0.03)', border: '1px solid rgba(16, 185, 129, 0.3)'}}>
+                      <div style={{fontSize: '0.8rem', fontWeight: 700, color: 'var(--accent-emerald)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 6}}>
+                        <span style={{display: 'flex', alignItems: 'center', gap: 6}}>
+                          <Move size={14} /> Ubicación & Tamaño del Logo:
+                        </span>
+                        <div style={{display: 'flex', alignItems: 'center', gap: 10}}>
+                          <label style={{fontSize: '0.72rem', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer'}}>
+                            <input 
+                              type="checkbox" 
+                              checked={showLogoDragGuide} 
+                              onChange={e => setShowLogoDragGuide(e.target.checked)}
+                              style={{width: 'auto'}}
+                            />
+                            Mostrar guía de arrastre en preview
+                          </label>
+                          {(canvasLogoX !== 50 || canvasLogoY !== 10 || canvasLogoScale !== 100 || canvasLogoBg !== 'none') && (
+                            <button 
+                              type="button" 
+                              onClick={() => { setCanvasLogoX(50); setCanvasLogoY(10); setCanvasLogoScale(100); setCanvasLogoBg('none'); }}
+                              style={{background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', fontSize: '0.7rem', textDecoration: 'underline'}}
+                            >
+                              Restablecer Original
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
+                      <div style={{fontSize: '0.72rem', color: '#94a3b8', backgroundColor: 'rgba(16, 185, 129, 0.08)', padding: '5px 8px', borderRadius: 6, border: '1px dashed rgba(16, 185, 129, 0.25)'}}>
+                        💡 <strong>Arrastre con el mouse:</strong> Puedes hacer clic o arrastrar directamente el logo sobre la imagen de previsualización a la derecha para ubicarlo donde quieras, o usar los accesos rápidos y deslizadores de abajo:
+                      </div>
+
+                      {/* Presets Rápidos */}
+                      <div style={{display: 'flex', flexDirection: 'column', gap: 4}}>
+                        <span style={{fontSize: '0.74rem', fontWeight: 600}}>Posiciones Rápidas (1 Clic):</span>
+                        <div style={{display: 'flex', gap: 6, flexWrap: 'wrap'}}>
+                          {[
+                            { label: '↖ Arriba Izq', x: 18, y: 10 },
+                            { label: '⬆ Arriba Centro', x: 50, y: 10 },
+                            { label: '↗ Arriba Der', x: 82, y: 10 },
+                            { label: '🎯 Centro', x: 50, y: 50 },
+                            { label: '↙ Abajo Izq', x: 18, y: 92 },
+                            { label: '⬇ Abajo Centro', x: 50, y: 92 },
+                            { label: '↘ Abajo Der', x: 82, y: 92 },
+                          ].map(p => {
+                            const isSelected = canvasLogoX === p.x && canvasLogoY === p.y
+                            return (
+                              <button
+                                key={p.label}
+                                type="button"
+                                onClick={() => { setCanvasLogoX(p.x); setCanvasLogoY(p.y); }}
+                                style={{
+                                  padding: '3px 8px',
+                                  fontSize: '0.72rem',
+                                  borderRadius: 5,
+                                  border: isSelected ? '1px solid #10b981' : '1px solid var(--border-color)',
+                                  backgroundColor: isSelected ? 'rgba(16, 185, 129, 0.22)' : 'var(--bg-dark)',
+                                  color: isSelected ? '#10b981' : 'var(--text-primary)',
+                                  cursor: 'pointer',
+                                  fontWeight: isSelected ? 700 : 500,
+                                  transition: 'all 0.15s ease'
+                                }}
+                              >
+                                {p.label}
+                              </button>
+                            )
+                          })}
+                        </div>
+                      </div>
+
+                      {/* Sliders de Precisión: X, Y, Escala y Fondo */}
+                      <div style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10, alignItems: 'center', marginTop: 2}}>
+                        <label style={{fontSize: '0.74rem', fontWeight: 600, display: 'flex', flexDirection: 'column'}}>
+                          <div style={{display: 'flex', justifyContent: 'space-between'}}>
+                            <span>Horizontal (X):</span>
+                            <span style={{color: 'var(--accent-emerald)', fontWeight: 700}}>{canvasLogoX}%</span>
+                          </div>
+                          <input 
+                            type="range" 
+                            min="5" 
+                            max="95" 
+                            step="1"
+                            value={canvasLogoX} 
+                            onChange={e => setCanvasLogoX(Number(e.target.value))}
+                            style={{width: '100%', marginTop: 4, accentColor: '#10b981', cursor: 'pointer'}}
+                          />
+                        </label>
+
+                        <label style={{fontSize: '0.74rem', fontWeight: 600, display: 'flex', flexDirection: 'column'}}>
+                          <div style={{display: 'flex', justifyContent: 'space-between'}}>
+                            <span>Vertical (Y):</span>
+                            <span style={{color: 'var(--accent-emerald)', fontWeight: 700}}>{canvasLogoY}%</span>
+                          </div>
+                          <input 
+                            type="range" 
+                            min="5" 
+                            max="95" 
+                            step="1"
+                            value={canvasLogoY} 
+                            onChange={e => setCanvasLogoY(Number(e.target.value))}
+                            style={{width: '100%', marginTop: 4, accentColor: '#10b981', cursor: 'pointer'}}
+                          />
+                        </label>
+
+                        <label style={{fontSize: '0.74rem', fontWeight: 600, display: 'flex', flexDirection: 'column'}}>
+                          <div style={{display: 'flex', justifyContent: 'space-between'}}>
+                            <span>Tamaño / Escala:</span>
+                            <span style={{color: 'var(--accent-emerald)', fontWeight: 700}}>{canvasLogoScale}%</span>
+                          </div>
+                          <input 
+                            type="range" 
+                            min="40" 
+                            max="200" 
+                            step="2"
+                            value={canvasLogoScale} 
+                            onChange={e => setCanvasLogoScale(Number(e.target.value))}
+                            style={{width: '100%', marginTop: 4, accentColor: '#10b981', cursor: 'pointer'}}
+                          />
+                        </label>
+
+                        <label style={{fontSize: '0.74rem', fontWeight: 600}}>Fondo / Contraste Logo:
+                          <select 
+                            value={canvasLogoBg} 
+                            onChange={e => setCanvasLogoBg(e.target.value)}
+                            style={{width: '100%', marginTop: 4, padding: '4px 6px', borderRadius: 6, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-dark)', color: 'var(--text-primary)', fontSize: '0.74rem'}}
+                          >
+                            <option value="none">Sin Fondo (Transparente)</option>
+                            <option value="dark">Cápsula Oscura (Traslúcida)</option>
+                            <option value="white">Cápsula Blanca (Traslúcida)</option>
+                            <option value="glass">Efecto Cristal Glassmorphism</option>
+                          </select>
+                        </label>
+                      </div>
+                    </div>
+
                     {/* Row 1: Tema & Color de Letras */}
                     <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8}}>
                       <label style={{fontSize: '0.78rem', fontWeight: 600}}>Tema de Fondo:
@@ -2798,21 +2976,74 @@ export default function Marketing() {
                       <span style={{fontSize: '0.7rem', color: 'var(--text-secondary)'}}>Listo para Instagram/Facebook</span>
                     </div>
 
-                    {(postType !== 'post') && (generatedVideoUrl.includes('.mp4') || generatedVideoUrl.includes('.webm') || videoEngine === 'google_veo' || videoEngine === 'gemini_canvas') ? (
-                      <video 
-                        src={generatedVideoUrl} 
-                        controls 
-                        autoPlay 
-                        loop 
-                        style={{maxHeight: 360, maxWidth: '100%', borderRadius: 8, boxShadow: '0 4px 16px rgba(0,0,0,0.6)', border: '2px solid var(--accent-blue)'}} 
-                      />
-                    ) : (
-                      <img 
-                        src={generatedVideoUrl} 
-                        alt="Previsualización IA" 
-                        style={{maxHeight: 360, maxWidth: '100%', borderRadius: 8, boxShadow: '0 4px 16px rgba(0,0,0,0.6)', border: '2px solid var(--accent-blue)', objectFit: 'contain'}} 
-                      />
-                    )}
+                    <div 
+                      ref={previewContainerRef}
+                      onPointerDown={handleContainerPointerDown}
+                      onPointerMove={handleLogoPointerMove}
+                      onPointerUp={handleLogoDragEnd}
+                      onPointerCancel={handleLogoDragEnd}
+                      style={{
+                        position: 'relative', 
+                        display: 'inline-block',
+                        maxHeight: 360,
+                        maxWidth: '100%',
+                        cursor: (videoEngine === 'gemini_canvas' && postType === 'post') ? 'crosshair' : 'default',
+                        userSelect: 'none',
+                        touchAction: 'none'
+                      }}
+                    >
+                      {(postType !== 'post') && (generatedVideoUrl.includes('.mp4') || generatedVideoUrl.includes('.webm') || videoEngine === 'google_veo' || videoEngine === 'gemini_canvas') ? (
+                        <video 
+                          src={generatedVideoUrl} 
+                          controls 
+                          autoPlay 
+                          loop 
+                          style={{maxHeight: 360, maxWidth: '100%', borderRadius: 8, boxShadow: '0 4px 16px rgba(0,0,0,0.6)', border: '2px solid var(--accent-blue)', display: 'block'}} 
+                        />
+                      ) : (
+                        <img 
+                          src={generatedVideoUrl} 
+                          alt="Previsualización IA" 
+                          draggable={false}
+                          style={{maxHeight: 360, maxWidth: '100%', borderRadius: 8, boxShadow: '0 4px 16px rgba(0,0,0,0.6)', border: '2px solid var(--accent-blue)', objectFit: 'contain', display: 'block', pointerEvents: 'none'}} 
+                        />
+                      )}
+
+                      {/* Interactive Drag Handle Overlay for Gemini Canvas Logo */}
+                      {videoEngine === 'gemini_canvas' && postType === 'post' && showLogoDragGuide && (
+                        <div
+                          onPointerDown={handleLogoDragStart}
+                          style={{
+                            position: 'absolute',
+                            left: `${canvasLogoX}%`,
+                            top: `${canvasLogoY}%`,
+                            transform: 'translate(-50%, -50%)',
+                            cursor: isDraggingLogo ? 'grabbing' : 'grab',
+                            padding: '4px 10px',
+                            backgroundColor: isDraggingLogo ? 'rgba(16, 185, 129, 0.75)' : 'rgba(15, 23, 42, 0.85)',
+                            border: isDraggingLogo ? '2px solid #34d399' : '2px dashed #10b981',
+                            borderRadius: 20,
+                            color: '#ffffff',
+                            fontSize: '0.72rem',
+                            fontWeight: 700,
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 5,
+                            boxShadow: '0 4px 14px rgba(0,0,0,0.7)',
+                            zIndex: 15,
+                            touchAction: 'none',
+                            userSelect: 'none',
+                            whiteSpace: 'nowrap',
+                            backdropFilter: 'blur(6px)',
+                            pointerEvents: 'auto'
+                          }}
+                          title="Arrastra con el mouse para ubicar el logo donde quieras"
+                        >
+                          <Move size={12} style={{color: '#34d399'}} />
+                          <span>Logo ({canvasLogoX}%, {canvasLogoY}%)</span>
+                        </div>
+                      )}
+                    </div>
 
                     <div style={{display: 'flex', gap: 8, width: '100%', marginTop: 5}}>
                       <button 
