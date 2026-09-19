@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { ShoppingBag, Globe, Store, Check, Clock, Plus, Trash2, ShoppingCart, DollarSign, Link, MessageSquare, Send, ExternalLink, FileText, UserCheck, User, Search, X, Filter, CheckSquare, Square, Layers, CheckCircle2, AlertCircle, Loader2, RefreshCw, Package, Calendar, Edit2, Eye } from 'lucide-react'
+import { ShoppingBag, Globe, Store, Check, Clock, Plus, Trash2, ShoppingCart, DollarSign, Link, MessageSquare, Send, ExternalLink, FileText, UserCheck, User, Search, X, Filter, CheckSquare, Square, Layers, CheckCircle2, AlertCircle, Loader2, RefreshCw, Package, Calendar, Edit2, Eye, CreditCard, Copy } from 'lucide-react'
 import { useTenant } from '../TenantContext'
 import { getCachedData, setCachedData, invalidateCache, CacheKeys } from '../utils/cache'
 import { matchesQuery, matchesPhoneOrDoc } from '../utils/searchUtils'
@@ -121,6 +121,13 @@ export default function Sales() {
   const [savingDate, setSavingDate] = useState(false)
 
   const [invoicingStates, setInvoicingStates] = useState({})
+
+  // Mercado Pago Payment Detail Modal & Link State
+  const [mpPaymentModalData, setMpPaymentModalData] = useState(null)
+  const [linkMpModalOrder, setLinkMpModalOrder] = useState(null)
+  const [linkMpPaymentIdInput, setLinkMpPaymentIdInput] = useState('')
+  const [linkingMpLoading, setLinkingMpLoading] = useState(false)
+  const [copiedPaymentId, setCopiedPaymentId] = useState(false)
 
   // Mercado Libre Chat Modal State
   const [chatModalOrder, setChatModalOrder] = useState(null)
@@ -635,6 +642,69 @@ export default function Sales() {
       setSavingDate(false)
     }
   }
+
+  const handleOpenMpPaymentModal = async (paymentId, order) => {
+    setMpPaymentModalData({ paymentId, loading: true, error: null, payment: null, order })
+    try {
+      const res = await fetch(`/api/mercadopago/payments/${paymentId}`)
+      const data = await res.json()
+      if (res.ok && data.success) {
+        setMpPaymentModalData(prev => ({ ...prev, loading: false, payment: data.payment }))
+      } else {
+        setMpPaymentModalData(prev => ({ ...prev, loading: false, error: data.detail || 'No se pudo obtener el detalle de Mercado Pago' }))
+      }
+    } catch (err) {
+      setMpPaymentModalData(prev => ({ ...prev, loading: false, error: 'Error de conexión: ' + err.message }))
+    }
+  }
+
+  const handleUnlinkMpPayment = async (orderId) => {
+    if (!window.confirm(`¿Desvincular el cobro de Mercado Pago de la venta #${orderId}?`)) return
+    try {
+      const res = await fetch(`/api/mercadopago/unlink-order/${orderId}`, { method: 'POST' })
+      const data = await res.json()
+      if (res.ok && data.success) {
+        alert("Cobro de Mercado Pago desvinculado con éxito.")
+        setMpPaymentModalData(null)
+        invalidateCache('sales')
+        fetchOrders(true)
+      } else {
+        alert("Error: " + (data.detail || "Error desconocido"))
+      }
+    } catch (err) {
+      alert("Error de conexión: " + err.message)
+    }
+  }
+
+  const handleLinkMpPayment = async (orderId, paymentId) => {
+    if (!paymentId || !String(paymentId).trim()) {
+      alert("Por favor ingresa un ID de pago de Mercado Pago válido.")
+      return
+    }
+    setLinkingMpLoading(true)
+    try {
+      const res = await fetch('/api/mercadopago/link-order', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ order_id: orderId, mp_payment_id: parseInt(paymentId) })
+      })
+      const data = await res.json()
+      if (res.ok && data.success) {
+        alert("¡Venta vinculada exitosamente con el cobro de Mercado Pago!")
+        setLinkMpModalOrder(null)
+        setLinkMpPaymentIdInput('')
+        invalidateCache('sales')
+        fetchOrders(true)
+      } else {
+        alert("Error al vincular: " + (data.detail || "Error desconocido"))
+      }
+    } catch (err) {
+      alert("Error de conexión: " + err.message)
+    } finally {
+      setLinkingMpLoading(false)
+    }
+  }
+
 
   const handleAddItem = () => {
     setNewOrder(prev => ({
@@ -1820,22 +1890,48 @@ export default function Sales() {
                         </small>
                       )}
 
-                      {/* Display matched Mercado Pago payment badge if linked */}
-                      {o.mp_payment_id && (
-                        <span 
-                          title={o.mp_fee_amount ? `Cobro MP #${o.mp_payment_id} | Comisión retenida: $${Number(o.mp_fee_amount).toLocaleString()}` : `Cobro MP #${o.mp_payment_id}`}
+                      {/* Display matched Mercado Pago payment button if linked */}
+                      {o.mp_payment_id ? (
+                        <button 
+                          type="button"
+                          onClick={() => handleOpenMpPaymentModal(o.mp_payment_id, o)}
+                          title={o.mp_fee_amount ? `Cobro MP #${o.mp_payment_id} | Comisión retenida: $${Number(o.mp_fee_amount).toLocaleString()} - Clic para ver comprobante y detalles` : `Cobro MP #${o.mp_payment_id} - Clic para ver comprobante y detalles`}
                           style={{
-                            display: 'inline-flex', alignItems: 'center', gap: 3,
-                            fontSize: '0.65rem', padding: '2px 6px', borderRadius: 4,
+                            display: 'inline-flex', alignItems: 'center', gap: 4,
+                            fontSize: '0.68rem', padding: '3px 8px', borderRadius: 5,
                             backgroundColor: 'rgba(0, 158, 227, 0.12)', color: '#009ee3',
-                            fontWeight: 600, border: '1px solid rgba(0, 158, 227, 0.25)'
+                            fontWeight: 700, border: '1px solid rgba(0, 158, 227, 0.35)',
+                            cursor: 'pointer', transition: 'all 0.15s ease'
                           }}
+                          onMouseEnter={e => { e.currentTarget.style.backgroundColor = 'rgba(0, 158, 227, 0.22)'; }}
+                          onMouseLeave={e => { e.currentTarget.style.backgroundColor = 'rgba(0, 158, 227, 0.12)'; }}
                         >
-                          💳 MP #{o.mp_payment_id}
+                          <CreditCard size={11} /> MP #{o.mp_payment_id}
                           {o.mp_fee_amount > 0 && (
-                            <span style={{opacity: 0.85, fontSize: '0.6rem'}}>(-${Number(o.mp_fee_amount).toFixed(0)})</span>
+                            <span style={{opacity: 0.85, fontSize: '0.62rem'}}>(-${Number(o.mp_fee_amount).toFixed(0)})</span>
                           )}
-                        </span>
+                          <ExternalLink size={10} style={{opacity: 0.7}} />
+                        </button>
+                      ) : (
+                        (o.payment_method?.toLowerCase().includes('mercado') || o.payment_method?.toLowerCase().includes('transferencia') || o.source_platform === 'LOCAL') && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setLinkMpModalOrder(o)
+                              setLinkMpPaymentIdInput('')
+                            }}
+                            title="Vincular con un cobro o transferencia de Mercado Pago"
+                            style={{
+                              display: 'inline-flex', alignItems: 'center', gap: 3,
+                              fontSize: '0.62rem', padding: '2px 6px', borderRadius: 4,
+                              backgroundColor: 'transparent', color: 'var(--text-secondary)',
+                              border: '1px dashed var(--border-color)', cursor: 'pointer',
+                              marginTop: 2
+                            }}
+                          >
+                            + Vincular MP
+                          </button>
+                        )
                       )}
                     </div>
                   </td>
@@ -4399,6 +4495,405 @@ export default function Sales() {
           </div>
         )
       })()}
+
+      {/* Mercado Pago Payment Detail & Voucher Modal */}
+      {mpPaymentModalData && (() => {
+        const { paymentId, loading, error, payment, order } = mpPaymentModalData
+        const p = payment || {}
+        const payer = p.payer || {}
+        const txDetails = p.transaction_details || {}
+        const feeDetails = p.fee_details || []
+        const isApproved = (p.status === 'approved' || p.status_detail === 'accredited')
+
+        return (
+          <div
+            onClick={(e) => { if (e.target === e.currentTarget) setMpPaymentModalData(null) }}
+            style={{
+              position: 'fixed', inset: 0,
+              backgroundColor: 'rgba(0, 0, 0, 0.75)',
+              backdropFilter: 'blur(4px)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              zIndex: 9999, padding: 16
+            }}
+          >
+            <div style={{
+              backgroundColor: 'var(--bg-card)',
+              border: '1px solid rgba(0, 158, 227, 0.35)',
+              borderRadius: 14,
+              width: '100%',
+              maxWidth: 580,
+              maxHeight: '90vh',
+              display: 'flex',
+              flexDirection: 'column',
+              boxShadow: '0 20px 45px rgba(0, 158, 227, 0.15), 0 10px 25px rgba(0,0,0,0.5)',
+              overflow: 'hidden'
+            }}>
+              {/* Header */}
+              <div style={{
+                padding: '16px 20px',
+                borderBottom: '1px solid var(--border-color)',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                backgroundColor: 'rgba(0, 158, 227, 0.08)'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <div style={{
+                    width: 38, height: 38, borderRadius: 10,
+                    backgroundColor: 'rgba(0, 158, 227, 0.15)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    border: '1px solid rgba(0, 158, 227, 0.3)'
+                  }}>
+                    <CreditCard size={20} color="#009ee3" />
+                  </div>
+                  <div>
+                    <h3 style={{ margin: 0, fontSize: '1.05rem', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 8 }}>
+                      Cobro Mercado Pago #{paymentId}
+                    </h3>
+                    <p style={{ margin: '2px 0 0 0', fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                      Asociado a la venta #{order?.order_id} ({order?.source_platform || 'LOCAL'})
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setMpPaymentModalData(null)}
+                  style={{
+                    background: 'none', border: 'none',
+                    color: 'var(--text-secondary)', cursor: 'pointer',
+                    fontSize: '1.2rem', padding: 4
+                  }}
+                >
+                  ✕
+                </button>
+              </div>
+
+              {/* Body */}
+              <div style={{ padding: 20, overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: 16 }}>
+                {loading ? (
+                  <div style={{ textAlign: 'center', padding: '40px 20px' }}>
+                    <Loader2 size={40} style={{ color: '#009ee3', animation: 'spin 1.2s linear infinite', margin: '0 auto 16px' }} />
+                    <h4 style={{ margin: '0 0 6px 0', color: 'var(--text-primary)' }}>Consultando datos en Mercado Pago...</h4>
+                    <p style={{ margin: 0, fontSize: '0.82rem', color: 'var(--text-secondary)' }}>
+                      Obteniendo información del pagador, comisiones y comprobante.
+                    </p>
+                  </div>
+                ) : error ? (
+                  <div style={{
+                    padding: 16, borderRadius: 10,
+                    backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                    border: '1px solid rgba(239, 68, 68, 0.3)',
+                    color: 'var(--text-primary)'
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#ef4444', fontWeight: 600, marginBottom: 6 }}>
+                      <AlertCircle size={18} /> No se pudo cargar el detalle
+                    </div>
+                    <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+                      {error}
+                    </p>
+                    <div style={{ marginTop: 14, display: 'flex', gap: 10 }}>
+                      <button
+                        type="button"
+                        className="btn"
+                        style={{ padding: '6px 12px', fontSize: '0.8rem', backgroundColor: 'var(--bg-hover)' }}
+                        onClick={() => handleOpenMpPaymentModal(paymentId, order)}
+                      >
+                        Reintentar
+                      </button>
+                      <button
+                        type="button"
+                        className="btn"
+                        style={{ padding: '6px 12px', fontSize: '0.8rem', backgroundColor: 'rgba(239, 68, 68, 0.15)', color: '#ef4444', border: '1px solid #ef4444' }}
+                        onClick={() => handleUnlinkMpPayment(order?.order_id)}
+                      >
+                        Desvincular cobro
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    {/* Status & Timing Banner */}
+                    <div style={{
+                      display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                      padding: '12px 16px', borderRadius: 10,
+                      backgroundColor: isApproved ? 'rgba(16, 185, 129, 0.1)' : 'rgba(245, 158, 11, 0.1)',
+                      border: `1px solid ${isApproved ? 'rgba(16, 185, 129, 0.3)' : 'rgba(245, 158, 11, 0.3)'}`,
+                      flexWrap: 'wrap', gap: 8
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <span style={{
+                          display: 'inline-flex', alignItems: 'center', gap: 4,
+                          padding: '4px 10px', borderRadius: 6,
+                          fontSize: '0.8rem', fontWeight: 700,
+                          backgroundColor: isApproved ? 'rgba(16, 185, 129, 0.2)' : 'rgba(245, 158, 11, 0.2)',
+                          color: isApproved ? '#10b981' : '#f59e0b'
+                        }}>
+                          {isApproved ? '✓ COBRO APROBADO' : (p.status || 'PENDIENTE').toUpperCase()}
+                        </span>
+                        {p.status_detail && (
+                          <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                            ({p.status_detail})
+                          </span>
+                        )}
+                      </div>
+                      <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
+                        Acreditado: <strong style={{ color: 'var(--text-primary)' }}>{p.date_approved ? formatDateTimeAR(p.date_approved) : (p.date_created ? formatDateTimeAR(p.date_created) : 'Reciente')}</strong>
+                      </div>
+                    </div>
+
+                    {/* Financial Summary Cards */}
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10 }}>
+                      <div style={{ padding: '12px 14px', borderRadius: 10, backgroundColor: 'var(--bg-hover)', border: '1px solid var(--border-color)' }}>
+                        <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', textTransform: 'uppercase', fontWeight: 600 }}>Monto Cobrado</div>
+                        <div style={{ fontSize: '1.25rem', fontWeight: 800, color: 'var(--text-primary)', marginTop: 4 }}>
+                          ${Number(p.transaction_amount || 0).toLocaleString()}
+                        </div>
+                      </div>
+
+                      <div style={{ padding: '12px 14px', borderRadius: 10, backgroundColor: 'var(--bg-hover)', border: '1px solid var(--border-color)' }}>
+                        <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', textTransform: 'uppercase', fontWeight: 600 }}>Comisión / Deducciones</div>
+                        <div style={{ fontSize: '1.25rem', fontWeight: 800, color: p.total_fee > 0 ? '#ef4444' : 'var(--text-secondary)', marginTop: 4 }}>
+                          {p.total_fee > 0 ? `-$${Number(p.total_fee).toLocaleString()}` : '$0'}
+                        </div>
+                      </div>
+
+                      <div style={{ padding: '12px 14px', borderRadius: 10, backgroundColor: 'rgba(16, 185, 129, 0.08)', border: '1px solid rgba(16, 185, 129, 0.25)' }}>
+                        <div style={{ fontSize: '0.72rem', color: '#10b981', textTransform: 'uppercase', fontWeight: 700 }}>Neto Recibido</div>
+                        <div style={{ fontSize: '1.25rem', fontWeight: 800, color: '#10b981', marginTop: 4 }}>
+                          ${Number(p.net_received_amount || p.transaction_amount || 0).toLocaleString()}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Fee Details breakdown if available */}
+                    {feeDetails.length > 0 && (
+                      <div style={{ padding: '10px 14px', borderRadius: 8, backgroundColor: 'var(--bg-hover)', fontSize: '0.78rem' }}>
+                        <div style={{ fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 6 }}>Desglose de deducciones MP:</div>
+                        {feeDetails.map((f, i) => (
+                          <div key={i} style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-primary)', padding: '2px 0' }}>
+                            <span>• {f.type === 'mercadopago_fee' ? 'Comisión por cobro Mercado Pago' : f.type}</span>
+                            <strong style={{ color: '#ef4444' }}>-${Number(f.amount || 0).toFixed(2)}</strong>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Payer Info Card */}
+                    <div style={{ padding: '12px 16px', borderRadius: 10, backgroundColor: 'var(--bg-hover)', border: '1px solid var(--border-color)' }}>
+                      <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--accent-blue)', textTransform: 'uppercase', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <User size={14} /> Datos del Pagador (Transferencia / Cliente)
+                      </div>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '8px 16px', fontSize: '0.82rem' }}>
+                        <div>
+                          <span style={{ color: 'var(--text-secondary)' }}>Nombre: </span>
+                          <strong style={{ color: 'var(--text-primary)' }}>
+                            {[payer.first_name, payer.last_name].filter(Boolean).join(' ') || p.description || 'No especificado'}
+                          </strong>
+                        </div>
+                        <div>
+                          <span style={{ color: 'var(--text-secondary)' }}>Email: </span>
+                          <strong style={{ color: 'var(--text-primary)' }}>{payer.email || 'Sin email'}</strong>
+                        </div>
+                        {payer.identification?.number && (
+                          <div>
+                            <span style={{ color: 'var(--text-secondary)' }}>{payer.identification?.type || 'DNI'}: </span>
+                            <strong style={{ color: 'var(--text-primary)' }}>{payer.identification.number}</strong>
+                          </div>
+                        )}
+                        <div>
+                          <span style={{ color: 'var(--text-secondary)' }}>Medio: </span>
+                          <strong style={{ color: 'var(--accent-emerald)' }}>
+                            {p.payment_method_id?.toUpperCase()} {p.payment_type_id ? `(${p.payment_type_id})` : ''}
+                          </strong>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Technical Operation Details */}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 14px', borderRadius: 8, backgroundColor: 'var(--bg-hover)', fontSize: '0.78rem', flexWrap: 'wrap', gap: 8 }}>
+                      <div>
+                        <span style={{ color: 'var(--text-secondary)' }}>ID Operación MP: </span>
+                        <strong style={{ fontFamily: 'monospace', color: 'var(--text-primary)' }}>{paymentId}</strong>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          navigator.clipboard.writeText(String(paymentId))
+                          setCopiedPaymentId(true)
+                          setTimeout(() => setCopiedPaymentId(false), 2000)
+                        }}
+                        className="btn"
+                        style={{ padding: '3px 8px', fontSize: '0.72rem', backgroundColor: 'var(--bg-card)', border: '1px solid var(--border-color)', display: 'inline-flex', alignItems: 'center', gap: 4 }}
+                      >
+                        <Copy size={11} /> {copiedPaymentId ? "¡Copiado!" : "Copiar ID"}
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
+
+              {/* Footer */}
+              <div style={{
+                padding: '14px 20px',
+                borderTop: '1px solid var(--border-color)',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                backgroundColor: 'var(--bg-dark)',
+                flexWrap: 'wrap',
+                gap: 10
+              }}>
+                <div>
+                  {order && (
+                    <button
+                      type="button"
+                      onClick={() => handleUnlinkMpPayment(order.order_id)}
+                      style={{
+                        background: 'none', border: 'none',
+                        color: '#ef4444', fontSize: '0.78rem',
+                        cursor: 'pointer', padding: '4px 8px',
+                        borderRadius: 4, opacity: 0.8
+                      }}
+                      onMouseEnter={e => e.currentTarget.style.opacity = '1'}
+                      onMouseLeave={e => e.currentTarget.style.opacity = '0.8'}
+                    >
+                      Desvincular de venta #{order.order_id}
+                    </button>
+                  )}
+                </div>
+
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                  {p.receipt_url && (
+                    <a
+                      href={p.receipt_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="btn"
+                      style={{
+                        padding: '6px 14px', fontSize: '0.82rem',
+                        backgroundColor: '#009ee3', color: '#fff',
+                        borderRadius: 6, textDecoration: 'none',
+                        fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 5
+                      }}
+                    >
+                      <ExternalLink size={13} /> Comprobante Oficial MP ↗
+                    </a>
+                  )}
+
+                  <a
+                    href="https://www.mercadopago.com.ar/activities"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="btn"
+                    style={{
+                      padding: '6px 12px', fontSize: '0.82rem',
+                      backgroundColor: 'var(--bg-hover)', color: 'var(--text-primary)',
+                      border: '1px solid var(--border-color)', borderRadius: 6,
+                      textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 5
+                    }}
+                  >
+                    <ExternalLink size={12} /> Ver en Panel MP ↗
+                  </a>
+
+                  <button
+                    type="button"
+                    className="btn"
+                    style={{ padding: '6px 14px', fontSize: '0.82rem', backgroundColor: 'var(--bg-card)', border: '1px solid var(--border-color)' }}
+                    onClick={() => setMpPaymentModalData(null)}
+                  >
+                    Cerrar
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
+
+      {/* Link MP Payment Modal */}
+      {linkMpModalOrder && (
+        <div
+          onClick={(e) => { if (e.target === e.currentTarget) setLinkMpModalOrder(null) }}
+          style={{
+            position: 'fixed', inset: 0,
+            backgroundColor: 'rgba(0, 0, 0, 0.75)',
+            backdropFilter: 'blur(4px)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            zIndex: 9999, padding: 16
+          }}
+        >
+          <div className="card shadow-2xl" style={{
+            backgroundColor: 'var(--bg-card)',
+            border: '1px solid var(--border-color)',
+            borderRadius: 14, width: '100%', maxWidth: 460,
+            padding: '20px 22px', flexShrink: 0
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, borderBottom: '1px solid var(--border-color)', paddingBottom: 10 }}>
+              <h3 style={{ margin: 0, fontSize: '1.05rem', color: '#009ee3', display: 'flex', alignItems: 'center', gap: 8 }}>
+                💳 Vincular Cobro de Mercado Pago
+              </h3>
+              <button
+                type="button"
+                style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: '1.2rem', padding: 4 }}
+                onClick={() => setLinkMpModalOrder(null)}
+              >
+                ✕
+              </button>
+            </div>
+
+            <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginTop: 0, marginBottom: 14 }}>
+              Asociar comprobante o transferencia de Mercado Pago a la venta <strong>#{linkMpModalOrder.order_id}</strong> (${Number(linkMpModalOrder.total_amount).toLocaleString()}):
+            </p>
+
+            <form onSubmit={(e) => {
+              e.preventDefault()
+              handleLinkMpPayment(linkMpModalOrder.order_id, linkMpPaymentIdInput)
+            }}>
+              <div style={{ marginBottom: 16 }}>
+                <label style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: 6 }}>
+                  ID DE PAGO DE MERCADO PAGO
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="Ej: 179737320580"
+                  value={linkMpPaymentIdInput}
+                  onChange={(e) => setLinkMpPaymentIdInput(e.target.value.trim())}
+                  style={{
+                    width: '100%', padding: '10px 12px', fontSize: '0.95rem',
+                    borderRadius: 8, border: '1px solid var(--accent-blue)',
+                    backgroundColor: 'var(--bg-hover)', color: 'var(--text-primary)',
+                    boxSizing: 'border-box', fontFamily: 'monospace'
+                  }}
+                />
+                <small style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', display: 'block', marginTop: 5 }}>
+                  Al vincular, si existía una venta genérica con este ID, se fusionará automáticamente para evitar duplicar el total.
+                </small>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, borderTop: '1px solid var(--border-color)', paddingTop: 14 }}>
+                <button
+                  type="button"
+                  className="btn"
+                  style={{ padding: '8px 14px', backgroundColor: 'transparent', border: '1px solid var(--border-color)', color: 'var(--text-secondary)' }}
+                  onClick={() => setLinkMpModalOrder(null)}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="btn"
+                  disabled={linkingMpLoading || !linkMpPaymentIdInput}
+                  style={{ padding: '8px 16px', backgroundColor: '#009ee3', color: '#fff', fontWeight: 700 }}
+                >
+                  {linkingMpLoading ? "Vinculando..." : "Vincular Cobro"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
+

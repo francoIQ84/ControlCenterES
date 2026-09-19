@@ -307,7 +307,43 @@ def create_order(req: ManualOrderRequest, current_user: dict = Depends(get_curre
         inventory_linked=1 if any_linked else 0,
         created_by_user=creator
     )
-    return {"success": True, "order_id": order_id}
+
+    # Auto-link recent matching Mercado Pago payment to avoid duplicates
+    linked_mp_id = None
+    try:
+        with database.get_connection() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute("""
+                    SELECT order_id, mp_payment_id, mp_fee_amount, total_amount
+                    FROM orders_cache
+                    WHERE source_platform LIKE 'MERCADOPAGO%%'
+                      AND ABS(total_amount - %s) < 0.05
+                      AND date_created::timestamp >= (NOW() - INTERVAL '48 hours')
+                    ORDER BY date_created DESC
+                    LIMIT 1
+                """, (req.total_amount,))
+                mp_row = cursor.fetchone()
+                if mp_row:
+                    linked_mp_id = mp_row['mp_payment_id'] or mp_row['order_id']
+                    mp_fee = float(mp_row.get('mp_fee_amount') or 0.0)
+                    cursor.execute("""
+                        UPDATE orders_cache
+                        SET mp_payment_id = %s,
+                            mp_fee_amount = %s,
+                            status = 'paid',
+                            payment_status = 'approved'
+                        WHERE order_id = %s
+                    """, (linked_mp_id, mp_fee, order_id))
+                    # Remove the generic MP order to prevent duplicate
+                    cursor.execute("""
+                        DELETE FROM orders_cache
+                        WHERE order_id = %s
+                    """, (mp_row['order_id'],))
+                    print(f"[Manual Order] Auto-vinculado cobro MP #{linked_mp_id} a la nueva orden #{order_id} y eliminada orden genérica duplicada.")
+    except Exception as e_link:
+        print(f"[Manual Order MP Auto-Link Error] {e_link}")
+
+    return {"success": True, "order_id": order_id, "mp_payment_id": linked_mp_id}
 
 class InvoiceOptionsRequest(BaseModel):
     doc_type: Optional[str] = '99' # '99' for Consumidor Final, 'CUIT' for CUIT

@@ -192,6 +192,16 @@ def init_db():
                 );
             ''')
 
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS unlinked_mp_matches (
+                    tenant_id UUID,
+                    order_id BIGINT NOT NULL,
+                    mp_payment_id BIGINT NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY(tenant_id, order_id, mp_payment_id)
+                );
+            ''')
+
             # Customers table
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS customers (
@@ -1225,6 +1235,7 @@ def get_order_by_id(order_id):
                 SELECT o.order_id, o.date_created, o.buyer_id, o.buyer_nickname, o.buyer_name, o.total_amount, o.currency_id, o.status, 
                        o.payment_status, o.shipping_status, o.items_json, o.invoice_generated, o.source_platform, o.payment_method, 
                        o.invoice_number, o.afip_cae, o.afip_cae_exp, o.meli_invoice_attached, o.created_by_user,
+                       o.mp_payment_id, o.mp_fee_amount,
                        c.document_type, c.document_number, c.address 
                 FROM orders_cache o
                 LEFT JOIN customers c ON o.buyer_id = c.buyer_id
@@ -1257,7 +1268,9 @@ def get_order_by_id(order_id):
                 'afip_cae': r.get('afip_cae', ''),
                 'afip_cae_exp': r.get('afip_cae_exp', ''),
                 'meli_invoice_attached': bool(r.get('meli_invoice_attached', 0)),
-                'created_by_user': r.get('created_by_user')
+                'created_by_user': r.get('created_by_user'),
+                'mp_payment_id': r.get('mp_payment_id'),
+                'mp_fee_amount': float(r.get('mp_fee_amount') or 0.0)
             }
 
 def get_last_invoice_number_for_pto(pto_vta, cbte_tipo):
@@ -1287,6 +1300,67 @@ def save_order_afip_details(order_id, invoice_number, cae, cae_exp):
 
 update_order_afip_invoice = save_order_afip_details
 
+def link_order_mp_payment(order_id: int, mp_payment_id: int, mp_fee_amount: float = 0.0):
+    """
+    Links an MP payment to a specific order, sets status as paid/approved,
+    removes from unlinked_mp_matches if previously unlinked,
+    and removes any standalone generic MP order with that payment_id to prevent duplicates.
+    """
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            try:
+                cursor.execute('''
+                    DELETE FROM unlinked_mp_matches
+                    WHERE order_id = %s AND mp_payment_id = %s
+                ''', (order_id, mp_payment_id))
+            except Exception:
+                pass
+            cursor.execute('''
+                UPDATE orders_cache
+                SET mp_payment_id = %s,
+                    mp_fee_amount = CASE WHEN %s > 0 THEN %s ELSE mp_fee_amount END,
+                    status = 'paid',
+                    payment_status = 'approved'
+                WHERE order_id = %s
+            ''', (mp_payment_id, mp_fee_amount, mp_fee_amount, order_id))
+            # Delete standalone duplicate MP order if it exists
+            cursor.execute('''
+                DELETE FROM orders_cache 
+                WHERE order_id = %s AND source_platform LIKE 'MERCADOPAGO%%'
+            ''', (mp_payment_id,))
+
+def unlink_order_mp_payment(order_id: int):
+    """
+    Unlinks an MP payment from an order, records in unlinked_mp_matches to prevent
+    automatic re-linking during subsequent periodic MP syncs, and returns the mp_payment_id.
+    """
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute("SELECT mp_payment_id, total_amount, date_created FROM orders_cache WHERE order_id = %s", (order_id,))
+            row = cursor.fetchone()
+            if not row or not row.get('mp_payment_id'):
+                return None
+            
+            mp_payment_id = row['mp_payment_id']
+
+            try:
+                cursor.execute('''
+                    INSERT INTO unlinked_mp_matches (tenant_id, order_id, mp_payment_id)
+                    VALUES (NULLIF(current_setting('app.current_tenant', true), '')::uuid, %s, %s)
+                    ON CONFLICT DO NOTHING
+                ''', (order_id, mp_payment_id))
+            except Exception as e_rec:
+                print(f"[Warning] Could not insert unlinked_mp_matches: {e_rec}")
+
+            cursor.execute('''
+                UPDATE orders_cache
+                SET mp_payment_id = NULL
+                WHERE order_id = %s
+            ''', (order_id,))
+
+            return mp_payment_id
+
+
 def get_all_orders(source_platform=None, search=None):
     with get_connection() as conn:
         with conn.cursor() as cursor:
@@ -1294,6 +1368,7 @@ def get_all_orders(source_platform=None, search=None):
                 SELECT o.order_id, o.date_created, o.buyer_id, o.buyer_nickname, o.buyer_name, o.total_amount, o.currency_id, o.status, 
                        o.payment_status, o.shipping_status, o.items_json, o.invoice_generated, o.source_platform, o.payment_method,
                        o.invoice_number, o.afip_cae, o.afip_cae_exp, o.meli_invoice_attached, o.created_by_user,
+                       o.mp_payment_id, o.mp_fee_amount,
                        c.document_type, c.document_number, c.address
                 FROM orders_cache o
                 LEFT JOIN customers c ON o.buyer_id = c.buyer_id
@@ -1321,9 +1396,10 @@ def get_all_orders(source_platform=None, search=None):
                         o.items_json ILIKE %s OR 
                         o.payment_method ILIKE %s OR
                         o.status ILIKE %s OR
-                        o.shipping_status ILIKE %s
+                        o.shipping_status ILIKE %s OR
+                        CAST(o.mp_payment_id AS text) ILIKE %s
                     )""")
-                    params.extend([w_pattern] * 12)
+                    params.extend([w_pattern] * 13)
                 
             if conditions:
                 query += " WHERE " + " AND ".join(conditions)
@@ -1358,7 +1434,9 @@ def get_all_orders(source_platform=None, search=None):
                     'afip_cae': r.get('afip_cae', ''),
                     'afip_cae_exp': r.get('afip_cae_exp', ''),
                     'meli_invoice_attached': bool(r.get('meli_invoice_attached', 0)),
-                    'created_by_user': r.get('created_by_user')
+                    'created_by_user': r.get('created_by_user'),
+                    'mp_payment_id': r.get('mp_payment_id'),
+                    'mp_fee_amount': float(r.get('mp_fee_amount') or 0.0)
                 })
             return orders
 

@@ -171,8 +171,19 @@ def sync_mp_payments(date_from=None, limit=2000):
                 try:
                     with database.get_connection() as conn:
                         with conn.cursor() as cursor:
+                            # 0. Check if this payment is ALREADY associated to an existing local/web order
+                            cursor.execute("""
+                                SELECT order_id, payment_method FROM orders_cache 
+                                WHERE (mp_payment_id = %s OR (order_id::text = %s AND source_platform IN ('LOCAL', 'WEB')))
+                                  AND order_id != %s
+                                LIMIT 1
+                            """, (payment_id, str(payment_id), payment_id))
+                            already_linked = cursor.fetchone()
+                            if already_linked:
+                                matched_local_order = already_linked
+
                             # 1. Match by external_reference if present
-                            if ext_ref:
+                            if not matched_local_order and ext_ref:
                                 cursor.execute("""
                                     SELECT order_id, payment_method FROM orders_cache 
                                     WHERE (order_id::text = %s OR order_id::text = %s)
@@ -181,16 +192,20 @@ def sync_mp_payments(date_from=None, limit=2000):
                                 """, (ext_ref, ext_ref.replace('order_', '')))
                                 matched_local_order = cursor.fetchone()
 
-                            # 2. Smart auto-match: same exact amount (+/- 0.05), created within 48 hours, and mp_payment_id is null
+                            # 2. Smart auto-match: same exact amount (+/- 0.05), created within 48 hours, and mp_payment_id is null/zero
                             if not matched_local_order and total_amount > 0 and date_created:
                                 clean_dt = date_created[:19]
                                 cursor.execute("""
                                     SELECT order_id, payment_method FROM orders_cache 
                                     WHERE source_platform IN ('LOCAL', 'WEB')
-                                      AND (mp_payment_id IS NULL OR mp_payment_id = 0)
+                                      AND (mp_payment_id IS NULL OR mp_payment_id = 0 OR mp_payment_id = %s)
                                       AND ABS(total_amount - %s) < 0.05
                                       AND CAST(SUBSTRING(date_created FROM 1 FOR 19) AS timestamp) >= (CAST(SUBSTRING(%s FROM 1 FOR 19) AS timestamp) - INTERVAL '48 hours')
                                       AND CAST(SUBSTRING(date_created FROM 1 FOR 19) AS timestamp) <= (CAST(SUBSTRING(%s FROM 1 FOR 19) AS timestamp) + INTERVAL '48 hours')
+                                      AND NOT EXISTS (
+                                          SELECT 1 FROM unlinked_mp_matches u 
+                                          WHERE u.order_id = orders_cache.order_id AND u.mp_payment_id = %s
+                                      )
                                     ORDER BY 
                                       CASE 
                                         WHEN payment_method ILIKE '%%Mercado Pago%%' OR payment_method ILIKE '%%Transferencia%%' THEN 0 
@@ -198,7 +213,7 @@ def sync_mp_payments(date_from=None, limit=2000):
                                       END,
                                       ABS(EXTRACT(EPOCH FROM (CAST(SUBSTRING(date_created FROM 1 FOR 19) AS timestamp) - CAST(SUBSTRING(%s FROM 1 FOR 19) AS timestamp)))) ASC
                                     LIMIT 1
-                                """, (total_amount, clean_dt, clean_dt, clean_dt))
+                                """, (payment_id, total_amount, clean_dt, clean_dt, payment_id, clean_dt))
                                 matched_local_order = cursor.fetchone()
 
                             if matched_local_order:
@@ -206,11 +221,16 @@ def sync_mp_payments(date_from=None, limit=2000):
                                 cursor.execute("""
                                     UPDATE orders_cache 
                                     SET mp_payment_id = %s,
-                                        mp_fee_amount = %s,
+                                        mp_fee_amount = CASE WHEN %s > 0 THEN %s ELSE mp_fee_amount END,
                                         status = 'paid',
                                         payment_status = 'approved'
                                     WHERE order_id = %s
-                                """, (payment_id, total_fee, matched_oid))
+                                """, (payment_id, total_fee, total_fee, matched_oid))
+                                # CRITICAL: Delete duplicate standalone generic MP order if it exists
+                                cursor.execute("""
+                                    DELETE FROM orders_cache 
+                                    WHERE order_id = %s AND source_platform LIKE 'MERCADOPAGO%'
+                                """, (payment_id,))
                                 print(f"[MP Auto-Match] Pago MP #{payment_id} (${total_amount}) vinculado con éxito a la venta local #{matched_oid}")
                 except Exception as e_match:
                     print(f"[MP Match Error] Error al intentar conciliar pago MP #{payment_id}: {e_match}")
@@ -546,3 +566,115 @@ def create_payment_preference(items: list, buyer_name: str = "", buyer_email: st
             return False, f"Error Mercado Pago ({response.status_code}): {response.text}"
     except Exception as e:
         return False, f"Excepción al conectar con Mercado Pago: {str(e)}"
+
+def get_mp_payment_details(payment_id: int | str):
+    """
+    Fetches comprehensive details for a specific Mercado Pago payment by ID.
+    Returns parsed payer info, amounts, fees, timestamps, payment method and receipt URLs.
+    """
+    if meli_api.is_demo_mode():
+        return True, {
+            "id": payment_id,
+            "status": "approved",
+            "status_detail": "accredited",
+            "date_created": datetime.now().isoformat(),
+            "date_approved": datetime.now().isoformat(),
+            "money_release_date": datetime.now().isoformat(),
+            "transaction_amount": 43000.0,
+            "net_received_amount": 42650.0,
+            "total_fee": 350.0,
+            "fee_details": [
+                {"type": "mercadopago_fee", "amount": 350.0, "fee_payer": "collector"}
+            ],
+            "payment_type_id": "account_money",
+            "payment_method_id": "account_money",
+            "operation_type": "money_transfer",
+            "description": "Transferencia Recibida (CVU/Banco)",
+            "payer": {
+                "id": "123456789",
+                "email": "maurovaldescozzi@gmail.com",
+                "first_name": "Mauro",
+                "last_name": "Valdescozzi",
+                "identification": {"type": "DNI", "number": "34567890"},
+                "phone": {}
+            },
+            "transaction_details": {
+                "financial_institution": "Mercado Pago",
+                "external_resource_url": None,
+                "payment_method_reference_id": None
+            },
+            "receipt_url": None,
+            "external_reference": None
+        }
+
+    access_token = config.get_access_token()
+    if not access_token:
+        return False, "No hay token de acceso configurado."
+
+    meli_api.check_and_refresh_token()
+    access_token = config.get_access_token()
+
+    url = f"{API_BASE_URL}/v1/payments/{payment_id}"
+    headers = {
+        'Authorization': f"Bearer {access_token}",
+        'Accept': 'application/json'
+    }
+
+    try:
+        resp = requests.get(url, headers=headers, timeout=12)
+        if resp.status_code == 200:
+            data = resp.json()
+            payer = data.get('payer') or {}
+            tx_details = data.get('transaction_details') or {}
+            fee_details = data.get('fee_details') or []
+            total_fee = sum(float(f.get('amount', 0.0)) for f in fee_details)
+            tx_amount = float(data.get('transaction_amount', 0.0))
+            net_amount = float(tx_details.get('net_received_amount') or (tx_amount - total_fee))
+
+            # Look for receipt / comprobante url in transaction_details or point_of_interaction
+            poi = data.get('point_of_interaction') or {}
+            poi_tx_data = poi.get('transaction_data') or {}
+            receipt_url = (
+                tx_details.get('external_resource_url') or 
+                poi_tx_data.get('ticket_url') or 
+                None
+            )
+
+            result = {
+                "id": data.get('id'),
+                "status": data.get('status'),
+                "status_detail": data.get('status_detail'),
+                "date_created": data.get('date_created'),
+                "date_approved": data.get('date_approved'),
+                "money_release_date": data.get('money_release_date'),
+                "transaction_amount": tx_amount,
+                "net_received_amount": net_amount,
+                "total_fee": total_fee,
+                "fee_details": fee_details,
+                "payment_type_id": data.get('payment_type_id'),
+                "payment_method_id": data.get('payment_method_id'),
+                "operation_type": data.get('operation_type'),
+                "description": data.get('description'),
+                "statement_descriptor": data.get('statement_descriptor'),
+                "payer": {
+                    "id": payer.get('id'),
+                    "email": payer.get('email'),
+                    "first_name": payer.get('first_name'),
+                    "last_name": payer.get('last_name'),
+                    "identification": payer.get('identification') or {},
+                    "phone": payer.get('phone') or {}
+                },
+                "transaction_details": {
+                    "financial_institution": tx_details.get('financial_institution'),
+                    "external_resource_url": tx_details.get('external_resource_url'),
+                    "payment_method_reference_id": tx_details.get('payment_method_reference_id')
+                },
+                "receipt_url": receipt_url,
+                "external_reference": data.get('external_reference')
+            }
+            return True, result
+        else:
+            return False, f"Mercado Pago API error ({resp.status_code}): {resp.text}"
+    except Exception as e:
+        return False, f"Excepción al consultar pago en Mercado Pago: {str(e)}"
+
