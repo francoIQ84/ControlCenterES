@@ -582,7 +582,7 @@ export default function Layout() {
       {isChannelEnabled('meli') && meliStatus && meliStatus.is_authenticated && (
         <button 
           onClick={handleSync24h}
-          disabled={syncing || autoSyncing}
+          disabled={syncing}
           title="Sincronizar ventas, cobros y publicaciones de Mercado Libre y Mercado Pago de las últimas 24 horas"
           style={{
             display: 'inline-flex',
@@ -596,8 +596,8 @@ export default function Layout() {
             backgroundColor: 'var(--accent-emerald)',
             color: '#ffffff',
             border: 'none',
-            cursor: syncing || autoSyncing ? 'not-allowed' : 'pointer',
-            opacity: syncing || autoSyncing ? 0.7 : 1,
+            cursor: syncing ? 'not-allowed' : 'pointer',
+            opacity: syncing ? 0.7 : 1,
             transition: 'all 0.2s',
             boxShadow: '0 2px 6px rgba(16, 185, 129, 0.3)',
             whiteSpace: 'nowrap',
@@ -607,14 +607,6 @@ export default function Layout() {
           <RefreshCw size={14} className={syncing ? 'animate-spin' : ''} />
           <span>{syncing ? 'Sincronizando...' : '⚡ Sincronizar 24hs ML/MP'}</span>
         </button>
-      )}
-
-      {/* Autosync indicator */}
-      {autoSyncing && (
-        <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', display: 'inline-flex', alignItems: 'center', gap: '5px', whiteSpace: 'nowrap', flexShrink: 0 }}>
-          <RefreshCw size={14} className="animate-spin" />
-          <span>Auto-sincronizando 7d...</span>
-        </span>
       )}
     </>
   );

@@ -40,3 +40,10 @@ check_*.py
 
 # ...pero la suite de tests del backend si se versiona
 !backend/tests/**/test_*.py
+
+# Credentials and Environment Secrets
+.env
+.env.*
+*.env
+.vps_credentials.json
+vps_credentials.json

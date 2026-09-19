@@ -3,12 +3,43 @@ import sys
 import time
 import paramiko
 
-HOST = '144.91.80.88'
-PORT = 22
-USERNAME = 'root'
-PASSWORD = 'Hidroponia26ab'
+import json
 
 LOCAL_DIR = os.path.dirname(os.path.abspath(__file__))
+
+def get_vps_credentials():
+    """
+    Carga credenciales desde .vps_credentials.json, variables de entorno o .env.
+    Permite versionar este script de despliegue sin exponer datos sensibles.
+    """
+    # 1. Intentar cargar desde .vps_credentials.json (ignorado en git)
+    creds_file = os.path.join(LOCAL_DIR, '.vps_credentials.json')
+    if os.path.exists(creds_file):
+        try:
+            with open(creds_file, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                return {
+                    'host': data.get('host', '').strip(),
+                    'port': int(data.get('port', 22)),
+                    'username': data.get('username', 'root').strip(),
+                    'password': data.get('password', '').strip()
+                }
+        except Exception as e:
+            print(f"[!] Error leyendo {creds_file}: {e}")
+
+    # 2. Variables de entorno (CI/CD o terminal)
+    host = os.environ.get('VPS_HOST', '').strip()
+    port = int(os.environ.get('VPS_PORT', '22'))
+    username = os.environ.get('VPS_USERNAME', 'root').strip()
+    password = os.environ.get('VPS_PASSWORD', '').strip()
+
+    if host and password:
+        return {'host': host, 'port': port, 'username': username, 'password': password}
+
+    print("[ERROR] No se encontraron credenciales del VPS.")
+    print("Por favor crea el archivo .vps_credentials.json en la raíz del proyecto basándote en .vps_credentials.example.json")
+    print("O define las variables de entorno VPS_HOST y VPS_PASSWORD.")
+    sys.exit(1)
 
 if sys.platform == 'win32':
     try:
@@ -45,10 +76,29 @@ def upload_directory(sftp, local_dir, remote_dir, ignore_dirs=None):
             sftp.put(local_file, remote_file)
 
 def main():
-    print(f"=== Conectando al VPS {HOST}:{PORT} ===")
+    creds = get_vps_credentials()
+    host = creds['host']
+    port = creds['port']
+    username = creds['username']
+    password = creds['password']
+
+    print(f"=== Conectando al VPS {host}:{port} ===")
     ssh = paramiko.SSHClient()
     ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    ssh.connect(HOST, port=PORT, username=USERNAME, password=PASSWORD, timeout=20)
+    connected = False
+    for attempt in range(5):
+        try:
+            ssh.connect(host, port=port, username=username, password=password, timeout=20)
+            connected = True
+            break
+        except Exception as e:
+            print(f"[!] Intento {attempt + 1}/5 falló ({e}). Reintentando en 3s...")
+            time.sleep(3)
+
+    if not connected:
+        print("[ERROR] No se pudo conectar al VPS tras 5 intentos.")
+        sys.exit(1)
+
     print("[OK] Conexión SSH establecida")
 
     sftp = ssh.open_sftp()
@@ -92,6 +142,7 @@ Environment=PYTHONUNBUFFERED=1
 ExecStart=/var/www/controlcenter/backend/venv/bin/python run_scheduler.py
 Restart=always
 RestartSec=5
+TimeoutStopSec=10
 
 [Install]
 WantedBy=multi-user.target
@@ -106,7 +157,7 @@ WantedBy=multi-user.target
     # deploy pisaba configuracion editada desde el panel (la 010 reescribia
     # mp_excluded_emails con valores fijos en cada despliegue). Los archivos
     # .sql se suben igual en el paso 3; aplicalos a mano cuando corresponda:
-    #   ssh root@144.91.80.88
+    #   ssh root@<IP_VPS>
     #   su - postgres -c "psql -d controlcenter -f /var/www/controlcenter/backend/migrations/0XX_nombre.sql"
 
     # 4. Ajustar permisos de archivos en el VPS

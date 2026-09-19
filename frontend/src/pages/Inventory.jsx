@@ -24,6 +24,9 @@ export default function Inventory() {
   const [query, setQuery] = useState("")
   const [sortConfig, setSortConfig] = useState({ key: null, direction: 'asc' })
   const [drafts, setDrafts] = useState({})
+  const [isSavingBulk, setIsSavingBulk] = useState(false)
+  const [saveProgress, setSaveProgress] = useState(null)
+  const [editVersion, setEditVersion] = useState(0)
   const [viewMode, setViewMode] = useState('compact') // 'compact' o 'detailed'
   const [isReadingMode, setIsReadingMode] = useState(() => localStorage.getItem('inventory_reading_mode') === 'true')
   const [previewImage, setPreviewImage] = useState(null)
@@ -270,35 +273,64 @@ export default function Inventory() {
     return modified
   }, [drafts, products])
 
+  const handleDiscardAllChanges = () => {
+    const itemsToSave = getModifiedItems()
+    if (itemsToSave.length === 0) return
+    if (!confirm(`¿Estás seguro de que deseas descartar todos los cambios pendientes en ${itemsToSave.length} producto(s)?`)) return
+    setDrafts({})
+    setEditVersion(v => v + 1)
+  }
+
   const saveAllChanges = async () => {
     const itemsToSave = getModifiedItems()
     if (itemsToSave.length === 0) return
 
     try {
-      setLoading(true)
-      const res = await fetch('/api/inventory/bulk', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ items: itemsToSave })
-      })
-      if (res.ok) {
+      setIsSavingBulk(true)
+      const CHUNK_SIZE = 15
+      const totalItems = itemsToSave.length
+      const allWarnings = []
+      let successCount = 0
+
+      // Guardado serializado en lotes para evitar timeouts y procesar limpiamente
+      for (let i = 0; i < totalItems; i += CHUNK_SIZE) {
+        const chunk = itemsToSave.slice(i, i + CHUNK_SIZE)
+        const currentEnd = Math.min(i + CHUNK_SIZE, totalItems)
+        setSaveProgress({ current: currentEnd, total: totalItems })
+
+        const res = await fetch('/api/inventory/bulk', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ items: chunk })
+        })
+
+        if (!res.ok) {
+          const errText = await res.text()
+          throw new Error(`Error en lote (${i + 1}-${currentEnd}): ${errText}`)
+        }
+
         const data = await res.json()
         if (data.warnings && data.warnings.length > 0) {
-          alert("Guardado con algunas advertencias:\n" + data.warnings.join('\n'))
-        } else {
-          alert("Todos los cambios guardados correctamente")
+          allWarnings.push(...data.warnings)
         }
-        invalidateCache('inventory')
-        setDrafts({})
-        fetchProducts(true)
-      } else {
-        const errText = await res.text()
-        alert("Error al guardar cambios en lote: " + errText)
-        setLoading(false)
+        successCount += chunk.length
       }
+
+      if (allWarnings.length > 0) {
+        alert(`Guardados ${successCount} productos con algunas advertencias:\n` + allWarnings.join('\n'))
+      } else {
+        alert(`¡Todos los cambios (${successCount} productos) fueron guardados exitosamente!`)
+      }
+
+      invalidateCache('inventory')
+      setDrafts({})
+      setEditVersion(v => v + 1)
+      await fetchProducts(true)
     } catch(e) {
-      alert("Error: " + e.message)
-      setLoading(false)
+      alert("Error al guardar cambios: " + e.message)
+    } finally {
+      setIsSavingBulk(false)
+      setSaveProgress(null)
     }
   }
 
@@ -1149,7 +1181,11 @@ export default function Inventory() {
     return sortedProducts.some(p => selectedIds.includes(p.ml_id)) && !isAllVisibleSelected
   }, [sortedProducts, selectedIds, isAllVisibleSelected])
 
-  const modifiedCount = getModifiedItems().length
+  const modifiedItems = React.useMemo(() => getModifiedItems(), [getModifiedItems])
+  const modifiedCount = modifiedItems.length
+  const modifiedItemIds = React.useMemo(() => {
+    return new Set(modifiedItems.map(m => m.ml_id))
+  }, [modifiedItems])
   const activeFiltersCount = (hiddenFilter !== 'visible' ? 1 : 0) + (outOfStockDays ? 1 : 0)
 
   // Desktop Zoom & Horizontal Scroll States (Exclusive to Desktop)
@@ -1589,8 +1625,20 @@ export default function Inventory() {
                   type="button" 
                   className="btn-mobile-save-banner"
                   onClick={saveAllChanges}
+                  disabled={isSavingBulk}
+                  style={{display: 'inline-flex', alignItems: 'center', gap: 5}}
                 >
-                  <Save size={13} /> Guardar ({modifiedCount})
+                  {isSavingBulk ? (
+                    <>
+                      <RefreshCw size={13} className="animate-spin" />
+                      <span>{saveProgress ? `Guardando (${saveProgress.current}/${saveProgress.total})` : 'Guardando...'}</span>
+                    </>
+                  ) : (
+                    <>
+                      <Save size={13} />
+                      <span>Guardar ({modifiedCount})</span>
+                    </>
+                  )}
                 </button>
               )}
 
@@ -2202,8 +2250,33 @@ export default function Inventory() {
           </div>
           <div className="control-buttons" style={{display: 'flex', gap: 10, flexWrap: 'wrap'}}>
             {modifiedCount > 0 && (
-              <button className="btn" style={{backgroundColor: '#10b981', color: 'white', border: 'none'}} onClick={saveAllChanges}>
-                Guardar {modifiedCount} cambios
+              <button 
+                className="btn" 
+                style={{
+                  backgroundColor: '#10b981', 
+                  color: 'white', 
+                  border: 'none', 
+                  display: 'inline-flex', 
+                  alignItems: 'center', 
+                  gap: 6, 
+                  fontWeight: 700,
+                  opacity: isSavingBulk ? 0.75 : 1,
+                  cursor: isSavingBulk ? 'not-allowed' : 'pointer'
+                }} 
+                onClick={saveAllChanges}
+                disabled={isSavingBulk}
+              >
+                {isSavingBulk ? (
+                  <>
+                    <RefreshCw size={14} className="animate-spin" />
+                    <span>{saveProgress ? `Guardando (${saveProgress.current}/${saveProgress.total})...` : 'Guardando...'}</span>
+                  </>
+                ) : (
+                  <>
+                    <Save size={14} />
+                    <span>Guardar {modifiedCount} cambios</span>
+                  </>
+                )}
               </button>
             )}
             <button 
@@ -2453,96 +2526,85 @@ export default function Inventory() {
         </div>
       )}
 
-      {selectedIds.length > 0 && !isReadingMode && (
+      {(selectedIds.length > 0 || modifiedCount > 0) && !isReadingMode && (
         <div style={{
           position: 'sticky',
           top: 10,
           zIndex: 100,
           marginBottom: 15,
-          padding: '12px 18px',
+          padding: '10px 16px',
           borderRadius: 10,
           backgroundColor: 'var(--bg-card)',
-          border: '1px solid var(--accent-blue)',
-          boxShadow: '0 4px 15px rgba(0, 0, 0, 0.2)',
+          border: modifiedCount > 0 ? '1px solid rgba(16, 185, 129, 0.65)' : '1px solid var(--accent-blue)',
+          boxShadow: modifiedCount > 0 
+            ? '0 6px 20px rgba(16, 185, 129, 0.2), 0 2px 6px rgba(0, 0, 0, 0.25)' 
+            : '0 4px 15px rgba(0, 0, 0, 0.2)',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
           gap: 12,
-          flexWrap: 'wrap'
+          flexWrap: 'wrap',
+          backdropFilter: 'blur(8px)',
+          transition: 'all 0.2s ease-in-out'
         }}>
-          <div style={{display: 'flex', alignItems: 'center', gap: 10}}>
-            <span style={{
-              backgroundColor: 'var(--accent-blue)',
-              color: '#fff',
-              padding: '3px 10px',
-              borderRadius: 12,
-              fontWeight: 'bold',
-              fontSize: '0.85rem'
-            }}>
-              {selectedIds.length} seleccionado{selectedIds.length > 1 ? 's' : ''}
-            </span>
-            <span style={{fontSize: '0.85rem', color: 'var(--text-secondary)'}}>
-              Acciones masivas:
-            </span>
+          {/* LADO IZQUIERDO: Indicadores de estado */}
+          <div style={{display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap'}}>
+            {modifiedCount > 0 && (
+              <div style={{display: 'flex', alignItems: 'center', gap: 8}}>
+                <span style={{
+                  backgroundColor: '#10b981',
+                  color: '#fff',
+                  padding: '4px 12px',
+                  borderRadius: 12,
+                  fontWeight: 'bold',
+                  fontSize: '0.85rem',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  boxShadow: '0 2px 6px rgba(16, 185, 129, 0.35)'
+                }}>
+                  <Save size={13} />
+                  {modifiedCount} producto{modifiedCount > 1 ? 's' : ''} con cambios
+                </span>
+                <span style={{fontSize: '0.82rem', color: 'var(--text-secondary)'}}>
+                  pendientes de guardar
+                </span>
+              </div>
+            )}
+
+            {selectedIds.length > 0 && (
+              <>
+                {modifiedCount > 0 && (
+                  <div style={{width: 1, height: 20, backgroundColor: 'var(--border-color)', margin: '0 4px'}} />
+                )}
+                <span style={{
+                  backgroundColor: 'var(--accent-blue)',
+                  color: '#fff',
+                  padding: '3px 10px',
+                  borderRadius: 12,
+                  fontWeight: 'bold',
+                  fontSize: '0.85rem'
+                }}>
+                  {selectedIds.length} seleccionado{selectedIds.length > 1 ? 's' : ''}
+                </span>
+                <span style={{fontSize: '0.85rem', color: 'var(--text-secondary)'}}>
+                  Acciones masivas:
+                </span>
+              </>
+            )}
           </div>
           
+          {/* LADO DERECHO: Botones de Acción */}
           <div style={{display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center'}}>
-            <button
-              type="button"
-              className="btn"
-              style={{
-                padding: '5px 10px',
-                fontSize: '0.78rem',
-                backgroundColor: 'rgba(139, 92, 246, 0.15)',
-                color: '#8b5cf6',
-                border: '1px solid rgba(139, 92, 246, 0.35)',
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 4,
-                cursor: auditing ? 'wait' : 'pointer',
-                opacity: auditing ? 0.6 : 1
-              }}
-              onClick={handleAuditSelected}
-              disabled={auditing}
-              title="Revisa ficha tecnica, fotos, titulo y descripcion de las publicaciones seleccionadas. No modifica nada."
-            >
-              <Gauge size={14} className={auditing ? 'animate-spin' : ''} />
-              {auditing ? 'Auditando...' : 'Auditar calidad'}
-            </button>
-            <button
-              type="button"
-              className="btn"
-              style={{
-                padding: '5px 10px',
-                fontSize: '0.78rem',
-                backgroundColor: 'rgba(16, 185, 129, 0.15)',
-                color: '#10b981',
-                border: '1px solid rgba(16, 185, 129, 0.35)',
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 4,
-                cursor: resolviendo ? 'wait' : 'pointer',
-                opacity: resolviendo ? 0.6 : 1
-              }}
-              onClick={handleResolveSelected}
-              disabled={!!resolviendo}
-              title="Genera propuestas con IA para todas las seleccionadas. No modifica nada hasta que las revises."
-            >
-              <Gauge size={14} className={resolviendo ? 'animate-spin' : ''} />
-              {resolviendo
-                ? 'Resolviendo ' + (resolviendo.current || 0) + '/' + (resolviendo.total || 0) + '...'
-                : 'Resolver calidad'}
-            </button>
-            <div style={{width: 1, height: 20, backgroundColor: 'var(--border-color)', margin: '0 4px'}} />
-
+            {/* BOTÓN GUARDAR CAMBIOS (Siempre visible cuando modifiedCount > 0) */}
             {modifiedCount > 0 && (
               <>
                 <button 
                   type="button" 
                   className="btn" 
                   style={{
-                    padding: '6px 14px', 
-                    fontSize: '0.82rem', 
+                    padding: '7px 16px', 
+                    fontSize: '0.85rem', 
                     backgroundColor: '#10b981', 
                     color: '#ffffff', 
                     border: 'none', 
@@ -2551,100 +2613,191 @@ export default function Inventory() {
                     display: 'inline-flex', 
                     alignItems: 'center', 
                     gap: 6,
-                    boxShadow: '0 2px 8px rgba(16, 185, 129, 0.4)',
-                    cursor: 'pointer'
+                    boxShadow: '0 2px 10px rgba(16, 185, 129, 0.45)',
+                    cursor: isSavingBulk ? 'not-allowed' : 'pointer',
+                    opacity: isSavingBulk ? 0.8 : 1,
+                    transition: 'all 0.15s ease'
                   }}
                   onClick={saveAllChanges}
-                  title="Guardar todos los cambios pendientes en el servidor"
+                  disabled={isSavingBulk}
+                  title="Guardar todos los cambios pendientes en el servidor (serializado en lote)"
                 >
-                  <Save size={15} /> Guardar {modifiedCount} cambio{modifiedCount > 1 ? 's' : ''}
+                  {isSavingBulk ? (
+                    <>
+                      <RefreshCw size={15} className="animate-spin" />
+                      <span>{saveProgress ? `Guardando (${saveProgress.current}/${saveProgress.total})...` : 'Guardando...'}</span>
+                    </>
+                  ) : (
+                    <>
+                      <Save size={15} />
+                      <span>Guardar {modifiedCount} cambio{modifiedCount > 1 ? 's' : ''}</span>
+                    </>
+                  )}
                 </button>
-                <div style={{width: 1, height: 20, backgroundColor: 'var(--border-color)', margin: '0 4px'}} />
+
+                <button
+                  type="button"
+                  className="btn"
+                  style={{
+                    padding: '6px 12px',
+                    fontSize: '0.80rem',
+                    backgroundColor: 'rgba(239, 68, 68, 0.12)',
+                    color: '#ef4444',
+                    border: '1px solid rgba(239, 68, 68, 0.3)',
+                    borderRadius: 6,
+                    cursor: isSavingBulk ? 'not-allowed' : 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 4
+                  }}
+                  onClick={handleDiscardAllChanges}
+                  disabled={isSavingBulk}
+                  title="Descartar todos los cambios y volver a los valores originales"
+                >
+                  ✕ Descartar
+                </button>
+
+                {selectedIds.length > 0 && (
+                  <div style={{width: 1, height: 20, backgroundColor: 'var(--border-color)', margin: '0 4px'}} />
+                )}
               </>
             )}
 
-            <button 
-              type="button" 
-              className="btn" 
-              style={{padding: '5px 10px', fontSize: '0.78rem', backgroundColor: 'rgba(239, 68, 68, 0.15)', color: '#ef4444', border: '1px solid rgba(239, 68, 68, 0.3)', display: 'inline-flex', alignItems: 'center', gap: 4}}
-              onClick={() => handleBulkHide(1)}
-              title="Ocultar del inventario"
-            >
-              <EyeOff size={14} /> Ocultar
-            </button>
+            {/* ACCIONES MASIVAS PARA PRODUCTOS SELECCIONADOS */}
+            {selectedIds.length > 0 && (
+              <>
+                <button
+                  type="button"
+                  className="btn"
+                  style={{
+                    padding: '5px 10px',
+                    fontSize: '0.78rem',
+                    backgroundColor: 'rgba(139, 92, 246, 0.15)',
+                    color: '#8b5cf6',
+                    border: '1px solid rgba(139, 92, 246, 0.35)',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 4,
+                    cursor: auditing ? 'wait' : 'pointer',
+                    opacity: auditing ? 0.6 : 1
+                  }}
+                  onClick={handleAuditSelected}
+                  disabled={auditing}
+                  title="Revisa ficha tecnica, fotos, titulo y descripcion de las publicaciones seleccionadas. No modifica nada."
+                >
+                  <Gauge size={14} className={auditing ? 'animate-spin' : ''} />
+                  {auditing ? 'Auditando...' : 'Auditar calidad'}
+                </button>
+                <button
+                  type="button"
+                  className="btn"
+                  style={{
+                    padding: '5px 10px',
+                    fontSize: '0.78rem',
+                    backgroundColor: 'rgba(16, 185, 129, 0.15)',
+                    color: '#10b981',
+                    border: '1px solid rgba(16, 185, 129, 0.35)',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 4,
+                    cursor: resolviendo ? 'wait' : 'pointer',
+                    opacity: resolviendo ? 0.6 : 1
+                  }}
+                  onClick={handleResolveSelected}
+                  disabled={!!resolviendo}
+                  title="Genera propuestas con IA para todas las seleccionadas. No modifica nada hasta que las revises."
+                >
+                  <Gauge size={14} className={resolviendo ? 'animate-spin' : ''} />
+                  {resolviendo
+                    ? 'Resolviendo ' + (resolviendo.current || 0) + '/' + (resolviendo.total || 0) + '...'
+                    : 'Resolver calidad'}
+                </button>
+                <div style={{width: 1, height: 20, backgroundColor: 'var(--border-color)', margin: '0 4px'}} />
 
-            <button 
-              type="button" 
-              className="btn" 
-              style={{padding: '5px 10px', fontSize: '0.78rem', backgroundColor: 'rgba(16, 185, 129, 0.15)', color: '#10b981', border: '1px solid rgba(16, 185, 129, 0.3)', display: 'inline-flex', alignItems: 'center', gap: 4}}
-              onClick={() => handleBulkHide(0)}
-              title="Mostrar en el inventario"
-            >
-              <Eye size={14} /> Mostrar
-            </button>
+                <button 
+                  type="button" 
+                  className="btn" 
+                  style={{padding: '5px 10px', fontSize: '0.78rem', backgroundColor: 'rgba(239, 68, 68, 0.15)', color: '#ef4444', border: '1px solid rgba(239, 68, 68, 0.3)', display: 'inline-flex', alignItems: 'center', gap: 4}}
+                  onClick={() => handleBulkHide(1)}
+                  title="Ocultar del inventario"
+                >
+                  <EyeOff size={14} /> Ocultar
+                </button>
 
-            <div style={{width: 1, height: 20, backgroundColor: 'var(--border-color)', margin: '0 4px'}} />
+                <button 
+                  type="button" 
+                  className="btn" 
+                  style={{padding: '5px 10px', fontSize: '0.78rem', backgroundColor: 'rgba(16, 185, 129, 0.15)', color: '#10b981', border: '1px solid rgba(16, 185, 129, 0.3)', display: 'inline-flex', alignItems: 'center', gap: 4}}
+                  onClick={() => handleBulkHide(0)}
+                  title="Mostrar en el inventario"
+                >
+                  <Eye size={14} /> Mostrar
+                </button>
 
-            <button 
-              type="button" 
-              className="btn" 
-              style={{padding: '5px 10px', fontSize: '0.78rem', backgroundColor: 'rgba(59, 130, 246, 0.15)', color: '#2563eb', border: '1px solid rgba(59, 130, 246, 0.3)', display: 'inline-flex', alignItems: 'center', gap: 4}}
-              onClick={() => handleBulkWebActive(1)}
-              title="Activar en Tienda Web"
-            >
-              Activar Web
-            </button>
+                <div style={{width: 1, height: 20, backgroundColor: 'var(--border-color)', margin: '0 4px'}} />
 
-            <button 
-              type="button" 
-              className="btn" 
-              style={{padding: '5px 10px', fontSize: '0.78rem', backgroundColor: 'var(--bg-hover)', color: 'var(--text-secondary)', border: '1px solid var(--border-color)', display: 'inline-flex', alignItems: 'center', gap: 4}}
-              onClick={() => handleBulkWebActive(0)}
-              title="Desactivar en Tienda Web"
-            >
-              Desactivar Web
-            </button>
+                <button 
+                  type="button" 
+                  className="btn" 
+                  style={{padding: '5px 10px', fontSize: '0.78rem', backgroundColor: 'rgba(59, 130, 246, 0.15)', color: '#2563eb', border: '1px solid rgba(59, 130, 246, 0.3)', display: 'inline-flex', alignItems: 'center', gap: 4}}
+                  onClick={() => handleBulkWebActive(1)}
+                  title="Activar en Tienda Web"
+                >
+                  Activar Web
+                </button>
 
-            <div style={{width: 1, height: 20, backgroundColor: 'var(--border-color)', margin: '0 4px'}} />
+                <button 
+                  type="button" 
+                  className="btn" 
+                  style={{padding: '5px 10px', fontSize: '0.78rem', backgroundColor: 'var(--bg-hover)', color: 'var(--text-secondary)', border: '1px solid var(--border-color)', display: 'inline-flex', alignItems: 'center', gap: 4}}
+                  onClick={() => handleBulkWebActive(0)}
+                  title="Desactivar en Tienda Web"
+                >
+                  Desactivar Web
+                </button>
 
-            <button 
-              type="button" 
-              className="btn" 
-              style={{padding: '5px 10px', fontSize: '0.78rem', backgroundColor: 'rgba(245, 158, 11, 0.15)', color: '#d97706', border: '1px solid rgba(245, 158, 11, 0.3)', display: 'inline-flex', alignItems: 'center', gap: 4}}
-              onClick={() => setShowBulkCategoryModal(true)}
-            >
-              📁 Asignar Categoría
-            </button>
+                <div style={{width: 1, height: 20, backgroundColor: 'var(--border-color)', margin: '0 4px'}} />
 
-            <button 
-              type="button" 
-              className="btn" 
-              style={{padding: '5px 10px', fontSize: '0.78rem', backgroundColor: 'rgba(139, 92, 246, 0.15)', color: '#8b5cf6', border: '1px solid rgba(139, 92, 246, 0.3)', display: 'inline-flex', alignItems: 'center', gap: 4}}
-              onClick={() => setShowBulkPriceModal(true)}
-            >
-              🏷️ Ajustar Precios
-            </button>
+                <button 
+                  type="button" 
+                  className="btn" 
+                  style={{padding: '5px 10px', fontSize: '0.78rem', backgroundColor: 'rgba(245, 158, 11, 0.15)', color: '#d97706', border: '1px solid rgba(245, 158, 11, 0.3)', display: 'inline-flex', alignItems: 'center', gap: 4}}
+                  onClick={() => setShowBulkCategoryModal(true)}
+                >
+                  📁 Asignar Categoría
+                </button>
 
-            <button 
-              type="button" 
-              className="btn" 
-              style={{padding: '5px 10px', fontSize: '0.78rem', backgroundColor: 'var(--bg-card)', color: 'var(--text-secondary)', border: '1px solid var(--border-color)', display: 'inline-flex', alignItems: 'center', gap: 4}}
-              onClick={() => handleBulkSyncMeli(1)}
-              title="Activar Sincro MeLi"
-            >
-              <Cloud size={13} /> Sincro MeLi
-            </button>
+                <button 
+                  type="button" 
+                  className="btn" 
+                  style={{padding: '5px 10px', fontSize: '0.78rem', backgroundColor: 'rgba(139, 92, 246, 0.15)', color: '#8b5cf6', border: '1px solid rgba(139, 92, 246, 0.3)', display: 'inline-flex', alignItems: 'center', gap: 4}}
+                  onClick={() => setShowBulkPriceModal(true)}
+                >
+                  🏷️ Ajustar Precios
+                </button>
 
-            <div style={{width: 1, height: 20, backgroundColor: 'var(--border-color)', margin: '0 4px'}} />
+                <button 
+                  type="button" 
+                  className="btn" 
+                  style={{padding: '5px 10px', fontSize: '0.78rem', backgroundColor: 'var(--bg-card)', color: 'var(--text-secondary)', border: '1px solid var(--border-color)', display: 'inline-flex', alignItems: 'center', gap: 4}}
+                  onClick={() => handleBulkSyncMeli(1)}
+                  title="Activar Sincro MeLi"
+                >
+                  <Cloud size={13} /> Sincro MeLi
+                </button>
 
-            <button 
-              type="button" 
-              className="btn" 
-              style={{padding: '5px 10px', fontSize: '0.78rem', backgroundColor: 'transparent', color: 'var(--text-secondary)', border: 'none', cursor: 'pointer'}}
-              onClick={clearSelection}
-            >
-              ✕ Cancelar
-            </button>
+                <div style={{width: 1, height: 20, backgroundColor: 'var(--border-color)', margin: '0 4px'}} />
+
+                <button 
+                  type="button" 
+                  className="btn" 
+                  style={{padding: '5px 10px', fontSize: '0.78rem', backgroundColor: 'transparent', color: 'var(--text-secondary)', border: 'none', cursor: 'pointer'}}
+                  onClick={clearSelection}
+                >
+                  ✕ Cancelar
+                </button>
+              </>
+            )}
           </div>
         </div>
       )}
@@ -2778,7 +2931,7 @@ export default function Inventory() {
                 <tbody>
                   {sortedProducts.map(p => (
                     <ProductRow 
-                      key={p.ml_id} 
+                      key={`${p.ml_id}_${editVersion}`} 
                       p={p} 
                       onSave={handleUpdate} 
                       onOpenGallery={openGallery} 
@@ -2787,6 +2940,7 @@ export default function Inventory() {
                       categoryCounts={categoryCounts}
                       viewMode={viewMode}
                       isSelected={selectedIds.includes(p.ml_id)}
+                      isModified={modifiedItemIds.has(p.ml_id)}
                       onToggleSelect={handleToggleSelectProduct}
                       health={listingHealth[p.ml_id]}
                       onOpenQuality={(prod, salud) => setQualityDetail({ producto: prod, salud })}
@@ -3955,7 +4109,7 @@ function QualityBadge({ health, onClick }) {
   )
 }
 
-function ProductRow({ p, onSave, onOpenGallery, onDraftChange, categories, categoryCounts, viewMode, onOpenQrModal, onToggleHide, isSelected, onToggleSelect, health, onOpenQuality }) {
+function ProductRow({ p, onSave, onOpenGallery, onDraftChange, categories, categoryCounts, viewMode, onOpenQrModal, onToggleHide, isSelected, onToggleSelect, health, onOpenQuality, isModified }) {
   const { isChannelEnabled } = useTenant()
   const [qty, setQty] = useState(p.available_quantity)
   const [price, setPrice] = useState(p.price)
@@ -4069,7 +4223,16 @@ function ProductRow({ p, onSave, onOpenGallery, onDraftChange, categories, categ
   if (viewMode === 'compact') {
     return (
       <React.Fragment>
-        <tr className="product-row-card compact-tr" style={{borderBottom: '1px solid var(--border-color)', fontSize: '0.85rem', backgroundColor: isSelected ? 'rgba(59, 130, 246, 0.12)' : undefined}}>
+        <tr 
+          className={`product-row-card compact-tr ${isModified ? 'row-modified' : ''}`} 
+          style={{
+            borderBottom: '1px solid var(--border-color)', 
+            fontSize: '0.85rem', 
+            backgroundColor: isSelected ? 'rgba(59, 130, 246, 0.12)' : (isModified ? 'rgba(16, 185, 129, 0.08)' : undefined),
+            borderLeft: isModified ? '4px solid #10b981' : (isSelected ? '4px solid var(--accent-blue)' : undefined),
+            transition: 'background-color 0.2s, border-left 0.2s'
+          }}
+        >
           <td data-label="Selección" className="sticky-col-left-1 cell-select" style={{padding: '5px 8px', textAlign: 'center'}}>
             <input 
               type="checkbox" 
@@ -4100,6 +4263,22 @@ function ProductRow({ p, onSave, onOpenGallery, onDraftChange, categories, categ
             </div>
             <div style={{display: 'flex', alignItems: 'center', gap: 6, marginTop: 4, flexWrap: 'wrap'}}>
               <span style={{color: 'var(--text-secondary)', fontSize: '0.76rem', fontFamily: 'monospace'}}>{p.ml_id}</span>
+              {isModified && (
+                <span style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 3,
+                  padding: '1px 6px',
+                  fontSize: '0.70rem',
+                  fontWeight: 700,
+                  borderRadius: 4,
+                  backgroundColor: 'rgba(16, 185, 129, 0.2)',
+                  color: '#10b981',
+                  border: '1px solid rgba(16, 185, 129, 0.4)'
+                }}>
+                  ✏️ Modificado
+                </span>
+              )}
               {p.category_name ? (
                 <span style={{
                   display: 'inline-flex',
@@ -4587,7 +4766,14 @@ function ProductRow({ p, onSave, onOpenGallery, onDraftChange, categories, categ
 
   return (
     <React.Fragment>
-      <tr className="product-row-card" style={{backgroundColor: isSelected ? 'rgba(59, 130, 246, 0.12)' : undefined}}>
+      <tr 
+        className={`product-row-card ${isModified ? 'row-modified' : ''}`} 
+        style={{
+          backgroundColor: isSelected ? 'rgba(59, 130, 246, 0.12)' : (isModified ? 'rgba(16, 185, 129, 0.06)' : undefined),
+          borderLeft: isModified ? '4px solid #10b981' : (isSelected ? '4px solid var(--accent-blue)' : undefined),
+          transition: 'background-color 0.2s, border-left 0.2s'
+        }}
+      >
         <td data-label="Selección" style={{padding: '5px 8px', textAlign: 'center'}}>
           <input 
             type="checkbox" 
@@ -4607,6 +4793,22 @@ function ProductRow({ p, onSave, onOpenGallery, onDraftChange, categories, categ
           <div style={{fontWeight: 600, fontSize: '0.9rem'}}>{p.title}</div>
           <div style={{display: 'flex', alignItems: 'center', gap: 8, marginTop: 4, flexWrap: 'wrap'}}>
             <span style={{color: 'var(--text-secondary)', fontSize: '0.75rem', fontFamily: 'monospace'}}>{p.ml_id}</span>
+            {isModified && (
+              <span style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 3,
+                padding: '1px 6px',
+                fontSize: '0.70rem',
+                fontWeight: 700,
+                borderRadius: 4,
+                backgroundColor: 'rgba(16, 185, 129, 0.2)',
+                color: '#10b981',
+                border: '1px solid rgba(16, 185, 129, 0.4)'
+              }}>
+                ✏️ Modificado
+              </span>
+            )}
             {parseNum(featuredOrder, true) > 0 && (
               <span style={{
                 display: 'inline-flex',

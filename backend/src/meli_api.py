@@ -241,59 +241,199 @@ def authenticate_with_code(code):
     except Exception as e:
         return False, f"Excepción de conexión: {str(e)}"
 
+# =============================================================================
+# ⚠️  SECCIÓN CRÍTICA: REFRESCO DE TOKEN OAuth DE MERCADO LIBRE  ⚠️
+# =============================================================================
+#
+# ¡NO MODIFICAR SIN LEER Y ENTENDER ESTO COMPLETAMENTE!
+#
+# CONTEXTO DEL PROBLEMA (resuelto, pero fácil de reintroducir):
+# -------------------------------------------------------------
+# Mercado Libre rota el refresh_token con cada uso: al pedir un access_token
+# nuevo con grant_type=refresh_token, la respuesta incluye un refresh_token
+# NUEVO y el anterior queda INMEDIATAMENTE INVALIDADO.
+#
+# Si dos procesos (ej: el backend HTTP de uvicorn y el scheduler de systemd)
+# intentan refrescar el token al mismo tiempo:
+#   1. Proceso A envía refresh_token "ABC" → recibe access_token nuevo y
+#      refresh_token "DEF" → guarda "DEF" en la DB.
+#   2. Proceso B (que leyó "ABC" antes de que A terminara) envía "ABC" →
+#      Mercado Libre rechaza con 400 porque "ABC" ya fue consumido.
+#   3. El proceso B no puede obtener un token → aparece desvinculado.
+#   4. En el peor caso, los reintentos del proceso B invalidan la cadena
+#      completa y hay que re-vincular manualmente desde el navegador.
+#
+# SOLUCIÓN IMPLEMENTADA:
+# ----------------------
+# Se usa un PostgreSQL Advisory Lock (pg_advisory_lock) para serializar el
+# refresco de token A TRAVÉS DE TODOS LOS PROCESOS del sistema (backend,
+# scheduler, scripts). Esto garantiza que solo un proceso a la vez puede
+# ejecutar el flujo de refresh contra la API de Mercado Libre.
+#
+# El threading.Lock (_token_refresh_lock) se mantiene como optimización
+# intra-proceso (evita que múltiples hilos de uvicorn o del scheduler
+# abran conexiones innecesarias a PostgreSQL), pero la protección real
+# es el advisory lock de la base de datos.
+#
+# REGLAS PARA FUTUROS CAMBIOS:
+# ----------------------------
+# 1. NUNCA llamar a la API de ML con grant_type=refresh_token fuera de
+#    refresh_access_token(). Todo refresco DEBE pasar por esta función.
+# 2. NUNCA quitar el advisory lock. Sin él, los procesos compiten y
+#    invalidan mutuamente los refresh_tokens.
+# 3. Si se agrega un nuevo proceso (worker, cron, script) que use la API
+#    de ML, NO necesita cambios: ya está protegido porque usa las mismas
+#    funciones (check_and_refresh_token / api_request).
+# 4. El advisory lock ID (847291039) es único y distinto del usado por el
+#    scheduler (847291038). NO reutilizar estos IDs para otros propósitos.
+# =============================================================================
+
+_TOKEN_REFRESH_ADVISORY_LOCK_ID = 847291039
+
+
+def _db_advisory_refresh():
+    """Ejecuta el refresco de token bajo un PostgreSQL Advisory Lock transaccional.
+
+    Usa pg_advisory_xact_lock (bloquea hasta obtenerlo, se libera al COMMIT/ROLLBACK)
+    para que solo un proceso en todo el sistema pueda refrescar a la vez.
+
+    Dentro del lock se re-lee el token de la DB por si otro proceso ya lo refrescó
+    mientras este esperaba su turno.
+    """
+    try:
+        conn = database.get_connection()
+        # Desactivar autocommit para que el advisory lock viva dentro de la
+        # transacción y se libere automáticamente al terminar.
+        conn.autocommit = False
+        try:
+            with conn.cursor() as cursor:
+                # Adquirir lock transaccional (espera si otro proceso lo tiene)
+                cursor.execute("SELECT pg_advisory_xact_lock(%s)",
+                               (_TOKEN_REFRESH_ADVISORY_LOCK_ID,))
+
+                # Re-leer estado FRESCO de la DB (otro proceso pudo haber
+                # refrescado mientras esperábamos el lock)
+                cursor.execute(
+                    "SELECT value FROM settings WHERE key = 'meli_token_expiry' "
+                    "AND tenant_id = app_current_tenant()")
+                row = cursor.fetchone()
+                current_expiry = float(row['value']) if row else 0.0
+
+                if (current_expiry - time.time() >= 300):
+                    # Otro proceso ya refrescó → no hay nada que hacer
+                    conn.rollback()
+                    return True
+
+                # Leer el refresh_token fresco de la DB
+                cursor.execute(
+                    "SELECT value FROM settings WHERE key = 'meli_refresh_token' "
+                    "AND tenant_id = app_current_tenant()")
+                row = cursor.fetchone()
+                fresh_refresh_token = row['value'] if row else ''
+
+            if not fresh_refresh_token:
+                conn.rollback()
+                return False
+
+            # Ejecutar el refresh contra Mercado Libre (fuera del cursor,
+            # pero aún dentro de la transacción → el lock sigue tomado)
+            client_id = config.get_client_id()
+            client_secret = config.get_client_secret()
+
+            url = f"{API_BASE_URL}/oauth/token"
+            post_headers = {
+                'Accept': 'application/json',
+                'Content-Type': 'application/x-www-form-urlencoded'
+            }
+            post_data = {
+                'grant_type': 'refresh_token',
+                'client_id': client_id,
+                'client_secret': client_secret,
+                'refresh_token': fresh_refresh_token
+            }
+
+            for attempt in range(3):
+                try:
+                    response = requests.post(url, headers=post_headers,
+                                             data=post_data, timeout=10)
+                    if response.status_code == 200:
+                        res_data = response.json()
+                        # Guardar tokens nuevos DENTRO de la transacción con lock
+                        new_access = res_data['access_token']
+                        new_refresh = res_data.get('refresh_token',
+                                                    fresh_refresh_token)
+                        new_expiry = str(time.time() + res_data.get(
+                            'expires_in', 21600))
+
+                        with conn.cursor() as cur:
+                            for k, v in [('meli_access_token', new_access),
+                                         ('meli_refresh_token', new_refresh),
+                                         ('meli_token_expiry', new_expiry)]:
+                                cur.execute(
+                                    "INSERT INTO settings (key, value) VALUES (%s, %s) "
+                                    "ON CONFLICT (tenant_id, key) DO UPDATE SET value = EXCLUDED.value",
+                                    (k, v))
+                        conn.commit()  # Libera el advisory lock
+                        return True
+
+                    elif response.status_code >= 500:
+                        time.sleep(1)
+                        continue
+                    else:
+                        print(f"[Meli API] Error al refrescar token "
+                              f"({response.status_code}): {response.text}")
+                        conn.rollback()
+                        return False
+                except Exception as e:
+                    print(f"[Meli API] Excepción al refrescar token "
+                          f"(intento {attempt+1}): {e}")
+                    time.sleep(1)
+
+            conn.rollback()
+            return False
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            # Restaurar autocommit al estado original para no afectar a
+            # quien reutilice la conexión (aunque get_connection() crea una
+            # nueva cada vez, es buena higiene).
+            try:
+                conn.autocommit = True
+            except Exception:
+                pass
+            conn.close()
+    except Exception as e:
+        print(f"[Meli API] Error crítico en _db_advisory_refresh: {e}")
+        return False
+
+
 def refresh_access_token():
-    """Refreshes the access token using the refresh token in a thread-safe manner."""
+    """Refresca el access_token de Mercado Libre de forma segura entre procesos.
+
+    ⚠️  ESTA FUNCIÓN ES EL ÚNICO PUNTO DE REFRESCO DE TOKEN DEL SISTEMA.
+    Ver la documentación extensa al inicio de esta sección.
+    """
     if is_demo_mode():
         config.set_token_expiry(time.time() + 21600)
         return True
 
     with _token_refresh_lock:
-        # Re-check expiry after acquiring lock (in case another thread refreshed it while waiting)
+        # Fast-path intra-proceso: si otro hilo ya refrescó, salir rápido
         expiry = config.get_token_expiry()
         if (expiry - time.time() >= 300) and config.get_access_token():
             return True
 
-        client_id = config.get_client_id()
-        client_secret = config.get_client_secret()
-        refresh_token = config.get_refresh_token()
+        # Slow-path inter-proceso: advisory lock en PostgreSQL
+        return _db_advisory_refresh()
 
-        if not refresh_token:
-            return False
-
-        url = f"{API_BASE_URL}/oauth/token"
-        headers = {
-            'Accept': 'application/json',
-            'Content-Type': 'application/x-www-form-urlencoded'
-        }
-        data = {
-            'grant_type': 'refresh_token',
-            'client_id': client_id,
-            'client_secret': client_secret,
-            'refresh_token': refresh_token
-        }
-
-        for attempt in range(3):
-            try:
-                response = requests.post(url, headers=headers, data=data, timeout=10)
-                if response.status_code == 200:
-                    res_data = response.json()
-                    config.set_access_token(res_data['access_token'])
-                    config.set_refresh_token(res_data.get('refresh_token', refresh_token))
-                    config.set_token_expiry(time.time() + res_data.get('expires_in', 21600))
-                    return True
-                elif response.status_code >= 500:
-                    time.sleep(1)
-                    continue
-                else:
-                    print(f"[Meli API] Error al refrescar token ({response.status_code}): {response.text}")
-                    return False
-            except Exception as e:
-                print(f"[Meli API] Excepción al refrescar token (intento {attempt+1}): {e}")
-                time.sleep(1)
-        return False
 
 def check_and_refresh_token():
-    """Checks if the token is close to expiry or missing and refreshes if needed."""
+    """Verifica si el token está próximo a vencer o ausente y lo refresca.
+
+    ⚠️  Toda llamada a la API de Mercado Libre DEBE pasar por aquí o por
+    api_request() — nunca refrescar tokens manualmente.
+    """
     expiry = config.get_token_expiry()
     access_token = config.get_access_token()
     if (expiry - time.time() < 300) or not access_token:
@@ -303,12 +443,16 @@ def check_and_refresh_token():
 # --- API Request Wrapper ---
 
 def api_request(method, path, headers=None, params=None, json_data=None):
-    """Safely executes an authorized request to Mercado Libre API."""
+    """Ejecuta una solicitud autorizada a la API de Mercado Libre.
+
+    Refresca el token automáticamente si está vencido y reintenta una vez
+    ante un 401 Unauthorized.
+    """
     if is_demo_mode():
         return None  # Should use mock path instead
-        
+
     check_and_refresh_token()
-    
+
     url = f"{API_BASE_URL}{path}"
     req_headers = {
         'Authorization': f"Bearer {config.get_access_token()}",
@@ -316,7 +460,7 @@ def api_request(method, path, headers=None, params=None, json_data=None):
     }
     if headers:
         req_headers.update(headers)
-        
+
     try:
         response = requests.request(method, url, headers=req_headers, params=params, json=json_data, timeout=15)
         # If response is 401 Unauthorized, try refreshing token once and retrying
