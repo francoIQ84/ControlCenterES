@@ -208,18 +208,28 @@ export default function Inventory() {
       const p = isInt ? parseInt(v, 10) : parseFloat(v)
       return isNaN(p) ? 0 : p
     }
-    const parseB = (v, defaultVal = 1) => {
+    const parseB = (v, defaultVal = 0) => {
       if (v === null || v === undefined || v === '') return defaultVal
       if (v === true || v === 1 || v === '1' || v === 'true') return 1
       if (v === false || v === 0 || v === '0' || v === 'false') return 0
       return defaultVal
     }
 
-    for (const ml_id in drafts) {
-      const orig = products.find(p => p.ml_id === ml_id)
-      if (orig) {
-        const d = drafts[ml_id]
+    const cleanImgStr = (str) => {
+      if (!str) return ""
+      return String(str).split(',').map(s => s.trim()).filter(Boolean).join(',')
+    }
 
+    for (const ml_id in drafts) {
+      const d = drafts[ml_id]
+      if (!d) continue
+
+      // Buscar orig en d._orig primero, luego en products, luego en allProductsRef.current
+      const orig = d._orig || 
+                   products.find(p => String(p.ml_id) === String(ml_id)) ||
+                   (allProductsRef.current && allProductsRef.current.find(p => String(p.ml_id) === String(ml_id)))
+
+      if (orig) {
         const qtyChanged = parseN(d.qty, true) !== parseN(orig.available_quantity, true)
         const priceChanged = Math.abs(parseN(d.price) - parseN(orig.price)) > 0.01
         const costChanged = Math.abs(parseN(d.cost) - parseN(orig.cost_price)) > 0.01
@@ -229,22 +239,22 @@ export default function Inventory() {
         const minStockChanged = parseN(d.min_stock, true) !== parseN(orig.min_stock, true)
         const featuredOrderChanged = parseN(d.featured_order, true) !== parseN(orig.featured_order, true)
 
-        const webActiveChanged = parseB(d.is_web_active, 1) !== parseB(orig.is_web_active, 1)
+        const webActiveChanged = parseB(d.is_web_active, 0) !== parseB(orig.is_web_active, 0)
         const syncMeliChanged = parseB(d.sync_meli, 1) !== parseB(orig.sync_meli, 1)
 
         const cat1 = d.category_id ? String(d.category_id) : ""
         const cat2 = orig.category_id ? String(orig.category_id) : ""
         const categoryChanged = cat1 !== cat2
 
-        const desc1 = (d.description || "").trim()
-        const desc2 = (orig.description || "").trim()
+        const desc1 = (d.description || "").trim().replace(/\r\n/g, '\n')
+        const desc2 = (orig.description || "").trim().replace(/\r\n/g, '\n')
         const descChanged = desc1 !== desc2
 
         let imagesChanged = false
         if (d.images !== undefined && d.images !== null) {
-          const img1 = (d.images || "").trim()
-          const img2 = (orig.images || "").trim()
-          const thumb = (orig.thumbnail || "").trim()
+          const img1 = cleanImgStr(d.images)
+          const img2 = cleanImgStr(orig.images)
+          const thumb = cleanImgStr(orig.thumbnail)
           if (img1 !== img2 && img1 !== thumb && !(img1 === "" && (img2 === "" || img2 === thumb))) {
             imagesChanged = true
           }
@@ -294,7 +304,8 @@ export default function Inventory() {
 
       // Guardado serializado en lotes para evitar timeouts y procesar limpiamente
       for (let i = 0; i < totalItems; i += CHUNK_SIZE) {
-        const chunk = itemsToSave.slice(i, i + CHUNK_SIZE)
+        // Remover campo auxiliar _orig antes de enviar al backend
+        const chunk = itemsToSave.slice(i, i + CHUNK_SIZE).map(({ _orig, ...rest }) => rest)
         const currentEnd = Math.min(i + CHUNK_SIZE, totalItems)
         setSaveProgress({ current: currentEnd, total: totalItems })
 
@@ -491,7 +502,6 @@ export default function Inventory() {
         } else if (!qToFetch && fetched.length > allProductsRef.current.length) {
           allProductsRef.current = fetched
         }
-        setDrafts({})
         setLoading(false)
       })
       .catch(err => {
@@ -4199,9 +4209,15 @@ function ProductRow({ p, onSave, onOpenGallery, onDraftChange, categories, categ
     }
   }
 
+  const isMountedRef = useRef(false)
   useEffect(() => {
+    if (!isMountedRef.current) {
+      isMountedRef.current = true
+      return
+    }
     onDraftChange(p.ml_id, {
       ml_id: p.ml_id,
+      _orig: p,
       qty: parseNum(qty, true),
       price: parseNum(price),
       cost: parseNum(cost),
