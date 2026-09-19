@@ -80,6 +80,10 @@ def get_health(ml_ids: Optional[str] = Query(None, description="IDs separados po
             fila['goals'] = json.loads(fila.pop('goals_json') or '[]')
         except (ValueError, TypeError):
             fila['goals'] = []
+        fila['is_catalog'] = any(
+            isinstance(g, dict) and (g.get('detail') or {}).get('catalog_managed')
+            for g in fila['goals']
+        )
         if fila.get('fetched_at'):
             fila['fetched_at'] = str(fila['fetched_at'])
 
@@ -333,6 +337,13 @@ def suggest_images(payload: ImageSuggestRequest):
         item, error = listing_apply_service._leer_item(ml_id)
         if error:
             resultados.append({"ml_id": ml_id, "ok": False, "error": error})
+            continue
+
+        if (item or {}).get('catalog_listing') or (item or {}).get('catalog_product_id'):
+            resultados.append({
+                "ml_id": ml_id, "ok": False,
+                "error": "Publicación de catálogo oficial de Mercado Libre: las imágenes son gestionadas centralmente por Mercado Libre y no se pueden modificar."
+            })
             continue
 
         salida = listing_image_service.generate_variants(ml_id, item, payload.estilos)

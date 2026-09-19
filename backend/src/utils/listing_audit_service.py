@@ -232,11 +232,17 @@ def compute_local_audit(item, category_attributes) -> dict:
 
     ficha_pendiente = bool(faltan_requeridos or faltan_condicionales)
 
+    is_catalog = bool(item.get('catalog_listing') or item.get('catalog_product_id'))
+
     fotos = len(item.get('pictures') or [])
     titulo = str(item.get('title') or '')
     # La descripción no viene en /items: la completa el llamador si la tiene.
     descripcion = str(item.get('_description') or '')
 
+    # En publicaciones de catálogo oficial de Mercado Libre, el título, las fotos y
+    # la descripción son gestionados centralmente por ML y no se pueden modificar por API.
+    # Por eso no se consideran pendientes: marcarlos como pendientes confundiría al usuario
+    # y provocaría que la IA genere contenido que Mercado Libre rechazará con HTTP 400.
     objetivos = [
         _objetivo('FICHA_TECNICA', ficha_pendiente, {
             'cargados': len(cargados),
@@ -246,17 +252,20 @@ def compute_local_audit(item, category_attributes) -> dict:
             'faltan_fiscales': faltan_fiscales,
             'alternativas': alternativas,
         }),
-        _objetivo('FOTOS', fotos < MIN_FOTOS_RECOMENDADAS, {
+        _objetivo('FOTOS', False if is_catalog else (fotos < MIN_FOTOS_RECOMENDADAS), {
             'cantidad': fotos,
             'recomendadas': MIN_FOTOS_RECOMENDADAS,
+            'catalog_managed': is_catalog,
         }),
-        _objetivo('TITULO', len(titulo) < MIN_CARACTERES_TITULO, {
+        _objetivo('TITULO', False if is_catalog else (len(titulo) < MIN_CARACTERES_TITULO), {
             'caracteres': len(titulo),
             'minimo_sugerido': MIN_CARACTERES_TITULO,
+            'catalog_managed': is_catalog,
         }),
-        _objetivo('DESCRIPCION', len(descripcion) < MIN_CARACTERES_DESCRIPCION, {
+        _objetivo('DESCRIPCION', False if is_catalog else (len(descripcion) < MIN_CARACTERES_DESCRIPCION), {
             'caracteres': len(descripcion),
             'minimo_sugerido': MIN_CARACTERES_DESCRIPCION,
+            'catalog_managed': is_catalog,
         }),
     ]
 
@@ -266,6 +275,7 @@ def compute_local_audit(item, category_attributes) -> dict:
         'level': 'LOCAL',
         'calculated_at': '',
         'category_id': item.get('category_id'),
+        'is_catalog': is_catalog,
         'pending_goals': len(pendientes),
         'pending_codes': [o['id'] for o in pendientes],
         'goals_json': json.dumps(objetivos, ensure_ascii=False),
@@ -328,7 +338,7 @@ def fetch_items_bulk(ml_ids) -> dict:
         lote = ids[inicio:inicio + TAMANIO_LOTE]
         cuerpo, error = _get_json(
             "/items?ids=" + ",".join(lote) +
-            "&attributes=id,title,category_id,attributes,pictures,status")
+            "&attributes=id,title,category_id,attributes,pictures,status,catalog_listing,catalog_product_id")
 
         if error or not isinstance(cuerpo, list):
             # Si el lote entero falla, cada publicación queda con ese error y se

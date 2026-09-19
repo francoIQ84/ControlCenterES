@@ -6017,8 +6017,33 @@ function QualityDetailModal({ producto, salud, onClose, onApplied }) {
     }
   }
 
+  const descartarBorrador = async (suggestionId) => {
+    try {
+      const res = await fetch('/api/listing-optimizer/suggestions/' + suggestionId, {
+        method: 'DELETE'
+      })
+      if (res.ok) {
+        cargarBorradores()
+      } else {
+        const data = await res.json().catch(() => ({}))
+        alert('No se pudo descartar: ' + (data.detail || 'error'))
+      }
+    } catch (e) {
+      alert('Error de conexión: ' + e.message)
+    }
+  }
+
+  const esCatalogo = Boolean(salud?.is_catalog || objetivos.some(o => o.detail?.catalog_managed))
+
   const describir = (objetivo) => {
     const d = objetivo.detail || {}
+    if (d.catalog_managed) {
+      return (
+        <div style={{color: 'var(--text-secondary)', fontSize: '0.78rem'}}>
+          Gestionado por el catálogo oficial de Mercado Libre (no modificable).
+        </div>
+      )
+    }
     if (objetivo.id === 'FICHA_TECNICA') {
       return (
         <div>
@@ -6099,6 +6124,23 @@ function QualityDetailModal({ producto, salud, onClose, onApplied }) {
           </button>
         </div>
 
+        {esCatalogo && (
+          <div style={{
+            marginTop: 12, padding: '10px 12px', borderRadius: 8,
+            backgroundColor: 'rgba(59, 130, 246, 0.1)', border: '1px solid rgba(59, 130, 246, 0.3)',
+            fontSize: '0.8rem', display: 'flex', alignItems: 'flex-start', gap: 10
+          }}>
+            <span style={{fontSize: '1.2rem', lineHeight: 1}}>🏷️</span>
+            <div>
+              <b style={{color: '#3b82f6'}}>Publicación de Catálogo Oficial de Mercado Libre</b>
+              <div style={{color: 'var(--text-secondary)', fontSize: '0.75rem', marginTop: 3, lineHeight: 1.4}}>
+                El título, fotos y descripción son provistos y estandarizados por Mercado Libre.
+                Solo podés optimizar la <b>Ficha técnica</b> para mejorar el posicionamiento y ganar la Buy Box.
+              </div>
+            </div>
+          </div>
+        )}
+
         {!salud ? (
           <p style={{fontSize: '0.85rem', color: 'var(--text-secondary)', marginTop: 16}}>
             Esta publicacion todavia no fue auditada. Selecciónala en la lista y usa
@@ -6132,30 +6174,37 @@ function QualityDetailModal({ producto, salud, onClose, onApplied }) {
               </div>
             </div>
 
-            {objetivos.map(objetivo => (
-              <div
-                key={objetivo.id}
-                style={{
-                  display: 'flex', gap: 10, alignItems: 'flex-start',
-                  padding: '10px 0', borderTop: '1px solid var(--border-color)'
-                }}
-              >
-                <span style={{
-                  fontSize: '0.7rem', fontWeight: 700, padding: '2px 8px', borderRadius: 10,
-                  flexShrink: 0, minWidth: 76, textAlign: 'center',
-                  backgroundColor: objetivo.status === 'PENDING' ? 'rgba(239, 68, 68, 0.15)' : 'rgba(16, 185, 129, 0.15)',
-                  color: objetivo.status === 'PENDING' ? '#ef4444' : '#10b981'
-                }}>
-                  {objetivo.status === 'PENDING' ? 'PENDIENTE' : 'OK'}
-                </span>
-                <div style={{minWidth: 0, fontSize: '0.82rem'}}>
-                  <div style={{fontWeight: 600, marginBottom: 2}}>
-                    {ETIQUETAS_OBJETIVO[objetivo.id] || objetivo.id}
+            {objetivos.map(objetivo => {
+              const esGestionadoCatalogo = Boolean(objetivo.detail?.catalog_managed)
+              return (
+                <div
+                  key={objetivo.id}
+                  style={{
+                    display: 'flex', gap: 10, alignItems: 'flex-start',
+                    padding: '10px 0', borderTop: '1px solid var(--border-color)'
+                  }}
+                >
+                  <span style={{
+                    fontSize: '0.7rem', fontWeight: 700, padding: '2px 8px', borderRadius: 10,
+                    flexShrink: 0, minWidth: 76, textAlign: 'center',
+                    backgroundColor: esGestionadoCatalogo
+                      ? 'rgba(59, 130, 246, 0.15)'
+                      : objetivo.status === 'PENDING' ? 'rgba(239, 68, 68, 0.15)' : 'rgba(16, 185, 129, 0.15)',
+                    color: esGestionadoCatalogo
+                      ? '#3b82f6'
+                      : objetivo.status === 'PENDING' ? '#ef4444' : '#10b981'
+                  }}>
+                    {esGestionadoCatalogo ? 'CATÁLOGO' : objetivo.status === 'PENDING' ? 'PENDIENTE' : 'OK'}
+                  </span>
+                  <div style={{minWidth: 0, fontSize: '0.82rem'}}>
+                    <div style={{fontWeight: 600, marginBottom: 2}}>
+                      {ETIQUETAS_OBJETIVO[objetivo.id] || objetivo.id}
+                    </div>
+                    {describir(objetivo)}
                   </div>
-                  {describir(objetivo)}
                 </div>
-              </div>
-            ))}
+              )
+            })}
 
             {/* ---------------- Borradores de mejora ---------------- */}
             <div style={{
@@ -6170,13 +6219,17 @@ function QualityDetailModal({ producto, salud, onClose, onApplied }) {
                   type="button"
                   className="dashboard-pill"
                   onClick={generarImagenes}
-                  disabled={generandoImg || trabajando}
+                  disabled={generandoImg || trabajando || esCatalogo}
                   style={{
-                    backgroundColor: 'rgba(6, 182, 212, 0.15)', color: '#06b6d4',
-                    border: '1px solid rgba(6, 182, 212, 0.35)', fontWeight: 700,
-                    cursor: generandoImg ? 'wait' : 'pointer', marginRight: 6
+                    backgroundColor: esCatalogo ? 'var(--bg-hover)' : 'rgba(6, 182, 212, 0.15)',
+                    color: esCatalogo ? 'var(--text-secondary)' : '#06b6d4',
+                    border: '1px solid ' + (esCatalogo ? 'var(--border-color)' : 'rgba(6, 182, 212, 0.35)'),
+                    fontWeight: 700,
+                    cursor: esCatalogo ? 'not-allowed' : (generandoImg ? 'wait' : 'pointer'),
+                    marginRight: 6,
+                    opacity: esCatalogo ? 0.6 : 1
                   }}
-                  title="Genera imagenes secundarias a partir de la foto real de esta publicacion"
+                  title={esCatalogo ? 'No disponible: las fotos de catálogo son gestionadas por Mercado Libre' : 'Genera imagenes secundarias a partir de la foto real de esta publicacion'}
                 >
                   {generandoImg ? 'Generando...' : 'Generar imagenes'}
                 </button>
@@ -6374,22 +6427,36 @@ function QualityDetailModal({ producto, salud, onClose, onApplied }) {
                       backgroundColor: 'var(--bg-card)'
                     }}
                   >
-                    <label style={{display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', marginBottom: 8}}>
-                      <input
-                        type="checkbox"
-                        checked={seleccionadas.includes(sug.id)}
-                        onChange={() => alternarSeleccion(sug.id)}
-                        style={{cursor: 'pointer', width: 16, height: 16, minHeight: 'auto'}}
-                      />
-                      <span style={{fontWeight: 700, fontSize: '0.85rem'}}>
-                        {ETIQUETAS_CAMPO[sug.field] || sug.field}
-                      </span>
-                      {sug.model_used && (
-                        <span style={{fontSize: '0.66rem', color: 'var(--text-secondary)'}}>
-                          {sug.model_used}
+                    <div style={{display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8}}>
+                      <label style={{display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer'}}>
+                        <input
+                          type="checkbox"
+                          checked={seleccionadas.includes(sug.id)}
+                          onChange={() => alternarSeleccion(sug.id)}
+                          style={{cursor: 'pointer', width: 16, height: 16, minHeight: 'auto'}}
+                        />
+                        <span style={{fontWeight: 700, fontSize: '0.85rem'}}>
+                          {ETIQUETAS_CAMPO[sug.field] || sug.field}
                         </span>
-                      )}
-                    </label>
+                        {sug.model_used && (
+                          <span style={{fontSize: '0.66rem', color: 'var(--text-secondary)'}}>
+                            {sug.model_used}
+                          </span>
+                        )}
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => descartarBorrador(sug.id)}
+                        style={{
+                          background: 'none', border: '1px solid var(--border-color)',
+                          color: 'var(--text-secondary)', borderRadius: 6, padding: '2px 8px',
+                          fontSize: '0.7rem', cursor: 'pointer'
+                        }}
+                        title="Descartar este borrador"
+                      >
+                        Descartar
+                      </button>
+                    </div>
 
                     {sug.field === 'pictures' ? (
                       <div>
@@ -6420,7 +6487,7 @@ function QualityDetailModal({ producto, salud, onClose, onApplied }) {
                                      style={{width: 110, height: 110, objectFit: 'cover', borderRadius: 8,
                                              border: '1px solid var(--border-color)'}} />
                                 <div style={{fontSize: '0.66rem', color: 'var(--text-secondary)', marginTop: 2}}>
-                                  {n.estilo}
+                                   {n.estilo}
                                 </div>
                               </div>
                             ))
@@ -6470,10 +6537,25 @@ function QualityDetailModal({ producto, salud, onClose, onApplied }) {
               {fallidos.map(sug => (
                 <div key={sug.id} style={{
                   border: '1px solid rgba(239, 68, 68, 0.35)', borderRadius: 8,
-                  padding: '8px 10px', marginBottom: 8, fontSize: '0.78rem'
+                  padding: '8px 10px', marginBottom: 8, fontSize: '0.78rem',
+                  display: 'flex', justifyContent: 'space-between', alignItems: 'center'
                 }}>
-                  <b>{ETIQUETAS_CAMPO[sug.field] || sug.field}</b>
-                  <span style={{color: '#ef4444'}}> — rechazado: {sug.reject_reason}</span>
+                  <div style={{minWidth: 0}}>
+                    <b>{ETIQUETAS_CAMPO[sug.field] || sug.field}</b>
+                    <span style={{color: '#ef4444'}}> — rechazado: {sug.reject_reason}</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => descartarBorrador(sug.id)}
+                    style={{
+                      background: 'none', border: '1px solid rgba(239, 68, 68, 0.35)',
+                      color: '#ef4444', borderRadius: 6, padding: '2px 8px', fontSize: '0.7rem',
+                      cursor: 'pointer', marginLeft: 8, flexShrink: 0
+                    }}
+                    title="Descartar propuesta rechazada"
+                  >
+                    Descartar
+                  </button>
                 </div>
               ))}
 

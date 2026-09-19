@@ -573,6 +573,8 @@ def generate_suggestions_bulk(ml_ids, incluir_imagenes: bool = False):
                 item, error = listing_apply_service._leer_item(ml_id)
                 if error:
                     errores.append(f"{ml_id} (imagenes): {error}")
+                elif (item or {}).get('catalog_listing') or (item or {}).get('catalog_product_id'):
+                    pass  # Las fotos de catálogo son gestionadas por Mercado Libre
                 else:
                     salida = listing_image_service.generate_variants(ml_id, item)
                     if salida.get('ok'):
@@ -637,6 +639,8 @@ def generate_suggestions(ml_ids, targets=None) -> list:
         auditoria = listing_audit_service.compute_local_audit(item, catalogo)
         pendientes = set(auditoria['pending_codes'])
 
+        is_catalog = bool(item.get('catalog_listing') or item.get('catalog_product_id'))
+
         objetivos = json.loads(auditoria['goals_json'])
         detalle_ficha = next(
             (o['detail'] for o in objetivos if o['id'] == 'FICHA_TECNICA'), {})
@@ -652,6 +656,11 @@ def generate_suggestions(ml_ids, targets=None) -> list:
             for codigo in pendientes
             if codigo in ('FICHA_TECNICA', 'TITULO', 'DESCRIPCION')
         ]
+
+        # En publicaciones de catálogo oficial de Mercado Libre, el título, las fotos y
+        # la descripción son gestionados centralmente por ML y no se pueden modificar por API.
+        if is_catalog:
+            a_generar = [f for f in a_generar if f == 'attributes']
 
         generados = []
         for field in a_generar:
@@ -740,6 +749,13 @@ def generate_suggestions(ml_ids, targets=None) -> list:
                          "que ser del producto real: no se generan con IA. Sacá 2 o 3 "
                          "fotos mas y subilas desde Mercado Libre, donde ademas "
                          "tenes su editor con IA para estandarizar el fondo.",
+            })
+        elif not generados and is_catalog:
+            generados.append({
+                "field": "catalog", "status": "catalog_managed",
+                "error": "Publicación de catálogo oficial de Mercado Libre: el título, "
+                         "las fotos y la descripción son gestionados centralmente por "
+                         "Mercado Libre. La ficha técnica ya está completa.",
             })
 
         resultados.append({"ml_id": ml_id, "status": "ok", "sugerencias": generados})

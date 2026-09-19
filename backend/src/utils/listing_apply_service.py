@@ -109,7 +109,10 @@ def _escribir_imagenes(ml_id: str, rutas, ids_actuales):
     if r is None:
         return False, "Sin respuesta de Mercado Libre"
     if r.status_code not in (200, 201):
-        return False, f"HTTP {r.status_code}: {' '.join((r.text or '')[:220].split())}"
+        detalle = ' '.join((r.text or '')[:220].split())
+        if 'item.catalog_listing' in detalle or 'field_not_updatable' in detalle:
+            return False, f"HTTP {r.status_code}: Publicación de catálogo oficial: Mercado Libre no permite modificar imágenes por API."
+        return False, f"HTTP {r.status_code}: {detalle}"
     return True, None
 
 
@@ -140,7 +143,10 @@ def _escribir(ml_id: str, field: str, valor, ids_actuales=None):
     if r is None:
         return False, "Sin respuesta de Mercado Libre"
     if r.status_code not in (200, 201):
-        return False, f"HTTP {r.status_code}: {' '.join((r.text or '')[:220].split())}"
+        detalle = ' '.join((r.text or '')[:220].split())
+        if 'item.catalog_listing' in detalle or 'field_not_updatable' in detalle:
+            return False, f"HTTP {r.status_code}: Publicación de catálogo oficial: Mercado Libre no permite modificar '{field}' por API."
+        return False, f"HTTP {r.status_code}: {detalle}"
     return True, None
 
 
@@ -215,17 +221,30 @@ def apply_suggestions(suggestion_ids, dry_run: bool = True) -> list:
             resultados.append(dict(base, status="error", error=error))
             continue
 
+        # Leer la publicación para verificar permisos de catálogo y atributos
+        if ml_id not in cache_items:
+            item, error_item = _leer_item(ml_id)
+            cache_items[ml_id] = (item, error_item)
+        item, error_item = cache_items[ml_id]
+        if error_item:
+            resultados.append(dict(base, status="error", error=error_item))
+            continue
+
+        is_catalog = bool((item or {}).get('catalog_listing') or (item or {}).get('catalog_product_id'))
+        if is_catalog and field in ('description', 'pictures', 'title'):
+            motivo = (
+                f"Publicación de catálogo oficial de Mercado Libre: '{field}' no es "
+                f"modificable por API (gestionado centralmente por Mercado Libre)."
+            )
+            database.update_listing_suggestion(
+                suggestion_id, status='failed', reject_reason=motivo)
+            resultados.append(dict(base, status="rejected", error=motivo))
+            continue
+
         # El catálogo hace falta para validar atributos contra la categoría.
         catalogo = []
         if field == 'attributes':
-            if ml_id not in cache_items:
-                item, error_item = _leer_item(ml_id)
-                cache_items[ml_id] = (item, error_item)
-            item, error_item = cache_items[ml_id]
-            if error_item:
-                resultados.append(dict(base, status="error", error=error_item))
-                continue
-            categoria = item.get('category_id')
+            categoria = (item or {}).get('category_id')
             if categoria:
                 if categoria not in cache_catalogos:
                     try:
@@ -259,8 +278,7 @@ def apply_suggestions(suggestion_ids, dry_run: bool = True) -> list:
             resultados.append(dict(base, status="rejected", error=motivo))
             continue
 
-        item_cacheado = cache_items.get(ml_id, (None, None))[0]
-        anterior, error = read_current_value(ml_id, field, item=item_cacheado)
+        anterior, error = read_current_value(ml_id, field, item=item)
         if error:
             resultados.append(dict(base, status="error", error=error))
             continue

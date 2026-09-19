@@ -218,6 +218,28 @@ class LocalAuditTest(unittest.TestCase):
             datos = svc.compute_local_audit(item, catalogo)
             self.assertIsInstance(datos['pending_goals'], int)
 
+    def test_publicacion_de_catalogo_marca_fotos_titulo_y_descripcion_como_gestionados_por_catalogo(self):
+        """En catálogo oficial ML gestiona fotos, título y descripción: no deben figurar como pendientes."""
+        item = self._item(
+            catalog_listing=True,
+            pictures=[{"id": "1"}],
+            _description='',
+            title='Corto',
+        )
+        datos, pendientes = self._auditar(item)
+        self.assertTrue(datos['is_catalog'])
+        self.assertNotIn('FOTOS', pendientes)
+        self.assertNotIn('TITULO', pendientes)
+        self.assertNotIn('DESCRIPCION', pendientes)
+
+        objetivos = {o['id']: o for o in json.loads(datos['goals_json'])}
+        self.assertEqual(objetivos['FOTOS']['status'], 'COMPLETED')
+        self.assertTrue(objetivos['FOTOS']['detail']['catalog_managed'])
+        self.assertEqual(objetivos['TITULO']['status'], 'COMPLETED')
+        self.assertTrue(objetivos['TITULO']['detail']['catalog_managed'])
+        self.assertEqual(objetivos['DESCRIPCION']['status'], 'COMPLETED')
+        self.assertTrue(objetivos['DESCRIPCION']['detail']['catalog_managed'])
+
 
 class AuditListingsTest(unittest.TestCase):
     def _audit(self, ids, fetch_side_effect, ages=None, **kwargs):

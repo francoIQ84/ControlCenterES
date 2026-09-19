@@ -352,6 +352,19 @@ class AplicarTest(unittest.TestCase):
     def test_sin_seleccion_no_hace_nada(self):
         self.assertEqual(aplicar.apply_suggestions([], dry_run=False), [])
 
+    def test_rechaza_aplicar_en_publicacion_de_catalogo(self):
+        """En catálogo oficial ML rechaza modificar fotos, título y descripción."""
+        item_catalogo = {'title': 'Piedra Difusora', 'category_id': 'MLA1', 'catalog_listing': True}
+        sug_desc = dict(self.SUGERENCIA, id=10, field='description', proposed_value='Nueva desc')
+        resultados, escrituras, actualizar, _r = self._aplicar(
+            [sug_desc], dry_run=False, item=item_catalogo)
+
+        self.assertEqual(escrituras, [])
+        self.assertEqual(resultados[0]['status'], 'rejected')
+        self.assertIn('catálogo', resultados[0]['error'].lower())
+        actualizar.assert_called_once()
+        self.assertEqual(actualizar.call_args[1]['status'], 'failed')
+
 
 class SincronizarCacheTest(unittest.TestCase):
     """El cache local tiene que quedar igual a lo que quedo en Mercado Libre."""
