@@ -224,7 +224,6 @@ export default function Layout() {
   const [meliStatus, setMeliStatus] = useState(null)
   const [progress, setProgress] = useState(null)
   const [showProgressModal, setShowProgressModal] = useState(false)
-  const [autoSyncing, setAutoSyncing] = useState(false)
   const [tnStatus, setTnStatus] = useState(null)
 
   // Notification Center State
@@ -342,35 +341,9 @@ export default function Layout() {
           }
         }
         
-        // 4. Sincronización automática de 7 días al ingresar (una vez por sesión de navegador)
-        const autoSynced = sessionStorage.getItem('meliAutoSynced');
-        if (!autoSynced && statusData.is_authenticated) {
-          sessionStorage.setItem('meliAutoSynced', 'true');
-          setAutoSyncing(true);
-          
-          const dateFrom = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('.')[0] + 'Z';
-          const res = await fetch('/api/settings/sync-all', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ limit: 500, date_from: dateFrom })
-          });
-          
-          if (res.ok) {
-            const interval = setInterval(async () => {
-              const pRes = await fetch('/api/settings/sync-progress');
-              if (pRes.ok) {
-                const pData = await pRes.ok ? await pRes.json() : null;
-                if (pData && (pData.status === 'completed' || pData.status === 'failed')) {
-                  clearInterval(interval);
-                  setAutoSyncing(false);
-                  window.location.reload();
-                }
-              }
-            }, 2000);
-          } else {
-            setAutoSyncing(false);
-          }
-        }
+        // El scheduler del backend (controlcenter-scheduler.service)
+        // se encarga de sincronizar automáticamente cada 30 minutos
+        // con trazabilidad inteligente por tenant mediante sync_state.
       } catch (e) {
         console.error("Meli init error:", e);
       }
