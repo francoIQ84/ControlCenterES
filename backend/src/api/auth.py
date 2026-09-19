@@ -159,7 +159,7 @@ def require_permission(permission: str):
         if not permissions_str:
             return
         allowed_list = [p.strip() for p in permissions_str.split(",") if p.strip()]
-        if permission == "meli_optimizer" and ("meli_optimizer" in allowed_list or "settings" in allowed_list):
+        if permission == "meli_optimizer" and ("meli_optimizer" in allowed_list or "inventory" in allowed_list or "settings" in allowed_list):
             return
         if permission == "quotes" and ("quotes" in allowed_list or "sales" in allowed_list or "settings" in allowed_list):
             return

@@ -15,7 +15,6 @@ import IndustrialProperty from './pages/IndustrialProperty'
 import Marketing from './pages/Marketing'
 import Tenants from './pages/Tenants'
 import MeliQuestions from './pages/MeliQuestions'
-import MeliOptimizer from './pages/MeliOptimizer'
 import Quotes from './pages/Quotes'
 import { TenantProvider } from './TenantContext'
 
@@ -115,9 +114,6 @@ function PermissionRoute({ permission, children }) {
   if (permission === 'inpi' && (perms.includes('inpi') || perms.includes('settings'))) {
     return children;
   }
-  if (permission === 'meli_optimizer' && (perms.includes('meli_optimizer') || perms.includes('settings'))) {
-    return children;
-  }
   if (permission === 'quotes' && (perms.includes('quotes') || perms.includes('sales') || perms.includes('settings'))) {
     return children;
   }
@@ -151,7 +147,7 @@ function App() {
             <Route path="expenses" element={<PermissionRoute permission="expenses"><Expenses /></PermissionRoute>} />
             <Route path="inpi" element={<PermissionRoute permission="inpi"><IndustrialProperty /></PermissionRoute>} />
             <Route path="marketing" element={<PermissionRoute permission="marketing"><Marketing /></PermissionRoute>} />
-            <Route path="meli-optimizer" element={<PermissionRoute permission="meli_optimizer"><MeliOptimizer /></PermissionRoute>} />
+            <Route path="meli-optimizer" element={<Navigate to="/inventory?tab=optimizer" replace />} />
             <Route path="mercadolibre/preguntas" element={<Navigate to="/customers?tab=meli_questions" replace />} />
             {/* Administración de la plataforma. La página se autoprotege y el
                 backend exige require_platform_admin de todas formas. */}

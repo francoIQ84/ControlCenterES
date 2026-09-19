@@ -233,8 +233,7 @@ def init_db():
             ''')
             cursor.execute('ALTER TABLE users ADD COLUMN IF NOT EXISTS permissions TEXT;')
             cursor.execute('ALTER TABLE users ADD COLUMN IF NOT EXISTS email VARCHAR(255);')
-            cursor.execute("UPDATE users SET permissions = 'dashboard,inventory,sales,billing,expenses,customers,media,settings,inpi,marketing,blog,meli_optimizer' WHERE permissions IS NULL;")
-            cursor.execute("UPDATE users SET permissions = permissions || ',meli_optimizer' WHERE permissions IS NOT NULL AND permissions NOT LIKE '%meli_optimizer%' AND (permissions LIKE '%settings%' OR permissions LIKE '%inventory%');")
+            cursor.execute("UPDATE users SET permissions = 'dashboard,inventory,sales,billing,expenses,customers,media,settings,inpi,marketing,blog' WHERE permissions IS NULL;")
 
             # Two Factor Codes table
             cursor.execute('''
@@ -580,7 +579,7 @@ def init_db():
                 cursor.execute('''
                     INSERT INTO users (username, password_hash, full_name, permissions)
                     VALUES (%s, %s, %s, %s)
-                ''', ("admin", admin_pw_hash, "Administrador", "dashboard,inventory,sales,billing,expenses,customers,media,settings,inpi,marketing,blog,meli_optimizer"))
+                ''', ("admin", admin_pw_hash, "Administrador", "dashboard,inventory,sales,billing,expenses,customers,media,settings,inpi,marketing,blog"))
 
 # --- Categories Operations ---
 
@@ -2434,7 +2433,7 @@ def get_all_users():
 
 def create_user(username, password, full_name, permissions=None, email=None, two_factor_enabled=False):
     if permissions is None:
-        permissions = "dashboard,inventory,sales,billing,expenses,customers,media,settings,inpi,marketing,blog,meli_optimizer"
+        permissions = "dashboard,inventory,sales,billing,expenses,customers,media,settings,inpi,marketing,blog"
     pw_hash = hash_password(password)
     with get_connection() as conn:
         with conn.cursor() as cursor:

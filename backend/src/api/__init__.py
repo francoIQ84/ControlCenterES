@@ -58,7 +58,7 @@ api_router.include_router(marketing_router, prefix="/marketing", tags=["marketin
 api_router.include_router(diffusion_router, prefix="/diffusion", tags=["diffusion"], dependencies=[Depends(verify_session)])
 api_router.include_router(tiendanube_router, prefix="/tiendanube", tags=["tiendanube"])
 api_router.include_router(meli_questions_router)
-api_router.include_router(meli_optimizer_router, tags=["meli-optimizer"], dependencies=[Depends(verify_session), Depends(require_permission("meli_optimizer"))])
+api_router.include_router(meli_optimizer_router, tags=["meli-optimizer"], dependencies=[Depends(verify_session), Depends(require_permission("inventory"))])
 
 
 

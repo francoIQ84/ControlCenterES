@@ -136,7 +136,7 @@ function AreaScoreBar({ area, score }) {
   )
 }
 
-export default function MeliOptimizer() {
+export default function MeliOptimizer({ onProductUpdated, embedded = false } = {}) {
   const [loading, setLoading] = useState(false)
   const [auditing, setAuditing] = useState(false)
   const [optimizing, setOptimizing] = useState(null) // ml_id or 'batch' or 'all'
@@ -287,6 +287,7 @@ export default function MeliOptimizer() {
           } else {
             await refreshItemQuality(ml_id)
           }
+          if (onProductUpdated) onProductUpdated()
         } else {
           showNotif(`Error: ${data.errors?.join('; ') || 'No se pudieron aplicar los cambios'}`, 'error')
         }
@@ -315,6 +316,7 @@ export default function MeliOptimizer() {
         showNotif(`Optimización finalizada: ${data.total_optimized || 0} publicaciones procesadas con IA`)
         setSelectedIds([])
         await loadCachedAudits()
+        if (onProductUpdated) onProductUpdated()
       } else {
         const err = await res.json().catch(() => ({}))
         showNotif(err.detail || 'Error en optimización masiva', 'error')
@@ -395,7 +397,7 @@ export default function MeliOptimizer() {
   const isAllVisibleSelected = visibleIds.length > 0 && visibleIds.every(id => selectedIds.includes(id))
 
   return (
-    <div style={{ padding: '24px 28px', maxWidth: 1400, margin: '0 auto' }}>
+    <div style={{ padding: embedded ? '6px 0 24px 0' : '24px 28px', maxWidth: 1400, margin: '0 auto' }}>
       {/* Notification Toast */}
       {notification && (
         <div style={{
@@ -413,64 +415,125 @@ export default function MeliOptimizer() {
       )}
 
       {/* Page Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16, marginBottom: 24, flexWrap: 'wrap' }}>
-        <div>
-          <h1 style={{ margin: '0 0 6px', fontSize: '1.5rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 10 }}>
-            <Sparkles size={24} style={{ color: '#8b5cf6' }} />
-            Optimizador IA de Publicaciones
-          </h1>
-          <p style={{ margin: 0, color: 'var(--text-secondary)', fontSize: '0.85rem' }}>
-            Audita y optimiza tus publicaciones de Mercado Libre con Inteligencia Artificial para maximizar visibilidad y ventas
-          </p>
-        </div>
-        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
-          <button onClick={runAudit} disabled={auditing || optimizing}
-            style={{
-              display: 'flex', alignItems: 'center', gap: 6, padding: '10px 18px',
-              borderRadius: 10, border: 'none', fontSize: '0.85rem', fontWeight: 600,
-              backgroundColor: '#8b5cf6', color: '#fff', cursor: auditing ? 'wait' : 'pointer',
-              opacity: auditing ? 0.7 : 1, transition: 'all 0.2s',
-              boxShadow: '0 4px 12px rgba(139,92,246,0.3)',
-            }}>
-            {auditing ? <Loader2 size={16} className="animate-spin" /> : <BarChart3 size={16} />}
-            {auditing ? 'Auditando...' : '🔬 Auditar Publicaciones'}
-          </button>
+      {!embedded ? (
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16, marginBottom: 24, flexWrap: 'wrap' }}>
+          <div>
+            <h1 style={{ margin: '0 0 6px', fontSize: '1.5rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 10 }}>
+              <Sparkles size={24} style={{ color: '#8b5cf6' }} />
+              Optimizador IA de Publicaciones
+            </h1>
+            <p style={{ margin: 0, color: 'var(--text-secondary)', fontSize: '0.85rem' }}>
+              Audita y optimiza tus publicaciones de Mercado Libre con Inteligencia Artificial para maximizar visibilidad y ventas
+            </p>
+          </div>
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+            <button onClick={runAudit} disabled={auditing || optimizing}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 6, padding: '10px 18px',
+                borderRadius: 10, border: 'none', fontSize: '0.85rem', fontWeight: 600,
+                backgroundColor: '#8b5cf6', color: '#fff', cursor: auditing ? 'wait' : 'pointer',
+                opacity: auditing ? 0.7 : 1, transition: 'all 0.2s',
+                boxShadow: '0 4px 12px rgba(139,92,246,0.3)',
+              }}>
+              {auditing ? <Loader2 size={16} className="animate-spin" /> : <BarChart3 size={16} />}
+              {auditing ? 'Auditando...' : '🔬 Auditar Publicaciones'}
+            </button>
 
-          {results.length > 0 && (
-            selectedIds.length > 0 ? (
-              <button
-                onClick={() => optimizeBatch({ ml_ids: selectedIds, desc: 'seleccionadas' })}
-                disabled={Boolean(optimizing)}
-                style={{
-                  display: 'flex', alignItems: 'center', gap: 8, padding: '10px 20px',
-                  borderRadius: 10, border: 'none', fontSize: '0.85rem', fontWeight: 700,
-                  background: 'linear-gradient(135deg, #8b5cf6, #ec4899)', color: '#fff',
-                  cursor: optimizing ? 'wait' : 'pointer',
-                  opacity: optimizing ? 0.7 : 1, transition: 'all 0.2s',
-                  boxShadow: '0 4px 14px rgba(236,72,153,0.35)',
-                }}>
-                {optimizing ? <Loader2 size={16} className="animate-spin" /> : <Zap size={16} />}
-                {optimizing ? 'Optimizando...' : `⚡ Optimizar Seleccionadas (${selectedIds.length})`}
-              </button>
-            ) : (
-              <button
-                onClick={() => setShowOptimizeModal(true)}
-                disabled={Boolean(optimizing)}
-                style={{
-                  display: 'flex', alignItems: 'center', gap: 8, padding: '10px 20px',
-                  borderRadius: 10, border: 'none', fontSize: '0.85rem', fontWeight: 700,
-                  background: 'linear-gradient(135deg, #f59e0b, #ef4444)', color: '#fff',
-                  cursor: optimizing ? 'wait' : 'pointer',
-                  opacity: optimizing ? 0.7 : 1, transition: 'all 0.2s',
-                  boxShadow: '0 4px 12px rgba(245,158,11,0.3)',
-                }}>
-                {optimizing ? <Loader2 size={16} className="animate-spin" /> : <Zap size={16} />}
-                {optimizing ? 'Optimizando...' : '⚡ Elegir qué Optimizar con IA'}
-              </button>
-            )
-          )}
+            {results.length > 0 && (
+              selectedIds.length > 0 ? (
+                <button
+                  onClick={() => optimizeBatch({ ml_ids: selectedIds, desc: 'seleccionadas' })}
+                  disabled={Boolean(optimizing)}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 8, padding: '10px 20px',
+                    borderRadius: 10, border: 'none', fontSize: '0.85rem', fontWeight: 700,
+                    background: 'linear-gradient(135deg, #8b5cf6, #ec4899)', color: '#fff',
+                    cursor: optimizing ? 'wait' : 'pointer',
+                    opacity: optimizing ? 0.7 : 1, transition: 'all 0.2s',
+                    boxShadow: '0 4px 14px rgba(236,72,153,0.35)',
+                  }}>
+                  {optimizing ? <Loader2 size={16} className="animate-spin" /> : <Zap size={16} />}
+                  {optimizing ? 'Optimizando...' : `⚡ Optimizar Seleccionadas (${selectedIds.length})`}
+                </button>
+              ) : (
+                <button
+                  onClick={() => setShowOptimizeModal(true)}
+                  disabled={Boolean(optimizing)}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 8, padding: '10px 20px',
+                    borderRadius: 10, border: 'none', fontSize: '0.85rem', fontWeight: 700,
+                    background: 'linear-gradient(135deg, #f59e0b, #ef4444)', color: '#fff',
+                    cursor: optimizing ? 'wait' : 'pointer',
+                    opacity: optimizing ? 0.7 : 1, transition: 'all 0.2s',
+                    boxShadow: '0 4px 12px rgba(245,158,11,0.3)',
+                  }}>
+                  {optimizing ? <Loader2 size={16} className="animate-spin" /> : <Zap size={16} />}
+                  {optimizing ? 'Optimizando...' : '⚡ Elegir qué Optimizar con IA'}
+                </button>
+              )
+            )}
+          </div>
         </div>
-      </div>
+      ) : (
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16, marginBottom: 20, flexWrap: 'wrap' }}>
+          <div>
+            <div style={{ fontSize: '1.15rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 8, color: 'var(--text-primary)' }}>
+              <Sparkles size={20} style={{ color: '#8b5cf6' }} />
+              Auditoría y Optimización IA para Mercado Libre
+            </div>
+            <p style={{ margin: '3px 0 0', color: 'var(--text-secondary)', fontSize: '0.82rem' }}>
+              Evalúa la calidad de tus publicaciones en Mercado Libre y mejora títulos, descripciones y fichas técnicas con Inteligencia Artificial
+            </p>
+          </div>
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+            <button onClick={runAudit} disabled={auditing || optimizing}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 6, padding: '9px 16px',
+                borderRadius: 9, border: 'none', fontSize: '0.84rem', fontWeight: 600,
+                backgroundColor: '#8b5cf6', color: '#fff', cursor: auditing ? 'wait' : 'pointer',
+                opacity: auditing ? 0.7 : 1, transition: 'all 0.2s',
+                boxShadow: '0 4px 12px rgba(139,92,246,0.3)',
+              }}>
+              {auditing ? <Loader2 size={15} className="animate-spin" /> : <BarChart3 size={15} />}
+              {auditing ? 'Auditando...' : '🔬 Auditar Publicaciones'}
+            </button>
+
+            {results.length > 0 && (
+              selectedIds.length > 0 ? (
+                <button
+                  onClick={() => optimizeBatch({ ml_ids: selectedIds, desc: 'seleccionadas' })}
+                  disabled={Boolean(optimizing)}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 8, padding: '9px 18px',
+                    borderRadius: 9, border: 'none', fontSize: '0.84rem', fontWeight: 700,
+                    background: 'linear-gradient(135deg, #8b5cf6, #ec4899)', color: '#fff',
+                    cursor: optimizing ? 'wait' : 'pointer',
+                    opacity: optimizing ? 0.7 : 1, transition: 'all 0.2s',
+                    boxShadow: '0 4px 14px rgba(236,72,153,0.35)',
+                  }}>
+                  {optimizing ? <Loader2 size={15} className="animate-spin" /> : <Zap size={15} />}
+                  {optimizing ? 'Optimizando...' : `⚡ Optimizar Seleccionadas (${selectedIds.length})`}
+                </button>
+              ) : (
+                <button
+                  onClick={() => setShowOptimizeModal(true)}
+                  disabled={Boolean(optimizing)}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 8, padding: '9px 18px',
+                    borderRadius: 9, border: 'none', fontSize: '0.84rem', fontWeight: 700,
+                    background: 'linear-gradient(135deg, #f59e0b, #ef4444)', color: '#fff',
+                    cursor: optimizing ? 'wait' : 'pointer',
+                    opacity: optimizing ? 0.7 : 1, transition: 'all 0.2s',
+                    boxShadow: '0 4px 12px rgba(245,158,11,0.3)',
+                  }}>
+                  {optimizing ? <Loader2 size={15} className="animate-spin" /> : <Zap size={15} />}
+                  {optimizing ? 'Optimizando...' : '⚡ Elegir qué Optimizar con IA'}
+                </button>
+              )
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Summary Cards */}
       {auditData && (

@@ -1,7 +1,9 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
-import { Package, CloudOff, Cloud, RefreshCw, Save, QrCode, Camera, ExternalLink, Eye, EyeOff, Store, Search, X, Gauge, SlidersHorizontal, Plus, User } from 'lucide-react'
+import { useSearchParams } from 'react-router-dom'
+import { Package, CloudOff, Cloud, RefreshCw, Save, QrCode, Camera, ExternalLink, Eye, EyeOff, Store, Search, X, Gauge, SlidersHorizontal, Plus, User, Sparkles } from 'lucide-react'
 import { Html5QrcodeScanner } from 'html5-qrcode'
 import MediaBrowser from '../components/MediaBrowser'
+import MeliOptimizer from './MeliOptimizer'
 import { useTenant } from '../TenantContext'
 import { getCachedData, setCachedData, invalidateCache, CacheKeys } from '../utils/cache'
 import { matchesQuery } from '../utils/searchUtils'
@@ -20,6 +22,25 @@ export default function Inventory() {
   const [resolviendo, setResolviendo] = useState(null)   // progreso de la generacion en lote
   const [revisionLote, setRevisionLote] = useState(null) // ml_ids a revisar cuando termina
   const { isSimpleView, isChannelEnabled } = useTenant()
+  const [searchParams, setSearchParams] = useSearchParams()
+  const activeTab = searchParams.get('tab') === 'optimizer' ? 'optimizer' : 'inventory'
+
+  const handleTabChange = (tab) => {
+    if (tab === 'optimizer') {
+      setSearchParams({ tab: 'optimizer' })
+    } else {
+      setSearchParams({})
+    }
+  }
+
+  const hasMeliOptimizerAccess = (() => {
+    if (!isChannelEnabled('meli')) return false
+    const permsStr = localStorage.getItem('adminPermissions')
+    if (permsStr === null || permsStr === '') return true
+    const perms = permsStr.split(',').map(p => p.trim())
+    return perms.includes('inventory') || perms.includes('settings')
+  })()
+
   const [loading, setLoading] = useState(() => !cachedInitial)
   const [query, setQuery] = useState("")
   const [sortConfig, setSortConfig] = useState({ key: null, direction: 'asc' })
@@ -1352,36 +1373,101 @@ export default function Inventory() {
     <div className="inventory-page-container">
       <div className={!isReadingMode ? "inventory-desktop-header" : ""} style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: isReadingMode ? 12 : 20, flexWrap: 'wrap', gap: 12}}>
         <div>
-          <h1 className="page-title">{isReadingMode ? "Consulta de Mostrador (Stock & Precios)" : "Inventario de Publicaciones"}</h1>
-          <p className="page-subtitle">{isReadingMode ? "Visualización rápida en tiempo real para atención al público en local. Precios de costo y márgenes protegidos." : "Sincronizá tus publicaciones de Mercado Libre y gestioná tu Tienda Web."}</p>
+          <h1 className="page-title">{isReadingMode ? "Consulta de Mostrador (Stock & Precios)" : activeTab === 'optimizer' ? "Optimizador IA de Publicaciones ML" : "Inventario de Publicaciones"}</h1>
+          <p className="page-subtitle">{isReadingMode ? "Visualización rápida en tiempo real para atención al público en local. Precios de costo y márgenes protegidos." : activeTab === 'optimizer' ? "Audita la calidad y optimiza títulos, descripciones y fichas técnicas con Inteligencia Artificial." : "Sincronizá tus publicaciones de Mercado Libre y gestioná tu Tienda Web."}</p>
         </div>
-        <button 
-          type="button" 
-          className="btn"
-          onClick={toggleReadingMode}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 8,
-            backgroundColor: isReadingMode ? '#10b981' : 'rgba(16, 185, 129, 0.15)',
-            color: isReadingMode ? '#ffffff' : '#10b981',
-            border: '1.5px solid #10b981',
-            fontWeight: 700,
-            padding: '8px 18px',
-            borderRadius: 8,
-            cursor: 'pointer',
-            boxShadow: isReadingMode ? '0 2px 10px rgba(16, 185, 129, 0.4)' : '0 2px 6px rgba(16, 185, 129, 0.15)',
-            fontSize: '0.9rem',
-            transition: 'all 0.15s ease'
-          }}
-          title={isReadingMode ? "Salir de modo mostrador y volver a edición normal" : "Activar Modo Mostrador / Lectura rápida de Stock y Precios para atención en mostrador"}
-        >
-          {isReadingMode ? <X size={18} /> : <Eye size={18} />}
-          <span>{isReadingMode ? "✕ Salir de Modo Mostrador" : "👁️ Modo Mostrador (Lectura)"}</span>
-        </button>
+        {activeTab !== 'optimizer' && (
+          <button 
+            type="button" 
+            className="btn"
+            onClick={toggleReadingMode}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              backgroundColor: isReadingMode ? '#10b981' : 'rgba(16, 185, 129, 0.15)',
+              color: isReadingMode ? '#ffffff' : '#10b981',
+              border: '1.5px solid #10b981',
+              fontWeight: 700,
+              padding: '8px 18px',
+              borderRadius: 8,
+              cursor: 'pointer',
+              boxShadow: isReadingMode ? '0 2px 10px rgba(16, 185, 129, 0.4)' : '0 2px 6px rgba(16, 185, 129, 0.15)',
+              fontSize: '0.9rem',
+              transition: 'all 0.15s ease'
+            }}
+            title={isReadingMode ? "Salir de modo mostrador y volver a edición normal" : "Activar Modo Mostrador / Lectura rápida de Stock y Precios para atención en mostrador"}
+          >
+            {isReadingMode ? <X size={18} /> : <Eye size={18} />}
+            <span>{isReadingMode ? "✕ Salir de Modo Mostrador" : "👁️ Modo Mostrador (Lectura)"}</span>
+          </button>
+        )}
       </div>
 
-      {isReadingMode ? (
+      {/* Tabs Navigation */}
+      {!isReadingMode && hasMeliOptimizerAccess && (
+        <div style={{
+          display: 'flex',
+          gap: 10,
+          marginBottom: '20px',
+          flexWrap: 'wrap'
+        }}>
+          <button
+            type="button"
+            onClick={() => handleTabChange('inventory')}
+            style={{
+              padding: '10px 18px',
+              border: activeTab === 'inventory' ? '2px solid var(--accent-blue)' : '1px solid var(--border-color)',
+              borderRadius: '8px',
+              backgroundColor: activeTab === 'inventory' ? 'rgba(59, 130, 246, 0.1)' : 'var(--bg-card)',
+              color: activeTab === 'inventory' ? 'var(--accent-blue)' : 'var(--text-secondary)',
+              fontWeight: '700',
+              fontSize: '0.88rem',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '8px',
+              transition: 'all 0.15s ease'
+            }}
+          >
+            <Package size={17} /> Catálogo & Stock ({products.length})
+          </button>
+
+          <button
+            type="button"
+            onClick={() => handleTabChange('optimizer')}
+            style={{
+              padding: '10px 18px',
+              border: activeTab === 'optimizer' ? '2px solid #8b5cf6' : '1px solid var(--border-color)',
+              borderRadius: '8px',
+              backgroundColor: activeTab === 'optimizer' ? 'rgba(139, 92, 246, 0.12)' : 'var(--bg-card)',
+              color: activeTab === 'optimizer' ? '#8b5cf6' : 'var(--text-secondary)',
+              fontWeight: '700',
+              fontSize: '0.88rem',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '8px',
+              transition: 'all 0.15s ease'
+            }}
+          >
+            <Sparkles size={17} /> Optimizador IA ML
+          </button>
+        </div>
+      )}
+
+      {!isReadingMode && activeTab === 'optimizer' ? (
+        <MeliOptimizer 
+          embedded={true}
+          onProductUpdated={() => {
+            fetchProducts(true)
+          }}
+        />
+      ) : (
+        <>
+          {isReadingMode ? (
         <div style={{marginBottom: 20}}>
           {/* Banner Mostrador */}
           <div className="reading-mode-banner" style={{
@@ -3880,6 +3966,8 @@ export default function Inventory() {
             </button>
           </div>
         </div>
+      )}
+        </>
       )}
     </div>
   )
