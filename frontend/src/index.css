@@ -1,4 +1,12 @@
 :root {
+  /* Escala de los logotipos. Mobile la baja al 80% (ver el media query de
+     768px): así el ajuste vive en un solo lugar y las tres piezas —logo ancho,
+     logo cuadrado y logo de plataforma— se achican juntas y en la misma
+     proporción. */
+  --logo-scale: 1;
+  --sidebar-logo-wide-height: calc(38px * var(--logo-scale));
+  --sidebar-logo-square-size: calc(32px * var(--logo-scale));
+
   --bg-dark: #0f172a;
   --bg-card: #1e293b;
   --bg-card-hover: #334155;
@@ -135,7 +143,7 @@ body {
 
 .sidebar-brand-logo-wide {
   max-width: 100%;
-  max-height: 38px;
+  max-height: var(--sidebar-logo-wide-height);
   width: auto;
   height: auto;
   object-fit: contain;
@@ -149,14 +157,63 @@ body:not(.light-mode) .sidebar-brand-logo-wide {
 }
 
 .sidebar-brand-logo-square {
-  width: 32px;
-  height: 32px;
-  min-width: 32px;
+  width: var(--sidebar-logo-square-size);
+  height: var(--sidebar-logo-square-size);
+  min-width: var(--sidebar-logo-square-size);
   border-radius: 8px;
   object-fit: contain;
   display: block;
   image-rendering: -webkit-optimize-contrast;
   image-rendering: high-quality;
+}
+
+/* ---------------------------------------------------------------------------
+   Logo de plataforma (componente BrandLogo: login y administración de clientes)
+
+   Las medidas cuelgan de --brand-logo-h, que el componente fija según su prop
+   `height`. Tenerlo en una variable es lo que permite achicarlo en mobile sin
+   duplicar el componente ni pelear contra estilos inline.
+   --------------------------------------------------------------------------- */
+.brand-logo {
+  /* El componente fija --brand-logo-base; la altura efectiva se deriva acá para
+     que --logo-scale pueda achicarla (un estilo inline no se puede pisar). */
+  --brand-logo-h: calc(var(--brand-logo-base, 44px) * var(--logo-scale, 1));
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.brand-logo img {
+  height: var(--brand-logo-h, 44px);
+  width: auto;
+  max-width: 100%;
+  object-fit: contain;
+}
+
+.brand-logo-fallback {
+  flex-direction: row;
+  gap: 8px;
+}
+
+.brand-logo-icon {
+  width: calc(var(--brand-logo-h, 44px) * 0.6);
+  height: calc(var(--brand-logo-h, 44px) * 0.6);
+  flex-shrink: 0;
+}
+
+.brand-logo-wordmark {
+  font-size: calc(var(--brand-logo-h, 44px) * 0.5);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.brand-logo-tagline {
+  font-size: 0.7rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  margin-top: 6px;
+  font-weight: 600;
 }
 
 .sidebar-monogram-badge {
@@ -589,8 +646,23 @@ input, select {
     background-color: var(--bg-card);
   }
 
+  /* Logos un 20% más chicos en mobile.
+
+     En una pantalla de 414px (iPhone 11) el logotipo del negocio ocupaba todo
+     el ancho de la cabecera de la barra lateral. Con la escala al 80% el logo
+     ancho baja de 38px a 30,4px, el cuadrado de 32px a 25,6px y el de
+     plataforma (login) acompaña en la misma proporción. */
+  :root {
+    --logo-scale: 0.8;
+  }
+
+  .sidebar-brand-logo-wide {
+    max-width: 80%;
+  }
+
   .header-mobile-brand {
     display: inline-block;
+    font-size: 0.84rem;   /* 1.05rem * 0.8 */
   }
 
   .header-status-desktop {

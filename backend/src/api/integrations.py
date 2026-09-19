@@ -6,12 +6,13 @@ guardar, activar, desactivar y borrar; para leer se muestra únicamente si está
 cargada y, cuando corresponde, el identificador público de la cuenta.
 """
 
+from datetime import datetime
 from typing import Dict, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
-from src import integrations, tenancy
+from src import integrations, sync_state, tenancy
 from src.api.auth import get_current_user, require_permission
 from src.utils import crypto
 
@@ -30,6 +31,13 @@ class ActivePayload(BaseModel):
     is_active: bool
 
 
+class ResetCursorPayload(BaseModel):
+    cursor_at: Optional[str] = Field(
+        None,
+        description="Fecha ISO desde la cual volver a sincronizar. "
+                    "Vacío = arrancar de cero (el canal se trata como nuevo).")
+
+
 @router.get("/")
 def list_integrations(_: dict = Depends(get_current_user),
                       __=Depends(require_permission("settings"))):
@@ -37,6 +45,79 @@ def list_integrations(_: dict = Depends(get_current_user),
     return {
         "encryption_configured": crypto.is_configured(),
         "integrations": integrations.list_integrations(),
+    }
+
+
+# ---------------------------------------------------------------------------
+# Registro de sincronización
+#
+# Declarados antes de las rutas con `{provider}` para que FastAPI no interprete
+# "sync-state" como el nombre de un proveedor.
+# ---------------------------------------------------------------------------
+
+@router.get("/sync-state")
+def get_sync_state(_: dict = Depends(get_current_user),
+                   __=Depends(require_permission("settings"))):
+    """Última actualización de cada canal y desde cuándo sigue la próxima."""
+    return {
+        "states": sync_state.list_states(),
+        "lookback_days": sync_state.DEFAULT_LOOKBACK_DAYS,
+        "overlap_minutes": sync_state.DEFAULT_OVERLAP_MINUTES,
+    }
+
+
+@router.get("/sync-log")
+def get_sync_log(provider: Optional[str] = None,
+                 resource: Optional[str] = None,
+                 limit: int = Query(50, ge=1, le=500),
+                 _: dict = Depends(get_current_user),
+                 __=Depends(require_permission("settings"))):
+    """Historial de corridas del tenant, para auditar y diagnosticar."""
+    return {
+        "runs": sync_state.list_runs(provider=provider, resource=resource,
+                                     limit=limit),
+        "retention_days": sync_state.LOG_RETENTION_DAYS,
+    }
+
+
+@router.post("/sync-state/{provider}/{resource}/reset")
+def reset_sync_cursor(provider: str, resource: str,
+                      payload: ResetCursorPayload,
+                      _: dict = Depends(get_current_user),
+                      __=Depends(require_permission("settings"))):
+    """Rebobina (o borra) la marca de agua de un canal.
+
+    Es la salida cuando un canal quedó apuntando a una fecha equivocada: en vez
+    de tocar la base a mano, se le dice desde cuándo volver a traer.
+    """
+    cursor_at = None
+    if payload.cursor_at:
+        try:
+            cursor_at = datetime.fromisoformat(payload.cursor_at.replace("Z", "+00:00"))
+        except ValueError:
+            raise HTTPException(status_code=400,
+                                detail="cursor_at tiene que ser una fecha ISO válida")
+
+    try:
+        ok = sync_state.reset_state(provider, resource, cursor_at)
+    except sync_state.UnknownResource as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    if not ok:
+        raise HTTPException(
+            status_code=503,
+            detail="El registro de sincronización no está disponible "
+                   "(falta aplicar la migración 015).")
+
+    return {
+        "success": True,
+        "provider": provider,
+        "resource": resource,
+        "cursor_at": cursor_at.isoformat() if cursor_at else None,
+        "message": ("La próxima sincronización arranca desde "
+                    f"{cursor_at.isoformat()}." if cursor_at else
+                    "Marca de agua borrada: la próxima sincronización usa la "
+                    f"ventana por defecto de {sync_state.DEFAULT_LOOKBACK_DAYS} días."),
     }
 
 

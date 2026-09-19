@@ -16,7 +16,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response, Backgr
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, Field
 
-from src import tn_api, database, integrations, tenancy, progress
+from src import tn_api, database, integrations, sync_state, tenancy, progress
 from src.api.auth import get_current_user, require_permission
 
 router = APIRouter()
@@ -303,7 +303,15 @@ def sync_orders_manual(payload: SyncOrdersRequest,
                        _: dict = Depends(get_current_user),
                        __=Depends(require_permission("sales"))):
     """Fuerza la sincronización de órdenes recientes desde Tiendanube."""
-    ok, count = tn_api.sync_orders(limit=payload.limit, date_from=payload.date_from)
+    # Queda asentada en el registro del tenant igual que la automática: si
+    # alguien recupera un pedido a mano, la próxima corrida del scheduler tiene
+    # que arrancar desde ahí y no volver a pedir lo mismo.
+    with sync_state.begin("tiendanube", "orders", trigger="manual",
+                          date_from=payload.date_from,
+                          full=payload.date_from is None) as run:
+        ok, count = tn_api.sync_orders(limit=payload.limit,
+                                       date_from=payload.date_from)
+        run.finish(ok, count)
     if ok:
         return {"success": True, "count": count, "message": f"Sincronización completada ({count} órdenes procesadas)."}
     raise HTTPException(status_code=500, detail="Error al sincronizar pedidos de Tiendanube")

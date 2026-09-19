@@ -1,8 +1,7 @@
 import threading
 import time
 import traceback
-from datetime import datetime
-from src import meli_api, mp_api, config, tenancy
+from src import meli_api, mp_api, config, sync_state, tenancy
 from src.api.backup import check_and_run_monthly_auto_backup
 
 # Los hilos de fondo no atienden una petición HTTP, así que no hay subdominio
@@ -34,24 +33,37 @@ def _for_each_tenant(task_name, fn):
 def _sync_one_tenant(tenant):
     """Sincronización de Mercado Libre / Mercado Pago de un único inquilino.
 
-    El cuerpo es exactamente el que corría antes; lo único que cambió es que
-    ahora se ejecuta bajo el contexto del tenant, así que `config` y `database`
-    leen y escriben sus datos y no los de otro.
+    Cada canal corre dentro de su propia corrida registrada (`sync_state`), que
+    es lo que define desde qué fecha se pide y deja asentado hasta dónde se
+    llegó. Si una corrida falla, su marca de agua no avanza y la próxima vuelve
+    a pedir la misma ventana.
     """
     slug = tenant.get("slug")
 
     if config.is_configured():
         print(f"[Scheduler][{slug}] Iniciando sincronización automática...")
-        now_tz = datetime.now().astimezone()
-        date_from = now_tz.replace(hour=0, minute=0, second=0,
-                                   microsecond=0).isoformat()
 
-        ok_p, count_p = meli_api.sync_products()
-        ok_s, count_s = meli_api.sync_orders(limit=100, date_from=date_from)
-        ok_mp, count_mp = mp_api.sync_mp_payments(date_from=date_from, limit=100)
+        with sync_state.begin("mercadolibre", "products") as run:
+            ok_p, count_p = meli_api.sync_products()
+            run.finish(ok_p, count_p)
+
+        with sync_state.begin("mercadolibre", "orders") as run:
+            ok_s, count_s = meli_api.sync_orders(limit=run.catch_up_limit(),
+                                                 date_from=run.date_from)
+            run.finish(ok_s, count_s)
+
+        with sync_state.begin("mercadopago", "payments") as run:
+            ok_mp, count_mp = mp_api.sync_mp_payments(date_from=run.date_from,
+                                                      limit=run.catch_up_limit())
+            run.finish(ok_mp, count_mp)
+
         print(f"[Scheduler][{slug}] Sincronización finalizada. "
               f"Productos: {count_p} (ok: {ok_p}), Ventas MeLi: {count_s} (ok: {ok_s}), "
               f"Cobros MP: {count_mp} (ok: {ok_mp})")
+
+        # El historial de corridas es para auditar, no para acumular: se poda
+        # acá para que ningún tenant lo deje crecer sin techo.
+        sync_state.prune_log()
     else:
         # In demo mode, we also sync to generate mock data if cache is empty
         if config.get_setting("demo_mode") == "true":
@@ -103,7 +115,14 @@ def _sync_one_tenant(tenant):
     try:
         from src import tn_api
         if tn_api.is_connected() and not tn_api.is_demo_mode():
-            ok_tn, count_tn = tn_api.sync_orders(limit=50)
+            with sync_state.begin("tiendanube", "orders") as run:
+                # En la primera corrida no se filtra por fecha: se trae lo
+                # último que haya, como venía haciendo. Recién cuando existe
+                # marca de agua se pide desde ahí.
+                ok_tn, count_tn = tn_api.sync_orders(
+                    limit=run.catch_up_limit(base=50, per_day=150, cap=500),
+                    date_from=run.date_from if run.resumed else None)
+                run.finish(ok_tn, count_tn)
             if ok_tn and count_tn > 0:
                 print(f"[Scheduler][{slug}] Órdenes de Tiendanube sincronizadas: {count_tn}")
     except Exception as tn_err:

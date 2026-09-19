@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException, BackgroundTasks, File, UploadFile,
 from pydantic import BaseModel
 import os
 from typing import Optional
-from src import database, meli_api, mp_api, config, tenancy
+from src import database, meli_api, mp_api, config, sync_state, tenancy
 from src.progress import get_progress, update_progress
 from src.api.auth import require_permission
 
@@ -282,22 +282,36 @@ def save_cms_config(req: CmsConfigModel, _=Depends(require_permission("settings"
     return {"success": True}
 
 def run_background_sync(limit: int, date_from: Optional[str]):
+    # Sin `date_from` la intención es la bajada histórica completa; con fecha,
+    # una ventana puntual. En los dos casos queda asentado en el registro de
+    # sincronización del tenant, que es de donde sale la próxima ventana
+    # automática.
+    full = date_from is None
     try:
         # Step 1: Products Sync
-        ok_products, count_or_msg = meli_api.sync_products()
+        with sync_state.begin("mercadolibre", "products", trigger="manual",
+                              full=True) as run:
+            ok_products, count_or_msg = meli_api.sync_products()
+            run.finish(ok_products, count_or_msg)
         if not ok_products:
             raise Exception(f"Fallo en la sincronización de productos: {count_or_msg}")
-            
+
         # Step 2: MeLi Sales Sync
-        ok_sales, count_or_msg = meli_api.sync_orders(limit=limit, date_from=date_from)
+        with sync_state.begin("mercadolibre", "orders", trigger="manual",
+                              date_from=date_from, full=full) as run:
+            ok_sales, count_or_msg = meli_api.sync_orders(limit=limit, date_from=date_from)
+            run.finish(ok_sales, count_or_msg)
         if not ok_sales:
             raise Exception(f"Fallo en la sincronización de ventas de Mercado Libre: {count_or_msg}")
 
         # Step 3: Mercado Pago Payments Sync
-        ok_mp, count_or_msg = mp_api.sync_mp_payments(date_from=date_from, limit=limit)
+        with sync_state.begin("mercadopago", "payments", trigger="manual",
+                              date_from=date_from, full=full) as run:
+            ok_mp, count_or_msg = mp_api.sync_mp_payments(date_from=date_from, limit=limit)
+            run.finish(ok_mp, count_or_msg)
         if not ok_mp:
             print(f"[Warning] Sincronización Mercado Pago: {count_or_msg}")
-            
+
         # Finalized successfully
         update_progress(status="completed", progress=100, message="Sincronización histórica (Mercado Libre + Mercado Pago) finalizada exitosamente.")
     except Exception as e:

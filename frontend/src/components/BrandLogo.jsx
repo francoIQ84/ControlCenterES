@@ -10,15 +10,19 @@ import { Zap } from 'lucide-react'
  *
  * Si el archivo no está presente cae a un logotipo tipográfico, para que un
  * asset faltante no deje un hueco roto en la pantalla de inicio de sesión.
+ *
+ * La altura viaja como variable CSS (`--brand-logo-base`) en lugar de aplicarse
+ * directo al `style` de la imagen: así el media query de mobile puede achicarlo
+ * un 20% sin pelearse contra un estilo inline, que siempre gana.
  */
 export default function BrandLogo({ height = 44, showTagline = false, style = {} }) {
   const [failed, setFailed] = useState(false)
 
   if (failed) {
     return (
-      <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, ...style }}>
-        <Zap size={height * 0.6} style={{ color: 'var(--accent-blue)' }} />
-        <span style={{ fontSize: height * 0.5, fontWeight: 800, letterSpacing: '-0.02em' }}>
+      <div className="brand-logo brand-logo-fallback" style={{ '--brand-logo-base': `${height}px`, ...style }}>
+        <Zap className="brand-logo-icon" style={{ color: 'var(--accent-blue)' }} />
+        <span className="brand-logo-wordmark">
           Control<span style={{ color: 'var(--accent-blue)' }}>Center</span>
         </span>
       </div>
@@ -26,18 +30,14 @@ export default function BrandLogo({ height = 44, showTagline = false, style = {}
   }
 
   return (
-    <div style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'center', ...style }}>
+    <div className="brand-logo" style={{ '--brand-logo-base': `${height}px`, ...style }}>
       <img
         src="/logo-controlcenter.png"
         alt="ControlCenter"
         onError={() => setFailed(true)}
-        style={{ height, width: 'auto', maxWidth: '100%', objectFit: 'contain' }}
       />
       {showTagline && (
-        <span style={{
-          fontSize: '0.7rem', letterSpacing: '0.18em', textTransform: 'uppercase',
-          color: 'var(--text-secondary)', marginTop: 6, fontWeight: 600
-        }}>
+        <span className="brand-logo-tagline">
           Plataforma integrada de gestión
         </span>
       )}

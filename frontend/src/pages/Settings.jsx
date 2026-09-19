@@ -35,6 +35,13 @@ export default function Settings() {
   const [syncingToday, setSyncingToday] = useState(false)
   const [syncProgress, setSyncProgress] = useState(null)
 
+  // Registro de sincronización por canal (Mercado Libre, Mercado Pago, Tiendanube)
+  const [syncStates, setSyncStates] = useState([])
+  const [syncRuns, setSyncRuns] = useState([])
+  const [syncMeta, setSyncMeta] = useState({ lookback_days: 7, overlap_minutes: 15 })
+  const [syncLogLoading, setSyncLogLoading] = useState(false)
+  const [syncLogFilter, setSyncLogFilter] = useState('')
+
   // Polling automático de progreso en tiempo real
   useEffect(() => {
     let intervalId = null
@@ -1029,6 +1036,65 @@ export default function Settings() {
       .catch(err => console.error(err))
   }
 
+  // ---------------------------------------------------------------------
+  // Registro de sincronización
+  // ---------------------------------------------------------------------
+  const fetchSyncRegistry = async () => {
+    setSyncLogLoading(true)
+    try {
+      const qs = syncLogFilter ? `?provider=${encodeURIComponent(syncLogFilter)}&limit=60` : '?limit=60'
+      const [stateRes, logRes] = await Promise.all([
+        fetch('/api/integrations/sync-state'),
+        fetch('/api/integrations/sync-log' + qs)
+      ])
+      if (stateRes.ok) {
+        const data = await stateRes.json()
+        setSyncStates(data.states || [])
+        setSyncMeta({
+          lookback_days: data.lookback_days ?? 7,
+          overlap_minutes: data.overlap_minutes ?? 15
+        })
+      }
+      if (logRes.ok) {
+        const data = await logRes.json()
+        setSyncRuns(data.runs || [])
+      }
+    } catch (err) {
+      console.error('Error al cargar el registro de sincronización:', err)
+    } finally {
+      setSyncLogLoading(false)
+    }
+  }
+
+  const handleResetCursor = async (state, mode) => {
+    // mode: 'clear' borra la marca de agua, o un número de días hacia atrás.
+    let cursor_at = null
+    let confirmMsg = `¿Borrar la marca de agua de ${state.resource_label}? La próxima sincronización va a pedir los últimos ${syncMeta.lookback_days} días.`
+    if (mode !== 'clear') {
+      const d = new Date(Date.now() - mode * 24 * 60 * 60 * 1000)
+      cursor_at = d.toISOString()
+      confirmMsg = `¿Rebobinar ${state.resource_label} a ${formatDateTimeAR(cursor_at)}? Se va a volver a traer todo desde esa fecha.`
+    }
+    if (!window.confirm(confirmMsg)) return
+
+    try {
+      const res = await fetch(`/api/integrations/sync-state/${state.provider}/${state.resource}/reset`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cursor_at })
+      })
+      const data = await res.json()
+      if (res.ok) {
+        alert(data.message || 'Marca de agua actualizada.')
+        fetchSyncRegistry()
+      } else {
+        alert('Error: ' + (data.detail || 'No se pudo actualizar la marca de agua'))
+      }
+    } catch (err) {
+      alert('Error de conexión: ' + err.message)
+    }
+  }
+
   const fetchGoogleDriveConfig = () => {
     fetch('/api/integrations/')
       .then(r => r.json())
@@ -1096,7 +1162,10 @@ export default function Settings() {
     if (activeTab === "web_config") {
       fetchFeaturedProducts()
     }
-  }, [activeTab])
+    if (activeTab === "sync") {
+      fetchSyncRegistry()
+    }
+  }, [activeTab, syncLogFilter])
 
   const fetchFeaturedProducts = () => {
     fetch('/api/inventory/')
@@ -1555,6 +1624,7 @@ export default function Settings() {
             { id: 'web_config', label: 'Configuración Web', icon: '🌐' },
             { id: 'lead_magnet', label: 'Pop-up Lead Magnet & Emails', icon: '🌱' },
           ] : []),
+          { id: 'sync', label: 'Registro de Sincronización', icon: '🔄' },
           { id: 'security', label: 'Seguridad & Accesos', icon: '🔒' },
           ...(isChannelEnabled('arca') ? [{ id: 'arca', label: 'Facturación ARCA (ex AFIP)', icon: '🧾' }] : []),
           { id: 'backups', label: 'Respaldos', icon: '💾' },
@@ -3459,6 +3529,160 @@ export default function Settings() {
             >
               {savingFeaturedOrder ? 'Guardando...' : '💾 Guardar Orden de Productos Destacados'}
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* Tab: Registro de Sincronización por canal */}
+      {activeTab === 'sync' && (
+        <div style={{display: 'flex', flexDirection: 'column', gap: 20}}>
+          <div className="card" style={{width: '100%'}}>
+            <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap'}}>
+              <div>
+                <h3 style={{margin: 0}}>🔄 Registro de Sincronización</h3>
+                <p style={{fontSize: '0.85rem', color: 'var(--text-secondary)', margin: '6px 0 0'}}>
+                  Cuándo fue la última actualización de cada canal y desde qué fecha arranca la próxima.
+                  Si una sincronización falla, la fecha no avanza: la siguiente vuelve a pedir la misma ventana,
+                  así no se pierde ninguna venta por un rato sin servicio.
+                </p>
+              </div>
+              <button className="btn" onClick={fetchSyncRegistry} disabled={syncLogLoading}>
+                <RefreshCw size={14} className={syncLogLoading ? 'animate-spin' : ''} style={{marginRight: 6}} />
+                {syncLogLoading ? 'Actualizando...' : 'Actualizar'}
+              </button>
+            </div>
+          </div>
+
+          {/* Estado por canal */}
+          <div style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 16}}>
+            {syncStates.map(st => {
+              const failing = (st.consecutive_failures || 0) > 0
+              const statusColor = st.never_synced ? 'var(--text-secondary)'
+                : failing ? 'var(--accent-red)' : 'var(--accent-emerald)'
+              return (
+                <div key={st.provider + '-' + st.resource} className="card" style={{display: 'flex', flexDirection: 'column', gap: 10}}>
+                  <div style={{display: 'flex', alignItems: 'center', gap: 8}}>
+                    <span style={{
+                      width: 10, height: 10, borderRadius: '50%', flexShrink: 0,
+                      backgroundColor: statusColor, boxShadow: '0 0 8px ' + statusColor
+                    }}></span>
+                    <div>
+                      <div style={{fontWeight: 700}}>{st.resource_label}</div>
+                      <div style={{fontSize: '0.75rem', color: 'var(--text-secondary)'}}>{st.provider_label}</div>
+                    </div>
+                  </div>
+
+                  <div style={{fontSize: '0.85rem', display: 'flex', flexDirection: 'column', gap: 4}}>
+                    <div>
+                      <span style={{color: 'var(--text-secondary)'}}>Última actualización: </span>
+                      <strong>{st.last_success_at ? formatDateTimeAR(st.last_success_at) : 'Nunca sincronizado'}</strong>
+                    </div>
+                    <div>
+                      <span style={{color: 'var(--text-secondary)'}}>Próxima corrida desde: </span>
+                      <strong>
+                        {st.next_window_from
+                          ? formatDateTimeAR(st.next_window_from)
+                          : 'Últimos ' + syncMeta.lookback_days + ' días (sin marca de agua)'}
+                      </strong>
+                    </div>
+                    <div style={{color: 'var(--text-secondary)'}}>
+                      Última corrida: {st.last_items || 0} registros · {st.total_runs || 0} corridas · {st.total_items || 0} acumulados
+                      {st.last_trigger ? ' · origen: ' + (st.last_trigger === 'manual' ? 'manual' : st.last_trigger === 'webhook' ? 'webhook' : 'automática') : ''}
+                    </div>
+                  </div>
+
+                  {failing && (
+                    <div style={{
+                      fontSize: '0.8rem', padding: '8px 10px', borderRadius: 6,
+                      backgroundColor: 'rgba(239, 68, 68, 0.1)', color: 'var(--accent-red)'
+                    }}>
+                      {st.consecutive_failures} {st.consecutive_failures === 1 ? 'fallo seguido' : 'fallos seguidos'}
+                      {st.last_error ? ': ' + st.last_error : ''}
+                    </div>
+                  )}
+
+                  <div style={{display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 'auto'}}>
+                    <button className="btn btn-secondary" style={{fontSize: '0.75rem', padding: '6px 10px'}}
+                            onClick={() => handleResetCursor(st, 7)}>
+                      Rebobinar 7 días
+                    </button>
+                    <button className="btn btn-secondary" style={{fontSize: '0.75rem', padding: '6px 10px'}}
+                            onClick={() => handleResetCursor(st, 30)}>
+                      Rebobinar 30 días
+                    </button>
+                    <button className="btn btn-secondary" style={{fontSize: '0.75rem', padding: '6px 10px'}}
+                            onClick={() => handleResetCursor(st, 'clear')}>
+                      Borrar marca
+                    </button>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+
+          {/* Historial de corridas */}
+          <div className="card" style={{width: '100%'}}>
+            <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 14}}>
+              <h3 style={{margin: 0}}>Historial de corridas</h3>
+              <select value={syncLogFilter} onChange={e => setSyncLogFilter(e.target.value)}
+                      style={{padding: '6px 10px', borderRadius: 6}}>
+                <option value="">Todos los canales</option>
+                <option value="mercadolibre">Mercado Libre</option>
+                <option value="mercadopago">Mercado Pago</option>
+                <option value="tiendanube">Tiendanube</option>
+              </select>
+            </div>
+
+            {syncLogLoading ? <p>Cargando historial...</p> : syncRuns.length === 0 ? (
+              <p style={{fontSize: '0.85rem', color: 'var(--text-secondary)'}}>
+                Todavía no hay corridas registradas. Aparecen acá en cuanto el sistema sincronice
+                (automáticamente cada 30 minutos, o al usar el botón de sincronización).
+              </p>
+            ) : (
+              <table className="mobile-cards data-table" style={{width: '100%', borderCollapse: 'collapse'}}>
+                <thead>
+                  <tr>
+                    <th style={{textAlign: 'left', padding: 8}}>Fecha</th>
+                    <th style={{textAlign: 'left', padding: 8}}>Canal</th>
+                    <th style={{textAlign: 'left', padding: 8}}>Desde</th>
+                    <th style={{textAlign: 'left', padding: 8}}>Origen</th>
+                    <th style={{textAlign: 'right', padding: 8}}>Registros</th>
+                    <th style={{textAlign: 'left', padding: 8}}>Estado</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {syncRuns.map(run => {
+                    const color = run.status === 'success' ? 'var(--accent-emerald)'
+                      : run.status === 'error' ? 'var(--accent-red)'
+                      : 'var(--text-secondary)'
+                    const label = run.status === 'success' ? 'OK'
+                      : run.status === 'error' ? 'Error'
+                      : run.status === 'running' ? 'En curso' : 'Omitida'
+                    return (
+                      <tr key={run.id} style={{borderTop: '1px solid var(--border-color)'}}>
+                        <td data-label="Fecha" style={{padding: 8, whiteSpace: 'nowrap'}}>{formatDateTimeAR(run.started_at)}</td>
+                        <td data-label="Canal" style={{padding: 8}}>{run.resource_label}</td>
+                        <td data-label="Desde" style={{padding: 8, whiteSpace: 'nowrap'}}>
+                          {run.window_from ? formatDateTimeAR(run.window_from) : 'Histórico completo'}
+                        </td>
+                        <td data-label="Origen" style={{padding: 8}}>
+                          {run.trigger_source === 'manual' ? 'Manual' : run.trigger_source === 'webhook' ? 'Webhook' : 'Automática'}
+                        </td>
+                        <td data-label="Registros" style={{padding: 8, textAlign: 'right'}}>{run.items_synced}</td>
+                        <td data-label="Estado" style={{padding: 8, color: color}} title={run.error_message || ''}>
+                          {label}
+                          {run.error_message && (
+                            <div style={{fontSize: '0.75rem', opacity: 0.85, maxWidth: 320, whiteSpace: 'normal'}}>
+                              {run.error_message}
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            )}
           </div>
         </div>
       )}

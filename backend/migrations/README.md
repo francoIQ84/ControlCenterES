@@ -99,6 +99,35 @@ ALTER DATABASE controlcenter SET app.default_tenant = '00000000-0000-0000-0000-0
 
 ---
 
+## Migración 015 — Registro de sincronización por inquilino
+
+Crea `integration_sync_state` (la marca de agua vigente de cada canal) e
+`integration_sync_log` (el historial de corridas). Es lo que permite que una
+sincronización arranque desde donde quedó la anterior en lugar de adivinar la
+ventana, que era de donde salían los huecos de ventas después de un rato sin
+servicio.
+
+```bash
+psql -d controlcenter -f backend/migrations/015_integration_sync_log.sql
+```
+
+No hace falta ventana de mantenimiento: son dos tablas nuevas, nada de lo
+existente se modifica. Mientras no esté aplicada, la aplicación sigue
+sincronizando igual —`src/sync_state.py` cae a un modo inerte— solo que sin
+dejar registro ni poder retomar.
+
+La semilla usa `tenant_integrations.last_sync_at` como punto de partida de las
+cuentas ya vinculadas. Los canales sin ese dato arrancan con la ventana por
+defecto de 7 días.
+
+Marcha atrás (no se pierde nada operativo: el registro es metadato):
+
+```bash
+psql -d controlcenter -f backend/migrations/015_integration_sync_log_rollback.sql
+```
+
+---
+
 ## Verificación
 
 ```bash

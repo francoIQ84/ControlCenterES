@@ -434,6 +434,7 @@ ControlCenterES/
 │   │   ├── tenancy.py   # Contexto de inquilino, resolución de subdominios, planes
 │   │   ├── middleware.py# TenantResolver (ASGI puro)
 │   │   ├── integrations.py # Almacenamiento y lectura de credenciales por inquilino
+│   │   ├── sync_state.py# Registro de sincronización por inquilino (ML / MP / TN)
 │   │   └── scheduler.py # Tareas en segundo plano, una pasada por inquilino activo
 │   ├── migrations/      # Migraciones SQL idempotentes + runner + README operativo
 │   ├── tests/           # Integración (requieren PostgreSQL)
