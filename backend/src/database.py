@@ -792,6 +792,15 @@ def update_product_hidden_status(ml_id: str, is_hidden: int):
         with conn.cursor() as cursor:
             cursor.execute("UPDATE products_cache SET is_hidden = %s, last_modified = %s WHERE ml_id = %s", (int(is_hidden), now, ml_id))
 
+def update_product_status(ml_id: str, status: str, updated_by_user: str = None):
+    now = datetime.now().isoformat()
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            if updated_by_user:
+                cursor.execute("UPDATE products_cache SET status = %s, last_modified = %s, updated_by_user = %s WHERE ml_id = %s", (status, now, updated_by_user, ml_id))
+            else:
+                cursor.execute("UPDATE products_cache SET status = %s, last_modified = %s WHERE ml_id = %s", (status, now, ml_id))
+
 def bulk_update_hidden_status(ml_ids: list, is_hidden: int):
     if not ml_ids:
         return

@@ -1142,6 +1142,31 @@ def update_stock_and_price(ml_id, quantity, price):
     except Exception as e:
         return False, f"Excepción de red: {str(e)}"
 
+def update_item_status(ml_id: str, new_status: str, updated_by_user: str = None) -> tuple:
+    """
+    Actualiza el estado de una publicación en Mercado Libre ('active' o 'paused').
+    """
+    is_local = ml_id.startswith('LOCAL-') or ml_id.startswith('WEB-')
+    if is_local:
+        database.update_product_status(ml_id, new_status, updated_by_user=updated_by_user)
+        return True, f"Producto local actualizado a {new_status}"
+
+    if is_demo_mode():
+        database.update_product_status(ml_id, new_status, updated_by_user=updated_by_user)
+        return True, f"Modo Demo: Publicación cambiada a {new_status}"
+
+    path = f"/items/{ml_id}"
+    data = {"status": new_status}
+    try:
+        response = api_request("PUT", path, json_data=data)
+        if response.status_code == 200:
+            database.update_product_status(ml_id, new_status, updated_by_user=updated_by_user)
+            return True, f"Publicación {new_status} exitosamente en Mercado Libre"
+        else:
+            return False, f"Error de Mercado Libre ({response.status_code}): {response.text}"
+    except Exception as e:
+        return False, f"Excepción al actualizar estado: {str(e)}"
+
 def update_item_handling_time(ml_id: str, days: int):
     """Actualiza la disponibilidad de stock / tiempo de elaboración (MANUFACTURING_TIME) en Mercado Libre."""
     is_local = ml_id.startswith('LOCAL-') or ml_id.startswith('WEB-')

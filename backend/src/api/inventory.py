@@ -160,6 +160,22 @@ def toggle_product_hidden(ml_id: str, payload: Optional[ToggleHiddenRequest] = N
     database.update_product_hidden_status(ml_id, new_hidden)
     return {"success": True, "ml_id": ml_id, "is_hidden": new_hidden, "message": "Estado de visibilidad actualizado correctamente"}
 
+class UpdateStatusRequest(BaseModel):
+    status: str
+
+@router.put("/{ml_id}/status")
+def update_product_status_endpoint(ml_id: str, payload: UpdateStatusRequest, current_user: dict = Depends(get_current_user)):
+    operator = current_user.get('full_name') or current_user.get('username') or 'Admin'
+    if payload.status not in ('active', 'paused'):
+        raise HTTPException(status_code=400, detail="El estado debe ser 'active' o 'paused'")
+    
+    ok, msg = meli_api.update_item_status(ml_id, payload.status, updated_by_user=operator)
+    if not ok:
+        raise HTTPException(status_code=400, detail=msg)
+    
+    updated_product = database.get_product_by_ml_id(ml_id)
+    return {"success": True, "message": msg, "product": updated_product}
+
 @router.put("/featured-order")
 def set_featured_products_order(payload: FeaturedOrderRequest):
     try:

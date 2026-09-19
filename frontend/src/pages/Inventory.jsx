@@ -538,6 +538,61 @@ export default function Inventory() {
     }
   }
 
+  const handleToggleStatus = async (p) => {
+    if (!p || !p.ml_id) return
+    if (p.status === 'local') {
+      alert("Este producto es exclusivo de la tienda web (local) y no está vinculado a Mercado Libre.")
+      return
+    }
+    const isPaused = p.status === 'paused'
+    const newStatus = isPaused ? 'active' : 'paused'
+    const actionText = isPaused ? 'ACTIVAR' : 'PAUSAR'
+    const actionDesc = isPaused 
+      ? 'volverá a estar visible para compradores en Mercado Libre' 
+      : 'se pausará en Mercado Libre y los compradores no podrán ofertar'
+    
+    const confirmed = window.confirm(
+      `¿Estás seguro de que deseas ${actionText} esta publicación en Mercado Libre?\n\n` +
+      `📦 Producto: ${p.title}\n` +
+      `🆔 ID: ${p.ml_id}\n\n` +
+      `Al confirmar, la publicación ${actionDesc}.`
+    )
+    if (!confirmed) return
+
+    try {
+      setLoading(true)
+      const res = await fetch(`/api/inventory/${p.ml_id}/status`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: newStatus })
+      })
+      if (res.ok) {
+        const data = await res.json()
+        const updated = data.product
+        if (updated) {
+          setProducts(prev => prev.map(item => item.ml_id === updated.ml_id ? { ...item, status: updated.status } : item))
+          if (allProductsRef.current) {
+            allProductsRef.current = allProductsRef.current.map(item => item.ml_id === updated.ml_id ? { ...item, status: updated.status } : item)
+          }
+        } else {
+          setProducts(prev => prev.map(item => item.ml_id === p.ml_id ? { ...item, status: newStatus } : item))
+          if (allProductsRef.current) {
+            allProductsRef.current = allProductsRef.current.map(item => item.ml_id === p.ml_id ? { ...item, status: newStatus } : item)
+          }
+        }
+        invalidateCache('inventory')
+        alert(`¡Publicación ${newStatus === 'active' ? 'activada' : 'pausada'} correctamente en Mercado Libre!`)
+      } else {
+        const err = await res.json()
+        alert(`Error al cambiar estado: ${err.detail || 'Error en el servidor'}`)
+      }
+    } catch(e) {
+      alert(`Error de red: ${e.message}`)
+    } finally {
+      setLoading(false)
+    }
+  }
+
   const handleSyncCosts = async () => {
     try {
       setLoading(true)
@@ -2959,6 +3014,7 @@ export default function Inventory() {
                         setShowQrPrintModal(true)
                       }}
                       onToggleHide={handleToggleHide}
+                      onToggleStatus={handleToggleStatus}
                     />
                   ))}
                 </tbody>
@@ -4119,7 +4175,7 @@ function QualityBadge({ health, onClick }) {
   )
 }
 
-function ProductRow({ p, onSave, onOpenGallery, onDraftChange, categories, categoryCounts, viewMode, onOpenQrModal, onToggleHide, isSelected, onToggleSelect, health, onOpenQuality, isModified }) {
+function ProductRow({ p, onSave, onOpenGallery, onDraftChange, categories, categoryCounts, viewMode, onOpenQrModal, onToggleHide, onToggleStatus, isSelected, onToggleSelect, health, onOpenQuality, isModified }) {
   const { isChannelEnabled } = useTenant()
   const [qty, setQty] = useState(p.available_quantity)
   const [price, setPrice] = useState(p.price)
@@ -4459,16 +4515,56 @@ function ProductRow({ p, onSave, onOpenGallery, onDraftChange, categories, categ
             </div>
           </td>
           <td data-label="Estado ML" className="cell-status-ml" style={{padding: '5px 8px'}}>
-            <span style={{
-              fontSize: '0.82rem', 
-              fontWeight: 600,
-              padding: '2px 6px',
-              borderRadius: 4,
-              backgroundColor: p.status === 'active' ? 'rgba(16, 185, 129, 0.15)' : p.status === 'paused' ? 'rgba(245, 158, 11, 0.15)' : 'var(--bg-hover)',
-              color: p.status === 'active' ? '#10b981' : p.status === 'paused' ? '#d97706' : 'var(--text-secondary)'
-            }}>
-              {p.status === 'active' ? 'Activa' : p.status === 'paused' ? 'Pausada' : p.status === 'under_review' ? 'En Revisión' : p.status === 'local' ? 'Local' : p.status}
-            </span>
+            <button
+              type="button"
+              onClick={() => onToggleStatus && onToggleStatus(p)}
+              disabled={p.status === 'local' || p.status === 'under_review'}
+              title={
+                p.status === 'paused' 
+                  ? '⏸️ Publicación Pausada. Haz clic para ACTIVAR en Mercado Libre' 
+                  : p.status === 'active' 
+                    ? '✅ Publicación Activa. Haz clic para PAUSAR en Mercado Libre' 
+                    : `Estado: ${p.status}`
+              }
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 4,
+                fontSize: '0.82rem', 
+                fontWeight: 600,
+                padding: '3px 8px',
+                borderRadius: 5,
+                border: p.status === 'paused' 
+                  ? '1px solid rgba(245, 158, 11, 0.45)' 
+                  : p.status === 'active' 
+                    ? '1px solid rgba(16, 185, 129, 0.35)' 
+                    : '1px solid var(--border-color)',
+                backgroundColor: p.status === 'active' 
+                  ? 'rgba(16, 185, 129, 0.15)' 
+                  : p.status === 'paused' 
+                    ? 'rgba(245, 158, 11, 0.15)' 
+                    : 'var(--bg-hover)',
+                color: p.status === 'active' 
+                  ? '#10b981' 
+                  : p.status === 'paused' 
+                    ? '#d97706' 
+                    : 'var(--text-secondary)',
+                cursor: (p.status === 'paused' || p.status === 'active') ? 'pointer' : 'default',
+                transition: 'all 0.15s ease'
+              }}
+            >
+              {p.status === 'active' ? (
+                <><span>●</span> Activa</>
+              ) : p.status === 'paused' ? (
+                <><span>⏸️</span> Pausada <span style={{fontSize: '0.70rem', opacity: 0.85}}>▶ Activar</span></>
+              ) : p.status === 'under_review' ? (
+                'En Revisión'
+              ) : p.status === 'local' ? (
+                'Local'
+              ) : (
+                p.status
+              )}
+            </button>
           </td>
           <td data-label="Calidad" className="cell-quality" style={{padding: '5px 8px', textAlign: 'center'}}>
             <QualityBadge health={health} onClick={() => onOpenQuality && onOpenQuality(p, health)} />
@@ -4951,13 +5047,54 @@ function ProductRow({ p, onSave, onOpenGallery, onDraftChange, categories, categ
           </div>
         </td>
         <td data-label="Estado ML">
-          {p.status === 'active' ? 
-            <span style={{color: 'var(--accent-emerald)', fontSize: '0.8rem', fontWeight: 600}}><Cloud size={14}/> Activa</span> : 
-            (p.status === 'local' ?
-              <span style={{color: 'var(--accent-blue)', fontSize: '0.8rem', fontWeight: 600}}><CloudOff size={14}/> Local (Web)</span> :
-              <span style={{color: 'var(--text-secondary)', fontSize: '0.8rem', fontWeight: 600}}><CloudOff size={14}/> {p.status}</span>
-            )
-          }
+          <button
+            type="button"
+            onClick={() => onToggleStatus && onToggleStatus(p)}
+            disabled={p.status === 'local' || p.status === 'under_review'}
+            title={
+              p.status === 'paused' 
+                ? '⏸️ Publicación Pausada. Haz clic para ACTIVAR en Mercado Libre' 
+                : p.status === 'active' 
+                  ? '✅ Publicación Activa. Haz clic para PAUSAR en Mercado Libre' 
+                  : `Estado: ${p.status}`
+            }
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 5,
+              fontSize: '0.80rem', 
+              fontWeight: 600,
+              padding: '3px 8px',
+              borderRadius: 5,
+              border: p.status === 'paused' 
+                ? '1px solid rgba(245, 158, 11, 0.45)' 
+                : p.status === 'active' 
+                  ? '1px solid rgba(16, 185, 129, 0.35)' 
+                  : '1px solid var(--border-color)',
+              backgroundColor: p.status === 'active' 
+                ? 'rgba(16, 185, 129, 0.15)' 
+                : p.status === 'paused' 
+                  ? 'rgba(245, 158, 11, 0.15)' 
+                  : 'var(--bg-hover)',
+              color: p.status === 'active' 
+                ? 'var(--accent-emerald)' 
+                : p.status === 'paused' 
+                  ? '#d97706' 
+                  : 'var(--text-secondary)',
+              cursor: (p.status === 'paused' || p.status === 'active') ? 'pointer' : 'default',
+              transition: 'all 0.15s ease'
+            }}
+          >
+            {p.status === 'active' ? (
+              <><Cloud size={14}/> Activa</>
+            ) : p.status === 'paused' ? (
+              <><CloudOff size={14}/> Pausada <span style={{fontSize: '0.70rem', opacity: 0.85}}>▶ Activar</span></>
+            ) : p.status === 'local' ? (
+              <><CloudOff size={14}/> Local (Web)</>
+            ) : (
+              <><CloudOff size={14}/> {p.status}</>
+            )}
+          </button>
           <div style={{marginTop: 4}}>
             <QualityBadge health={health} onClick={() => onOpenQuality && onOpenQuality(p, health)} />
           </div>
