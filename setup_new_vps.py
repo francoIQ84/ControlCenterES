@@ -322,9 +322,28 @@ RestartSec=5
 [Install]
 WantedBy=multi-user.target
 """
+        scheduler_service = """[Unit]
+Description=ControlCenterES Background Scheduler Daemon
+After=network.target postgresql.service controlcenter-backend.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/var/www/controlcenter/backend
+EnvironmentFile=/var/www/controlcenter/backend/.env
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/var/www/controlcenter/backend/venv/bin/python run_scheduler.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+"""
         sftp = ssh.open_sftp()
         with sftp.open('/etc/systemd/system/controlcenter-backend.service', 'w') as f:
             f.write(backend_service)
+        with sftp.open('/etc/systemd/system/controlcenter-scheduler.service', 'w') as f:
+            f.write(scheduler_service)
         with sftp.open('/etc/systemd/system/controlcenter-storefront.service', 'w') as f:
             f.write(storefront_service)
         with sftp.open('/etc/systemd/system/controlcenter-whatsapp.service', 'w') as f:
@@ -336,6 +355,7 @@ WantedBy=multi-user.target
             ssh,
             "systemctl daemon-reload && "
             "systemctl enable --now controlcenter-backend.service && "
+            "systemctl enable --now controlcenter-scheduler.service && "
             "systemctl enable --now controlcenter-storefront.service && "
             "systemctl enable --now controlcenter-whatsapp.service",
             "Recargar y habilitar servicios systemd"
@@ -348,47 +368,46 @@ WantedBy=multi-user.target
     listen [::]:80 default_server;
     server_name _;
 
-    client_max_body_size 100M;
+    client_max_body_size 50M;
 
-    # Frontend Admin
-    location / {
-        root /var/www/controlcenter/admin;
+    # Frontend Admin (SPA)
+    location /admin {
+        alias /var/www/controlcenter/admin;
         index index.html;
-        try_files $uri $uri/ /index.html;
+        try_files $uri $uri/ /admin/index.html;
     }
 
     # Backend API
-    location /api/ {
-        proxy_pass http://127.0.0.1:8090/api/;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection "upgrade";
+    location /api {
+        proxy_pass http://127.0.0.1:8090;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_read_timeout 300s;
-        proxy_connect_timeout 75s;
     }
 
-    # Static uploads & invoices
-    location /uploads/ {
-        alias /var/www/controlcenter/backend/uploads/;
-        expires 30d;
-        add_header Cache-Control "public, no-transform";
+    # Storefront (Next.js)
+    location / {
+        proxy_pass http://127.0.0.1:3000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
     }
 
-    location /invoices/ {
-        alias /var/www/controlcenter/backend/invoices/;
-        expires 30d;
-        add_header Cache-Control "public, no-transform";
+    # Static uploads/invoices
+    location /invoices {
+        alias /var/www/controlcenter/backend/invoices;
     }
-}
-"""
+    location /uploads {
+        alias /var/www/controlcenter/backend/uploads;
+    }
+}"""
         sftp = ssh.open_sftp()
         with sftp.open('/etc/nginx/sites-available/controlcenter', 'w') as f:
             f.write(nginx_conf)
         sftp.close()
+        print("[OK] Configuracion de Nginx escrita.")
 
         exec_cmd(
             ssh,
@@ -401,6 +420,7 @@ WantedBy=multi-user.target
         # FASE 10: Verificación Final
         print_step("FASE 10: Verificacion de Estado y Salud del Sistema")
         exec_cmd(ssh, "systemctl is-active controlcenter-backend.service", "Estado Backend")
+        exec_cmd(ssh, "systemctl is-active controlcenter-scheduler.service", "Estado Scheduler")
         exec_cmd(ssh, "systemctl is-active controlcenter-storefront.service", "Estado Storefront")
         exec_cmd(ssh, "systemctl is-active controlcenter-whatsapp.service", "Estado WhatsApp")
         exec_cmd(ssh, "systemctl is-active nginx", "Estado Nginx")

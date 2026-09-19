@@ -22,8 +22,10 @@ from src.utils.ssl_gen import ensure_ssl_certs
 # Initialize database
 database.init_db()
 
-# Start background scheduler
-scheduler.start_scheduler()
+# En producción el scheduler corre como servicio independiente (controlcenter-scheduler.service).
+# Para desarrollo local opcional sin servicio separado, se puede activar con RUN_SCHEDULER=1.
+if os.environ.get("RUN_SCHEDULER", "0") == "1":
+    scheduler.start_scheduler()
 
 # Create invoices and uploads directory
 os.makedirs('invoices', exist_ok=True)
@@ -83,10 +85,11 @@ app.mount("/quotes", StaticFiles(directory="quotes"), name="quotes")
 app.include_router(api_router, prefix="/api")
 
 if __name__ == "__main__":
+    reload_env = os.environ.get("RELOAD", "").lower() in ("true", "1") or os.environ.get("ENV") == "development"
     uvicorn.run(
         "main:app",
         host="127.0.0.1",
         port=8090,
-        reload=True
+        reload=reload_env
     )
 

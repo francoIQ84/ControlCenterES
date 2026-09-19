@@ -1,3 +1,4 @@
+import signal
 import threading
 import time
 import traceback
@@ -220,6 +221,53 @@ def marketing_publisher_loop():
         time.sleep(30)
 
 
+SCHEDULER_ADVISORY_LOCK_ID = 847291038  # Identificador único para el scheduler de ControlCenter
+
+_lock_connection = None
+
+
+def acquire_scheduler_lock() -> bool:
+    """Intenta adquirir un advisory lock de PostgreSQL a nivel de sesión.
+    Retorna True si lo adquiere, False si ya lo tiene otra sesión/proceso.
+    """
+    global _lock_connection
+    try:
+        from src import database
+        conn = database.get_connection()
+        with conn.cursor() as cursor:
+            cursor.execute(
+                "SELECT pg_try_advisory_lock(%s) AS acquired",
+                (SCHEDULER_ADVISORY_LOCK_ID,)
+            )
+            row = cursor.fetchone()
+            if row and row.get('acquired'):
+                _lock_connection = conn
+                return True
+            else:
+                conn.close()
+                return False
+    except Exception as e:
+        print(f"[Scheduler] Error al intentar adquirir advisory lock: {e}")
+        return False
+
+
+def release_scheduler_lock():
+    """Libera el advisory lock de PostgreSQL si está tomado."""
+    global _lock_connection
+    if _lock_connection is not None:
+        try:
+            with _lock_connection.cursor() as cursor:
+                cursor.execute(
+                    "SELECT pg_advisory_unlock(%s)",
+                    (SCHEDULER_ADVISORY_LOCK_ID,)
+                )
+            _lock_connection.close()
+        except Exception as e:
+            print(f"[Scheduler] Error al liberar advisory lock: {e}")
+        finally:
+            _lock_connection = None
+
+
 def start_scheduler():
     # Sleep interval read on start as default for logging
     try:
@@ -234,6 +282,39 @@ def start_scheduler():
 
     thread_mkt = threading.Thread(target=marketing_publisher_loop, daemon=True)
     thread_mkt.start()
+
+
+def run_scheduler_daemon():
+    """Punto de entrada principal para el servicio systemd independiente."""
+    retries = 0
+    while not acquire_scheduler_lock():
+        retries += 1
+        print("[Scheduler] No se pudo adquirir el PostgreSQL Advisory Lock (otra instancia activa o DB no disponible).")
+        print(f"[Scheduler] Reintentando en 15 segundos (intento #{retries})...")
+        time.sleep(15)
+
+    print("[Scheduler] PostgreSQL Advisory Lock adquirido exitosamente.")
+    try:
+        start_scheduler()
+
+        _stop_event = threading.Event()
+
+        def handle_signal(sig, frame):
+            print(f"[Scheduler] Recibida señal de detención ({sig}). Cerrando daemon...")
+            _stop_event.set()
+
+        try:
+            signal.signal(signal.SIGINT, handle_signal)
+            signal.signal(signal.SIGTERM, handle_signal)
+        except (ValueError, AttributeError):
+            pass
+
+        while not _stop_event.is_set():
+            _stop_event.wait(timeout=1.0)
+    finally:
+        print("[Scheduler] Liberando lock y finalizando...")
+        release_scheduler_lock()
+
 
 def _check_vencimientos_alerts_for_tenant(tenant):
     from src import database

@@ -65,16 +65,41 @@ def main():
     upload_directory(sftp, frontend_dist, '/var/www/controlcenter/admin')
     print("[OK] Frontend subido exitosamente")
 
-    # 3. Subir Backend (src/, migrations/ y main.py)
-    print("\n3. Subiendo código Backend (src/, migrations/ y main.py)...")
+    # 3. Subir Backend (src/, migrations/, main.py y run_scheduler.py)
+    print("\n3. Subiendo código Backend (src/, migrations/, main.py y run_scheduler.py)...")
     backend_src = os.path.join(LOCAL_DIR, 'backend', 'src')
     backend_migrations = os.path.join(LOCAL_DIR, 'backend', 'migrations')
     backend_main = os.path.join(LOCAL_DIR, 'backend', 'main.py')
+    backend_scheduler = os.path.join(LOCAL_DIR, 'backend', 'run_scheduler.py')
     upload_directory(sftp, backend_src, '/var/www/controlcenter/backend/src')
     upload_directory(sftp, backend_migrations, '/var/www/controlcenter/backend/migrations')
     if os.path.exists(backend_main):
         sftp.put(backend_main, '/var/www/controlcenter/backend/main.py')
-    print("[OK] Backend subido exitosamente")
+    if os.path.exists(backend_scheduler):
+        sftp.put(backend_scheduler, '/var/www/controlcenter/backend/run_scheduler.py')
+
+    # Instalar/actualizar archivo de servicio systemd para el Scheduler
+    scheduler_service_def = """[Unit]
+Description=ControlCenterES Background Scheduler Daemon
+After=network.target postgresql.service controlcenter-backend.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/var/www/controlcenter/backend
+EnvironmentFile=/var/www/controlcenter/backend/.env
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/var/www/controlcenter/backend/venv/bin/python run_scheduler.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+"""
+    with sftp.open('/etc/systemd/system/controlcenter-scheduler.service', 'w') as f:
+        f.write(scheduler_service_def)
+
+    print("[OK] Backend y Scheduler subidos exitosamente")
     sftp.close()
 
     # Las migraciones NO se aplican desde aca a proposito: correrlas en cada
@@ -95,12 +120,17 @@ def main():
     stdout.read()
     print("[OK] Permisos aplicados")
 
-    # 5. Reiniciar backend service
-    print("\n5. Reiniciando servicio de backend...")
-    stdin, stdout, stderr = ssh.exec_command("systemctl restart controlcenter-backend.service")
+    # 5. Reiniciar servicios de backend y scheduler
+    print("\n5. Reiniciando servicios de backend y scheduler...")
+    cmd_restart = (
+        "systemctl daemon-reload && "
+        "systemctl enable controlcenter-scheduler.service && "
+        "systemctl restart controlcenter-backend.service controlcenter-scheduler.service"
+    )
+    stdin, stdout, stderr = ssh.exec_command(cmd_restart)
     stdout.read()
     time.sleep(2)
-    print("[OK] Servicio backend reiniciado")
+    print("[OK] Servicios backend y scheduler reiniciados")
 
     # 6. Recargar Nginx
     print("\n6. Recargando Nginx...")
@@ -114,11 +144,14 @@ def main():
 
     # 7. Verificar servicios
     print("\n7. Verificando estado de los servicios...")
-    stdin, stdout, stderr = ssh.exec_command("systemctl is-active controlcenter-backend.service controlcenter-storefront.service nginx")
+    stdin, stdout, stderr = ssh.exec_command(
+        "systemctl is-active controlcenter-backend.service controlcenter-scheduler.service controlcenter-storefront.service nginx"
+    )
     status = stdout.read().decode().strip().split()
-    print(f"Backend: {status[0] if len(status) > 0 else 'unknown'}")
-    print(f"Storefront: {status[1] if len(status) > 1 else 'unknown'}")
-    print(f"Nginx: {status[2] if len(status) > 2 else 'unknown'}")
+    print(f"Backend:    {status[0] if len(status) > 0 else 'unknown'}")
+    print(f"Scheduler:  {status[1] if len(status) > 1 else 'unknown'}")
+    print(f"Storefront: {status[2] if len(status) > 2 else 'unknown'}")
+    print(f"Nginx:      {status[3] if len(status) > 3 else 'unknown'}")
 
     # 8. Verificación de index.html servido
     print("\n8. Verificando index.html en el VPS...")
@@ -127,9 +160,13 @@ def main():
     print("Contenido index.html en VPS:")
     print(index_content.strip())
 
-    # 9. Verificación de logs recientes del backend
+    # 9. Verificación de logs recientes
     print("\n9. Últimos logs del backend...")
     stdin, stdout, stderr = ssh.exec_command("journalctl -u controlcenter-backend.service -n 15 --no-pager")
+    print(stdout.read().decode().strip())
+
+    print("\n10. Últimos logs del scheduler...")
+    stdin, stdout, stderr = ssh.exec_command("journalctl -u controlcenter-scheduler.service -n 15 --no-pager")
     print(stdout.read().decode().strip())
 
     ssh.close()
