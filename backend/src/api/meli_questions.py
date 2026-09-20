@@ -161,6 +161,39 @@ def sync_unanswered(background_tasks: BackgroundTasks, _: dict = Depends(get_cur
     return {"message": "Sincronización de preguntas iniciada en segundo plano"}
 
 
+def _resolve_question_tenant(seller_id):
+    """Inquilino dueño de la cuenta de Mercado Libre que generó el aviso.
+
+    El camino normal es `tenant_integrations`, poblado al vincular la cuenta.
+    Pero esa fila sólo existe desde que `authenticate_with_code` la registra, y
+    para las cuentas ya vinculadas la siembra la migración 016. Si el código se
+    despliega antes que la migración —el script de deploy no aplica
+    migraciones a propósito—, la resolución quedaría vacía y las preguntas del
+    Maestro, que hoy se responden solas, dejarían de atenderse.
+
+    Por eso el segundo intento compara contra el `meli_user_id` que el Maestro
+    tiene configurado. Es una comprobación exacta contra una cuenta concreta,
+    no un "si no sé, mandalo al Maestro": un vendedor desconocido sigue sin
+    resolver.
+    """
+    tenant_id = integrations.resolve_tenant_by_account("mercadolibre", seller_id)
+    if tenant_id:
+        return tenant_id
+
+    if seller_id in (None, ""):
+        return None
+
+    with tenancy.tenant_context(tenancy.MASTER_TENANT_ID):
+        master_account = (database.get_setting("meli_user_id") or "").strip()
+    if master_account and str(seller_id) == master_account:
+        print("[Meli Webhook Questions] Cuenta resuelta por el meli_user_id del "
+              "Maestro; falta registrar la cuenta en tenant_integrations "
+              "(migración 016).")
+        return tenancy.MASTER_TENANT_ID
+
+    return None
+
+
 @router.post("/webhook")
 async def meli_webhook(request: Request):
     """
@@ -186,7 +219,7 @@ async def meli_webhook(request: Request):
             return {"status": "OK"}
 
         seller_id = body.get("user_id")
-        tenant_id = integrations.resolve_tenant_by_account("mercadolibre", seller_id)
+        tenant_id = _resolve_question_tenant(seller_id)
         if not tenant_id:
             # Cuenta no vinculada a ningún inquilino activo. Se responde 200
             # igual: un error haría que Mercado Libre reintente en bucle un
