@@ -13,6 +13,19 @@ from fastapi.responses import FileResponse
 
 router = APIRouter()
 
+# ---------------------------------------------------------------------------
+# Keys de configuración de plataforma (developer / infra)
+# ---------------------------------------------------------------------------
+_PLATFORM_SETTINGS_KEYS = [
+    "meli_app_id", "meli_client_id", "meli_client_secret",
+    "meta_app_id", "meta_app_secret",
+    "tiendanube_client_id", "tn_client_id",
+    "tiendanube_client_secret", "tn_client_secret",
+    "gemini_api_key",
+    "google_drive_folder_id",
+    "public_base_url",
+]
+
 BACKUP_DIR = "backups"
 
 # Directories/files to include in the backup beyond the DB dump.
@@ -26,6 +39,60 @@ _EXTRA_DIRS = [
 _EXTRA_FILES = [
     ("whatsapp/contacts_cache.json", "whatsapp/contacts_cache.json"),
 ]
+
+
+def _get_service_account_path() -> str:
+    """Busca service_account.json en las ubicaciones habituales."""
+    for p in [
+        "service_account.json",
+        "/var/www/controlcenter/backend/service_account.json",
+        os.path.join(os.getcwd(), "service_account.json"),
+    ]:
+        if os.path.exists(p):
+            return p
+    return "service_account.json"
+
+
+def _export_platform_config() -> dict:
+    """Lee las credenciales de plataforma del Master Tenant y las devuelve
+    como diccionario para incluirlas en el backup.
+
+    Esto permite restaurar toda la configuración de desarrollador sin
+    tener que re-ingresar manualmente cada API key, client ID, etc.
+    """
+    from src import database, tenancy
+    config: dict = {"_meta": {
+        "exported_at": get_now_ar_iso(),
+        "description": "Configuración de plataforma (developer/infra). "
+                       "Generada automáticamente por el sistema de backup.",
+    }}
+    try:
+        with tenancy.tenant_context(tenancy.MASTER_TENANT_ID):
+            for key in _PLATFORM_SETTINGS_KEYS:
+                val = database.get_setting(key, None)
+                if val is not None:
+                    config[key] = val
+    except Exception as e:
+        config["_export_error"] = str(e)
+    return config
+
+
+def _restore_platform_config(config: dict) -> list:
+    """Restaura las credenciales de plataforma al Master Tenant.
+    Devuelve una lista de las keys restauradas."""
+    from src import database, tenancy
+    restored = []
+    skip_keys = {"_meta", "_export_error"}
+    with tenancy.tenant_context(tenancy.MASTER_TENANT_ID):
+        for key, val in config.items():
+            if key in skip_keys:
+                continue
+            try:
+                database.set_setting(key, val)
+                restored.append(key)
+            except Exception as e:
+                print(f"[Restore] Error restaurando setting '{key}': {e}")
+    return restored
 
 
 def get_db_url():
@@ -159,9 +226,35 @@ def run_backup_dump(is_auto: bool = False):
         for src_path, arcname in _EXTRA_FILES:
             _add_file_to_zip(zipf, src_path, arcname, manifest_files)
 
-        # 4) Build and embed the manifest
+        # 4) Platform / developer config export
+        has_platform_config = False
+        try:
+            platform_config = _export_platform_config()
+            platform_json = json.dumps(platform_config, indent=2, ensure_ascii=False)
+            zipf.writestr("platform_config.json", platform_json)
+            has_platform_config = bool(
+                set(platform_config.keys()) - {"_meta", "_export_error"}
+            )
+            manifest_files.append({
+                "path": "platform_config.json",
+                "size": len(platform_json.encode("utf-8")),
+                "sha256": hashlib.sha256(platform_json.encode("utf-8")).hexdigest(),
+            })
+            print(f"[Backup] Configuración de plataforma exportada ({len(platform_config) - 1} keys).")
+        except Exception as e:
+            print(f"[Backup] No se pudo exportar config de plataforma: {e}")
+
+        # 5) service_account.json (Google Drive / API credentials)
+        has_service_account = False
+        sa_path = _get_service_account_path()
+        if os.path.isfile(sa_path):
+            _add_file_to_zip(zipf, sa_path, "service_account.json", manifest_files)
+            has_service_account = True
+            print("[Backup] service_account.json incluido en el respaldo.")
+
+        # 6) Build and embed the manifest
         manifest = {
-            "version": "2.0",
+            "version": "2.1",
             "created_at": get_now_ar_iso(),
             "type": "auto" if is_auto else "manual",
             "system": {
@@ -175,6 +268,8 @@ def run_backup_dump(is_auto: bool = False):
                 "afip_certs": os.path.isdir("data/afip"),
                 "whatsapp_session": os.path.isdir("whatsapp/auth_state"),
                 "whatsapp_contacts": os.path.isfile("whatsapp/contacts_cache.json"),
+                "platform_config": has_platform_config,
+                "service_account": has_service_account,
             },
             "files_count": len(manifest_files),
             "files": manifest_files,
@@ -206,16 +301,18 @@ def run_backup_dump(is_auto: bool = False):
 
     # -- Upload to Google Drive if configured for the platform --
     try:
-        from src import tenancy, integrations
         from src.utils import google_drive
-        
-        with tenancy.tenant_context(tenancy.MASTER_TENANT_ID):
-            gdrive_creds = integrations.get_credentials("google_drive", allow_legacy=False)
+        import json
+        folder_id = os.getenv("GOOGLE_DRIVE_FOLDER_ID", "").strip()
+        gdrive_creds_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "service_account.json")
+        gdrive_creds = None
+        if os.path.exists(gdrive_creds_path) and folder_id:
+            with open(gdrive_creds_path, 'r', encoding='utf-8') as f:
+                gdrive_creds = json.load(f)
             
-        if gdrive_creds and gdrive_creds.get("folder_id"):
-            print(f"[Backup] Subiendo a Google Drive (carpeta {gdrive_creds['folder_id']})...")
+        if gdrive_creds and folder_id:
+            print(f"[Backup] Subiendo a Google Drive (carpeta {folder_id})...")
             # Remove folder_id from the credentials passed to google_drive
-            folder_id = gdrive_creds.pop("folder_id")
             file_id = google_drive.upload_file(backup_path, backup_filename, folder_id, gdrive_creds)
             if file_id:
                 print(f"[Backup] Subida de sistema a Google Drive exitosa. ID: {file_id}")
@@ -543,7 +640,8 @@ async def restore_backup(file: UploadFile = File(...)):
         # --- 5. Restore specific individual files ---
         if not is_media_only:
             files_to_restore = [
-                ("whatsapp/contacts_cache.json", "whatsapp/contacts_cache.json")
+                ("whatsapp/contacts_cache.json", "whatsapp/contacts_cache.json"),
+                ("service_account.json", "service_account.json"),
             ]
             for src_rel, dest_rel in files_to_restore:
                 src_full = os.path.join(extract_dir, src_rel)
@@ -551,6 +649,19 @@ async def restore_backup(file: UploadFile = File(...)):
                     os.makedirs(os.path.dirname(dest_rel), exist_ok=True)
                     shutil.copy2(src_full, dest_rel)
                     restore_log["files_restored"].append(dest_rel)
+
+            # --- 5b. Restore platform developer config ---
+            platform_config_path = os.path.join(extract_dir, "platform_config.json")
+            if os.path.isfile(platform_config_path):
+                try:
+                    with open(platform_config_path, "r", encoding="utf-8") as pcf:
+                        platform_data = json.load(pcf)
+                    restored_keys = _restore_platform_config(platform_data)
+                    restore_log["platform_config_restored"] = restored_keys
+                    print(f"[Restore] Configuración de plataforma restaurada: {len(restored_keys)} keys.")
+                except Exception as e:
+                    restore_log["errors"].append(f"Error restaurando config de plataforma: {e}")
+                    print(f"[Restore] Error restaurando platform_config.json: {e}")
 
         # --- 6. Restart services ---
         if not is_media_only:
