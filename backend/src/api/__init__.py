@@ -54,7 +54,7 @@ api_router.include_router(whatsapp_router, prefix="/whatsapp", tags=["whatsapp"]
 api_router.include_router(mercadopago_router, prefix="/mercadopago", tags=["mercadopago"], dependencies=[Depends(verify_session)])
 api_router.include_router(blog_router, prefix="/blog", tags=["blog"], dependencies=[Depends(verify_session), Depends(require_permission("settings"))])
 api_router.include_router(inpi_router, prefix="/inpi", tags=["inpi"], dependencies=[Depends(verify_session)])
-api_router.include_router(marketing_router, prefix="/marketing", tags=["marketing"], dependencies=[Depends(verify_session)])
+api_router.include_router(marketing_router, prefix="/marketing", tags=["marketing"])
 api_router.include_router(diffusion_router, prefix="/diffusion", tags=["diffusion"], dependencies=[Depends(verify_session)])
 api_router.include_router(tiendanube_router, prefix="/tiendanube", tags=["tiendanube"])
 api_router.include_router(meli_questions_router)
