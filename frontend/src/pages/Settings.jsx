@@ -1946,18 +1946,7 @@ export default function Settings() {
                   {status.is_authenticated ? "Revincular o Cambiar de Cuenta en Mercado Libre" : "Autorizar Mercado Libre / Mercado Pago"}
                 </button>
                 
-                <details style={{marginTop: 20, fontSize: '0.85rem', color: 'var(--text-secondary)'}}>
-                  <summary style={{cursor: 'pointer', fontWeight: 600, color: 'var(--text-primary)'}}>
-                    Opción manual: Pegar código TG-xxx
-                  </summary>
-                  <div style={{marginTop: 10}}>
-                    <p style={{fontSize: '0.85rem', marginBottom: 5}}>Pega el código de la URL (TG-xxx):</p>
-                    <div style={{display: 'flex', gap: 10}}>
-                      <input type="text" value={code} onChange={e => setCode(e.target.value)} placeholder="TG-..." style={{flex: 1}}/>
-                      <button className="btn" onClick={handleCode}>Vincular</button>
-                    </div>
-                  </div>
-                </details>
+
 
                 {/* Modal de Desvinculación Segura */}
                 {showDisconnectModal && (
@@ -2177,47 +2166,7 @@ export default function Settings() {
               </div>
             </div>
 
-            <div className="card" style={{flex: 1, minWidth: 300}}>
-              <h3 style={{display: 'flex', alignItems: 'center', gap: '8px'}}>
-                <span style={{fontSize: '1.2rem'}}>🛍️</span>
-                Estado de Conexión Tiendanube
-              </h3>
-              
-              {tnStatus.is_connected ? (
-                <div style={{color: 'var(--accent-emerald)', fontWeight: 'bold', padding: '8px 12px', borderRadius: '6px', backgroundColor: 'rgba(16, 185, 129, 0.1)', border: '1px solid var(--accent-emerald)'}}>
-                  ✓ Tienda #{tnStatus.store_id || 'Conectada'}
-                </div>
-              ) : (
-                <div style={{color: 'var(--accent-red)', fontWeight: 'bold', padding: '8px 12px', borderRadius: '6px', backgroundColor: 'rgba(239, 68, 68, 0.1)', border: '1px solid var(--accent-red)'}}>
-                  ✗ No vinculada
-                </div>
-              )}
 
-              <div style={{marginTop: 20}}>
-                <div style={{fontSize: '0.85rem', color: 'var(--text-secondary)', backgroundColor: 'var(--bg-hover)', padding: '10px 12px', borderRadius: '6px', marginBottom: 15}}>
-                  💡 <strong>Vinculación en 1-Clic:</strong> Haz clic en <strong>Conectar con Tiendanube</strong> para autorizar la integración oficial.
-                </div>
-                
-                <p style={{fontSize: '0.9rem', fontWeight: 600}}>1. Autorizar aplicación:</p>
-                <button 
-                  className="btn" 
-                  onClick={handleTnConnect}
-                  style={{backgroundColor: '#0052cc', color: '#fff', fontWeight: 'bold', width: '100%', padding: '10px 15px'}}
-                >
-                  Conectar con Tiendanube
-                </button>
-
-                {tnStatus.is_connected && (
-                  <button 
-                    className="btn" 
-                    onClick={handleTnDisconnect}
-                    style={{backgroundColor: 'transparent', color: 'var(--accent-red)', border: '1px solid var(--accent-red)', fontWeight: 'bold', width: '100%', padding: '10px 15px', marginTop: '10px'}}
-                  >
-                    Desvincular Tiendanube
-                  </button>
-                )}
-              </div>
-            </div>
           </div>
 
           <div className="card">
@@ -4048,59 +3997,8 @@ export default function Settings() {
               Al configurar una Service Account de Google Cloud, el sistema subirá automáticamente una copia de todos los respaldos generados (tanto manuales como mensuales) a la carpeta especificada en Drive.
             </p>
             
-            <div style={{display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20}}>
-              <label style={{display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: '0.9rem'}}>
-                <input 
-                  type="checkbox" 
-                  checked={googleDriveConfig.active}
-                  onChange={e => setGoogleDriveConfig(prev => ({...prev, active: e.target.checked}))}
-                  style={{width: 16, height: 16}}
-                />
-                Activar subida automática a Google Drive
-              </label>
-            </div>
-
-            <div style={{display: 'flex', flexDirection: 'column', gap: 15, opacity: googleDriveConfig.active ? 1 : 0.5}}>
-              <div>
-                <label style={{display: 'block', marginBottom: 5, fontSize: '0.85rem', fontWeight: 'bold'}}>
-                  ID de la Carpeta Destino
-                </label>
-                <input 
-                  type="text" 
-                  className="input" 
-                  placeholder="Ej: 1A2B3C4D5E6F7G8H9I0J"
-                  value={googleDriveConfig.folder_id}
-                  onChange={e => setGoogleDriveConfig(prev => ({...prev, folder_id: e.target.value}))}
-                  disabled={!googleDriveConfig.active}
-                />
-              </div>
-              
-              <div>
-                <label style={{display: 'block', marginBottom: 5, fontSize: '0.85rem', fontWeight: 'bold'}}>
-                  JSON de Google Cloud Service Account
-                </label>
-                <textarea 
-                  className="input" 
-                  placeholder='{"type": "service_account", "project_id": "...", ...}'
-                  rows={5}
-                  style={{resize: 'vertical', fontFamily: 'monospace', fontSize: '0.8rem'}}
-                  value={googleDriveConfig.service_account_json}
-                  onChange={e => setGoogleDriveConfig(prev => ({...prev, service_account_json: e.target.value}))}
-                  disabled={!googleDriveConfig.active}
-                />
-                <span style={{fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: 4, display: 'block'}}>
-                  Pegá el contenido completo del archivo .json que descargaste desde Google Cloud. No olvides compartir la carpeta de Drive con el correo electrónico (client_email) de esta Service Account con permisos de "Editor".
-                </span>
-              </div>
-              
-              <button 
-                className="btn btn-primary" 
-                onClick={handleSaveGoogleDrive}
-                disabled={savingGDrive || !googleDriveConfig.active}
-                style={{alignSelf: 'flex-start', marginTop: 5}}
-              >
-                {savingGDrive ? 'Guardando...' : 'Guardar Configuración'}
-              </button>
+            <div style={{marginTop: 15, fontSize: '0.9rem', color: 'var(--text-secondary)'}}>
+              Los respaldos de la base de datos y archivos multimedia se sincronizan automáticamente con la nube segura de la plataforma todos los días.
             </div>
           </div>
 
@@ -4521,96 +4419,10 @@ export default function Settings() {
                   </div>
                 </div>
 
-                <label>Google Gemini API Key (Capa Gratuita o Pago)
-                  <div style={{display: 'flex', gap: 10, alignItems: 'center', marginTop: 5}}>
-                    <input 
-                      type="password" 
-                      value={waConfig.gemini_api_key || ""} 
-                      onChange={e => {
-                        setWaConfig({...waConfig, gemini_api_key: e.target.value})
-                        setTestResult(null)
-                      }} 
-                      placeholder="AIzaSy..." 
-                      style={{flex: 1}}
-                      required={waConfig.enabled || waConfig.read_only}
-                    />
-                    <button 
-                      type="button" 
-                      onClick={handleTestGeminiKey} 
-                      className="btn btn-secondary" 
-                      disabled={testingKey || !waConfig.gemini_api_key}
-                      style={{whiteSpace: 'nowrap'}}
-                    >
-                      {testingKey ? 'Probando...' : 'Probar Clave'}
-                    </button>
+                  <div style={{marginTop: 15, fontSize: '0.85rem', color: 'var(--text-secondary)'}}>
+                    La clave de inteligencia artificial (Gemini) es provista automáticamente por la plataforma.
                   </div>
-                  {testResult && (
-                    <div style={{
-                      marginTop: 8, 
-                      padding: '8px 12px', 
-                      borderRadius: 4, 
-                      fontSize: '0.82rem',
-                      backgroundColor: testResult.success ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.15)',
-                      color: testResult.success ? 'var(--accent-emerald)' : 'var(--accent-red)',
-                      border: `1px solid ${testResult.success ? 'var(--accent-emerald)' : 'var(--accent-red)'}`
-                    }}>
-                      {testResult.success ? '✓ ' : '✕ '} {testResult.message}
-                    </div>
-                  )}
 
-                  {modelCapabilities && (
-                    <div style={{
-                      marginTop: 10,
-                      padding: '12px 14px',
-                      borderRadius: 8,
-                      backgroundColor: 'var(--bg-dark)',
-                      border: '1px solid var(--border-color)',
-                      fontSize: '0.82rem'
-                    }}>
-                      <div style={{fontWeight: 600, marginBottom: 8, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', justifyContent: 'space-between'}}>
-                        <span>🤖 Servicios e IA Habilitados con esta API Key:</span>
-                        <span style={{fontSize: '0.75rem', opacity: 0.7}}>Clave: {modelCapabilities.api_key_prefix}</span>
-                      </div>
-                      
-                      <div style={{display: 'flex', flexDirection: 'column', gap: 6}}>
-                        {/* Gemini Text & Code */}
-                        <div style={{display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 10px', borderRadius: 6, backgroundColor: 'rgba(255,255,255,0.03)'}}>
-                          <span style={{display: 'flex', alignItems: 'center', gap: 6}}>
-                            <span style={{color: '#10B981'}}>🟢</span> 
-                            <strong>Google Gemini 2.0 Flash / Textos IA:</strong>
-                          </span>
-                          <span style={{color: '#10B981', fontWeight: 600}}>Habilitado (Gratis)</span>
-                        </div>
-
-                        {/* Imagen 3 */}
-                        <div style={{display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 10px', borderRadius: 6, backgroundColor: 'rgba(255,255,255,0.03)'}}>
-                          <span style={{display: 'flex', alignItems: 'center', gap: 6}}>
-                            <span>{modelCapabilities.imagen_models?.length > 0 ? '🟢' : '🟡'}</span> 
-                            <strong>Google Imagen 3.0 (Fotos IA):</strong>
-                          </span>
-                          <span style={{color: modelCapabilities.imagen_models?.length > 0 ? '#10B981' : '#F59E0B', fontWeight: 600}}>
-                            {modelCapabilities.imagen_models?.length > 0 ? `Activo (${modelCapabilities.imagen_models[0]})` : 'Requiere Habilitar en AI Studio'}
-                          </span>
-                        </div>
-
-                        {/* Google Veo */}
-                        <div style={{display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 10px', borderRadius: 6, backgroundColor: 'rgba(255,255,255,0.03)'}}>
-                          <span style={{display: 'flex', alignItems: 'center', gap: 6}}>
-                            <span>{modelCapabilities.veo_models?.length > 0 ? '🟢' : '🟡'}</span> 
-                            <strong>Google Veo 3.1 / 2.0 (Video IA):</strong>
-                          </span>
-                          <span style={{color: modelCapabilities.veo_models?.length > 0 ? '#10B981' : '#F59E0B', fontWeight: 600}}>
-                            {modelCapabilities.veo_models?.length > 0 ? `Activo (${modelCapabilities.veo_models.join(', ')})` : 'Requiere Habilitar en AI Studio / Billing'}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-                  <small style={{display: 'block', marginTop: 6, color: 'var(--text-secondary)', fontSize: '0.75rem'}}>
-                    Obtén o configura tus servicios en <a href="https://aistudio.google.com/" target="_blank" rel="noopener noreferrer" style={{color: 'var(--accent-blue)', textDecoration: 'underline'}}>Google AI Studio</a>.
-                  </small>
-                </label>
 
                 <div>
                   <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6, flexWrap: 'wrap', gap: 10}}>

@@ -6,6 +6,7 @@ from src.api.auth import verify_session, require_permission
 import requests
 import re
 import json
+import os
 
 router = APIRouter()
 
@@ -53,7 +54,7 @@ def get_whatsapp_config(_=Depends(verify_session)):
     return {
         "enabled": database.get_setting("whatsapp_enabled", "0") == "1",
         "read_only": database.get_setting("whatsapp_read_only", "0") == "1",
-        "gemini_api_key": database.get_setting("gemini_api_key", ""),
+        "gemini_api_key": (os.getenv("GEMINI_API_KEY") or database.get_setting("gemini_api_key", "")).strip(),
         "bot_instructions": database.get_setting("whatsapp_bot_instructions", (
             "Eres un asistente virtual experto y amable para la tienda 'Hidroponia Rosario'. "
             "Responde de forma concisa y educada. Ayuda a los clientes con información de stock, "
@@ -69,7 +70,6 @@ def get_whatsapp_config(_=Depends(verify_session)):
 def save_whatsapp_config(req: WhatsAppConfigReq, _=Depends(verify_session), _2=Depends(require_permission("settings"))):
     database.set_setting("whatsapp_enabled", "1" if req.enabled else "0")
     database.set_setting("whatsapp_read_only", "1" if req.read_only else "0")
-    database.set_setting("gemini_api_key", req.gemini_api_key.strip())
     database.set_setting("whatsapp_bot_instructions", req.bot_instructions.strip())
     return {"success": True}
 
@@ -84,7 +84,7 @@ def disconnect_whatsapp(_=Depends(verify_session), _2=Depends(require_permission
     except Exception as e:
         print(f"[WhatsApp Disconnect Error] Node control server unreachable: {e}")
 
-    import os, shutil
+    import shutil
     auth_dir = os.path.join("backend", "whatsapp", "auth_state")
     if not os.path.exists(auth_dir):
         auth_dir = os.path.join("whatsapp", "auth_state")
@@ -238,7 +238,7 @@ def process_silent_inquiry_tracking(sender: str, user_text: str, catalog_context
         catalog_context = "\n".join(catalog_lines)
 
     if not gemini_key:
-        gemini_key = database.get_setting("gemini_api_key", "").strip()
+        gemini_key = (os.getenv("GEMINI_API_KEY") or database.get_setting("gemini_api_key", "")).strip()
 
     inquiries_found = []
     tokens_recorded = False

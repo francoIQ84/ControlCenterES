@@ -206,16 +206,18 @@ def run_backup_dump(is_auto: bool = False):
 
     # -- Upload to Google Drive if configured for the platform --
     try:
-        from src import tenancy, integrations
         from src.utils import google_drive
-        
-        with tenancy.tenant_context(tenancy.MASTER_TENANT_ID):
-            gdrive_creds = integrations.get_credentials("google_drive", allow_legacy=False)
+        import json
+        folder_id = os.getenv("GOOGLE_DRIVE_FOLDER_ID", "").strip()
+        gdrive_creds_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "service_account.json")
+        gdrive_creds = None
+        if os.path.exists(gdrive_creds_path) and folder_id:
+            with open(gdrive_creds_path, 'r', encoding='utf-8') as f:
+                gdrive_creds = json.load(f)
             
-        if gdrive_creds and gdrive_creds.get("folder_id"):
-            print(f"[Backup] Subiendo a Google Drive (carpeta {gdrive_creds['folder_id']})...")
+        if gdrive_creds and folder_id:
+            print(f"[Backup] Subiendo a Google Drive (carpeta {folder_id})...")
             # Remove folder_id from the credentials passed to google_drive
-            folder_id = gdrive_creds.pop("folder_id")
             file_id = google_drive.upload_file(backup_path, backup_filename, folder_id, gdrive_creds)
             if file_id:
                 print(f"[Backup] Subida de sistema a Google Drive exitosa. ID: {file_id}")
