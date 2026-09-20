@@ -57,17 +57,35 @@ def is_demo_mode():
     return str(demo_setting).lower() in ('1', 'true')
 
 def validate_token():
-    """Checks if there is a valid (and active) token, or if we can refresh it."""
+    """Verifica si el tenant tiene credenciales de Mercado Libre configuradas.
+
+    IMPORTANTE: Esta función se llama en cada carga de página desde
+    /api/settings/status. Por eso NO hace network I/O: solo verifica el
+    estado local (DB). El refresco real del token ocurre de forma lazy en
+    api_request() y check_and_refresh_token() cuando se necesita hacer una
+    llamada real a la API de Mercado Libre.
+
+    Si el access_token expiró pero tenemos refresh_token, reportamos como
+    vinculado: el token se refrescará automáticamente en la próxima llamada
+    real. Esto evita el problema de mostrar 'desvinculado' por errores
+    transitorios de la API de ML.
+    """
     if is_demo_mode():
         return True
     access_token = config.get_access_token()
     refresh_token = config.get_refresh_token()
     if not access_token and not refresh_token:
         return False
-    try:
-        return check_and_refresh_token()
-    except Exception:
+    # Si tenemos refresh_token, podemos refrescar → estamos vinculados
+    if refresh_token:
+        return True
+    # Solo access_token sin refresh: verificar que no haya expirado
+    expiry = config.get_token_expiry()
+    if expiry > 0 and (expiry - time.time() <= 0):
+        # Token expirado y sin refresh_token → genuinamente desvinculado
         return False
+    # Token con tiempo restante (o sin expiry registrado)
+    return True
 
 # --- Authentication and OAuth ---
 
@@ -195,10 +213,19 @@ def authenticate_with_code(code):
                 return False, "La respuesta de Mercado Libre no contiene el token de acceso ('access_token')."
             
             config.set_access_token(access_token)
-            config.set_refresh_token(res_data.get('refresh_token', ''))
+            new_refresh = res_data.get('refresh_token', '')
+            if not new_refresh:
+                print("[Meli API] ⚠️  ADVERTENCIA: La respuesta de OAuth no "
+                      "incluyó refresh_token. La conexión se perderá cuando "
+                      "el access_token expire (~6h). Esto puede ocurrir si "
+                      "la app de ML no tiene permisos offline_access.")
+            config.set_refresh_token(new_refresh)
             config.set_token_expiry(time.time() + res_data.get('expires_in', 21600))
             new_user_id = str(res_data.get('user_id', ''))
             config.set_user_id(new_user_id)
+            print(f"[Meli API] Autenticación exitosa. user_id={new_user_id}, "
+                  f"refresh_token={'presente' if new_refresh else 'AUSENTE'}, "
+                  f"expires_in={res_data.get('expires_in', 'N/A')}s")
 
             # Retrieve user details from Mercado Libre
             user_info = fetch_user_info(custom_token=access_token)
@@ -332,6 +359,9 @@ def _db_advisory_refresh():
                 fresh_refresh_token = row['value'] if row else ''
 
             if not fresh_refresh_token:
+                print("[Meli API] No hay refresh_token en la DB — no se puede "
+                      "refrescar el access_token. El usuario debe revincular "
+                      "manualmente desde Configuración.")
                 conn.rollback()
                 return False
 
@@ -359,11 +389,24 @@ def _db_advisory_refresh():
                     if response.status_code == 200:
                         res_data = response.json()
                         # Guardar tokens nuevos DENTRO de la transacción con lock
-                        new_access = res_data['access_token']
-                        new_refresh = res_data.get('refresh_token',
-                                                    fresh_refresh_token)
+                        new_access = res_data.get('access_token', '')
+                        new_refresh = res_data.get('refresh_token', '')
                         new_expiry = str(time.time() + res_data.get(
                             'expires_in', 21600))
+
+                        if not new_access:
+                            print("[Meli API] Refresh exitoso pero la respuesta "
+                                  "no contiene access_token. Abortando.")
+                            conn.rollback()
+                            return False
+
+                        # PROTECCIÓN CRÍTICA: nunca sobrescribir el
+                        # refresh_token con un valor vacío. Si ML no
+                        # devuelve uno nuevo, conservar el que ya teníamos.
+                        if not new_refresh:
+                            print("[Meli API] ⚠️  ML no devolvió nuevo "
+                                  "refresh_token. Conservando el existente.")
+                            new_refresh = fresh_refresh_token
 
                         with conn.cursor() as cur:
                             for k, v in [('meli_access_token', new_access),
@@ -374,6 +417,9 @@ def _db_advisory_refresh():
                                     "ON CONFLICT (tenant_id, key) DO UPDATE SET value = EXCLUDED.value",
                                     (k, v))
                         conn.commit()  # Libera el advisory lock
+                        print(f"[Meli API] Token refrescado exitosamente. "
+                              f"Nuevo expiry en {res_data.get('expires_in', 21600)//3600}h. "
+                              f"refresh_token {'renovado' if new_refresh != fresh_refresh_token else 'conservado'}.")
                         return True
 
                     elif response.status_code >= 500:
@@ -445,8 +491,10 @@ def check_and_refresh_token():
 def api_request(method, path, headers=None, params=None, json_data=None):
     """Ejecuta una solicitud autorizada a la API de Mercado Libre.
 
-    Refresca el token automáticamente si está vencido y reintenta una vez
-    ante un 401 Unauthorized.
+    Refresca el token automáticamente si está vencido y reintenta UNA SOLA
+    VEZ ante un 401 Unauthorized. Si el refresh falla (ej: no hay
+    refresh_token), devuelve la respuesta 401 sin reintentar para evitar
+    un loop infinito de refreshes.
     """
     if is_demo_mode():
         return None  # Should use mock path instead
@@ -465,10 +513,24 @@ def api_request(method, path, headers=None, params=None, json_data=None):
         response = requests.request(method, url, headers=req_headers, params=params, json=json_data, timeout=15)
         # If response is 401 Unauthorized, try refreshing token once and retrying
         if response.status_code == 401:
-            print("[Meli API] Respuesta 401 Unauthorized. Intentando refrescar token...")
+            # Solo intentar refresh si tenemos refresh_token disponible
+            refresh_token = config.get_refresh_token()
+            if not refresh_token:
+                print(f"[Meli API] 401 en {method} {path} — sin refresh_token, "
+                      f"no se puede reintentar. Revincular manualmente.")
+                return response
+            print(f"[Meli API] 401 en {method} {path}. Refrescando token...")
             if refresh_access_token():
-                req_headers['Authorization'] = f"Bearer {config.get_access_token()}"
+                new_token = config.get_access_token()
+                req_headers['Authorization'] = f"Bearer {new_token}"
                 response = requests.request(method, url, headers=req_headers, params=params, json=json_data, timeout=15)
+                if response.status_code == 401:
+                    print(f"[Meli API] 401 persistente en {method} {path} "
+                          f"después de refresh exitoso. Token posiblemente "
+                          f"revocado por Mercado Libre.")
+            else:
+                print(f"[Meli API] Refresh falló para {method} {path}. "
+                      f"Devolviendo 401 original.")
         return response
     except Exception as e:
         raise ConnectionError(f"Error al conectar con la API de Mercado Libre: {str(e)}")

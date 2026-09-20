@@ -500,10 +500,22 @@ export default function Layout() {
       )}
 
       {/* Vínculo Meli status Badge (Clickable for instant OAuth or settings) */}
-      {isChannelEnabled('meli') && meliStatus && (
+      {isChannelEnabled('meli') && meliStatus && (() => {
+        const hasWarning = meliStatus.is_authenticated && meliStatus.token_warning;
+        const badgeColor = !meliStatus.is_authenticated ? 'var(--accent-red)' 
+          : hasWarning ? '#f59e0b' : 'var(--accent-emerald)';
+        const badgeBg = !meliStatus.is_authenticated ? 'rgba(239, 68, 68, 0.15)' 
+          : hasWarning ? 'rgba(245, 158, 11, 0.12)' : 'rgba(16, 185, 129, 0.1)';
+        const badgeBorder = !meliStatus.is_authenticated ? 'rgba(239, 68, 68, 0.3)' 
+          : hasWarning ? 'rgba(245, 158, 11, 0.3)' : 'rgba(16, 185, 129, 0.3)';
+        return (
         <div 
           onClick={handleAuthMeliClick}
-          title={meliStatus.is_authenticated ? `Cuenta vinculada: ${meliStatus.nickname || meliStatus.user_id}${meliStatus.email ? ` (${meliStatus.email})` : ''}. Hacé clic para administrar en Configuración.` : "¡Hacé clic para vincular tu cuenta de Mercado Libre / Mercado Pago!"}
+          title={meliStatus.is_authenticated 
+            ? (hasWarning 
+              ? meliStatus.token_warning + ' Hacé clic para revincular.'
+              : `Cuenta vinculada: ${meliStatus.nickname || meliStatus.user_id}${meliStatus.email ? ` (${meliStatus.email})` : ''}. Hacé clic para administrar en Configuración.`)
+            : "¡Hacé clic para vincular tu cuenta de Mercado Libre / Mercado Pago!"}
           style={{
             display: 'inline-flex',
             alignItems: 'center',
@@ -512,9 +524,9 @@ export default function Layout() {
             borderRadius: '20px',
             fontSize: '0.8rem',
             fontWeight: '600',
-            backgroundColor: meliStatus.is_authenticated ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.15)',
-            color: meliStatus.is_authenticated ? 'var(--accent-emerald)' : 'var(--accent-red)',
-            border: `1px solid ${meliStatus.is_authenticated ? 'rgba(16, 185, 129, 0.3)' : 'rgba(239, 68, 68, 0.3)'}`,
+            backgroundColor: badgeBg,
+            color: badgeColor,
+            border: `1px solid ${badgeBorder}`,
             cursor: 'pointer',
             transition: 'all 0.2s',
             userSelect: 'none',
@@ -526,16 +538,17 @@ export default function Layout() {
             width: '8px',
             height: '8px',
             borderRadius: '50%',
-            backgroundColor: meliStatus.is_authenticated ? 'var(--accent-emerald)' : 'var(--accent-red)',
-            boxShadow: meliStatus.is_authenticated ? '0 0 8px var(--accent-emerald)' : '0 0 8px var(--accent-red)'
+            backgroundColor: badgeColor,
+            boxShadow: `0 0 8px ${badgeColor}`
           }}></span>
           {meliStatus.is_authenticated ? (
-            <span>ML/MP: {meliStatus.nickname || (meliStatus.user_id ? `ID ${meliStatus.user_id}` : 'Vinculado')} {meliStatus.demo_mode && '(Demo)'}</span>
+            <span>{hasWarning ? '⚠️ ' : ''}ML/MP: {meliStatus.nickname || (meliStatus.user_id ? `ID ${meliStatus.user_id}` : 'Vinculado')} {meliStatus.demo_mode && '(Demo)'}</span>
           ) : (
             <span>🔗 Sin Vincular ML/MP</span>
           )}
         </div>
-      )}
+        );
+      })()}
 
       {/* Vínculo Tiendanube status Badge */}
       {isChannelEnabled('tiendanube') && tnStatus && (

@@ -48,7 +48,19 @@ def get_auth_status():
         nickname = database.get_setting('meli_nickname', '')
         email = database.get_setting('meli_email', '')
 
-    
+    # Detectar si falta el refresh_token (causa raíz de desvinculaciones)
+    token_warning = None
+    if user_id and token_valid:
+        refresh_token = config.get_refresh_token()
+        if not refresh_token:
+            import time
+            expiry = config.get_token_expiry()
+            remaining_h = max(0, (expiry - time.time()) / 3600) if expiry else 0
+            token_warning = (
+                f"⚠️ Falta el refresh_token. La conexión se perderá en "
+                f"~{remaining_h:.1f}h. Revinculá desde Configuración."
+            )
+
     afip_enabled = database.get_setting('afip_enabled', '0') == '1'
     cert_exists = os.path.exists("backend/data/afip/arca.crt") or os.path.exists("data/afip/arca.crt")
     key_exists = os.path.exists("backend/data/afip/arca.key") or os.path.exists("data/afip/arca.key")
@@ -60,7 +72,8 @@ def get_auth_status():
         "email": email,
         "expected_account": expected_account,
         "demo_mode": meli_api.is_demo_mode(),
-        "afip_active": afip_enabled and cert_exists and key_exists
+        "afip_active": afip_enabled and cert_exists and key_exists,
+        "token_warning": token_warning
     }
 
 @router.get("/config")
