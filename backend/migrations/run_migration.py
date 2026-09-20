@@ -35,6 +35,31 @@ MIGRATIONS_DIR = os.path.dirname(os.path.abspath(__file__))
 MASTER_TENANT_ID = "00000000-0000-0000-0000-000000000001"
 LOCAL_HOSTS = {"localhost", "127.0.0.1", "::1", ""}
 
+#: Migraciones de aislamiento, en orden. Son las que este runner administra:
+#: la 001 levanta los cimientos y la 016 cierra las tablas que quedaron
+#: afuera. El resto (002-015) son de funcionalidad y se aplican con psql
+#: según el README; no se incluyen acá para que `--apply` sobre producción
+#: siga siendo una operación acotada y predecible.
+ISOLATION_MIGRATIONS = (
+    ("001_multitenancy.sql", "Migración 001 (cimientos multi-tenant)"),
+    ("016_tenant_isolation_gaps.sql", "Migración 016 (tablas sin aislar)"),
+)
+
+ISOLATION_ROLLBACKS = (
+    ("016_tenant_isolation_gaps_rollback.sql", "Reversión 016"),
+    ("001_multitenancy_rollback.sql", "Reversión 001"),
+)
+
+#: Tablas que no llevan `tenant_id` a propósito. Sin esta lista la auditoría
+#: las reporta como agujeros para siempre y el ruido termina tapando un
+#: agujero de verdad. Cada una está justificada con COMMENT ON TABLE en la
+#: migración 016.
+GLOBAL_BY_DESIGN = (
+    "tenants",                        # registro de ruteo: se lee antes de saber el tenant
+    "tenant_subscription_payments",   # cobros de la plataforma, no del inquilino
+    "meli_category_attrs_cache",      # metadatos públicos de Mercado Libre
+)
+
 
 # --------------------------------------------------------------------------
 # Utilidades
@@ -81,27 +106,38 @@ def confirm_remote(host, dbname):
 # Acciones
 # --------------------------------------------------------------------------
 
-def run_sql_file(db_url, filename, commit, label):
-    sql = load_sql(filename)
+def run_sql_files(db_url, migrations, commit):
+    """Aplica una secuencia de .sql dentro de UNA sola transacción.
+
+    Que sea una sola importa por dos motivos. En `--dry-run`, la 016 necesita
+    `app_current_tenant()`, que crea la 001: si cada archivo tuviera su propia
+    transacción, el ROLLBACK de la primera dejaría a la segunda sin función a
+    la cual agarrarse. Y en `--apply`, media migración aplicada es peor que
+    ninguna: o queda todo el aislamiento o no queda nada.
+    """
     conn = psycopg2.connect(db_url)
     conn.autocommit = False
+    label = ""
     try:
-        with conn.cursor() as cur:
-            cur.execute(sql)
-        drain_notices(conn)
+        for filename, label in migrations:
+            print(f"  -> {label}")
+            with conn.cursor() as cur:
+                cur.execute(load_sql(filename))
+            drain_notices(conn, prefix="      ")
 
         if commit:
             conn.commit()
-            print(f"\n  OK: {label} aplicada y confirmada (COMMIT).")
+            print(f"\n  OK: {len(migrations)} migración/es aplicadas y confirmadas (COMMIT).")
         else:
             conn.rollback()
-            print(f"\n  OK: {label} se aplicó sin errores y se revirtió (ROLLBACK).")
+            print(f"\n  OK: {len(migrations)} migración/es se aplicaron sin errores "
+                  f"y se revirtieron (ROLLBACK).")
             print("      La base quedó exactamente como estaba.")
         return True
     except Exception as exc:
         conn.rollback()
-        drain_notices(conn)
-        print(f"\n  FALLO: {label} abortada. Se revirtió todo.\n")
+        drain_notices(conn, prefix="      ")
+        print(f"\n  FALLO en '{label}'. Se revirtió TODA la secuencia.\n")
         print(f"  {type(exc).__name__}: {exc}")
         return False
     finally:
@@ -175,13 +211,13 @@ def verify(db_url):
                 FROM pg_class c
                 JOIN pg_namespace n ON n.oid = c.relnamespace
                 WHERE n.nspname = 'public' AND c.relkind = 'r'
-                  AND c.relname NOT IN ('tenants')
+                  AND c.relname <> ALL(%s)
                   AND NOT EXISTS (
                       SELECT 1 FROM pg_attribute a
                       WHERE a.attrelid = c.oid AND a.attname = 'tenant_id'
                         AND NOT a.attisdropped)
                 ORDER BY 1
-            """)
+            """, (list(GLOBAL_BY_DESIGN),))
             missing = [r[0] for r in cur.fetchall()]
             if missing:
                 print(f"  Tablas sin tenant_id ........ {', '.join(missing)}")
@@ -198,8 +234,9 @@ def verify(db_url):
                 JOIN pg_attribute a ON a.attrelid = c.oid AND a.attname = 'tenant_id'
                                    AND NOT a.attisdropped
                 WHERE n.nspname = 'public' AND c.relkind = 'r'
+                  AND c.relname <> ALL(%s)
                 ORDER BY 1
-            """)
+            """, (list(GLOBAL_BY_DESIGN),))
             rows = cur.fetchall()
             unprotected = [r[0] for r in rows if not (r[1] and r[2] and r[3] > 0)]
             print(f"  Tablas con tenant_id ........ {len(rows)}")
@@ -265,20 +302,38 @@ def main():
     args = parser.parse_args()
 
     load_dotenv()
-    db_url = os.environ.get("DATABASE_URL")
-    if not db_url:
+    app_url = os.environ.get("DATABASE_URL")
+    if not app_url:
         print("ERROR: falta DATABASE_URL (backend/.env)")
         return 1
 
-    host, dbname, is_local = describe_target(db_url)
+    # Hay dos conexiones distintas y no son intercambiables.
+    #
+    # DATABASE_URL es la de la aplicación: rol sin privilegios, sujeto a RLS.
+    # Con ella no se puede migrar (no tiene DDL) pero es la ÚNICA con la que
+    # tiene sentido auditar, porque lo que se quiere comprobar es justamente
+    # que ese rol no ve lo que no debe.
+    #
+    # ADMIN_DATABASE_URL es la de mantenimiento (superusuario). Es la que crea
+    # tablas, políticas y roles. Si no está definida se cae a DATABASE_URL, que
+    # es el caso de una instalación vieja donde la app todavía conecta como
+    # postgres.
+    admin_url = os.environ.get("ADMIN_DATABASE_URL") or app_url
+    ddl_url = app_url if args.verify else admin_url
+
+    host, dbname, is_local = describe_target(ddl_url)
     print()
     print("=" * 72)
-    print("  ControlCenter — Migración Multi-Tenant (001)")
+    print("  ControlCenter — Migración Multi-Tenant (001 + 016)")
     print("=" * 72)
     print(f"  Destino: {host or 'socket local'} / {dbname}   [{'LOCAL' if is_local else 'REMOTO'}]")
+    if admin_url != app_url and not args.verify:
+        print("  Conexión: ADMIN_DATABASE_URL (mantenimiento)")
 
     if args.verify:
-        return 0 if verify(db_url) else 1
+        return 0 if verify(app_url) else 1
+
+    db_url = ddl_url
 
     if args.set_role_password:
         return 0 if set_app_role_password(db_url) else 1
@@ -287,9 +342,8 @@ def main():
         if not is_local and not confirm_remote(host, dbname):
             print("\n  Cancelado.")
             return 1
-        print("\n  Revirtiendo migración...\n")
-        ok = run_sql_file(db_url, "001_multitenancy_rollback.sql", True, "Reversión")
-        return 0 if ok else 1
+        print("\n  Revirtiendo migraciones (en orden inverso)...\n")
+        return 0 if run_sql_files(db_url, ISOLATION_ROLLBACKS, True) else 1
 
     # --- dry-run / apply --------------------------------------------------
     if args.apply and not is_local and not confirm_remote(host, dbname):
@@ -302,7 +356,17 @@ def main():
         print("\n  Ejecutando database.init_db() (idempotente)...")
         try:
             from src import database
-            database.init_db()
+            # `database` fija su URL al importarse, apuntando al rol de la
+            # aplicación. Ese rol no tiene DDL a propósito, así que init_db()
+            # se saltearía el bootstrap y una instalación nueva quedaría sin
+            # tablas. Acá se lo apunta a la conexión de mantenimiento, que es
+            # la que corresponde para crear esquema.
+            previous_url = database.DB_URL
+            database.DB_URL = db_url
+            try:
+                database.init_db()
+            finally:
+                database.DB_URL = previous_url
             print("  OK: esquema base al día.")
         except Exception as exc:
             print(f"  FALLO en init_db(): {exc}")
@@ -310,8 +374,7 @@ def main():
 
     mode = "APLICANDO" if args.apply else "ENSAYO (se revierte al final)"
     print(f"\n  {mode}\n")
-    ok = run_sql_file(db_url, "001_multitenancy.sql", args.apply, "Migración 001")
-    if not ok:
+    if not run_sql_files(db_url, ISOLATION_MIGRATIONS, args.apply):
         return 1
 
     if args.apply:

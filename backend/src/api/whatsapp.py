@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from typing import Optional
-from src import database
+from src import database, tenancy, whatsapp_bridge
 from src.api.auth import verify_session, require_permission
 import requests
 import re
@@ -47,6 +47,38 @@ def verify_internal_only(request: Request):
     if client_host not in ("127.0.0.1", "::1", "localhost"):
         raise HTTPException(status_code=403, detail="Access denied: Internal only")
 
+
+def resolve_bridge_tenant(request: Request) -> str:
+    """Inquilino al que pertenece un aviso del puente de WhatsApp.
+
+    El puente (Node/Baileys) llama a 127.0.0.1, así que el Host es localhost y
+    el TenantResolver cae al Maestro. Hasta ahora eso significaba que TODA
+    conversación entrante se guardaba en el Maestro, sin importar de qué
+    negocio fuera el número.
+
+    El puente puede declarar a quién sirve mandando `X-Tenant-Slug`. Confiar en
+    ese header acá es seguro y no contradice la advertencia de
+    `TenantResolverMiddleware`: estos endpoints ya están restringidos a
+    localhost por `verify_internal_only`, así que solo el propio puente puede
+    ponerlo.
+
+    Sin header se mantiene el comportamiento actual (Maestro), que es lo que
+    hace que la operación de hoy siga funcionando sin tocar el puente.
+
+    NOTA: hoy hay un único puente para toda la plataforma
+    (127.0.0.1:8091, hardcodeado). Esto resuelve el ruteo de los datos, no la
+    multiplicidad de sesiones: para que cada negocio tenga su propio número
+    hace falta una instancia del puente por inquilino.
+    """
+    slug = (request.headers.get("x-tenant-slug") or "").strip().lower()
+    if not slug:
+        return tenancy.MASTER_TENANT_ID
+    tenant = tenancy.get_tenant_by_slug(slug)
+    if not tenant or tenant.get("status") not in ("active", "trial"):
+        print(f"[WhatsApp Bridge] Slug '{slug}' desconocido o inactivo; se usa el Maestro.")
+        return tenancy.MASTER_TENANT_ID
+    return tenant["id"]
+
 # Admin panel endpoints (Protected)
 @router.get("/config")
 def get_whatsapp_config(_=Depends(verify_session)):
@@ -55,7 +87,8 @@ def get_whatsapp_config(_=Depends(verify_session)):
         "read_only": database.get_setting("whatsapp_read_only", "0") == "1",
         "gemini_api_key": database.get_setting("gemini_api_key", ""),
         "bot_instructions": database.get_setting("whatsapp_bot_instructions", (
-            "Eres un asistente virtual experto y amable para la tienda 'Hidroponia Rosario'. "
+            f"Eres un asistente virtual experto y amable para la tienda "
+            f"'{database.get_merchant_name()}'. "
             "Responde de forma concisa y educada. Ayuda a los clientes con información de stock, "
             "precios, envíos o con el estado de sus pedidos. "
             "Responde siempre en español."
@@ -80,7 +113,7 @@ def disconnect_whatsapp(_=Depends(verify_session), _2=Depends(require_permission
     database.set_setting("whatsapp_qr", "")
 
     try:
-        requests.post("http://127.0.0.1:8091/disconnect", timeout=5)
+        whatsapp_bridge.post("disconnect", {}, timeout=5)
     except Exception as e:
         print(f"[WhatsApp Disconnect Error] Node control server unreachable: {e}")
 
@@ -197,20 +230,22 @@ def save_whatsapp_schedule(req: WhatsAppScheduleReq, _=Depends(verify_session), 
 
 # Internal service endpoints (Only from localhost)
 @router.post("/status-update")
-def status_update(req: StatusUpdateReq, _=Depends(verify_internal_only)):
-    database.set_setting("whatsapp_status", req.status)
-    database.set_setting("whatsapp_phone", req.phone or "")
-    database.set_setting("whatsapp_qr", req.qr or "")
+def status_update(req: StatusUpdateReq, request: Request, _=Depends(verify_internal_only)):
+    with tenancy.tenant_context(resolve_bridge_tenant(request)):
+        database.set_setting("whatsapp_status", req.status)
+        database.set_setting("whatsapp_phone", req.phone or "")
+        database.set_setting("whatsapp_qr", req.qr or "")
     return {"success": True}
 
 @router.post("/human-activity")
-def human_activity(req: HumanActivityReq, _=Depends(verify_internal_only)):
-    if req.action == "unpause":
-        database.unpause_whatsapp_ai(req.sender)
-        print(f"[WhatsApp Human Takeover] Operator unpaused AI for {req.sender} via command.")
-    else:
-        database.pause_whatsapp_ai(req.sender, duration_hours=24, reason="intervencion_operador")
-        print(f"[WhatsApp Human Takeover] Operator wrote to {req.sender}. AI paused for 24h.")
+def human_activity(req: HumanActivityReq, request: Request, _=Depends(verify_internal_only)):
+    with tenancy.tenant_context(resolve_bridge_tenant(request)):
+        if req.action == "unpause":
+            database.unpause_whatsapp_ai(req.sender)
+            print(f"[WhatsApp Human Takeover] Operator unpaused AI for {req.sender} via command.")
+        else:
+            database.pause_whatsapp_ai(req.sender, duration_hours=24, reason="intervencion_operador")
+            print(f"[WhatsApp Human Takeover] Operator wrote to {req.sender}. AI paused for 24h.")
     return {"success": True}
 
 def process_silent_inquiry_tracking(sender: str, user_text: str, catalog_context: str = "", gemini_key: str = "", customer_name: str = ""):
@@ -246,7 +281,8 @@ def process_silent_inquiry_tracking(sender: str, user_text: str, catalog_context
     # 1. Try Gemini AI analysis if API Key is available
     if gemini_key:
         extraction_system_prompt = (
-            "Eres un clasificador y detector de demanda de productos para 'Hidroponia Rosario'.\n"
+            f"Eres un clasificador y detector de demanda de productos para "
+            f"'{database.get_merchant_name()}'.\n"
             "Tu única tarea es analizar el mensaje del cliente e identificar si pregunta, consulta o muestra interés de compra por uno o más productos, insumos o artículos.\n\n"
             f"CATÁLOGO DISPONIBLE:\n{catalog_context}\n\n"
             "FORMATO DE SALIDA ESTRICTO:\n"
@@ -322,7 +358,18 @@ def process_silent_inquiry_tracking(sender: str, user_text: str, catalog_context
     return inquiries_found
 
 @router.post("/webhook")
-def whatsapp_webhook(req: WebhookReq, _=Depends(verify_internal_only)):
+def whatsapp_webhook(req: WebhookReq, request: Request, _=Depends(verify_internal_only)):
+    """Entrada del puente. Resuelve el inquilino y delega.
+
+    El cuerpo vive en `_handle_webhook` para que todo lo que toca la base
+    —historial de chat, consultas, pausas, catálogo— quede dentro del contexto
+    del negocio correcto sin reindentar cien líneas.
+    """
+    with tenancy.tenant_context(resolve_bridge_tenant(request)):
+        return _handle_webhook(req)
+
+
+def _handle_webhook(req: WebhookReq):
     push_name = (req.pushName or "").strip()
 
     # Automatically incorporate WhatsApp contact and customer data into CRM

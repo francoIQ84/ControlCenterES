@@ -16,7 +16,7 @@ import Marketing from './pages/Marketing'
 import Tenants from './pages/Tenants'
 import MeliQuestions from './pages/MeliQuestions'
 import Quotes from './pages/Quotes'
-import { TenantProvider } from './TenantContext'
+import { TenantProvider, useTenant } from './TenantContext'
 
 // Global fetch interceptor to append authorization token
 const originalFetch = window.fetch
@@ -104,22 +104,43 @@ function ProtectedRoute() {
   return <Outlet />
 }
 
-function PermissionRoute({ permission, children }) {
+/**
+ * Puerta de entrada a cada página del panel.
+ *
+ * Aplica los dos filtros, igual que el menú y que el backend:
+ *   - `permission`: qué puede hacer esta persona (RBAC del usuario).
+ *   - `module`: qué contrató este negocio (plan del inquilino). Por defecto
+ *     es el mismo nombre que el permiso; `module={null}` lo desactiva.
+ *
+ * Antes solo miraba el permiso, así que el módulo desaparecía del menú pero
+ * la página seguía sirviéndose si alguien escribía la URL. El backend ahora
+ * responde 403 en ese caso; esto evita además la pantalla rota intermedia.
+ */
+function PermissionRoute({ permission, module = undefined, children }) {
+  const { hasModule, loading: tenantLoading } = useTenant();
+
   const permsStr = localStorage.getItem('adminPermissions');
   if (permsStr === null) {
     return children; // default allowed during loading
   }
-  
+
   const perms = permsStr.split(',').map(p => p.trim());
-  if (permission === 'inpi' && (perms.includes('inpi') || perms.includes('settings'))) {
-    return children;
-  }
-  if (permission === 'quotes' && (perms.includes('quotes') || perms.includes('sales') || perms.includes('settings'))) {
-    return children;
-  }
-  if (!perms.includes(permission)) {
+  const allowedByPermission =
+    (permission === 'inpi' && (perms.includes('inpi') || perms.includes('settings'))) ||
+    (permission === 'quotes' && (perms.includes('quotes') || perms.includes('sales') || perms.includes('settings'))) ||
+    perms.includes(permission);
+
+  if (!allowedByPermission) {
     return <Navigate to="/" replace />;
   }
+
+  // Mientras no se sepan los módulos no se bloquea nada: el criterio es el
+  // mismo que en TenantContext.hasModule, nunca esconder algo que hoy está
+  // en uso por no haber terminado de cargar.
+  if (module !== null && !tenantLoading && !hasModule(module || permission)) {
+    return <Navigate to="/" replace />;
+  }
+
   return children;
 }
 
@@ -138,10 +159,10 @@ function App() {
             <Route index element={<PermissionRoute permission="dashboard"><Dashboard /></PermissionRoute>} />
             <Route path="inventory" element={<PermissionRoute permission="inventory"><Inventory /></PermissionRoute>} />
             <Route path="sales" element={<PermissionRoute permission="sales"><Sales /></PermissionRoute>} />
-            <Route path="presupuestos" element={<PermissionRoute permission="quotes"><Quotes /></PermissionRoute>} />
+            <Route path="presupuestos" element={<PermissionRoute permission="quotes" module="quotes"><Quotes /></PermissionRoute>} />
             <Route path="billing" element={<PermissionRoute permission="billing"><Billing /></PermissionRoute>} />
             <Route path="customers" element={<PermissionRoute permission="customers"><Customers /></PermissionRoute>} />
-            <Route path="settings" element={<PermissionRoute permission="settings"><Settings /></PermissionRoute>} />
+            <Route path="settings" element={<PermissionRoute permission="settings" module={null}><Settings /></PermissionRoute>} />
             <Route path="cms" element={<PermissionRoute permission="blog"><BlogCMS /></PermissionRoute>} />
             <Route path="media" element={<PermissionRoute permission="media"><MediaManager /></PermissionRoute>} />
             <Route path="expenses" element={<PermissionRoute permission="expenses"><Expenses /></PermissionRoute>} />
@@ -151,7 +172,7 @@ function App() {
             <Route path="mercadolibre/preguntas" element={<Navigate to="/customers?tab=meli_questions" replace />} />
             {/* Administración de la plataforma. La página se autoprotege y el
                 backend exige require_platform_admin de todas formas. */}
-            <Route path="tenants" element={<PermissionRoute permission="settings"><Tenants /></PermissionRoute>} />
+            <Route path="tenants" element={<PermissionRoute permission="settings" module={null}><Tenants /></PermissionRoute>} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Route>
         </Route>

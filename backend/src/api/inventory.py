@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException, Depends
 from typing import Optional
 from pydantic import BaseModel
 from src import database, meli_api
-from src.api.auth import get_current_user
+from src.api.auth import get_current_user, enforce_plan_limit
 import random
 import time
 
@@ -68,6 +68,13 @@ def sync_product_costs():
 
 @router.post("/")
 def create_product(payload: CreateProductRequest, current_user: dict = Depends(get_current_user)):
+    # Solo el alta manual. La sincronización con Mercado Libre queda fuera a
+    # propósito: cortarla dejaría el catálogo a medias sin que el usuario haya
+    # hecho nada.
+    enforce_plan_limit("products",
+                       "SELECT COUNT(*) AS total FROM products_cache",
+                       "productos")
+
     operator = current_user.get('full_name') or current_user.get('username') or 'Admin'
     # Determine ml_id based on publish_to_meli and demo mode
     is_demo = meli_api.is_demo_mode()

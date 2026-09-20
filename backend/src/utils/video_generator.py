@@ -3,7 +3,7 @@ import os
 import urllib.request
 import urllib.parse
 import time
-from src import database
+from src import database, tenancy
 from src.utils.image_utils import get_high_res_image_url
 
 def generate_video_script_with_gemini(product_data: dict, user_prompt: str = ""):
@@ -21,9 +21,11 @@ def generate_video_script_with_gemini(product_data: dict, user_prompt: str = "")
     images_str = product_data.get("images") or product_data.get("thumbnail") or ""
     images_list = [get_high_res_image_url(i.strip()) for i in images_str.split(",") if i.strip()]
 
+    merchant_name = database.get_merchant_name()
+
     prompt_text = f"""
     Eres un director creativo publicitario experto en TikTok Reels e Instagram Reels en Argentina.
-    Crea el guión visual y escrito para un Reel corto de 15 segundos promocionando este producto de "Hidroponía Rosario":
+    Crea el guión visual y escrito para un Reel corto de 15 segundos promocionando este producto de "{merchant_name}":
     - Producto: {title}
     - Precio: ${price:,.2f} ARS
     - Categoría: {category}
@@ -60,7 +62,7 @@ def generate_video_script_with_gemini(product_data: dict, user_prompt: str = "")
                 "scene_num": 4,
                 "duration_sec": 4,
                 "badge_text": "¡COMPRÁ AHORA!",
-                "main_headline": "Disponible en Hidroponia Rosario",
+                "main_headline": "Disponible en {merchant_name}",
                 "sub_text": "Haz clic para consultar stock"
             }}
         ],
@@ -104,8 +106,9 @@ def generate_video_with_google_veo(prompt: str, image_url: str = ""):
         raise Exception("Se requiere una API Key de Gemini / Google AI Studio configurada en Ajustes.")
 
     prompt_clean = prompt or "Un Reel publicitario comercial profesional en movimiento de alta calidad para redes sociales"
-    out_dir = os.path.join("uploads", "reels")
-    os.makedirs(out_dir, exist_ok=True)
+    # Los reels generados son material del negocio: cada inquilino escribe
+    # en su propia carpeta (ver tenancy.tenant_media_dir).
+    out_dir = tenancy.tenant_media_dir("reels")
     out_filename = f"veo_{int(time.time())}.mp4"
     out_path = os.path.join(out_dir, out_filename)
 
@@ -216,7 +219,7 @@ def generate_video_with_google_veo(prompt: str, image_url: str = ""):
                         with open(out_path, "wb") as f:
                             f.write(video_obj.video_bytes)
                         print(f"[Veo] Video guardado desde video_bytes: {out_path}")
-                        return {"success": True, "video_url": f"/uploads/reels/{out_filename}", "engine": "google_veo", "model": veo_model}
+                        return {"success": True, "video_url": f'{tenancy.tenant_media_url("reels")}/{out_filename}', "engine": "google_veo", "model": veo_model}
 
                     # Method 2: client.files.download
                     if hasattr(client, 'files') and hasattr(client.files, 'download'):
@@ -226,7 +229,7 @@ def generate_video_with_google_veo(prompt: str, image_url: str = ""):
                                 with open(out_path, "wb") as f:
                                     f.write(video_bytes)
                                 print(f"[Veo] Video descargado via client.files.download: {out_path}")
-                                return {"success": True, "video_url": f"/uploads/reels/{out_filename}", "engine": "google_veo", "model": veo_model}
+                                return {"success": True, "video_url": f'{tenancy.tenant_media_url("reels")}/{out_filename}', "engine": "google_veo", "model": veo_model}
                         except Exception as dl_err:
                             print(f"[Veo] Download error: {dl_err}")
 
@@ -235,7 +238,7 @@ def generate_video_with_google_veo(prompt: str, image_url: str = ""):
                         import urllib.request
                         urllib.request.urlretrieve(video_obj.uri, out_path)
                         print(f"[Veo] Video descargado desde URI: {out_path}")
-                        return {"success": True, "video_url": f"/uploads/reels/{out_filename}", "engine": "google_veo", "model": veo_model}
+                        return {"success": True, "video_url": f'{tenancy.tenant_media_url("reels")}/{out_filename}', "engine": "google_veo", "model": veo_model}
 
                     all_errors.append(f"{veo_model}: completó pero no se pudieron obtener bytes del video")
                 else:
@@ -393,7 +396,7 @@ def generate_image_with_gemini_native(prompt: str, product_data: dict, post_type
 
     full_prompt = (
         f"Professional high quality promotional social media product photography "
-        f"for {title} from Hidroponía Rosario. Price ${price:,.0f} ARS. "
+        f"for {title} from {database.get_merchant_name()}. Price ${price:,.0f} ARS. "
     )
     if prompt and prompt.strip():
         full_prompt += f"User instructions: {prompt}. "

@@ -123,6 +123,65 @@ def is_valid_tenant_id(value) -> bool:
 
 
 # ---------------------------------------------------------------------------
+# Almacenamiento en disco
+# ---------------------------------------------------------------------------
+
+#: Raíz de los archivos subidos y generados, servida como estático en
+#: /uploads (ver main.py).
+UPLOADS_ROOT = "uploads"
+
+#: Carpeta contenedora del material de los inquilinos que no son el Maestro.
+TENANT_MEDIA_SUBDIR = "t"
+
+
+def tenant_storage_dir(base: str, *parts, tenant_id: Optional[str] = None,
+                       create: bool = True) -> str:
+    """Subdirectorio de `base` que le corresponde al inquilino activo.
+
+    El aislamiento por RLS cubre la base de datos, no el disco. Sin esto, las
+    imágenes generadas por IA, los reels, las facturas, los presupuestos y el
+    explorador de archivos comparten una única carpeta por tipo: cualquier
+    negocio lista, descarga y borra el material de los demás. Peor todavía, los
+    nombres de archivo se repiten —`presupuesto_PRES-2026-0001.pdf` es el
+    primer presupuesto de CADA negocio, porque la numeración es secuencial por
+    inquilino— así que uno terminaba pisando el PDF del otro.
+
+    El Tenant Maestro se queda en `base/` a secas y no se mueve: sus rutas ya
+    están escritas en products_cache, web_config y blog_posts, y sus PDF ya
+    existen. Moverlas rompería el catálogo, la web y el histórico de la
+    operación que hoy está andando. Los demás viven en `base/t/{tenant_id}/`.
+
+        tenant_storage_dir("uploads", "reels")
+            -> uploads/reels             (maestro)
+            -> uploads/t/<uuid>/reels    (resto)
+    """
+    tenant_id = tenant_id or get_current_tenant_id()
+    if tenant_id == MASTER_TENANT_ID:
+        path = os.path.join(base, *parts)
+    else:
+        path = os.path.join(base, TENANT_MEDIA_SUBDIR, tenant_id, *parts)
+    if create:
+        os.makedirs(path, exist_ok=True)
+    return path
+
+
+def tenant_media_dir(*parts, tenant_id: Optional[str] = None,
+                     create: bool = True) -> str:
+    """`tenant_storage_dir` sobre `uploads/`, que es el caso más frecuente."""
+    return tenant_storage_dir(UPLOADS_ROOT, *parts,
+                              tenant_id=tenant_id, create=create)
+
+
+def tenant_media_url(*parts, tenant_id: Optional[str] = None) -> str:
+    """URL pública del directorio que devuelve `tenant_media_dir`."""
+    rel = os.path.relpath(
+        tenant_media_dir(*parts, tenant_id=tenant_id, create=False),
+        UPLOADS_ROOT,
+    ).replace("\\", "/")
+    return "/uploads" if rel == "." else f"/uploads/{rel}"
+
+
+# ---------------------------------------------------------------------------
 # Resolución por subdominio
 # ---------------------------------------------------------------------------
 
@@ -192,6 +251,11 @@ def _system_connection():
 _cache = {}
 _cache_lock = threading.Lock()
 
+#: Se apaga sola si `tenants.custom_domain` no existe (migración 016 sin
+#: aplicar). Vuelve a habilitarse al invalidar la caché, que es lo que corre
+#: el alta o edición de un negocio: para entonces la migración ya pasó.
+_custom_domains_available = True
+
 
 def _cache_get(key):
     with _cache_lock:
@@ -209,12 +273,22 @@ def _cache_put(key, value):
 
 
 def invalidate_tenant_cache(slug: Optional[str] = None):
-    """Limpia la caché de resolución (llamar al crear/suspender un tenant)."""
+    """Limpia la caché de resolución (llamar al crear/suspender un tenant).
+
+    Al invalidar un slug se tiran también todas las entradas de dominio: el
+    dominio propio pudo haber cambiado en la misma operación y no hay forma de
+    saber cuál era el anterior desde acá. Son pocas entradas y se repueblan en
+    la siguiente petición.
+    """
+    global _custom_domains_available
+    _custom_domains_available = True
     with _cache_lock:
         if slug is None:
             _cache.clear()
         else:
             _cache.pop(("slug", slug), None)
+            for key in [k for k in _cache if k[0] == "domain"]:
+                _cache.pop(key, None)
 
 
 def invalidate_module_cache(tenant_id: Optional[str] = None):
@@ -253,6 +327,82 @@ def get_tenant_by_slug(slug: str) -> Optional[dict]:
 
     tenant = dict(row) if row else None
     _cache_put(("slug", slug), tenant or False)
+    return tenant
+
+
+def normalize_host(host: Optional[str]) -> Optional[str]:
+    """Deja el Host en una forma comparable: sin puerto, sin www, en minúsculas."""
+    if not host:
+        return None
+    host = host.split(",")[0].strip().lower()
+    if host.startswith("["):
+        host = host.split("]")[0].lstrip("[")
+    elif ":" in host:
+        host = host.rsplit(":", 1)[0]
+    if host.startswith("www."):
+        host = host[4:]
+    return host or None
+
+
+def get_tenant_by_domain(host: Optional[str]) -> Optional[dict]:
+    """Busca un tenant por su dominio propio.
+
+    Es el segundo intento del resolver, después del subdominio. Sin esto, un
+    negocio con dominio propio —que es exactamente lo que se le vende con el
+    módulo "Tienda Web"— no identificaba a nadie y caía al Tenant Maestro: su
+    tienda servía el catálogo de Hidroponía.
+
+    Comparte la caché de 60s y el mismo modo tolerante que `get_tenant_by_slug`:
+    si la columna todavía no existe (migración 016 sin aplicar) devuelve None y
+    el llamador sigue con el comportamiento anterior.
+    """
+    host = normalize_host(host)
+    if not host:
+        return None
+
+    # Descartar sin tocar la base lo que nunca puede ser un dominio propio.
+    # Sin esto, cada petición al panel (localhost o el dominio apex) abría una
+    # conexión para preguntar por un dominio que no existe, y como el error de
+    # conexión no se cachea, la penalización se pagaba en TODAS.
+    if host == "localhost" or host.endswith(".localhost"):
+        return None
+    if re.match(r"^\d{1,3}(\.\d{1,3}){3}$", host):
+        return None
+    if any(host == base or host.endswith("." + base) for base in BASE_DOMAINS):
+        return None
+
+    # Si la columna todavía no existe (migración 016 sin aplicar) se deja de
+    # preguntar del todo. Sin esta bandera, desplegar el código antes que la
+    # migración significaba una consulta fallida por CADA petición: el camino
+    # de error no cachea nada, a propósito, porque un fallo de conexión sí debe
+    # reintentarse.
+    global _custom_domains_available
+    if not _custom_domains_available:
+        return None
+
+    cached = _cache_get(("domain", host))
+    if cached is not None:
+        return cached or None
+
+    try:
+        with _system_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT id::text, slug, name, status, plan_id "
+                    "FROM tenants WHERE custom_domain = %s",
+                    (host,),
+                )
+                row = cur.fetchone()
+    except psycopg2.errors.UndefinedColumn:
+        _custom_domains_available = False
+        print("[Tenancy] tenants.custom_domain no existe todavía: se omite la "
+              "resolución por dominio propio hasta aplicar la migración 016.")
+        return None
+    except psycopg2.Error:
+        return None
+
+    tenant = dict(row) if row else None
+    _cache_put(("domain", host), tenant or False)
     return tenant
 
 
@@ -311,6 +461,65 @@ def get_active_modules(tenant_id: Optional[str] = None) -> list:
     modules = list(row["active_modules"]) if row and row["active_modules"] else []
     _cache_put(("modules", tenant_id), modules)
     return modules
+
+
+def invalidate_limits_cache(tenant_id: Optional[str] = None):
+    """Limpia la caché de límites (llamar al cambiar de plan)."""
+    with _cache_lock:
+        if tenant_id is None:
+            for key in [k for k in _cache if k[0] == "limits"]:
+                _cache.pop(key, None)
+        else:
+            _cache.pop(("limits", tenant_id), None)
+
+
+def get_plan_limits(tenant_id: Optional[str] = None) -> dict:
+    """Topes del plan contratado (`tenant_settings.plan_limits`).
+
+    Un diccionario `{"products": 150, "users": 3}`. La ausencia de una clave
+    significa "sin tope", igual que un valor nulo o <= 0: los planes se venden
+    con límites pero hasta ahora no había nada que los leyera, así que el
+    criterio por defecto tiene que ser no romper nada.
+    """
+    tenant_id = tenant_id or get_current_tenant_id()
+    cached = _cache_get(("limits", tenant_id))
+    if cached is not None:
+        return cached
+
+    limits = {}
+    try:
+        with _system_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SET app.current_tenant = %s", (tenant_id,))
+                cur.execute(
+                    "SELECT plan_limits FROM tenant_settings WHERE tenant_id = %s",
+                    (tenant_id,),
+                )
+                row = cur.fetchone()
+        if row and row["plan_limits"]:
+            limits = dict(row["plan_limits"])
+    except psycopg2.Error:
+        return {}
+
+    _cache_put(("limits", tenant_id), limits)
+    return limits
+
+
+def get_plan_limit(resource: str, tenant_id: Optional[str] = None) -> Optional[int]:
+    """Tope de un recurso, o None si no tiene.
+
+    El Tenant Maestro nunca tiene tope: es la operación propia, no un cliente
+    con un plan contratado.
+    """
+    tenant_id = tenant_id or get_current_tenant_id()
+    if tenant_id == MASTER_TENANT_ID:
+        return None
+    value = get_plan_limits(tenant_id).get(resource)
+    try:
+        value = int(value)
+    except (TypeError, ValueError):
+        return None
+    return value if value > 0 else None
 
 
 def is_module_active(module: str, tenant_id: Optional[str] = None) -> bool:

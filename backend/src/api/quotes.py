@@ -93,7 +93,10 @@ def get_quote_commercial_config():
     has_configured = bool(database.get_setting('merchant_commercial_address') or database.get_setting('web_config'))
     
     show_legal_name = database.get_setting('quote_show_legal_name', 'false').lower() in ('true', '1', 'yes')
-    legal_name = database.get_setting('quote_legal_name') or database.get_setting('merchant_name', 'GENTILI FRANCO AGUSTIN')
+    # Sin razón social propia se usa el nombre del negocio activo. Antes caía
+    # a la razón social del Tenant Maestro, que salía impresa en los
+    # presupuestos de todos los demás.
+    legal_name = database.get_setting('quote_legal_name') or database.get_merchant_name()
     
     show_cuit = database.get_setting('quote_show_cuit', 'false').lower() in ('true', '1', 'yes')
     cuit = database.get_setting('quote_cuit') or database.get_setting('afip_cuit', '20-31383248-2')
@@ -101,7 +104,7 @@ def get_quote_commercial_config():
     return {
         "merchant_commercial_name": commercial_name,
         "merchant_commercial_address": commercial_address,
-        "merchant_phone": database.get_setting('merchant_phone', '+54 9 3412 59-0161'),
+        "merchant_phone": database.get_setting('merchant_phone', ''),
         "merchant_email": database.get_setting('merchant_email', ''),
         "show_legal_name": show_legal_name,
         "legal_name": legal_name,

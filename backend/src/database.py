@@ -1,5 +1,6 @@
 import os
 import json
+import re
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 import hashlib
@@ -51,6 +52,67 @@ def _can_run_ddl():
                 return bool(cursor.fetchone()['ok'])
     except psycopg2.Error:
         return False
+
+
+#: Tablas a las que ya se les aseguró el aislamiento en este proceso. Evita
+#: repetir el DDL (y su mensaje de error) en cada llamada.
+_isolation_ensured = set()
+
+_TABLE_NAME_RE = re.compile(r"^[a-z_][a-z0-9_]*$")
+
+
+def ensure_tenant_isolation(cursor, table):
+    """Deja `table` con tenant_id, DEFAULT, índice y política RLS.
+
+    Existe porque las tablas que se crean en caliente (por ejemplo las del
+    optimizador, que nacen la primera vez que alguien audita una publicación)
+    se saltean las migraciones: si la migración corrió antes de que la tabla
+    existiera, la tabla nace sin aislamiento y nadie se entera hasta que dos
+    negocios ven los datos del otro.
+
+    Es un no-op si `app_current_tenant()` todavía no existe (base sin migrar) o
+    si el rol no puede hacer DDL, y no propaga errores: una tabla accesoria no
+    puede impedir que arranque el sistema. La migración 016 hace lo mismo de
+    forma exhaustiva y auditable; esto es el cinturón para lo que se cree
+    después de ella.
+    """
+    if table in _isolation_ensured:
+        return
+    if not _TABLE_NAME_RE.match(table):
+        raise ValueError(f"nombre de tabla inválido: {table!r}")
+
+    try:
+        cursor.execute("SELECT to_regprocedure('app_current_tenant()') IS NOT NULL AS ok")
+        row = cursor.fetchone()
+        if not row or not row["ok"]:
+            return  # Base sin migrar: no hay a qué anclar la política.
+
+        cursor.execute(f'ALTER TABLE {table} ADD COLUMN IF NOT EXISTS tenant_id uuid')
+        cursor.execute(
+            f'ALTER TABLE {table} ALTER COLUMN tenant_id SET DEFAULT app_current_tenant()')
+        # El backfill va al Tenant Maestro, igual que la 001 y la 016. Usar
+        # app_current_tenant() acá le regalaría las filas históricas al
+        # inquilino que justo haya disparado la creación de la tabla.
+        cursor.execute(
+            f'UPDATE {table} SET tenant_id = %s WHERE tenant_id IS NULL',
+            (tenancy.MASTER_TENANT_ID,))
+        cursor.execute(
+            f'CREATE INDEX IF NOT EXISTS idx_{table}_tenant_id ON {table} (tenant_id)')
+        cursor.execute(f'ALTER TABLE {table} ENABLE ROW LEVEL SECURITY')
+        cursor.execute(f'ALTER TABLE {table} FORCE  ROW LEVEL SECURITY')
+        cursor.execute(f'DROP POLICY IF EXISTS tenant_isolation ON {table}')
+        cursor.execute(
+            f'CREATE POLICY tenant_isolation ON {table} '
+            f'    USING      (tenant_id = app_current_tenant()) '
+            f'    WITH CHECK (tenant_id = app_current_tenant())')
+        _isolation_ensured.add(table)
+    except psycopg2.Error as exc:
+        # Lo normal acá es que el rol de aplicación no sea dueño de la tabla,
+        # que es justamente el estado deseado en producción: la migración ya
+        # dejó la política puesta y no hay nada que hacer.
+        _isolation_ensured.add(table)
+        print(f"[DB] Aislamiento de {table} no modificado ({exc.__class__.__name__}). "
+              f"Se asume gestionado por las migraciones.")
 
 
 def init_db():
@@ -401,7 +463,7 @@ def init_db():
                     cover_image TEXT,
                     published_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     is_published INT DEFAULT 1,
-                    author VARCHAR(100) DEFAULT 'Equipo Hidroponia Rosario',
+                    author VARCHAR(100),
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
@@ -612,6 +674,36 @@ def get_setting(key, default=None):
                 return row['value'] if row else default
     except psycopg2.Error:
         return default
+
+def get_merchant_name(default: str = "ControlCenterES") -> str:
+    """Nombre comercial del inquilino activo.
+
+    Existe para tener un único lugar del que salga el nombre del negocio. El
+    literal "Hidroponia Rosario" estaba escrito a mano como valor por defecto
+    en una docena de sitios —remitente de correo, instrucciones del bot de
+    WhatsApp, prompts de las publicaciones que genera la IA, autor de los
+    artículos del blog, título de los cobros de Mercado Pago—, así que
+    cualquier negocio nuevo mandaba correos, publicaba y cobraba a nombre de
+    otro hasta que alguien se acordara de cambiar cada ajuste.
+
+    Orden: lo que el negocio configuró, el nombre con el que está dado de alta
+    en el registro de inquilinos, y recién después el genérico.
+    """
+    configured = (get_setting("merchant_name") or "").strip()
+    if configured:
+        return configured
+
+    tenant = tenancy.get_current_tenant()
+    if not tenant and tenancy.get_current_tenant_id() == tenancy.MASTER_TENANT_ID:
+        # Los bloques `tenant_context(MASTER_TENANT_ID)` del scheduler fijan el
+        # id pero no la fila, así que sin esto el remitente de los correos
+        # automáticos pasaba de "Hidroponía Rosario" al genérico.
+        tenant = tenancy.get_master_tenant()
+    if tenant and (tenant.get("name") or "").strip():
+        return tenant["name"].strip()
+
+    return default
+
 
 def set_setting(key, value):
     with get_connection() as conn:
@@ -1308,9 +1400,15 @@ def link_order_mp_payment(order_id: int, mp_payment_id: int, mp_fee_amount: floa
     with get_connection() as conn:
         with conn.cursor() as cursor:
             try:
+                # El filtro por tenant es explícito porque esta tabla se
+                # escribe y se borra nombrando tenant_id a mano (ver el INSERT
+                # más abajo); sin él, un negocio podía borrar el registro de
+                # desvinculación de otro y provocarle una re-vinculación
+                # automática que ya había rechazado.
                 cursor.execute('''
                     DELETE FROM unlinked_mp_matches
                     WHERE order_id = %s AND mp_payment_id = %s
+                      AND tenant_id = NULLIF(current_setting('app.current_tenant', true), '')::uuid
                 ''', (order_id, mp_payment_id))
             except Exception:
                 pass
@@ -2839,7 +2937,7 @@ def create_blog_post(title: str, slug: str, category: str, summary: str, content
                 INSERT INTO blog_posts (title, slug, category, summary, content, cover_image, published_at, is_published, author)
                 VALUES (%s, %s, %s, %s, %s, %s, COALESCE(%s::timestamp, CURRENT_TIMESTAMP), %s, %s)
                 RETURNING *
-            """, (title, slug, category or 'General', summary or '', content, cover_image or '', published_at or None, is_published, author or 'Equipo Hidroponia Rosario'))
+            """, (title, slug, category or 'General', summary or '', content, cover_image or '', published_at or None, is_published, author or f'Equipo {get_merchant_name()}'))
             return cursor.fetchone()
 
 def update_blog_post(post_id: int, title: str, slug: str, category: str, summary: str, content: str, cover_image: str, published_at: str, is_published: int, author: str):
@@ -2851,7 +2949,7 @@ def update_blog_post(post_id: int, title: str, slug: str, category: str, summary
                     published_at = COALESCE(%s::timestamp, published_at), is_published = %s, author = %s, updated_at = CURRENT_TIMESTAMP
                 WHERE id = %s
                 RETURNING *
-            """, (title, slug, category or 'General', summary or '', content, cover_image or '', published_at or None, is_published, author or 'Equipo Hidroponia Rosario', post_id))
+            """, (title, slug, category or 'General', summary or '', content, cover_image or '', published_at or None, is_published, author or f'Equipo {get_merchant_name()}', post_id))
             return cursor.fetchone()
 
 def delete_blog_post(post_id: int):
@@ -3751,6 +3849,11 @@ def _ensure_optimizer_tables():
                     cached_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             ''')
+            # `meli_optimizations` guarda auditorías por publicación, o sea
+            # datos del negocio: va aislada. `meli_category_attrs_cache` no
+            # lleva tenant a propósito — son los atributos públicos de las
+            # categorías de Mercado Libre, idénticos para todos.
+            ensure_tenant_isolation(cursor, 'meli_optimizations')
 
 
 def save_meli_optimization(ml_id: str, opt_type: str, data: dict):

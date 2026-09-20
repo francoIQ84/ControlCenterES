@@ -3,7 +3,7 @@ import time
 import urllib.request
 import urllib.parse
 import urllib.error
-from src import database
+from src import database, tenancy
 from src.utils.image_utils import get_high_res_image_url
 
 META_GRAPH_API_VERSION = "v19.0"
@@ -293,8 +293,9 @@ def ensure_jpeg_image(path_or_url: str) -> str:
             return path_or_url
 
         try:
-            cache_dir = os.path.abspath(os.path.join("uploads", "social_cache"))
-            os.makedirs(cache_dir, exist_ok=True)
+            # Caché por inquilino: aunque la clave sea el hash de la URL,
+            # lo que queda en disco es una copia de la imagen del negocio.
+            cache_dir = os.path.abspath(tenancy.tenant_media_dir("social_cache"))
             url_hash = hashlib.md5(path_or_url.encode('utf-8')).hexdigest()
             cached_path = os.path.join(cache_dir, f"{url_hash}.jpg")
 

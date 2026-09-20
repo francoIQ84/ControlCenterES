@@ -16,7 +16,8 @@ class BlogPostReq(BaseModel):
     cover_image: Optional[str] = ""
     published_at: Optional[str] = None
     is_published: Optional[int] = 1
-    author: Optional[str] = "Equipo Hidroponia Rosario"
+    # Sin autor explícito se resuelve al del negocio activo (ver create/update).
+    author: Optional[str] = None
 
 def generate_slug(text: str) -> str:
     slug = text.lower()
@@ -54,7 +55,7 @@ def create_blog_post(req: BlogPostReq, _=Depends(verify_session), _2=Depends(req
         cover_image=req.cover_image.strip() if req.cover_image else "",
         published_at=req.published_at,
         is_published=req.is_published if req.is_published is not None else 1,
-        author=req.author.strip() if req.author else "Equipo Hidroponia Rosario"
+        author=req.author.strip() if req.author else f"Equipo {database.get_merchant_name()}"
     )
     return created
 
@@ -76,7 +77,7 @@ def update_blog_post(post_id: int, req: BlogPostReq, _=Depends(verify_session), 
         cover_image=req.cover_image.strip() if req.cover_image else "",
         published_at=req.published_at,
         is_published=req.is_published if req.is_published is not None else 1,
-        author=req.author.strip() if req.author else "Equipo Hidroponia Rosario"
+        author=req.author.strip() if req.author else f"Equipo {database.get_merchant_name()}"
     )
     return updated
 

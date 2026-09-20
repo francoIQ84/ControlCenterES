@@ -88,6 +88,14 @@ const PLAN_PRESETS = {
   }
 }
 
+// Nombres legibles de los topes que el backend aplica de verdad
+// (ver DEFAULT_PLAN_LIMITS en backend/src/api/tenants.py). Los renglones de
+// "limits" de cada plan son material de venta; esto es lo que se hace cumplir.
+const LIMIT_LABELS = {
+  products: 'productos',
+  users: 'usuarios',
+}
+
 const STATUS_STYLE = {
   active: { bg: 'rgba(16, 185, 129, 0.12)', color: 'var(--accent-emerald)', label: 'Activo' },
   trial: { bg: 'rgba(37, 99, 235, 0.12)', color: 'var(--accent-blue)', label: 'Prueba' },
@@ -190,7 +198,7 @@ export default function Tenants() {
 
   // Creation Form
   const [form, setForm] = useState({
-    slug: '', name: '', cuit: '', plan_id: 'starter',
+    slug: '', name: '', cuit: '', custom_domain: '', plan_id: 'starter',
     plan_price: 35000, billing_cycle: 'monthly',
     admin_email: '', admin_phone: '', next_billing_date: '',
     admin_username: 'admin', admin_password: '', admin_full_name: 'Administrador',
@@ -201,7 +209,7 @@ export default function Tenants() {
 
   // Edit / Upgrade / Downgrade Form
   const [editForm, setEditForm] = useState({
-    slug: '', name: '', cuit: '', plan_id: 'starter',
+    slug: '', name: '', cuit: '', custom_domain: '', plan_id: 'starter',
     plan_price: 35000, billing_cycle: 'monthly',
     admin_email: '', admin_phone: '', next_billing_date: '',
     status: 'active', active_modules: [],
@@ -301,6 +309,7 @@ export default function Tenants() {
       slug: t.slug,
       name: t.name,
       cuit: t.cuit || '',
+      custom_domain: t.custom_domain || '',
       plan_id: t.plan_id || 'starter',
       plan_price: t.plan_price || (PLAN_PRESETS[t.plan_id]?.defaultPrice || 35000),
       billing_cycle: t.billing_cycle || 'monthly',
@@ -367,7 +376,7 @@ export default function Tenants() {
         setCreated({ ...body, password: form.admin_password })
         setShowForm(false)
         setForm({
-          slug: '', name: '', cuit: '', admin_password: '',
+          slug: '', name: '', cuit: '', custom_domain: '', admin_password: '',
           admin_email: '', admin_phone: '', next_billing_date: '',
           plan_price: 35000, billing_cycle: 'monthly',
           plan_id: 'starter', active_modules: PLAN_PRESETS.starter.modules
@@ -717,6 +726,16 @@ export default function Tenants() {
                      style={{ width: '100%' }} />
             </label>
             <label>
+              <span style={{ fontSize: '0.85rem', fontWeight: 600 }}>Dominio propio (opcional)</span>
+              <input value={form.custom_domain} placeholder="tiendadelcliente.com"
+                     onChange={e => setForm({ ...form, custom_domain: e.target.value })}
+                     style={{ width: '100%' }} />
+              <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>
+                Si el negocio usa su propio dominio, cargalo acá. Sin esto, ese dominio
+                muestra los datos del Negocio Maestro. El DNS debe apuntar al servidor.
+              </span>
+            </label>
+            <label>
               <span style={{ fontSize: '0.85rem', fontWeight: 600 }}>Email para avisos de cobro</span>
               <input type="email" value={form.admin_email} placeholder="admin@cliente.com"
                      onChange={e => setForm({ ...form, admin_email: e.target.value })}
@@ -898,6 +917,18 @@ export default function Tenants() {
                     onChange={e => setEditForm({ ...editForm, cuit: e.target.value })}
                     style={{ width: '100%', marginTop: 4 }}
                   />
+                </label>
+                <label>
+                  <span style={{ fontSize: '0.8rem', fontWeight: 600 }}>Dominio propio</span>
+                  <input
+                    value={editForm.custom_domain}
+                    placeholder="tiendadelcliente.com"
+                    onChange={e => setEditForm({ ...editForm, custom_domain: e.target.value })}
+                    style={{ width: '100%', marginTop: 4 }}
+                  />
+                  <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>
+                    Vaciá el campo para quitarlo.
+                  </span>
                 </label>
                 <label>
                   <span style={{ fontSize: '0.8rem', fontWeight: 600 }}>Estado de la Cuenta</span>
@@ -1390,6 +1421,13 @@ export default function Tenants() {
                           )}
                         </div>
                         {t.cuit && <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>CUIT: {t.cuit}</div>}
+                        {t.custom_domain && <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>Dominio: {t.custom_domain}</div>}
+                        {t.plan_limits && Object.keys(t.plan_limits).length > 0 && (
+                          <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>
+                            Tope aplicado: {Object.entries(t.plan_limits)
+                              .map(([k, v]) => `${v} ${LIMIT_LABELS[k] || k}`).join(' · ')}
+                          </div>
+                        )}
                       </td>
                       <td data-label="Subdominio">
                         <code>{t.slug}</code>

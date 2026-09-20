@@ -14,7 +14,9 @@ def send_smtp_email(to_email: str, subject: str, html_content: str, pdf_url: str
     smtp_port = int(database.get_setting("smtp_port", "587"))
     smtp_user = database.get_setting("smtp_user", "").strip()
     smtp_password = database.get_setting("smtp_password", "").strip().replace(" ", "")
-    sender_name = database.get_setting("smtp_sender_name", "Hidroponia Rosario").strip()
+    # El remitente por defecto es el nombre del negocio activo, no el del
+    # Tenant Maestro: si no, cada cliente mandaba correos firmados por otro.
+    sender_name = (database.get_setting("smtp_sender_name") or database.get_merchant_name()).strip()
 
     if not smtp_user or not smtp_password:
         return False, "Faltan configurar las credenciales de correo SMTP (Email y Contraseña)."

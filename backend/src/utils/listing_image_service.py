@@ -23,11 +23,13 @@ import urllib.request
 
 import requests
 
-from src import database, meli_api
+from src import database, meli_api, tenancy
 
-# Directorio servido por la app en /uploads (ver main.py).
-DIRECTORIO_SALIDA = os.path.join('uploads', 'ai_listing')
-URL_PUBLICA = '/uploads/ai_listing'
+# Directorio servido por la app en /uploads (ver main.py), separado por
+# inquilino: las imágenes generadas son material del negocio y el nombre de
+# archivo lleva el ml_id, así que en una carpeta común quedaban a la vista de
+# los demás. Se resuelven por llamada porque el tenant cambia en cada request.
+SUBCARPETA_SALIDA = 'ai_listing'
 
 RUTA_SUBIDA_ML = "/pictures/items/upload"
 
@@ -293,7 +295,8 @@ def generate_variants(ml_id: str, item: dict, estilos=None) -> dict:
     if not elegidos:
         return {'ok': False, 'error': 'Ningún estilo válido seleccionado'}
 
-    os.makedirs(DIRECTORIO_SALIDA, exist_ok=True)
+    directorio_salida = tenancy.tenant_media_dir(SUBCARPETA_SALIDA)
+    url_publica = tenancy.tenant_media_url(SUBCARPETA_SALIDA)
     generadas, errores, modelo_usado = [], [], None
 
     for estilo in elegidos:
@@ -304,7 +307,7 @@ def generate_variants(ml_id: str, item: dict, estilos=None) -> dict:
             continue
 
         nombre = f"{ml_id}_{estilo}_{int(time.time())}.png"
-        ruta = os.path.join(DIRECTORIO_SALIDA, nombre)
+        ruta = os.path.join(directorio_salida, nombre)
         try:
             with open(ruta, 'wb') as f:
                 f.write(datos)
@@ -315,7 +318,7 @@ def generate_variants(ml_id: str, item: dict, estilos=None) -> dict:
         generadas.append({
             'estilo': estilo,
             'ruta': ruta,
-            'url': f"{URL_PUBLICA}/{nombre}",
+            'url': f"{url_publica}/{nombre}",
             'bytes': len(datos),
         })
 

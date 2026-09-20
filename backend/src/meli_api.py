@@ -263,6 +263,21 @@ def authenticate_with_code(code):
                         f"Por favor cerrá sesión en mercadolibre.com.ar e iniciá sesión con la cuenta oficial."
                     )
 
+            # Dejar asentada la cuenta para poder resolver los webhooks
+            # entrantes: Mercado Libre avisa al dominio apex y lo único que
+            # trae para identificar al destinatario es este user_id. Sin la
+            # fila en tenant_integrations, las preguntas y las ventas de este
+            # inquilino se procesarían como si fueran del Tenant Maestro.
+            try:
+                from src import integrations
+                integrations.register_account("mercadolibre", new_user_id, is_active=True)
+            except Exception as reg_err:
+                # No invalida una autenticación que ya salió bien: el panel
+                # sigue andando, solo que los webhooks caen al Maestro hasta
+                # que se reintente.
+                print(f"[Meli API] No se pudo registrar la cuenta {new_user_id} "
+                      f"en tenant_integrations: {reg_err}")
+
             return True, "Autenticación exitosa"
         else:
             return False, f"Error Meli API: {response.text}"

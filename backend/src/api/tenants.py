@@ -15,7 +15,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Request, BackgroundTasks
 from pydantic import BaseModel, Field, field_validator
 
-from src import database, tenancy, config
+from src import database, tenancy, config, whatsapp_bridge
 from src.api.auth import get_current_user, require_platform_admin
 
 router = APIRouter()
@@ -27,6 +27,29 @@ ALL_MODULES = DEFAULT_MODULES + ["billing", "inpi", "marketing", "whatsapp",
 
 SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9-]{1,62}$")
 
+#: Topes por plan. Diccionario vacío o clave ausente = sin tope. Es la fuente
+#: de verdad: el panel los muestra, pero quien los aplica es el backend (ver
+#: `auth.enforce_plan_limit`).
+#:
+#: Solo figura `products`, que es el único tope que el material de venta ya
+#: publicita Y que se puede cortar sin romper nada: el alta manual de un
+#: producto se puede rechazar, el usuario ve el aviso y decide.
+#:
+#: Deliberadamente NO están:
+#:   - ventas/facturas por mes: rechazar una venta real es una decisión
+#:     comercial, no técnica, y el costo de equivocarse lo paga el cliente.
+#:   - espacio en disco: hace falta medirlo por inquilino primero.
+#:   - usuarios: no está publicitado en ningún plan; inventar un número acá
+#:     sería fijar política de producto desde el código.
+#: El mecanismo los soporta (`{"users": 3}` funciona); falta la decisión.
+DEFAULT_PLAN_LIMITS = {
+    "starter":    {"products": 150},
+    "pro":        {"products": 1000},
+    "enterprise": {},
+    "custom":     {},
+    "master":     {},
+}
+
 DEFAULT_PLAN_PRICES = {
     "starter": 35000.0,
     "pro": 65000.0,
@@ -36,10 +59,51 @@ DEFAULT_PLAN_PRICES = {
 }
 
 
+DOMAIN_RE = re.compile(r"^(?!-)[a-z0-9-]{1,63}(?<!-)(\.(?!-)[a-z0-9-]{1,63}(?<!-))+$")
+
+
+def _normalize_custom_domain(value):
+    """Normaliza un dominio propio o lo rechaza.
+
+    Se guarda en minúsculas, sin protocolo, sin `www.`, sin puerto y sin ruta,
+    porque así es como lo compara el TenantResolver contra el header Host. Si
+    se guardara "https://www.Cliente.com/" la comparación nunca coincidiría y
+    el negocio seguiría cayendo al Tenant Maestro sin ningún error visible.
+
+    Cadena vacía significa "quitar el dominio", y se distingue de None, que
+    significa "no tocar".
+    """
+    if value is None:
+        return None
+    value = value.strip().lower()
+    if not value:
+        return ""
+    for prefix in ("https://", "http://"):
+        if value.startswith(prefix):
+            value = value[len(prefix):]
+    value = value.split("/")[0].split("?")[0]
+    if ":" in value:
+        value = value.rsplit(":", 1)[0]
+    if value.startswith("www."):
+        value = value[4:]
+    if not DOMAIN_RE.match(value) or len(value) > 255:
+        raise ValueError(f"'{value}' no es un dominio válido (ej. tiendadelcliente.com)")
+    if any(value == base or value.endswith("." + base) for base in tenancy.BASE_DOMAINS):
+        raise ValueError(
+            "Ese dominio pertenece a la plataforma: el subdominio "
+            "{slug}.%s ya apunta a este negocio." % tenancy.BASE_DOMAINS[0])
+    return value
+
+
 class TenantCreate(BaseModel):
     slug: str = Field(..., description="Subdominio: {slug}.controlcenter.app")
     name: str
     cuit: Optional[str] = None
+    custom_domain: Optional[str] = Field(
+        None, description="Dominio propio del negocio, ej. tiendadelcliente.com")
+    plan_limits: Optional[dict] = Field(
+        None, description='Topes del plan, ej. {"products": 150, "users": 2}. '
+                          'Si se omite se usan los del plan elegido.')
     plan_id: str = "starter"
     plan_price: Optional[float] = None
     billing_cycle: Optional[str] = "monthly"
@@ -73,6 +137,11 @@ class TenantCreate(BaseModel):
             raise ValueError(f"Módulos desconocidos: {', '.join(invalid)}")
         return v
 
+    @field_validator("custom_domain")
+    @classmethod
+    def validate_custom_domain(cls, v):
+        return _normalize_custom_domain(v) or None
+
 
 class TenantStatusUpdate(BaseModel):
     status: str
@@ -100,6 +169,8 @@ class TenantModulesUpdate(BaseModel):
 class TenantUpdate(BaseModel):
     name: Optional[str] = None
     cuit: Optional[str] = None
+    custom_domain: Optional[str] = None
+    plan_limits: Optional[dict] = None
     plan_id: Optional[str] = None
     plan_price: Optional[float] = None
     billing_cycle: Optional[str] = None
@@ -125,6 +196,13 @@ class TenantUpdate(BaseModel):
                 raise ValueError(f"Módulos desconocidos: {', '.join(invalid)}")
         return v
 
+    @field_validator("custom_domain")
+    @classmethod
+    def validate_custom_domain(cls, v):
+        # A diferencia del alta, acá la cadena vacía se conserva: es cómo el
+        # panel expresa "quitarle el dominio propio a este negocio".
+        return _normalize_custom_domain(v)
+
 
 # ---------------------------------------------------------------------------
 # Endpoints de Consulta y Gestión
@@ -139,7 +217,8 @@ def get_my_tenant(current_user: dict = Depends(get_current_user)):
     with database.get_connection() as conn:
         with conn.cursor() as cursor:
             cursor.execute(
-                "SELECT logo_url, primary_color, currency, timezone, active_modules "
+                "SELECT logo_url, primary_color, currency, timezone, active_modules, "
+                "       plan_limits "
                 "FROM tenant_settings WHERE tenant_id = %s", (tenant_id,))
             settings_row = cursor.fetchone()
     settings_dict = dict(settings_row) if settings_row else {}
@@ -184,7 +263,7 @@ def list_tenants(_: dict = Depends(require_platform_admin)):
     with database.get_connection() as conn:
         with conn.cursor() as cursor:
             cursor.execute("""
-                SELECT id::text, slug, name, cuit, status, plan_id,
+                SELECT id::text, slug, name, cuit, custom_domain, status, plan_id,
                        admin_email, admin_phone, billing_cycle, plan_price,
                        next_billing_date, last_reminder_sent_at, created_at
                 FROM tenants
@@ -194,6 +273,7 @@ def list_tenants(_: dict = Depends(require_platform_admin)):
 
     for row in rows:
         row["active_modules"] = tenancy.get_active_modules(row["id"])
+        row["plan_limits"] = tenancy.get_plan_limits(row["id"])
         # Formatear fecha para JSON
         if row.get("next_billing_date"):
             row["next_billing_date"] = str(row["next_billing_date"])
@@ -206,6 +286,8 @@ def list_tenants(_: dict = Depends(require_platform_admin)):
 def create_tenant(payload: TenantCreate, _: dict = Depends(require_platform_admin)):
     """Da de alta un negocio con su usuario administrador inicial y configuración de suscripción."""
     modules = payload.active_modules or DEFAULT_MODULES
+    limits = (payload.plan_limits if payload.plan_limits is not None
+              else DEFAULT_PLAN_LIMITS.get(payload.plan_id, {}))
     price = payload.plan_price if payload.plan_price is not None else DEFAULT_PLAN_PRICES.get(payload.plan_id, 35000.0)
     
     # Fecha de vencimiento: por defecto 30 días de prueba si no se especifica
@@ -221,16 +303,31 @@ def create_tenant(payload: TenantCreate, _: dict = Depends(require_platform_admi
                     status_code=409,
                     detail=f"El subdominio '{payload.slug}' ya está en uso")
 
+            # Un dominio no puede apuntar a dos negocios: la constraint UNIQUE
+            # lo impide igual, pero un 409 explicando cuál es el conflicto es
+            # más útil que un 500 con un error de Postgres.
+            if payload.custom_domain:
+                cursor.execute("SELECT slug FROM tenants WHERE custom_domain = %s",
+                               (payload.custom_domain,))
+                owner = cursor.fetchone()
+                if owner:
+                    raise HTTPException(
+                        status_code=409,
+                        detail=f"El dominio '{payload.custom_domain}' ya está "
+                               f"asignado al negocio '{owner['slug']}'")
+
             cursor.execute("""
                 INSERT INTO tenants (
-                    slug, name, cuit, status, plan_id,
+                    slug, name, cuit, custom_domain, status, plan_id,
                     plan_price, billing_cycle, admin_email, admin_phone, next_billing_date
                 )
-                VALUES (%s, %s, %s, 'trial', %s, %s, %s, %s, %s, %s)
-                RETURNING id::text, slug, name, status, plan_id, plan_price, billing_cycle,
+                VALUES (%s, %s, %s, %s, 'trial', %s, %s, %s, %s, %s, %s)
+                RETURNING id::text, slug, name, cuit, custom_domain, status, plan_id,
+                          plan_price, billing_cycle,
                           admin_email, admin_phone, next_billing_date, created_at
             """, (
-                payload.slug, payload.name, payload.cuit, payload.plan_id,
+                payload.slug, payload.name, payload.cuit, payload.custom_domain,
+                payload.plan_id,
                 price, payload.billing_cycle or "monthly",
                 payload.admin_email, payload.admin_phone, next_date
             ))
@@ -241,9 +338,9 @@ def create_tenant(payload: TenantCreate, _: dict = Depends(require_platform_admi
             with database.get_connection() as conn:
                 with conn.cursor() as cursor:
                     cursor.execute("""
-                        INSERT INTO tenant_settings (tenant_id, active_modules)
-                        VALUES (%s, %s::jsonb)
-                    """, (tenant["id"], json.dumps(modules)))
+                        INSERT INTO tenant_settings (tenant_id, active_modules, plan_limits)
+                        VALUES (%s, %s::jsonb, %s::jsonb)
+                    """, (tenant["id"], json.dumps(modules), json.dumps(limits)))
 
             database.create_user(
                 payload.admin_username,
@@ -251,6 +348,17 @@ def create_tenant(payload: TenantCreate, _: dict = Depends(require_platform_admi
                 payload.admin_full_name,
                 ",".join(modules),
             )
+
+            # Semilla mínima de `settings`. Sin esto el negocio nace con la
+            # tabla vacía y las facturas, presupuestos y correos salen con el
+            # nombre por defecto del sistema en lugar del suyo.
+            database.set_setting("merchant_name", payload.name)
+            if payload.cuit:
+                database.set_setting("merchant_cuit", payload.cuit)
+            if payload.admin_email:
+                database.set_setting("merchant_email", payload.admin_email)
+            if payload.admin_phone:
+                database.set_setting("merchant_phone", payload.admin_phone)
     except Exception as exc:
         with database.get_connection() as conn:
             with conn.cursor() as cursor:
@@ -271,6 +379,7 @@ def create_tenant(payload: TenantCreate, _: dict = Depends(require_platform_admi
         "success": True,
         "tenant": tenant,
         "active_modules": modules,
+        "plan_limits": limits,
         "admin_username": payload.admin_username,
         "url": f"https://{payload.slug}.controlcenter.app",
         "message": f"Negocio '{payload.name}' creado en estado de prueba (trial).",
@@ -306,7 +415,7 @@ def update_tenant(slug: str, payload: TenantUpdate, _: dict = Depends(require_pl
     with database.get_connection() as conn:
         with conn.cursor() as cursor:
             cursor.execute("""
-                SELECT id::text, slug, name, cuit, status, plan_id,
+                SELECT id::text, slug, name, cuit, custom_domain, status, plan_id,
                        plan_price, billing_cycle, admin_email, admin_phone, next_billing_date
                 FROM tenants WHERE slug = %s
             """, (slug,))
@@ -329,6 +438,22 @@ def update_tenant(slug: str, payload: TenantUpdate, _: dict = Depends(require_pl
             if payload.cuit is not None:
                 updates.append("cuit = %s")
                 params.append(payload.cuit)
+            if payload.custom_domain is not None:
+                if payload.custom_domain:
+                    cursor.execute(
+                        "SELECT slug FROM tenants WHERE custom_domain = %s AND slug <> %s",
+                        (payload.custom_domain, slug))
+                    owner = cursor.fetchone()
+                    if owner:
+                        raise HTTPException(
+                            status_code=409,
+                            detail=f"El dominio '{payload.custom_domain}' ya está "
+                                   f"asignado al negocio '{owner['slug']}'")
+                # NULL y no cadena vacía: la constraint UNIQUE trata cada NULL
+                # como distinto, así que varios negocios pueden no tener
+                # dominio. Con "" solo el primero podría.
+                updates.append("custom_domain = %s")
+                params.append(payload.custom_domain or None)
             if payload.plan_id is not None:
                 updates.append("plan_id = %s")
                 params.append(payload.plan_id)
@@ -358,7 +483,7 @@ def update_tenant(slug: str, payload: TenantUpdate, _: dict = Depends(require_pl
                     UPDATE tenants
                     SET {', '.join(updates)}
                     WHERE slug = %s
-                    RETURNING id::text, slug, name, cuit, status, plan_id,
+                    RETURNING id::text, slug, name, cuit, custom_domain, status, plan_id,
                               plan_price, billing_cycle, admin_email, admin_phone, next_billing_date
                 """
                 cursor.execute(query, params)
@@ -378,12 +503,31 @@ def update_tenant(slug: str, payload: TenantUpdate, _: dict = Depends(require_pl
                     """, (tenant_id, json.dumps(payload.active_modules)))
         tenancy.invalidate_module_cache(tenant_id)
 
+    # Los topes se recalculan cuando se cambia de plan sin pasarlos a mano:
+    # subir de Starter a Pro tiene que ampliar el cupo, no dejar el viejo.
+    new_limits = payload.plan_limits
+    if new_limits is None and payload.plan_id is not None:
+        new_limits = DEFAULT_PLAN_LIMITS.get(payload.plan_id)
+    if new_limits is not None:
+        with tenancy.tenant_context(tenant_id):
+            with database.get_connection() as conn:
+                with conn.cursor() as cursor:
+                    cursor.execute("""
+                        INSERT INTO tenant_settings (tenant_id, plan_limits)
+                        VALUES (%s, %s::jsonb)
+                        ON CONFLICT (tenant_id) DO UPDATE SET
+                            plan_limits = EXCLUDED.plan_limits,
+                            updated_at = CURRENT_TIMESTAMP
+                    """, (tenant_id, json.dumps(new_limits)))
+        tenancy.invalidate_limits_cache(tenant_id)
+
     tenancy.invalidate_tenant_cache(slug)
 
     result = dict(row)
     if result.get("next_billing_date"):
         result["next_billing_date"] = str(result["next_billing_date"])
     result["active_modules"] = tenancy.get_active_modules(tenant_id)
+    result["plan_limits"] = tenancy.get_plan_limits(tenant_id)
     return {"success": True, "tenant": result}
 
 
@@ -673,11 +817,8 @@ def _process_subscription_activation(slug: str, plan_id: str, cycle: str, p_data
 
 def _send_whatsapp_notification(phone: str, message: str):
     try:
-        requests.post("http://127.0.0.1:8091/send-broadcast", json={
-            "recipients": [{"phone": phone, "name": "Administrador"}],
-            "message": message,
-            "delaySeconds": 1
-        }, timeout=10)
+        whatsapp_bridge.send_broadcast(
+            [{"phone": phone, "name": "Administrador"}], message)
     except Exception as e:
         print(f"[Subscription WhatsApp Error] {e}")
 

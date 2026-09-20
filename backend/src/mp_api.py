@@ -524,7 +524,7 @@ def create_payment_preference(items: list, buyer_name: str = "", buyer_email: st
 
     if not formatted_items:
         formatted_items = [{
-            "title": "Cobro Hidroponia Rosario",
+            "title": f"Cobro {database.get_merchant_name()}",
             "quantity": 1,
             "currency_id": "ARS",
             "unit_price": 100.0

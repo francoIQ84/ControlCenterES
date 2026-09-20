@@ -13,9 +13,25 @@ from reportlab.graphics import renderPDF
 from reportlab.platypus.flowables import Flowable
 from reportlab.lib.enums import TA_LEFT, TA_CENTER, TA_RIGHT
 
-from src import database
+from src import database, tenancy
 
-PDF_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'invoices')
+#: Raíz histórica de las facturas. El Maestro sigue escribiendo acá; el resto
+#: de los inquilinos, en `invoices/t/{tenant_id}/` (ver get_pdf_dir).
+PDF_ROOT = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'invoices')
+
+#: Se mantiene el nombre anterior para no romper los imports existentes.
+PDF_DIR = PDF_ROOT
+
+
+def get_pdf_dir() -> str:
+    """Directorio de facturas del inquilino activo.
+
+    Tiene que resolverse por llamada y no al importar el módulo: el tenant lo
+    fija el middleware en cada petición. Una constante calculada al arranque
+    mandaría todas las facturas a la misma carpeta, que es justamente el
+    problema que esto viene a resolver.
+    """
+    return tenancy.tenant_storage_dir(PDF_ROOT)
 
 # ──────────────────────────────────────────────
 # Helper – QR vector widget (AFIP official URL)
@@ -326,7 +342,7 @@ def _build_invoice_page(order, copy_type, usable_w):
     """Builds all the flowable elements for one page of the invoice (ORIGINAL or DUPLICADO)."""
 
     # ---- Load merchant settings ----
-    merchant_name = database.get_setting('merchant_name', 'Hidroponia Rosario')
+    merchant_name = database.get_merchant_name()
     merchant_cuit = database.get_setting('afip_cuit', '30-71234567-9')
     merchant_address = database.get_setting('merchant_address', 'Bv. Oroño 4500, Rosario, Santa Fe')
     merchant_phone = database.get_setting('merchant_phone', '+54 341 456-7890')
@@ -667,9 +683,9 @@ def _build_invoice_page(order, copy_type, usable_w):
 # Main generator
 # ──────────────────────────────────────────────
 def generate_invoice_pdf(order):
-    os.makedirs(PDF_DIR, exist_ok=True)
+    pdf_dir = get_pdf_dir()
     filename = f"factura_{order['order_id']}.pdf"
-    filepath = os.path.join(PDF_DIR, filename)
+    filepath = os.path.join(pdf_dir, filename)
 
     page_w, page_h = A4
     margin = 15 * mm

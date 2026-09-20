@@ -6,20 +6,81 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException, UploadFile, File, Query
 from pydantic import BaseModel
 
+from src import tenancy
+
 router = APIRouter()
 
-# Safe base path
+# Raíz de todo lo subido. Se sigue sirviendo entera como estático en
+# /uploads, porque las URLs de imágenes de productos, logos y artículos del
+# blog apuntan ahí y están guardadas en la base.
 UPLOAD_DIR = Path("uploads").resolve()
 
+#: Carpeta bajo la cual vive el material de cada inquilino que no es el
+#: Maestro: uploads/t/{tenant_id}/...
+TENANT_SUBDIR = "t"
+
+
+def get_tenant_root() -> Path:
+    """Raíz del gestor de archivos para el inquilino activo.
+
+    El Tenant Maestro se queda en `uploads/` a secas y NO se migra a una
+    subcarpeta: las rutas de sus imágenes ya están escritas en products_cache,
+    web_config y blog_posts. Moverlas rompería el catálogo y la web pública de
+    la operación que hoy está andando.
+
+    Los demás inquilinos viven cada uno en `uploads/t/{tenant_id}/`, que es lo
+    que impide que el explorador de archivos de uno liste, mueva o borre los
+    archivos de otro.
+    """
+    tenant_id = tenancy.get_current_tenant_id()
+    if tenant_id == tenancy.MASTER_TENANT_ID:
+        return UPLOAD_DIR
+
+    root = (UPLOAD_DIR / TENANT_SUBDIR / tenant_id).resolve()
+    root.mkdir(parents=True, exist_ok=True)
+    return root
+
+
 def get_safe_path(relative_path: str = "") -> Path:
-    """Resolves and validates that the target path is strictly inside the UPLOAD_DIR."""
-    # Prevent traversal
-    clean_rel = relative_path.replace("..", "").strip("/")
-    target = (UPLOAD_DIR / clean_rel).resolve()
-    
-    if not str(target).startswith(str(UPLOAD_DIR)):
-        raise HTTPException(status_code=403, detail="Acceso denegado: Ruta fuera de límites permitidos.")
+    """Resuelve una ruta relativa dentro del espacio del inquilino activo.
+
+    La comprobación se hace contra la raíz del inquilino, no contra
+    `uploads/`: si se hiciera contra `uploads/` un `../` bien puesto llevaría
+    a la carpeta de otro negocio y la validación lo daría por bueno.
+
+    También se cambió `startswith` por comparación de rutas reales. Con
+    `startswith`, un directorio hermano llamado `uploads_backup` pasaba el
+    control por ser prefijo de texto de `uploads`.
+    """
+    root = get_tenant_root()
+    clean_rel = (relative_path or "").replace("\\", "/").strip("/")
+    target = (root / clean_rel).resolve()
+
+    try:
+        target.relative_to(root)
+    except ValueError:
+        raise HTTPException(
+            status_code=403,
+            detail="Acceso denegado: Ruta fuera de límites permitidos.")
     return target
+
+
+def to_public_url(absolute: Path) -> str:
+    """URL pública de un archivo, relativa al montaje estático /uploads."""
+    return "/uploads/" + os.path.relpath(absolute, UPLOAD_DIR).replace("\\", "/")
+
+
+def to_browser_path(absolute: Path, root: Path = None) -> str:
+    """Ruta tal como la maneja el explorador: relativa a la raíz del inquilino.
+
+    Es la que viaja en `path` de vuelta a la API, así que tiene que estar
+    expresada en el mismo marco que espera `get_safe_path`.
+
+    `root` se puede pasar para no resolverlo de nuevo en cada elemento de un
+    listado: `get_tenant_root()` crea el directorio si falta, y hacer ese
+    syscall una vez por archivo no tiene ningún sentido.
+    """
+    return os.path.relpath(absolute, root or get_tenant_root()).replace("\\", "/")
 
 class FolderRequest(BaseModel):
     name: str
@@ -40,9 +101,17 @@ def list_media(path: str = ""):
         
     directories = []
     files = []
-    
+    root = get_tenant_root()
+    is_master_root = (target_dir == UPLOAD_DIR)
+
     for entry in os.scandir(target_dir):
-        rel_path = os.path.relpath(entry.path, UPLOAD_DIR).replace("\\", "/")
+        # `uploads/t` es el contenedor de los demás inquilinos. El Maestro
+        # tiene su material en la raíz, así que sin este salto vería —y podría
+        # borrar— las carpetas de todos sus clientes desde el explorador.
+        if is_master_root and entry.is_dir() and entry.name == TENANT_SUBDIR:
+            continue
+
+        rel_path = to_browser_path(Path(entry.path), root)
         if entry.is_dir():
             directories.append({
                 "name": entry.name,
@@ -66,7 +135,7 @@ def list_media(path: str = ""):
                 files.append({
                     "name": entry.name,
                     "path": rel_path,
-                    "url": f"/uploads/{rel_path}",
+                    "url": to_public_url(Path(entry.path)),
                     "size": size,
                     "date": mtime,
                     "file_type": file_type
@@ -128,11 +197,10 @@ async def upload_file(path: str = "", file: UploadFile = File(...)):
         with open(dest_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
             
-        rel_path = os.path.relpath(dest_path, UPLOAD_DIR).replace("\\", "/")
         return {
             "success": True,
             "filename": safe_filename,
-            "url": f"/uploads/{rel_path}"
+            "url": to_public_url(dest_path)
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error al guardar archivo: {str(e)}")

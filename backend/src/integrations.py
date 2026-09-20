@@ -95,6 +95,38 @@ def save_credentials(provider: str, credentials: dict,
             return dict(cursor.fetchone())
 
 
+def register_account(provider: str, external_account_id, is_active: bool = True) -> bool:
+    """Deja asentado qué cuenta externa usa este inquilino en ese proveedor.
+
+    Es lo que después permite que un webhook entrante sepa a quién pertenece.
+    Cuando llega un aviso de Mercado Libre no hay subdominio del cual deducir
+    el inquilino: lo único que trae es el id del vendedor, y sin esta fila
+    `app_resolve_tenant_by_account` no encuentra a nadie y el aviso se
+    descarta.
+
+    No toca `credentials_encrypted`: el id de la cuenta es público (aparece en
+    cada notificación) y se guarda en claro justamente para poder buscar por
+    él. Los secretos siguen su propio camino en `save_credentials`.
+    """
+    provider = _check_provider(provider)
+    if external_account_id in (None, ""):
+        return False
+
+    tenant_id = tenancy.get_current_tenant_id()
+    with database.get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute("""
+                INSERT INTO tenant_integrations
+                    (tenant_id, provider, external_account_id, is_active, updated_at)
+                VALUES (%s, %s, %s, %s, CURRENT_TIMESTAMP)
+                ON CONFLICT (tenant_id, provider) DO UPDATE SET
+                    external_account_id = EXCLUDED.external_account_id,
+                    is_active           = EXCLUDED.is_active,
+                    updated_at          = CURRENT_TIMESTAMP
+            """, (tenant_id, provider, str(external_account_id), bool(is_active)))
+    return True
+
+
 def set_active(provider: str, is_active: bool):
     provider = _check_provider(provider)
     with database.get_connection() as conn:

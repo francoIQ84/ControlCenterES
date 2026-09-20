@@ -2,7 +2,7 @@ import signal
 import threading
 import time
 import traceback
-from src import meli_api, mp_api, config, sync_state, tenancy
+from src import meli_api, mp_api, config, sync_state, tenancy, whatsapp_bridge
 from src.api.backup import check_and_run_monthly_auto_backup
 
 # Los hilos de fondo no atienden una petición HTTP, así que no hay subdominio
@@ -370,11 +370,8 @@ def _check_vencimientos_alerts_for_tenant(tenant):
                     msg += "\n_Mensaje automático de ControlCenterES Finanzas._"
 
                     try:
-                        res = requests.post("http://127.0.0.1:8091/send-broadcast", json={
-                            "recipients": [{"phone": alert_phone, "name": "Administrador"}],
-                            "message": msg,
-                            "delaySeconds": 1
-                        }, timeout=10)
+                        res = whatsapp_bridge.send_broadcast(
+                            [{"phone": alert_phone, "name": "Administrador"}], msg)
 
                         if res.status_code == 200:
                             cursor.execute("UPDATE service_payments SET last_alert_sent_at = NOW() WHERE id = %s", (v['id'],))
@@ -440,11 +437,8 @@ def _check_platform_tenant_subscriptions():
                           f"Hola *{name}*, tu cuenta ha sido pausada temporalmente debido a que la suscripción de tu plan *{plan_id.upper()}* venció hace {abs(days_diff)} días.\n\n" \
                           f"Para reactivar tu cuenta y reanudar el acceso de inmediato, por favor completá el pago de renovación o contactate con soporte."
                     try:
-                        requests.post("http://127.0.0.1:8091/send-broadcast", json={
-                            "recipients": [{"phone": phone, "name": name}],
-                            "message": msg,
-                            "delaySeconds": 1
-                        }, timeout=10)
+                        whatsapp_bridge.send_broadcast(
+                            [{"phone": phone, "name": name}], msg)
                         with database.get_connection() as conn:
                             with conn.cursor() as cursor:
                                 cursor.execute("UPDATE tenants SET last_reminder_sent_at = NOW() WHERE slug = %s", (slug,))
@@ -520,11 +514,8 @@ def _check_platform_tenant_subscriptions():
                 sent_ok = False
                 if phone:
                     try:
-                        res = requests.post("http://127.0.0.1:8091/send-broadcast", json={
-                            "recipients": [{"phone": phone, "name": name}],
-                            "message": wa_msg,
-                            "delaySeconds": 1
-                        }, timeout=10)
+                        res = whatsapp_bridge.send_broadcast(
+                            [{"phone": phone, "name": name}], wa_msg)
                         if res.status_code == 200:
                             sent_ok = True
                             print(f"[Scheduler-Suscripciones][{slug}] Recordatorio WhatsApp enviado a {phone}")

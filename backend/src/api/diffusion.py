@@ -2,13 +2,12 @@ from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks
 from pydantic import BaseModel
 from typing import Optional, List
 import json
-import requests
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from datetime import datetime
 
-from src import database
+from src import database, whatsapp_bridge
 from src.api.auth import verify_session
 
 router = APIRouter()
@@ -101,7 +100,7 @@ def send_html_email(to_email: str, subject: str, message_text: str, media_url: s
     smtp_port = int(database.get_setting("smtp_port", "587"))
     smtp_user = database.get_setting("smtp_user", "").strip()
     smtp_pass = database.get_setting("smtp_pass", "").strip() or database.get_setting("smtp_password", "").strip()
-    sender_name = database.get_setting("smtp_sender_name", "Hidroponía Rosario").strip()
+    sender_name = (database.get_setting("smtp_sender_name") or database.get_merchant_name()).strip()
 
     if not smtp_host or not smtp_user or not smtp_pass:
         raise Exception("Servidor SMTP no configurado. Ve a Ajustes > Ajustes de Pop-up & Email Marketing SMTP para ingresarlo.")
@@ -192,7 +191,7 @@ def run_campaign_background(campaign_id: int, delay_seconds: int):
         wa_members = [m for m in members if m.get('phone')]
         if wa_members:
             try:
-                res = requests.post("http://127.0.0.1:8091/send-broadcast", json={
+                res = whatsapp_bridge.post("send-broadcast", {
                     "recipients": [{"phone": m['phone'], "name": m.get('contact_name')} for m in wa_members],
                     "message": message_text,
                     "mediaUrl": media_url,

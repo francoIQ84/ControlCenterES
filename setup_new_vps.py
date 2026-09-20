@@ -1,4 +1,5 @@
 import os
+import secrets
 import sys
 import time
 import socket
@@ -221,7 +222,20 @@ def run_setup():
             encryption_key = "u7M6x1Br5fNSdWTqgVjm4nP1uRNGaTk1iOneHdS8JaA="
         print(f"Clave de cifrado configurada: {encryption_key}")
 
-        env_content = f"""DATABASE_URL=postgresql://postgres:Hidroponia26ab@localhost:5432/controlcenter
+        # El rol de aplicación NO es superusuario, a propósito: PostgreSQL
+        # ignora por completo las políticas RLS para un superusuario, así que
+        # conectando como `postgres` el aislamiento entre negocios existe en el
+        # esquema pero no se aplica a ninguna consulta.
+        #
+        # La contraseña se genera acá y se le asigna al rol más abajo, después
+        # de que la migración lo haya creado.
+        app_db_password = secrets.token_urlsafe(24)
+
+        env_content = f"""DATABASE_URL=postgresql://controlcenter_app:{app_db_password}@localhost:5432/controlcenter
+# Credenciales de superusuario, solo para migraciones y respaldos. La
+# aplicación NO las usa: si lo hiciera, evadiría sus propias políticas RLS.
+ADMIN_DATABASE_URL=postgresql://postgres:Hidroponia26ab@localhost:5432/controlcenter
+APP_DB_PASSWORD={app_db_password}
 CREDENTIALS_ENCRYPTION_KEY={encryption_key}
 TENANT_BASE_DOMAINS=controlcenter.app
 TENANT_TRUST_HEADER=0
@@ -242,15 +256,22 @@ TENANT_TRUST_HEADER=0
             "sudo -u postgres psql -d controlcenter -c 'CREATE EXTENSION IF NOT EXISTS \"pgcrypto\";'",
             "Recrear base de datos controlcenter limpia"
         )
-        exec_cmd(
-            ssh,
-            "cd /var/www/controlcenter/backend && /var/www/controlcenter/backend/venv/bin/python -c \"from src import database; database.init_db()\"",
-            "Ejecutar init_db()"
-        )
+        # El runner crea el esquema y aplica las migraciones usando
+        # ADMIN_DATABASE_URL (superusuario), asigna la contraseña del rol de
+        # aplicación desde APP_DB_PASSWORD y audita el aislamiento al final.
+        # init_db() va incluido: no hace falta invocarlo aparte.
         exec_cmd(
             ssh,
             "cd /var/www/controlcenter/backend && /var/www/controlcenter/backend/venv/bin/python -m migrations.run_migration --apply",
-            "Aplicar migraciones multi-tenant (001 a 005)"
+            "Aplicar migraciones multi-tenant y crear el rol de aplicación"
+        )
+        # Comprobación explícita: si la aplicación quedara conectada como
+        # superusuario, las políticas RLS existirían pero no filtrarían nada y
+        # el aislamiento entre negocios sería puramente decorativo.
+        exec_cmd(
+            ssh,
+            "cd /var/www/controlcenter/backend && /var/www/controlcenter/backend/venv/bin/python -m migrations.run_migration --verify",
+            "Verificar que el aislamiento multi-tenant es efectivo"
         )
 
         # FASE 7: Dependencias de WhatsApp y Storefront

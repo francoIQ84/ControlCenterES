@@ -395,7 +395,7 @@ def get_arca_config(_=Depends(require_permission("settings"))):
         "afip_type_cmp": int(database.get_setting('afip_type_cmp', '11')),
         "afip_concept": int(database.get_setting('afip_concept', '1')),
         "afip_environment": database.get_setting('afip_environment', 'homologacion'),
-        "merchant_name": database.get_setting('merchant_name', 'Hidroponia Rosario'),
+        "merchant_name": database.get_merchant_name(),
         "merchant_address": database.get_setting('merchant_address', 'Bv. Oroño 4500, Rosario'),
         "merchant_phone": database.get_setting('merchant_phone', '+54 341 456-7890'),
         "merchant_commercial_name": database.get_setting('merchant_commercial_name', 'Experiencia Sustentable'),
@@ -474,7 +474,9 @@ class LeadPopupConfigModel(BaseModel):
     smtp_port: int = 587
     smtp_user: str = ""
     smtp_password: str = ""
-    smtp_sender_name: str = "Hidroponia Rosario"
+    # Vacío por defecto: si el negocio no lo define, el remitente se resuelve
+    # con database.get_merchant_name() al momento de enviar.
+    smtp_sender_name: str = ""
 
 class TestEmailRequest(BaseModel):
     target_email: str
@@ -502,7 +504,7 @@ def get_lead_popup_config(_=Depends(require_permission("settings"))):
         "smtp_port": int(database.get_setting("smtp_port", "587")),
         "smtp_user": database.get_setting("smtp_user", ""),
         "smtp_password": database.get_setting("smtp_password", ""),
-        "smtp_sender_name": database.get_setting("smtp_sender_name", "Hidroponia Rosario")
+        "smtp_sender_name": database.get_setting("smtp_sender_name") or database.get_merchant_name()
     }
 
 @router.post("/lead-popup")

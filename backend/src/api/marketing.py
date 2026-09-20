@@ -347,7 +347,7 @@ def generate_ai_post_copy(req: GeneratePostRequest, _=Depends(verify_session)):
 
     prompt = f"""
     Eres un experto en Marketing Digital y Community Management especializado en e-commerce y cultivo hidropónico/tradicional en Argentina.
-    Crea un post para redes sociales (Instagram/Facebook/Reels) promocionando este producto de la tienda "Hidroponía Rosario":
+    Crea un post para redes sociales (Instagram/Facebook/Reels) promocionando este producto de la tienda "{database.get_merchant_name()}":
     - Producto: {title}
     - Precio a promocionar: {price_detail}
     - Categoría: {category}
@@ -577,7 +577,7 @@ def suggest_ai_comment_reply(req: AISuggestReplyRequest, _=Depends(verify_sessio
         )
 
     prompt = f"""
-    Eres el gestor de atención al cliente de "Hidroponía Rosario" (tienda especializada en insumos para cultivo e hidroponía en Argentina).
+    Eres el gestor de atención al cliente de "{database.get_merchant_name()}".
     Redacta una respuesta amable, profesional, concisa y comercial a este comentario recibido en redes sociales:
     
     - Usuario: {req.author_name or 'Cliente'}

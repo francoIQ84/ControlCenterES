@@ -624,8 +624,9 @@ def create_invoice_endpoint(order_id: int, req: Optional[InvoiceOptionsRequest] 
 
 @router.get("/{order_id}/invoice/pdf")
 def get_invoice_pdf_endpoint(order_id: int):
+    from src.utils.invoice_gen import get_pdf_dir
     filename = f"factura_{order_id}.pdf"
-    filepath = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'invoices', filename)
+    filepath = os.path.join(get_pdf_dir(), filename)
     
     if not os.path.exists(filepath):
         order = database.get_order_by_id(order_id)
@@ -646,8 +647,8 @@ def get_meli_invoice_pdf_endpoint(order_id: int):
         raise HTTPException(status_code=404, detail="No se encontró factura adjunta en Mercado Libre para esta venta.")
         
     # Guardamos temporalmente para devolverlo
-    os.makedirs("backend/invoices", exist_ok=True)
-    filepath = os.path.join("backend/invoices", f"meli_factura_{order_id}.pdf")
+    from src.utils.invoice_gen import get_pdf_dir
+    filepath = os.path.join(get_pdf_dir(), f"meli_factura_{order_id}.pdf")
     with open(filepath, "wb") as f:
         f.write(pdf_bytes)
         
@@ -697,9 +698,9 @@ def regenerate_invoice_endpoint(order_id: int):
             print(f"Error fetching shipping for regeneration of order {order_id}: {e}")
 
     # Delete old PDF
-    from src.utils.invoice_gen import generate_invoice_pdf, PDF_DIR
+    from src.utils.invoice_gen import generate_invoice_pdf, get_pdf_dir
     filename = f"factura_{order_id}.pdf"
-    filepath = os.path.join(PDF_DIR, filename)
+    filepath = os.path.join(get_pdf_dir(), filename)
     if os.path.exists(filepath):
         os.remove(filepath)
 

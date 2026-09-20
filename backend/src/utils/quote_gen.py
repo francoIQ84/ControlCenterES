@@ -8,9 +8,23 @@ from reportlab.lib import colors
 from reportlab.lib.units import mm, cm
 from reportlab.lib.enums import TA_LEFT, TA_CENTER, TA_RIGHT
 
-from src import database
+from src import database, tenancy
 
-QUOTES_PDF_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), '..', 'quotes')
+#: Raíz histórica de los presupuestos.
+QUOTES_PDF_ROOT = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), '..', 'quotes')
+
+#: Se mantiene el nombre anterior para no romper los imports existentes.
+QUOTES_PDF_DIR = QUOTES_PDF_ROOT
+
+
+def get_quotes_pdf_dir() -> str:
+    """Directorio de presupuestos del inquilino activo.
+
+    Acá el aislamiento no es solo privacidad: `quote_number` es secuencial por
+    negocio, así que `presupuesto_PRES-2026-0001.pdf` es el primer presupuesto
+    de TODOS. En una carpeta común el último en generarlo pisaba el del otro.
+    """
+    return tenancy.tenant_storage_dir(QUOTES_PDF_ROOT)
 
 
 def format_currency(val) -> str:
@@ -43,9 +57,9 @@ def format_date(dt_val) -> str:
 
 def generate_quote_pdf(quote: dict) -> str:
     """Genera un archivo PDF profesional para un presupuesto y retorna la ruta del archivo."""
-    os.makedirs(QUOTES_PDF_DIR, exist_ok=True)
+    quotes_dir = get_quotes_pdf_dir()
     filename = f"presupuesto_{quote.get('quote_number', quote.get('id', 'doc'))}.pdf"
-    filepath = os.path.join(QUOTES_PDF_DIR, filename)
+    filepath = os.path.join(quotes_dir, filename)
 
     # Document setup: A4 with 14mm margins
     doc = SimpleDocTemplate(

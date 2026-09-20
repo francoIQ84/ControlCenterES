@@ -1,8 +1,7 @@
 from fastapi import APIRouter, HTTPException, File, UploadFile
 from pydantic import BaseModel
 from typing import Optional, List
-from src import database
-import requests
+from src import database, whatsapp_bridge
 
 router = APIRouter()
 
@@ -48,8 +47,10 @@ def sync_whatsapp_contacts():
             "message": "WhatsApp no está vinculado actualmente. Ve a Configuración > Asistente WhatsApp (IA) y presiona 'Generar Código QR de Vinculación' para escanear el QR."
         }
     try:
-        # Call Node Baileys server on port 8091
-        res = requests.get("http://127.0.0.1:8091/sync-contacts", timeout=8)
+        # La agenda la devuelve el puente de WhatsApp, que hoy es uno solo
+        # para toda la plataforma: la llamada declara el inquilino para que el
+        # día que haya una sesión por negocio no haya que tocar esto.
+        res = whatsapp_bridge.get("sync-contacts", timeout=8)
         if res.status_code == 200:
             res_json = res.json()
             contacts = res_json.get('contacts', [])

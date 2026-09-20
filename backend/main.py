@@ -67,19 +67,39 @@ app.add_middleware(
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 # Setup CORS
+#
+# El regex se arma desde TENANT_BASE_DOMAINS en lugar de hardcodear
+# controlcenter.app: si alguien cambia el dominio de la plataforma por
+# variable de entorno, el resolver lo toma pero CORS seguía rechazando todos
+# los subdominios nuevos, con el panel en blanco y ningún error en el backend.
+import re as _re
+
+_base_domains = [d.strip() for d in
+                 os.environ.get("TENANT_BASE_DOMAINS", "controlcenter.app").split(",")
+                 if d.strip()]
+_subdomain_pattern = "|".join(_re.escape(d) for d in _base_domains)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:3000"],
-    allow_origin_regex=r"https://[a-z0-9][a-z0-9-]*\.controlcenter\.app",
+    allow_origin_regex=rf"https://[a-z0-9][a-z0-9-]*\.({_subdomain_pattern})",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Mount static files for invoices and uploads
-app.mount("/invoices", StaticFiles(directory="invoices"), name="invoices")
+# `uploads` se sirve público a propósito: las imágenes del catálogo, el logo y
+# las fotos de los artículos del blog se referencian por URL desde la tienda
+# web y desde Meta, que tiene que poder descargarlas para publicar.
 app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
-app.mount("/quotes", StaticFiles(directory="quotes"), name="quotes")
+
+# `invoices` y `quotes` NO se montan. Contienen facturas y presupuestos con
+# datos fiscales y de clientes, y montados como estático quedaban legibles sin
+# autenticación para quien adivinara el nombre del archivo —que es predecible:
+# `factura_{order_id}.pdf`, `presupuesto_PRES-2026-0001.pdf`—. Se sirven por
+# los endpoints autenticados /api/sales/{id}/invoice/pdf y /api/quotes/{id}/pdf,
+# que además filtran por inquilino. El frontend ya usaba esos endpoints: el
+# montaje estático no estaba enlazado desde ninguna parte.
 
 # Include API routes
 app.include_router(api_router, prefix="/api")

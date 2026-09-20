@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from typing import List, Optional
 from datetime import datetime, date, timedelta
 from pydantic import BaseModel
-from src import database, config
+from src import database, config, whatsapp_bridge
 from src.api.auth import get_current_user
 
 router = APIRouter()
@@ -597,7 +597,6 @@ class TestAlertReq(BaseModel):
 
 @router.post("/vencimientos/test-alert")
 def test_vencimiento_alert(req: TestAlertReq, current_user: dict = Depends(get_current_user)):
-    import requests
     phone = req.phone.strip()
     if not phone:
         raise HTTPException(status_code=400, detail="Número de teléfono es requerido")
@@ -612,11 +611,8 @@ def test_vencimiento_alert(req: TestAlertReq, current_user: dict = Depends(get_c
           "_Este es un mensaje de prueba del sistema de Alertas de Vencimientos._"
 
     try:
-        res = requests.post("http://127.0.0.1:8091/send-broadcast", json={
-            "recipients": [{"phone": phone, "name": "Administrador"}],
-            "message": msg,
-            "delaySeconds": 1
-        }, timeout=10)
+        res = whatsapp_bridge.send_broadcast(
+            [{"phone": phone, "name": "Administrador"}], msg)
         if res.status_code == 200:
             return {"success": True, "message": f"Alerta enviada correctamente a {phone}"}
         else:

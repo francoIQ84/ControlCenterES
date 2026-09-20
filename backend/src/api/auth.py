@@ -151,6 +151,97 @@ def require_platform_admin(current_user: dict = Depends(get_current_user)):
     return current_user
 
 
+def require_module(module: str):
+    """Exige que el negocio tenga contratado el módulo.
+
+    Es el otro filtro, distinto del permiso: el permiso dice qué puede hacer
+    *esta persona*, el módulo dice qué contrató *el negocio*. Hasta ahora el
+    módulo solo escondía la entrada del menú, así que escribir la URL a mano —o
+    pegarle a la API con curl— daba acceso completo a funcionalidad no
+    contratada. Con esto el corte pasa a estar en el backend, que es donde se
+    puede sostener.
+
+    No depende de la sesión: le alcanza con el tenant que resolvió el
+    middleware. Así puede proteger también endpoints públicos, como el catálogo
+    de la tienda web.
+
+    Mantiene el criterio de `is_module_active`: mientras `tenant_settings` no
+    esté poblado no apaga nada, para no dejar sin servicio a quien ya lo está
+    usando.
+    """
+    from src import tenancy
+
+    def dependency():
+        if not tenancy.is_module_active(module):
+            raise HTTPException(
+                status_code=403,
+                detail=f"El plan contratado no incluye el módulo '{module}'.")
+        return True
+
+    return dependency
+
+
+def enforce_plan_limit(resource: str, count_sql: str, label: str):
+    """Corta el alta cuando el negocio llegó al tope de su plan.
+
+    Los planes se venden con topes ("Hasta 150 productos", "Hasta 3 usuarios")
+    pero hasta ahora no había nada que los leyera: eran texto de marketing.
+
+    Se aplica solo al alta MANUAL. Deliberadamente no se toca la
+    sincronización de Mercado Libre ni el registro de ventas: cortar ahí
+    significaría perder un pedido real o dejar el catálogo a medias, y eso es
+    una decisión comercial, no técnica.
+
+    Sin tope configurado no hace nada, que es el estado de todos los negocios
+    hasta que la administración de plataforma cargue los límites.
+    """
+    from src import database, tenancy
+
+    limit = tenancy.get_plan_limit(resource)
+    if limit is None:
+        return
+
+    with database.get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute(count_sql)
+            row = cursor.fetchone()
+            current = int(row["total"]) if row else 0
+
+    if current >= limit:
+        raise HTTPException(
+            status_code=409,
+            detail=(f"Alcanzaste el máximo de {limit} {label} de tu plan "
+                    f"(tenés {current}). Para seguir agregando, actualizá tu plan."))
+
+
+def require_any_permission(*permissions: str):
+    """Permite el acceso si el usuario tiene AL MENOS uno de los permisos.
+
+    Hace falta para las APIs de apoyo, que no son de una sola pantalla. El caso
+    que lo motivó es el explorador de archivos: el alta de un negocio deriva
+    los permisos del usuario administrador de los módulos contratados
+    (`create_user(..., ",".join(modules))`), así que un plan Starter —que no
+    incluye el módulo "Archivos"— dejaba a su administrador sin permiso
+    `media`, y con él sin poder ponerle una foto a un producto desde
+    Inventario, que sí contrató. El selector de imágenes devolvía 403 sin
+    ninguna explicación.
+
+    Sigue siendo un corte real: quien no puede editar ningún contenido tampoco
+    entra.
+    """
+    def dependency(current_user: dict = Depends(get_current_user)):
+        granted = {p.strip() for p in (current_user.get("permissions") or "").split(",")
+                   if p.strip()}
+        # Sin permisos declarados se deja pasar, igual que require_permission:
+        # es el estado de las instalaciones anteriores al RBAC.
+        if not granted or granted & set(permissions):
+            return current_user
+        raise HTTPException(
+            status_code=403,
+            detail=f"Se requiere alguno de estos permisos: {', '.join(permissions)}")
+    return dependency
+
+
 def require_permission(permission: str):
     """FastAPI dependency to check if the current user has the required permission."""
     def dependency(current_user: dict = Depends(get_current_user)):
@@ -402,7 +493,10 @@ def add_user(payload: UserCreate, current_user: dict = Depends(get_current_user)
         
     if payload.two_factor_enabled and not (payload.email and payload.email.strip()):
         raise HTTPException(status_code=400, detail="Para activar 2FA, el usuario debe tener un correo electrónico configurado.")
-        
+
+    # RLS ya limita el COUNT a este negocio, así que no hace falta filtrar.
+    enforce_plan_limit("users", "SELECT COUNT(*) AS total FROM users", "usuarios")
+
     try:
         user_id = database.create_user(
             username=payload.username, 

@@ -236,3 +236,66 @@ class CacheTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PlanLimitsTest(unittest.TestCase):
+    """Topes del plan contratado.
+
+    Los planes se venden con topes ("Hasta 150 productos") pero hasta ahora no
+    había nada que los leyera: eran texto de marketing. El criterio por defecto
+    tiene que seguir siendo no cortar nada, para no romper a quien ya está
+    operando.
+    """
+
+    TENANT = "11111111-2222-3333-4444-555555555555"
+
+    def setUp(self):
+        tenancy.invalidate_limits_cache()
+
+    def tearDown(self):
+        tenancy.invalidate_limits_cache()
+
+    @patch.object(tenancy, "get_plan_limits")
+    def test_tope_configurado(self, mock_limits):
+        mock_limits.return_value = {"products": 150}
+        self.assertEqual(tenancy.get_plan_limit("products", self.TENANT), 150)
+
+    @patch.object(tenancy, "get_plan_limits")
+    def test_sin_tope_configurado(self, mock_limits):
+        mock_limits.return_value = {}
+        self.assertIsNone(tenancy.get_plan_limit("products", self.TENANT))
+
+    @patch.object(tenancy, "get_plan_limits")
+    def test_recurso_no_listado_no_tiene_tope(self, mock_limits):
+        mock_limits.return_value = {"products": 150}
+        self.assertIsNone(tenancy.get_plan_limit("users", self.TENANT))
+
+    @patch.object(tenancy, "get_plan_limits")
+    def test_cero_y_negativos_significan_sin_tope(self, mock_limits):
+        """Un 0 guardado por error no puede dejar a un negocio sin poder
+        cargar nada."""
+        for valor in (0, -1, None, "", "abc"):
+            mock_limits.return_value = {"products": valor}
+            self.assertIsNone(tenancy.get_plan_limit("products", self.TENANT),
+                              f"valor {valor!r} debería significar sin tope")
+
+    @patch.object(tenancy, "get_plan_limits")
+    def test_numero_como_texto(self, mock_limits):
+        """JSONB puede devolver el valor como cadena según cómo se haya
+        guardado."""
+        mock_limits.return_value = {"products": "150"}
+        self.assertEqual(tenancy.get_plan_limit("products", self.TENANT), 150)
+
+    @patch.object(tenancy, "get_plan_limits")
+    def test_el_maestro_nunca_tiene_tope(self, mock_limits):
+        """Es la operación propia, no un cliente con un plan contratado."""
+        mock_limits.return_value = {"products": 1}
+        self.assertIsNone(
+            tenancy.get_plan_limit("products", tenancy.MASTER_TENANT_ID))
+
+    def test_la_invalidacion_de_limites_no_toca_las_demas_entradas(self):
+        tenancy._cache_put(("limits", self.TENANT), {"products": 10})
+        tenancy._cache_put(("slug", "acme"), {"id": self.TENANT})
+        tenancy.invalidate_limits_cache(self.TENANT)
+        self.assertIsNone(tenancy._cache_get(("limits", self.TENANT)))
+        self.assertIsNotNone(tenancy._cache_get(("slug", "acme")))

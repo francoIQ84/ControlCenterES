@@ -215,3 +215,137 @@ class TrustHeaderTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CustomDomainTest(unittest.TestCase):
+    """Resolución por dominio propio del negocio.
+
+    Es el caso del cliente que contrata "Tienda Web" y apunta su propio
+    dominio: antes ese host no identificaba a nadie y la petición caía al
+    Tenant Maestro, así que su tienda servía el catálogo de Hidroponía.
+    """
+
+    def setUp(self):
+        self.app = Harness()
+        self.middleware = TenantResolverMiddleware(self.app)
+        patcher = patch.object(tenancy, "get_master_tenant", return_value=MASTER)
+        self.addCleanup(patcher.stop)
+        patcher.start()
+        tenancy.invalidate_tenant_cache()
+        self.addCleanup(tenancy.invalidate_tenant_cache)
+
+    def _run(self, host, tenant):
+        with patch.object(tenancy, "get_tenant_by_domain", return_value=tenant):
+            return asyncio.run(call_middleware(self.middleware, build_scope(host)))
+
+    def test_dominio_propio_resuelve_al_inquilino(self):
+        sent = self._run("tiendadelcliente.com", ACME)
+        self.assertEqual(response_status(sent), 200)
+        self.assertEqual(self.app.seen_tenant_id, ACME["id"])
+        self.assertEqual(self.app.seen_scope["tenant_source"], "custom_domain")
+
+    def test_dominio_desconocido_cae_al_maestro(self):
+        """Un host que no es de nadie no puede ser un 404: puede ser el propio
+        dominio del panel, un health-check o una IP."""
+        sent = self._run("desconocido.com", None)
+        self.assertEqual(response_status(sent), 200)
+        self.assertEqual(self.app.seen_tenant_id, tenancy.MASTER_TENANT_ID)
+
+    def test_dominio_de_inquilino_suspendido_devuelve_403(self):
+        sent = self._run("tiendadelcliente.com", {**ACME, "status": "suspended"})
+        self.assertEqual(response_status(sent), 403)
+        self.assertFalse(self.app.called)
+
+    def test_el_subdominio_tiene_prioridad_sobre_el_dominio_propio(self):
+        with patch.object(tenancy, "get_tenant_by_domain") as by_domain:
+            with patch.object(tenancy, "get_tenant_by_slug", return_value=ACME):
+                asyncio.run(call_middleware(
+                    self.middleware, build_scope("acme.controlcenter.app")))
+        by_domain.assert_not_called()
+
+
+class NormalizeHostTest(unittest.TestCase):
+    def test_quita_puerto_www_y_mayusculas(self):
+        self.assertEqual(tenancy.normalize_host("WWW.Cliente.COM:8443"), "cliente.com")
+
+    def test_ipv6_entre_corchetes(self):
+        self.assertEqual(tenancy.normalize_host("[::1]:8090"), "::1")
+
+    def test_vacio(self):
+        self.assertIsNone(tenancy.normalize_host(""))
+        self.assertIsNone(tenancy.normalize_host(None))
+
+
+class DomainLookupGuardTest(unittest.TestCase):
+    """Los hosts que nunca pueden ser un dominio propio no deben llegar a la
+    base: sin este corte, cada petición al panel abría una conexión para
+    preguntar por un dominio inexistente."""
+
+    def setUp(self):
+        tenancy.invalidate_tenant_cache()
+        self.addCleanup(tenancy.invalidate_tenant_cache)
+
+    def _assert_no_db(self, host):
+        with patch.object(tenancy, "_system_connection") as conn:
+            self.assertIsNone(tenancy.get_tenant_by_domain(host))
+        conn.assert_not_called()
+
+    def test_localhost(self):
+        self._assert_no_db("localhost:5173")
+
+    def test_ip_desnuda(self):
+        self._assert_no_db("192.168.1.50")
+
+    def test_dominio_de_la_plataforma(self):
+        self._assert_no_db("controlcenter.app")
+
+    def test_subdominio_de_la_plataforma(self):
+        self._assert_no_db("acme.controlcenter.app")
+
+    def test_un_dominio_externo_si_consulta(self):
+        with patch.object(tenancy, "_system_connection") as conn:
+            conn.side_effect = RuntimeError("se esperaba la consulta")
+            with self.assertRaises(RuntimeError):
+                tenancy.get_tenant_by_domain("tiendadelcliente.com")
+
+
+class DomainLookupDegradationTest(unittest.TestCase):
+    """Si el código se despliega antes que la migración 016, la columna
+    `tenants.custom_domain` no existe. El camino de error no cachea —un fallo
+    de conexión sí debe reintentarse—, así que sin una bandera cada petición
+    pagaría una consulta fallida."""
+
+    def setUp(self):
+        tenancy.invalidate_tenant_cache()
+        self.addCleanup(tenancy.invalidate_tenant_cache)
+
+    def test_deja_de_consultar_tras_columna_inexistente(self):
+        import psycopg2
+        with patch.object(tenancy, "_system_connection") as conn:
+            conn.side_effect = psycopg2.errors.UndefinedColumn("no existe")
+            self.assertIsNone(tenancy.get_tenant_by_domain("cliente.com"))
+            self.assertEqual(conn.call_count, 1)
+            # Un host distinto tampoco vuelve a preguntar.
+            self.assertIsNone(tenancy.get_tenant_by_domain("otro.com"))
+            self.assertEqual(conn.call_count, 1)
+
+    def test_un_fallo_de_conexion_si_reintenta(self):
+        import psycopg2
+        with patch.object(tenancy, "_system_connection") as conn:
+            conn.side_effect = psycopg2.OperationalError("base caída")
+            self.assertIsNone(tenancy.get_tenant_by_domain("cliente.com"))
+            self.assertIsNone(tenancy.get_tenant_by_domain("cliente.com"))
+            self.assertEqual(conn.call_count, 2)
+
+    def test_la_invalidacion_rehabilita_la_busqueda(self):
+        """Después de aplicar la migración, el alta de un negocio invalida la
+        caché y con eso se vuelve a intentar sin reiniciar el proceso."""
+        import psycopg2
+        with patch.object(tenancy, "_system_connection") as conn:
+            conn.side_effect = psycopg2.errors.UndefinedColumn("no existe")
+            tenancy.get_tenant_by_domain("cliente.com")
+        tenancy.invalidate_tenant_cache()
+        with patch.object(tenancy, "_system_connection") as conn:
+            conn.side_effect = RuntimeError("se esperaba la consulta")
+            with self.assertRaises(RuntimeError):
+                tenancy.get_tenant_by_domain("cliente.com")

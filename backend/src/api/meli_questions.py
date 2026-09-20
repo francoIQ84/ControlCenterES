@@ -2,7 +2,7 @@ from typing import Optional, List, Dict
 from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks, Request
 from pydantic import BaseModel, Field
 
-from src import database, meli_api
+from src import database, meli_api, integrations, tenancy
 from src.api.auth import get_current_user
 from src.utils.meli_questions_service import process_question, process_pending_questions, generate_ai_answer, sanitize_and_validate_answer
 
@@ -165,13 +165,36 @@ def sync_unanswered(background_tasks: BackgroundTasks, _: dict = Depends(get_cur
 async def meli_webhook(request: Request):
     """
     Webhook receptor para notificaciones de Mercado Libre (topic: questions).
+
+    Mercado Libre postea al dominio apex, sin subdominio, así que el
+    TenantResolver no tiene de dónde deducir el inquilino y cae al Maestro. Sin
+    resolución explícita, las preguntas de TODOS los negocios se procesaban con
+    el token de Mercado Libre del Maestro: se guardaban en el inquilino
+    equivocado y se respondían desde la cuenta equivocada.
+
+    El aviso sí trae con qué resolverlo: `user_id` es el vendedor dueño de la
+    publicación. Se traduce a tenant con `app_resolve_tenant_by_account`, que
+    es la única función autorizada a mirar cuentas de todos los inquilinos, y
+    el procesamiento entero ocurre dentro de ese contexto.
     """
     try:
         body = await request.json()
         topic = body.get("topic")
-        resource = body.get("resource") # e.g. "/questions/12345678"
+        resource = body.get("resource")  # e.g. "/questions/12345678"
 
-        if topic == "questions" and resource and resource.startswith("/questions/"):
+        if topic != "questions" or not resource or not resource.startswith("/questions/"):
+            return {"status": "OK"}
+
+        seller_id = body.get("user_id")
+        tenant_id = integrations.resolve_tenant_by_account("mercadolibre", seller_id)
+        if not tenant_id:
+            # Cuenta no vinculada a ningún inquilino activo. Se responde 200
+            # igual: un error haría que Mercado Libre reintente en bucle un
+            # aviso que nunca vamos a poder atender.
+            print(f"[Meli Webhook Questions] Vendedor {seller_id!r} sin inquilino activo; ignorado.")
+            return {"status": "OK", "detail": "Unknown seller"}
+
+        with tenancy.tenant_context(tenant_id):
             q_id = resource.split("/")[-1]
             q_detail = meli_api.get_question_detail(q_id)
             if q_detail and q_detail.get("status") == "UNANSWERED":
