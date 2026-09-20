@@ -23,6 +23,7 @@ from .tiendanube import router as tiendanube_router
 from .meli_optimizer import router as meli_optimizer_router
 from .listing_optimizer import router as listing_optimizer_router
 from .quotes import router as quotes_router
+from .platform import router as platform_router
 
 api_router = APIRouter()
 
@@ -59,6 +60,7 @@ api_router.include_router(diffusion_router, prefix="/diffusion", tags=["diffusio
 api_router.include_router(tiendanube_router, prefix="/tiendanube", tags=["tiendanube"])
 api_router.include_router(meli_questions_router)
 api_router.include_router(meli_optimizer_router, tags=["meli-optimizer"], dependencies=[Depends(verify_session), Depends(require_permission("inventory"))])
+api_router.include_router(platform_router, prefix="/platform", tags=["platform"], dependencies=[Depends(verify_session), Depends(require_platform_admin)])
 
 
 

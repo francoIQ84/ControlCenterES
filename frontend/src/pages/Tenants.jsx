@@ -3,10 +3,11 @@ import {
   Building2, Plus, RefreshCw, ShieldCheck, X, Copy, Check,
   Sliders, Edit3, CheckCircle2, Zap, AlertCircle, CreditCard,
   QrCode, ExternalLink, Send, History, Calendar, DollarSign, Phone, Mail,
-  Layers, Package, FileText, HardDrive, Sparkles, ChevronDown, ChevronUp
+  Layers, Package, FileText, HardDrive, Sparkles, ChevronDown, ChevronUp, Server
 } from 'lucide-react'
 import { useTenant } from '../TenantContext'
 import BrandLogo from '../components/BrandLogo'
+import PlatformSettings from '../components/PlatformSettings'
 import { formatDateAR } from '../utils/dateUtils'
 
 const ALL_MODULES = [
@@ -177,6 +178,7 @@ export default function Tenants() {
   const [tenants, setTenants] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  const [platformTab, setPlatformTab] = useState('tenants') // 'tenants' | 'platform'
   
   // UI States
   const [showPlansBanner, setShowPlansBanner] = useState(false)
@@ -457,26 +459,77 @@ export default function Tenants() {
           </p>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
-          <button
-            className="btn-icon"
-            onClick={() => setShowPlansBanner(!showPlansBanner)}
-            title="Ver comparativa de planes y límites"
-            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontWeight: 600 }}
-          >
-            <Layers size={16} />
-            {showPlansBanner ? 'Ocultar Planes' : 'Ver Planes & Límites'}
-            {showPlansBanner ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-          </button>
-          <button className="btn-icon" onClick={fetchTenants} title="Actualizar">
-            <RefreshCw size={18} className={loading ? 'animate-spin' : ''} />
-          </button>
-          <button className="btn" onClick={() => { setShowForm(!showForm); setCreated(null); setEditingTenant(null); setBillingTenant(null) }}
-                  style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-            <Plus size={16} /> Nuevo negocio
-          </button>
+          {platformTab === 'tenants' && (
+            <>
+              <button
+                className="btn-icon"
+                onClick={() => setShowPlansBanner(!showPlansBanner)}
+                title="Ver comparativa de planes y límites"
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontWeight: 600 }}
+              >
+                <Layers size={16} />
+                {showPlansBanner ? 'Ocultar Planes' : 'Ver Planes & Límites'}
+                {showPlansBanner ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+              </button>
+              <button className="btn-icon" onClick={fetchTenants} title="Actualizar">
+                <RefreshCw size={18} className={loading ? 'animate-spin' : ''} />
+              </button>
+              <button className="btn" onClick={() => { setShowForm(!showForm); setCreated(null); setEditingTenant(null); setBillingTenant(null) }}
+                      style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                <Plus size={16} /> Nuevo negocio
+              </button>
+            </>
+          )}
         </div>
       </div>
 
+      {/* TABS DE PLATAFORMA */}
+      <div style={{ display: 'flex', gap: 10, margin: '20px 0 20px 0', borderBottom: '1px solid var(--border-color)', paddingBottom: 12 }}>
+        <button
+          type="button"
+          onClick={() => setPlatformTab('tenants')}
+          className="btn"
+          style={{
+            backgroundColor: platformTab === 'tenants' ? 'var(--accent-blue)' : 'transparent',
+            color: platformTab === 'tenants' ? '#fff' : 'var(--text-secondary)',
+            border: platformTab === 'tenants' ? 'none' : '1px solid var(--border-color)',
+            fontWeight: 600,
+            fontSize: '0.9rem',
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 8,
+            padding: '8px 18px',
+            borderRadius: 8
+          }}
+        >
+          <Building2 size={16} /> Negocios & Suscripciones ({tenants.length})
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setPlatformTab('platform')}
+          className="btn"
+          style={{
+            backgroundColor: platformTab === 'platform' ? 'var(--accent-blue)' : 'transparent',
+            color: platformTab === 'platform' ? '#fff' : 'var(--text-secondary)',
+            border: platformTab === 'platform' ? 'none' : '1px solid var(--border-color)',
+            fontWeight: 600,
+            fontSize: '0.9rem',
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 8,
+            padding: '8px 18px',
+            borderRadius: 8
+          }}
+        >
+          <Server size={16} /> Integraciones Globales (Desarrollador)
+        </button>
+      </div>
+
+      {platformTab === 'platform' ? (
+        <PlatformSettings />
+      ) : (
+        <>
       {/* BANNER COMPARATIVO DE PLANES Y LÍMITES */}
       {showPlansBanner && (
         <div className="card" style={{ marginTop: 16, backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-color)' }}>
@@ -1435,6 +1488,8 @@ export default function Tenants() {
           </div>
         )}
       </div>
+        </>
+      )}
     </div>
   )
 }
