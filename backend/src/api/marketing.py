@@ -1,7 +1,9 @@
 from fastapi import APIRouter, HTTPException, Depends
+from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 from typing import Optional, List
 import json
+import os
 import urllib.request
 import urllib.parse
 
@@ -45,6 +47,7 @@ class SaveConfigReq(BaseModel):
     meta_access_token: str
     meta_instagram_account_id: str
     meta_facebook_page_id: str
+    meta_page_name: Optional[str] = None
     public_base_url: Optional[str] = None
     meta_app_id: Optional[str] = None
     meta_app_secret: Optional[str] = None
@@ -55,13 +58,14 @@ def get_marketing_config(_=Depends(verify_session)):
         "meta_access_token": database.get_setting("meta_access_token", ""),
         "meta_instagram_account_id": database.get_setting("meta_instagram_account_id", ""),
         "meta_facebook_page_id": database.get_setting("meta_facebook_page_id", ""),
+        "meta_page_name": database.get_setting("meta_page_name", ""),
         "public_base_url": database.get_setting("public_base_url", "")
     }
     # Las credenciales de la App Meta son globales (Master Tenant)
     try:
         with tenancy.tenant_context(tenancy.MASTER_TENANT_ID):
-            app_id = database.get_setting("meta_app_id", "")
-            app_secret = database.get_setting("meta_app_secret", "")
+            app_id = (os.getenv("META_APP_ID") or database.get_setting("meta_app_id", "")).strip()
+            app_secret = (os.getenv("META_APP_SECRET") or database.get_setting("meta_app_secret", "")).strip()
         result["meta_app_id"] = app_id
         result["has_meta_app_secret"] = bool(app_secret)
     except Exception:
@@ -74,6 +78,8 @@ def save_marketing_config(req: SaveConfigReq, _=Depends(verify_session)):
     database.set_setting("meta_access_token", req.meta_access_token.strip())
     database.set_setting("meta_instagram_account_id", req.meta_instagram_account_id.strip())
     database.set_setting("meta_facebook_page_id", req.meta_facebook_page_id.strip())
+    if req.meta_page_name is not None:
+        database.set_setting("meta_page_name", req.meta_page_name.strip())
     if req.public_base_url:
         database.set_setting("public_base_url", req.public_base_url.strip())
     # App ID y App Secret son credenciales globales: se guardan en el Master
@@ -85,6 +91,135 @@ def save_marketing_config(req: SaveConfigReq, _=Depends(verify_session)):
         with tenancy.tenant_context(tenancy.MASTER_TENANT_ID):
             database.set_setting("meta_app_secret", req.meta_app_secret.strip())
     return {"success": True, "message": "Configuración de redes sociales guardada exitosamente"}
+
+
+@router.get("/auth-url")
+def get_meta_auth_url(_=Depends(verify_session)):
+    """Genera la URL de autorización de Meta para conectar Facebook & Instagram con 1 clic."""
+    with tenancy.tenant_context(tenancy.MASTER_TENANT_ID):
+        app_id = (os.getenv("META_APP_ID") or database.get_setting("meta_app_id", "")).strip()
+        public_url = (os.getenv("PUBLIC_BASE_URL") or database.get_setting("public_base_url", "")).strip()
+
+    if not app_id:
+        raise HTTPException(
+            status_code=400,
+            detail="META_APP_ID no está configurado en el servidor. El administrador debe configurarlo en .env"
+        )
+
+    if not public_url:
+        public_url = "https://es.focalserver.com"
+    public_url = public_url.rstrip("/")
+
+    redirect_uri = f"{public_url}/api/marketing/oauth-callback"
+    scopes = [
+        "pages_show_list",
+        "pages_read_engagement",
+        "pages_manage_posts",
+        "pages_manage_engagement",
+        "instagram_basic",
+        "instagram_content_publish",
+        "instagram_manage_comments"
+    ]
+
+    current_tenant = tenancy.get_current_tenant_id()
+    state_payload = {"tenant_id": current_tenant}
+    state_str = json.dumps(state_payload)
+
+    params = urllib.parse.urlencode({
+        "client_id": app_id,
+        "redirect_uri": redirect_uri,
+        "scope": ",".join(scopes),
+        "response_type": "code",
+        "state": state_str
+    })
+    auth_url = f"https://www.facebook.com/{social_publisher.META_GRAPH_API_VERSION}/dialog/oauth?{params}"
+    return {"auth_url": auth_url}
+
+
+@router.get("/oauth-callback")
+def meta_oauth_callback(code: Optional[str] = None,
+                        state: Optional[str] = None,
+                        error: Optional[str] = None,
+                        error_description: Optional[str] = None):
+    """Callback receptor de Meta luego de que el usuario autoriza la app."""
+    if error or error_description:
+        err_msg = error_description or error or "Autorización cancelada"
+        return RedirectResponse(url=f"/marketing?tab=config&meta_error={urllib.parse.quote(err_msg)}")
+
+    if not code:
+        return RedirectResponse(url="/marketing?tab=config&meta_error=no_code")
+
+    tenant_id = tenancy.MASTER_TENANT_ID
+    if state:
+        try:
+            state_data = json.loads(state)
+            tenant_id = state_data.get("tenant_id") or tenant_id
+        except Exception:
+            tenant_id = state
+
+    with tenancy.tenant_context(tenancy.MASTER_TENANT_ID):
+        app_id = (os.getenv("META_APP_ID") or database.get_setting("meta_app_id", "")).strip()
+        app_secret = (os.getenv("META_APP_SECRET") or database.get_setting("meta_app_secret", "")).strip()
+        public_url = (os.getenv("PUBLIC_BASE_URL") or database.get_setting("public_base_url", "")).strip()
+
+    if not public_url:
+        public_url = "https://es.focalserver.com"
+    public_url = public_url.rstrip("/")
+    redirect_uri = f"{public_url}/api/marketing/oauth-callback"
+
+    if not app_id or not app_secret:
+        return RedirectResponse(url="/marketing?tab=config&meta_error=Faltan+credenciales+globales+de+Meta+(App+ID/Secret)")
+
+    # 1. Intercambiar code por User Access Token inicial
+    token_resp = social_publisher.get_user_access_token_from_code(code, redirect_uri, app_id, app_secret)
+    if not token_resp.get("success"):
+        err = token_resp.get("error", "Error al obtener token de Meta")
+        return RedirectResponse(url=f"/marketing?tab=config&meta_error={urllib.parse.quote(str(err))}")
+
+    short_user_token = token_resp["access_token"]
+
+    # 2. Intercambiar por Long-Lived User Token (60 días)
+    ll_resp = social_publisher.exchange_for_long_lived_token(short_user_token, app_id, app_secret)
+    if not ll_resp.get("success"):
+        err = ll_resp.get("error", "Error al intercambiar por token de larga duración")
+        return RedirectResponse(url=f"/marketing?tab=config&meta_error={urllib.parse.quote(str(err))}")
+
+    long_lived_user_token = ll_resp["access_token"]
+
+    # 3. Obtener Page Token perpetuo e IDs de Facebook e Instagram
+    page_resp = social_publisher.get_long_lived_page_token(long_lived_user_token)
+    if not page_resp.get("success"):
+        with tenancy.tenant_context(tenant_id):
+            database.set_setting("meta_access_token", long_lived_user_token)
+        err = page_resp.get("error", "No se pudo obtener el token de página")
+        return RedirectResponse(url=f"/marketing?tab=config&meta_error={urllib.parse.quote(str(err))}")
+
+    page_token = page_resp["page_token"]
+    page_id = page_resp["page_id"]
+    page_name = page_resp.get("page_name", "")
+    ig_account_id = page_resp.get("instagram_account_id", "")
+
+    # 4. Guardar en la base de datos del tenant
+    with tenancy.tenant_context(tenant_id):
+        database.set_setting("meta_access_token", page_token)
+        if page_id:
+            database.set_setting("meta_facebook_page_id", page_id)
+        if ig_account_id:
+            database.set_setting("meta_instagram_account_id", ig_account_id)
+        if page_name:
+            database.set_setting("meta_page_name", page_name)
+
+    return RedirectResponse(url=f"/marketing?tab=config&meta_status=success&page_name={urllib.parse.quote(page_name)}")
+
+
+@router.post("/disconnect")
+def disconnect_meta(_=Depends(verify_session)):
+    """Desvincula las credenciales de Meta del tenant activo."""
+    database.set_setting("meta_access_token", "")
+    database.set_setting("meta_facebook_page_id", "")
+    database.set_setting("meta_instagram_account_id", "")
+    database.set_setting("meta_page_name", "")
+    return {"success": True, "message": "Cuenta de Facebook e Instagram desvinculada exitosamente"}
 
 
 class ExchangeTokenReq(BaseModel):
@@ -111,8 +246,8 @@ def exchange_long_lived_token(req: ExchangeTokenReq, _=Depends(verify_session)):
 
     # Leer App ID y App Secret del Master Tenant (credenciales globales)
     with tenancy.tenant_context(tenancy.MASTER_TENANT_ID):
-        app_id = database.get_setting("meta_app_id", "").strip()
-        app_secret = database.get_setting("meta_app_secret", "").strip()
+        app_id = (os.getenv("META_APP_ID") or database.get_setting("meta_app_id", "")).strip()
+        app_secret = (os.getenv("META_APP_SECRET") or database.get_setting("meta_app_secret", "")).strip()
 
     if not app_id or not app_secret:
         raise HTTPException(
@@ -187,7 +322,7 @@ def generate_ai_post_copy(req: GeneratePostRequest, _=Depends(verify_session)):
             reordered = [sel] + [i for i in raw_imgs if i != sel and get_high_res_image_url(i) != clean_sel]
             product["images"] = ",".join(reordered)
 
-    gemini_key = database.get_setting("gemini_api_key", "").strip()
+    gemini_key = (os.getenv("GEMINI_API_KEY") or database.get_setting("gemini_api_key", "")).strip()
     if not gemini_key:
         raise HTTPException(
             status_code=400, 
@@ -324,7 +459,7 @@ def generate_ai_video(req: GenerateVideoRequest, _=Depends(verify_session)):
 @router.get("/ai-models")
 def list_available_ai_models(_=Depends(verify_session)):
     """Lists all available Veo and Imagen models from the configured Gemini API Key."""
-    gemini_key = database.get_setting("gemini_api_key", "").strip()
+    gemini_key = (os.getenv("GEMINI_API_KEY") or database.get_setting("gemini_api_key", "")).strip()
     if not gemini_key:
         return {"success": False, "error": "No hay API Key de Gemini configurada."}
     
@@ -434,7 +569,7 @@ def reply_to_social_comment(req: ReplyCommentRequest, _=Depends(verify_session))
 
 @router.post("/comments/ai-suggest")
 def suggest_ai_comment_reply(req: AISuggestReplyRequest, _=Depends(verify_session)):
-    gemini_key = database.get_setting("gemini_api_key", "").strip()
+    gemini_key = (os.getenv("GEMINI_API_KEY") or database.get_setting("gemini_api_key", "")).strip()
     if not gemini_key:
         raise HTTPException(
             status_code=400, 

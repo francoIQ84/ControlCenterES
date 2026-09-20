@@ -231,6 +231,7 @@ export default function Marketing() {
     meta_access_token: '',
     meta_instagram_account_id: '',
     meta_facebook_page_id: '',
+    meta_page_name: '',
     meta_app_id: '',
     meta_app_secret: ''
   })
@@ -239,6 +240,47 @@ export default function Marketing() {
   const [showPermissionsGuide, setShowPermissionsGuide] = useState(false)
   const [exchangeLoading, setExchangeLoading] = useState(false)
   const [exchangeResult, setExchangeResult] = useState(null)
+  const [connectingMeta, setConnectingMeta] = useState(false)
+  const [disconnectingMeta, setDisconnectingMeta] = useState(false)
+  const [showAdvancedMeta, setShowAdvancedMeta] = useState(false)
+
+  const handleConnectMeta = async () => {
+    setConnectingMeta(true)
+    try {
+      const res = await fetch('/api/marketing/auth-url')
+      const data = await res.json()
+      if (res.ok && data.auth_url) {
+        window.location.href = data.auth_url
+      } else {
+        alert("Error al iniciar conexión con Meta: " + (data.detail || data.error || "No se pudo obtener la URL de autorización"))
+      }
+    } catch (err) {
+      alert("Error de conexión: " + err.message)
+    } finally {
+      setConnectingMeta(false)
+    }
+  }
+
+  const handleDisconnectMeta = async () => {
+    if (!confirm("¿Estás seguro de que deseas desvincular las cuentas de Facebook e Instagram de este tenant?")) {
+      return
+    }
+    setDisconnectingMeta(true)
+    try {
+      const res = await fetch('/api/marketing/disconnect', { method: 'POST' })
+      const data = await res.json()
+      if (res.ok) {
+        alert("✅ Cuenta de Facebook e Instagram desvinculada exitosamente.")
+        fetchMetaConfig()
+      } else {
+        alert("Error al desvincular: " + (data.detail || "Error desconocido"))
+      }
+    } catch (err) {
+      alert("Error: " + err.message)
+    } finally {
+      setDisconnectingMeta(false)
+    }
+  }
 
   const handleAutodetectMeta = async () => {
     if (!metaConfig.meta_access_token?.trim()) {
@@ -513,6 +555,25 @@ export default function Marketing() {
   }
 
   useEffect(() => {
+    // Detectar retorno de Meta OAuth
+    const params = new URLSearchParams(window.location.search)
+    const metaStatus = params.get('meta_status')
+    const metaError = params.get('meta_error')
+    const pageName = params.get('page_name')
+    const urlTab = params.get('tab')
+
+    if (urlTab) {
+      setActiveTab(urlTab)
+    }
+
+    if (metaStatus === 'success') {
+      alert(`🎉 ¡Conexión con Meta exitosa! Página vinculada: ${pageName || 'Página de Facebook'}`)
+      window.history.replaceState({}, document.title, window.location.pathname + (urlTab ? `?tab=${urlTab}` : ''))
+    } else if (metaError) {
+      alert(`❌ Error al conectar con Meta: ${metaError}`)
+      window.history.replaceState({}, document.title, window.location.pathname + (urlTab ? `?tab=${urlTab}` : ''))
+    }
+
     fetchProducts()
     fetchCategories()
     fetchPosts()
@@ -752,6 +813,7 @@ export default function Marketing() {
           meta_access_token: data.meta_access_token || '',
           meta_instagram_account_id: data.meta_instagram_account_id || '',
           meta_facebook_page_id: data.meta_facebook_page_id || '',
+          meta_page_name: data.meta_page_name || '',
           meta_app_id: data.meta_app_id || '',
           // No sobreescribir el secret si ya fue cargado localmente
           meta_app_secret: prev.meta_app_secret || (data.has_meta_app_secret ? '••••••••' : '')
@@ -4634,223 +4696,372 @@ export default function Marketing() {
 
       {/* TAB 4: Configuración de Redes */}
       {activeTab === 'config' && (
-        <div className="card" style={{maxWidth: 680}}>
-          <h3 style={{marginTop: 0, marginBottom: 10}}>Conexión con Meta API (Instagram & Facebook)</h3>
-          <p style={{fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: 15}}>
-            Ingresá las credenciales de tu aplicación de Meta for Developers para habilitar la publicación directa y autónoma de publicaciones y Reels.
-          </p>
-
-          {/* Quick Access Toolbar */}
-          <div style={{
-            display: 'flex',
-            gap: 10,
-            flexWrap: 'wrap',
-            marginBottom: 20,
-            padding: 12,
-            backgroundColor: 'var(--bg-hover)',
-            borderRadius: 8,
-            border: '1px solid var(--border-color)'
-          }}>
-            <a 
-              href="https://developers.facebook.com/tools/explorer/" 
-              target="_blank" 
-              rel="noreferrer"
-              className="btn"
-              style={{
-                padding: '6px 12px',
-                fontSize: '0.8rem',
-                backgroundColor: 'var(--accent-blue)',
-                color: '#fff',
-                textDecoration: 'none',
-                display: 'flex',
+        <div className="card" style={{maxWidth: 720}}>
+          <div style={{display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 15, flexWrap: 'wrap', gap: 10}}>
+            <div>
+              <h3 style={{margin: 0, fontSize: '1.25rem', fontWeight: 700}}>Conexión con Meta (Facebook & Instagram)</h3>
+              <p style={{fontSize: '0.85rem', color: 'var(--text-secondary)', margin: '4px 0 0 0'}}>
+                Vinculá las redes sociales de tu negocio para publicar reels, posts automáticos y responder comentarios con IA.
+              </p>
+            </div>
+            {metaConfig.meta_access_token && (metaConfig.meta_facebook_page_id || metaConfig.meta_instagram_account_id) ? (
+              <span style={{
+                display: 'inline-flex',
                 alignItems: 'center',
                 gap: 6,
-                fontWeight: 600
-              }}
-            >
-              🔗 Abrir Meta Graph API Explorer
-            </a>
-
-            <button 
-              type="button" 
-              className="btn"
-              onClick={handleAutodetectMeta}
-              disabled={autodetectLoading}
-              style={{
-                padding: '6px 12px',
+                padding: '4px 12px',
+                borderRadius: 20,
                 fontSize: '0.8rem',
-                backgroundColor: 'var(--accent-emerald)',
-                color: '#fff',
-                display: 'flex',
+                fontWeight: 600,
+                backgroundColor: 'rgba(34, 197, 94, 0.15)',
+                color: '#22c55e',
+                border: '1px solid rgba(34, 197, 94, 0.3)'
+              }}>
+                <span style={{width: 8, height: 8, borderRadius: '50%', backgroundColor: '#22c55e'}}></span>
+                Conectado
+              </span>
+            ) : (
+              <span style={{
+                display: 'inline-flex',
                 alignItems: 'center',
                 gap: 6,
-                fontWeight: 600
-              }}
-            >
-              {autodetectLoading ? <RefreshCw className="animate-spin" size={14} /> : <Sparkles size={14} />}
-              {autodetectLoading ? 'Detectando IDs...' : '🔍 Autodetectar IDs desde Token'}
-            </button>
-
-            <button 
-              type="button" 
-              className="btn"
-              onClick={() => setShowPermissionsGuide(!showPermissionsGuide)}
-              style={{
-                padding: '6px 12px',
+                padding: '4px 12px',
+                borderRadius: 20,
                 fontSize: '0.8rem',
-                backgroundColor: 'var(--bg-dark)',
-                color: 'var(--text-primary)',
-                border: '1px solid var(--border-color)',
-                display: 'flex',
-                alignItems: 'center',
-                gap: 6
-              }}
-            >
-              📘 {showPermissionsGuide ? 'Ocultar Guía' : 'Ver Permisos Requeridos'}
-            </button>
+                fontWeight: 600,
+                backgroundColor: 'rgba(239, 68, 68, 0.15)',
+                color: '#ef4444',
+                border: '1px solid rgba(239, 68, 68, 0.3)'
+              }}>
+                <span style={{width: 8, height: 8, borderRadius: '50%', backgroundColor: '#ef4444'}}></span>
+                No vinculado
+              </span>
+            )}
           </div>
 
-          {/* Expandable Permissions Guide */}
-          {showPermissionsGuide && (
+          {/* ESTADO CONECTADO */}
+          {metaConfig.meta_access_token && (metaConfig.meta_facebook_page_id || metaConfig.meta_instagram_account_id) ? (
             <div style={{
               backgroundColor: 'var(--bg-dark)',
-              padding: 14,
-              borderRadius: 8,
-              border: '1px dashed var(--accent-blue)',
-              marginBottom: 20,
-              fontSize: '0.8rem',
-              color: 'var(--text-secondary)'
+              border: '1px solid var(--border-color)',
+              borderRadius: 12,
+              padding: 20,
+              marginBottom: 20
             }}>
-              <div style={{fontWeight: 'bold', color: 'var(--accent-blue)', marginBottom: 8}}>
-                🔑 Permisos requeridos al generar el Token en Graph API Explorer:
+              <div style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 16, marginBottom: 20}}>
+                <div style={{
+                  padding: 14,
+                  backgroundColor: 'rgba(59, 130, 246, 0.08)',
+                  borderRadius: 8,
+                  border: '1px solid rgba(59, 130, 246, 0.2)'
+                }}>
+                  <div style={{fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: 4}}>📘 Página de Facebook</div>
+                  <div style={{fontSize: '1rem', fontWeight: 700, color: 'var(--text-primary)'}}>
+                    {metaConfig.meta_page_name || 'Página de Facebook'}
+                  </div>
+                  <div style={{fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: 4}}>
+                    ID: <code>{metaConfig.meta_facebook_page_id || 'No disponible'}</code>
+                  </div>
+                </div>
+
+                <div style={{
+                  padding: 14,
+                  backgroundColor: 'rgba(236, 72, 153, 0.08)',
+                  borderRadius: 8,
+                  border: '1px solid rgba(236, 72, 153, 0.2)'
+                }}>
+                  <div style={{fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: 4}}>📸 Instagram Business</div>
+                  <div style={{fontSize: '1rem', fontWeight: 700, color: 'var(--text-primary)'}}>
+                    {metaConfig.meta_instagram_account_id ? 'Cuenta Vinculada' : 'No asociada a la Página'}
+                  </div>
+                  <div style={{fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: 4}}>
+                    {metaConfig.meta_instagram_account_id ? (
+                      <>ID: <code>{metaConfig.meta_instagram_account_id}</code></>
+                    ) : (
+                      'Para publicar en Instagram, la cuenta debe ser Empresa y estar asociada a tu página de Facebook.'
+                    )}
+                  </div>
+                </div>
               </div>
-              <ul style={{margin: '0 0 10px 18px', padding: 0, lineHeight: 1.6}}>
-                <li><strong>Facebook (Página):</strong> <code>pages_show_list</code>, <code>pages_read_engagement</code>, <code>pages_manage_posts</code>, <code>pages_manage_engagement</code></li>
-                <li><strong>Instagram (Empresa):</strong> <code>instagram_basic</code>, <code>instagram_content_publish</code>, <code>instagram_manage_comments</code></li>
-              </ul>
-              <div style={{fontSize: '0.78rem', color: 'var(--accent-orange)'}}>
-                💡 <strong>Tip rápido de renovación:</strong> Copiá el Token del Explorer, pégalo en la casilla de abajo y presioná <strong>"🔍 Autodetectar IDs desde Token"</strong> para autocompletar el Facebook Page ID y el Instagram Business Account ID en 1 clic.
+
+              <div style={{display: 'flex', gap: 12, flexWrap: 'wrap'}}>
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={handleConnectMeta}
+                  disabled={connectingMeta}
+                  style={{
+                    padding: '8px 18px',
+                    fontSize: '0.85rem',
+                    backgroundColor: 'var(--accent-blue)',
+                    color: '#fff',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    fontWeight: 600
+                  }}
+                >
+                  {connectingMeta ? <RefreshCw className="animate-spin" size={15} /> : <RefreshCw size={15} />}
+                  {connectingMeta ? 'Conectando con Meta...' : 'Reconectar o Cambiar de Página'}
+                </button>
+
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={handleDisconnectMeta}
+                  disabled={disconnectingMeta}
+                  style={{
+                    padding: '8px 18px',
+                    fontSize: '0.85rem',
+                    backgroundColor: 'transparent',
+                    color: '#ef4444',
+                    border: '1px solid #ef4444',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    fontWeight: 600
+                  }}
+                >
+                  {disconnectingMeta ? <RefreshCw className="animate-spin" size={15} /> : <Trash2 size={15} />}
+                  {disconnectingMeta ? 'Desvinculando...' : 'Desvincular Redes'}
+                </button>
               </div>
+            </div>
+          ) : (
+            /* ESTADO NO CONECTADO */
+            <div style={{
+              backgroundColor: 'var(--bg-dark)',
+              border: '1px dashed var(--border-color)',
+              borderRadius: 12,
+              padding: '30px 20px',
+              textAlign: 'center',
+              marginBottom: 20
+            }}>
+              <div style={{fontSize: '2.5rem', marginBottom: 12}}>🌐</div>
+              <h4 style={{margin: '0 0 8px 0', fontSize: '1.1rem'}}>Conectá tus Redes Sociales en 1 Clic</h4>
+              <p style={{fontSize: '0.85rem', color: 'var(--text-secondary)', maxWidth: 460, margin: '0 auto 20px auto', lineHeight: 1.5}}>
+                Iniciá sesión con tu cuenta de Facebook para autorizar tu Página comercial y tu cuenta de Instagram. No necesitás generar tokens manuales ni buscar IDs técnicos.
+              </p>
+
+              <button
+                type="button"
+                className="btn"
+                onClick={handleConnectMeta}
+                disabled={connectingMeta}
+                style={{
+                  padding: '12px 28px',
+                  fontSize: '0.95rem',
+                  backgroundColor: '#1877F2',
+                  color: '#fff',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 10,
+                  fontWeight: 700,
+                  borderRadius: 8,
+                  boxShadow: '0 4px 14px rgba(24, 119, 242, 0.35)'
+                }}
+              >
+                {connectingMeta ? <RefreshCw className="animate-spin" size={18} /> : <span>📘</span>}
+                {connectingMeta ? 'Redirigiendo a Facebook...' : 'Conectar con Facebook e Instagram'}
+              </button>
             </div>
           )}
 
-          <form onSubmit={handleSaveMetaConfig} style={{display: 'flex', flexDirection: 'column', gap: 15}}>
-            <label style={{fontSize: '0.85rem'}}>Meta Access Token (Token de acceso de página o usuario)
-              <input 
-                type="text" 
-                value={metaConfig.meta_access_token} 
-                onChange={e => setMetaConfig({...metaConfig, meta_access_token: e.target.value})} 
-                placeholder="EAA..." 
-                style={{width: '100%', marginTop: 5, padding: '8px 10px', borderRadius: 6, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-dark)', color: 'var(--text-primary)'}}
-              />
-            </label>
+          {/* OPCIONES AVANZADAS (Colapsable para configuración manual) */}
+          <div style={{borderTop: '1px solid var(--border-color)', paddingTop: 15, marginTop: 10}}>
+            <button
+              type="button"
+              onClick={() => setShowAdvancedMeta(!showAdvancedMeta)}
+              style={{
+                background: 'none',
+                border: 'none',
+                color: 'var(--text-secondary)',
+                fontSize: '0.82rem',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                padding: '4px 0'
+              }}
+            >
+              <span>{showAdvancedMeta ? '▼' : '▶'}</span>
+              <span>Opciones avanzadas (Configuración manual de Token / IDs)</span>
+            </button>
 
-            {/* Botón de intercambio de token de larga duración */}
-            <div style={{
-              padding: 14,
-              backgroundColor: 'var(--bg-dark)',
-              borderRadius: 8,
-              border: '1px solid var(--accent-emerald)',
-            }}>
-              <div style={{fontSize: '0.82rem', color: 'var(--text-secondary)', marginBottom: 10}}>
-                🔄 <strong>Obtener Token Perpetuo:</strong> Pegá tu token del <a href="https://developers.facebook.com/tools/explorer/" target="_blank" rel="noreferrer" style={{color: 'var(--accent-blue)'}}>Graph API Explorer</a> arriba y presioná el botón para convertirlo automáticamente en un <strong style={{color: 'var(--accent-emerald)'}}>Token de Página que nunca expira</strong>.
-              </div>
-              <button 
-                type="button" 
-                className="btn"
-                onClick={handleExchangeToken}
-                disabled={exchangeLoading || !metaConfig.meta_access_token?.trim()}
-                style={{
-                  padding: '8px 16px',
-                  fontSize: '0.85rem',
-                  backgroundColor: 'var(--accent-emerald)',
-                  color: '#fff',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 6,
-                  fontWeight: 700
-                }}
-              >
-                {exchangeLoading ? <RefreshCw className="animate-spin" size={14} /> : '♾️'}
-                {exchangeLoading ? 'Intercambiando token con Meta...' : '🔄 Obtener Token de Larga Duración (Perpetuo)'}
-              </button>
-              {exchangeResult && (
+            {showAdvancedMeta && (
+              <div style={{marginTop: 15, padding: 15, backgroundColor: 'var(--bg-dark)', borderRadius: 8, border: '1px solid var(--border-color)'}}>
+                {/* Quick Access Toolbar */}
                 <div style={{
-                  marginTop: 10,
-                  padding: '10px 14px',
-                  borderRadius: 6,
-                  fontSize: '0.82rem',
-                  backgroundColor: exchangeResult.type === 'success' ? 'rgba(45, 212, 100, 0.1)' : 'rgba(255, 80, 80, 0.1)',
-                  border: `1px solid ${exchangeResult.type === 'success' ? 'var(--accent-emerald)' : '#ff5050'}`,
-                  color: exchangeResult.type === 'success' ? 'var(--accent-emerald)' : '#ff5050'
+                  display: 'flex',
+                  gap: 10,
+                  flexWrap: 'wrap',
+                  marginBottom: 15,
+                  padding: 10,
+                  backgroundColor: 'var(--bg-hover)',
+                  borderRadius: 6
                 }}>
-                  {exchangeResult.type === 'success' ? '✅' : '❌'} {exchangeResult.message}
-                </div>
-              )}
-            </div>
+                  <a 
+                    href="https://developers.facebook.com/tools/explorer/" 
+                    target="_blank" 
+                    rel="noreferrer"
+                    className="btn"
+                    style={{
+                      padding: '6px 12px',
+                      fontSize: '0.8rem',
+                      backgroundColor: 'var(--accent-blue)',
+                      color: '#fff',
+                      textDecoration: 'none',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 6,
+                      fontWeight: 600
+                    }}
+                  >
+                    🔗 Abrir Meta Graph API Explorer
+                  </a>
 
-            <label style={{fontSize: '0.85rem'}}>Instagram Business Account ID
-              <input 
-                type="text" 
-                value={metaConfig.meta_instagram_account_id} 
-                onChange={e => setMetaConfig({...metaConfig, meta_instagram_account_id: e.target.value})} 
-                placeholder="178414..." 
-                style={{width: '100%', marginTop: 5, padding: '8px 10px', borderRadius: 6, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-dark)', color: 'var(--text-primary)'}}
-              />
-            </label>
+                  <button 
+                    type="button" 
+                    className="btn"
+                    onClick={handleAutodetectMeta}
+                    disabled={autodetectLoading}
+                    style={{
+                      padding: '6px 12px',
+                      fontSize: '0.8rem',
+                      backgroundColor: 'var(--accent-emerald)',
+                      color: '#fff',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 6,
+                      fontWeight: 600
+                    }}
+                  >
+                    {autodetectLoading ? <RefreshCw className="animate-spin" size={14} /> : <Sparkles size={14} />}
+                    {autodetectLoading ? 'Detectando IDs...' : '🔍 Autodetectar IDs desde Token'}
+                  </button>
 
-            <label style={{fontSize: '0.85rem'}}>Facebook Page ID
-              <input 
-                type="text" 
-                value={metaConfig.meta_facebook_page_id} 
-                onChange={e => setMetaConfig({...metaConfig, meta_facebook_page_id: e.target.value})} 
-                placeholder="102938..." 
-                style={{width: '100%', marginTop: 5, padding: '8px 10px', borderRadius: 6, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-dark)', color: 'var(--text-primary)'}}
-              />
-            </label>
+                  <button 
+                    type="button" 
+                    className="btn"
+                    onClick={() => setShowPermissionsGuide(!showPermissionsGuide)}
+                    style={{
+                      padding: '6px 12px',
+                      fontSize: '0.8rem',
+                      backgroundColor: 'var(--bg-dark)',
+                      color: 'var(--text-primary)',
+                      border: '1px solid var(--border-color)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 6
+                    }}
+                  >
+                    📘 {showPermissionsGuide ? 'Ocultar Guía' : 'Ver Permisos Requeridos'}
+                  </button>
+                </div>
 
-            {/* Credenciales de la App Meta — solo visibles para el admin de la plataforma */}
-            {isPlatformAdmin && (
-              <div style={{
-                marginTop: 5,
-                padding: 14,
-                backgroundColor: 'var(--bg-hover)',
-                borderRadius: 8,
-                border: '1px dashed var(--accent-orange)'
-              }}>
-                <div style={{fontSize: '0.82rem', fontWeight: 'bold', color: 'var(--accent-orange)', marginBottom: 10}}>
-                  🔐 Credenciales de la App Meta (Solo Administrador de Plataforma)
-                </div>
-                <div style={{fontSize: '0.78rem', color: 'var(--text-secondary)', marginBottom: 12}}>
-                  Estos datos provienen de tu App en <a href="https://developers.facebook.com/apps/" target="_blank" rel="noreferrer" style={{color: 'var(--accent-blue)'}}>Meta for Developers</a> → Configuración → Básica. Se configuran <strong>una sola vez</strong> y aplican a todos los clientes de la plataforma.
-                </div>
-                <div style={{display: 'flex', flexDirection: 'column', gap: 10}}>
-                  <label style={{fontSize: '0.85rem'}}>Meta App ID (client_id)
+                {/* Expandable Permissions Guide */}
+                {showPermissionsGuide && (
+                  <div style={{
+                    backgroundColor: 'var(--bg-dark)',
+                    padding: 12,
+                    borderRadius: 6,
+                    border: '1px dashed var(--accent-blue)',
+                    marginBottom: 15,
+                    fontSize: '0.78rem',
+                    color: 'var(--text-secondary)'
+                  }}>
+                    <div style={{fontWeight: 'bold', color: 'var(--accent-blue)', marginBottom: 6}}>
+                      🔑 Permisos requeridos al generar el Token en Graph API Explorer:
+                    </div>
+                    <ul style={{margin: '0 0 8px 18px', padding: 0, lineHeight: 1.5}}>
+                      <li><strong>Facebook (Página):</strong> <code>pages_show_list</code>, <code>pages_read_engagement</code>, <code>pages_manage_posts</code>, <code>pages_manage_engagement</code></li>
+                      <li><strong>Instagram (Empresa):</strong> <code>instagram_basic</code>, <code>instagram_content_publish</code>, <code>instagram_manage_comments</code></li>
+                    </ul>
+                  </div>
+                )}
+
+                <form onSubmit={handleSaveMetaConfig} style={{display: 'flex', flexDirection: 'column', gap: 12}}>
+                  <label style={{fontSize: '0.82rem'}}>Meta Access Token (Token de acceso de página o usuario)
                     <input 
                       type="text" 
-                      value={metaConfig.meta_app_id} 
-                      onChange={e => setMetaConfig({...metaConfig, meta_app_id: e.target.value})} 
-                      placeholder="1234567890123456" 
-                      style={{width: '100%', marginTop: 5, padding: '8px 10px', borderRadius: 6, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-dark)', color: 'var(--text-primary)'}}
+                      value={metaConfig.meta_access_token} 
+                      onChange={e => setMetaConfig({...metaConfig, meta_access_token: e.target.value})} 
+                      placeholder="EAA..." 
+                      style={{width: '100%', marginTop: 4, padding: '7px 10px', borderRadius: 6, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-dark)', color: 'var(--text-primary)'}}
                     />
                   </label>
-                  <label style={{fontSize: '0.85rem'}}>Meta App Secret (client_secret)
+
+                  {/* Botón de intercambio de token de larga duración */}
+                  <div style={{
+                    padding: 12,
+                    backgroundColor: 'var(--bg-dark)',
+                    borderRadius: 6,
+                    border: '1px solid var(--accent-emerald)',
+                  }}>
+                    <div style={{fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: 8}}>
+                      🔄 <strong>Obtener Token Perpetuo:</strong> Pegá tu token del Graph API Explorer arriba y convertilo automáticamente en un Token de Página que nunca expira.
+                    </div>
+                    <button 
+                      type="button" 
+                      className="btn"
+                      onClick={handleExchangeToken}
+                      disabled={exchangeLoading || !metaConfig.meta_access_token?.trim()}
+                      style={{
+                        padding: '6px 14px',
+                        fontSize: '0.82rem',
+                        backgroundColor: 'var(--accent-emerald)',
+                        color: '#fff',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 6,
+                        fontWeight: 700
+                      }}
+                    >
+                      {exchangeLoading ? <RefreshCw className="animate-spin" size={14} /> : '♾️'}
+                      {exchangeLoading ? 'Intercambiando token con Meta...' : '🔄 Obtener Token de Larga Duración (Perpetuo)'}
+                    </button>
+                    {exchangeResult && (
+                      <div style={{
+                        marginTop: 8,
+                        padding: '8px 12px',
+                        borderRadius: 6,
+                        fontSize: '0.8rem',
+                        backgroundColor: exchangeResult.type === 'success' ? 'rgba(45, 212, 100, 0.1)' : 'rgba(255, 80, 80, 0.1)',
+                        border: `1px solid ${exchangeResult.type === 'success' ? 'var(--accent-emerald)' : '#ff5050'}`,
+                        color: exchangeResult.type === 'success' ? 'var(--accent-emerald)' : '#ff5050'
+                      }}>
+                        {exchangeResult.type === 'success' ? '✅' : '❌'} {exchangeResult.message}
+                      </div>
+                    )}
+                  </div>
+
+                  <label style={{fontSize: '0.82rem'}}>Instagram Business Account ID
                     <input 
-                      type="password" 
-                      value={metaConfig.meta_app_secret} 
-                      onChange={e => setMetaConfig({...metaConfig, meta_app_secret: e.target.value})} 
-                      placeholder="abc123def456..." 
-                      style={{width: '100%', marginTop: 5, padding: '8px 10px', borderRadius: 6, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-dark)', color: 'var(--text-primary)'}}
+                      type="text" 
+                      value={metaConfig.meta_instagram_account_id} 
+                      onChange={e => setMetaConfig({...metaConfig, meta_instagram_account_id: e.target.value})} 
+                      placeholder="178414..." 
+                      style={{width: '100%', marginTop: 4, padding: '7px 10px', borderRadius: 6, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-dark)', color: 'var(--text-primary)'}}
                     />
                   </label>
-                </div>
+
+                  <label style={{fontSize: '0.82rem'}}>Facebook Page ID
+                    <input 
+                      type="text" 
+                      value={metaConfig.meta_facebook_page_id} 
+                      onChange={e => setMetaConfig({...metaConfig, meta_facebook_page_id: e.target.value})} 
+                      placeholder="102938..." 
+                      style={{width: '100%', marginTop: 4, padding: '7px 10px', borderRadius: 6, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-dark)', color: 'var(--text-primary)'}}
+                    />
+                  </label>
+
+                  <button type="submit" className="btn" disabled={savingConfig} style={{backgroundColor: 'var(--accent-blue)', color: '#fff', alignSelf: 'flex-start', marginTop: 6, padding: '8px 16px', fontWeight: 'bold', fontSize: '0.85rem'}}>
+                    {savingConfig ? 'Guardando...' : '💾 Guardar Credenciales Manuales'}
+                  </button>
+                </form>
               </div>
             )}
-
-            <button type="submit" className="btn" disabled={savingConfig} style={{backgroundColor: 'var(--accent-blue)', color: '#fff', alignSelf: 'flex-start', marginTop: 10, padding: '10px 20px', fontWeight: 'bold'}}>
-              {savingConfig ? 'Guardando...' : '💾 Guardar Credenciales de Meta'}
-            </button>
-          </form>
+          </div>
         </div>
       )}
 

@@ -10,6 +10,45 @@ META_GRAPH_API_VERSION = "v19.0"
 META_GRAPH_BASE_URL = f"https://graph.facebook.com/{META_GRAPH_API_VERSION}"
 
 
+def get_user_access_token_from_code(code: str, redirect_uri: str, app_id: str,
+                                    app_secret: str) -> dict:
+    """Intercambia el código de autorización OAuth de Meta por un User Access Token.
+
+    Llamada server-side:
+    GET /oauth/access_token?client_id=...&redirect_uri=...&client_secret=...&code=...
+    """
+    params = urllib.parse.urlencode({
+        "client_id": app_id,
+        "redirect_uri": redirect_uri,
+        "client_secret": app_secret,
+        "code": code,
+    })
+    url = f"{META_GRAPH_BASE_URL}/oauth/access_token?{params}"
+    try:
+        req = urllib.request.Request(url, method="GET")
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            if "access_token" in data:
+                return {
+                    "success": True,
+                    "access_token": data["access_token"],
+                    "token_type": data.get("token_type", "bearer"),
+                    "expires_in": data.get("expires_in"),
+                }
+            return {"success": False, "error": data.get("error", {}).get(
+                "message", "Respuesta inesperada de Meta")}
+    except urllib.error.HTTPError as e:
+        body = e.read().decode("utf-8", errors="replace")
+        try:
+            err_data = json.loads(body)
+            msg = err_data.get("error", {}).get("message", body)
+        except Exception:
+            msg = body
+        return {"success": False, "error": f"Meta API Error ({e.code}): {msg}"}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
 def exchange_for_long_lived_token(short_token: str, app_id: str,
                                   app_secret: str) -> dict:
     """Intercambia un token de corta duración (2 hs) por uno de larga duración (60 días).
