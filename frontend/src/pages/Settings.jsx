@@ -4102,6 +4102,8 @@ export default function Settings() {
                             {c.afip_certs && <span title="Certificados AFIP/ARCA" style={{cursor: 'default'}}>🔐</span>}
                             {c.whatsapp_session && <span title="Sesión WhatsApp" style={{cursor: 'default'}}>💬</span>}
                             {c.whatsapp_contacts && <span title="Contactos WhatsApp" style={{cursor: 'default'}}>📇</span>}
+                            {c.platform_config && <span title="Config Plataforma (Developer)" style={{cursor: 'default'}}>⚙️</span>}
+                            {c.service_account && <span title="Service Account (Google)" style={{cursor: 'default'}}>🔑</span>}
                             {!b.main_file?.contents && <span style={{fontSize: '0.7rem', color: 'var(--text-secondary)'}} title="Backup legacy sin manifiesto">v1</span>}
                           </div>
                         </td>
