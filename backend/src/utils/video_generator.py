@@ -10,7 +10,7 @@ def generate_video_script_with_gemini(product_data: dict, user_prompt: str = "")
     """
     Uses Gemini AI to generate a structured 4-scene video script tailored for a 15-second Reel.
     """
-    gemini_key = database.get_setting("gemini_api_key", "").strip()
+    gemini_key = database.get_platform_setting("gemini_api_key", "GEMINI_API_KEY")
     if not gemini_key:
         raise Exception("Se requiere una API Key de Gemini configurada en Ajustes para generar videos por IA.")
 
@@ -101,7 +101,7 @@ def generate_video_with_google_veo(prompt: str, image_url: str = ""):
     Calls Google Veo API using configured Gemini API Key.
     Auto-discovers available Veo models from the API key.
     """
-    gemini_key = database.get_setting("gemini_api_key", "").strip()
+    gemini_key = database.get_platform_setting("gemini_api_key", "GEMINI_API_KEY")
     if not gemini_key:
         raise Exception("Se requiere una API Key de Gemini / Google AI Studio configurada en Ajustes.")
 
@@ -299,7 +299,7 @@ def generate_video_with_imagen3(prompt: str, post_type: str = "reel"):
     """
     Uses Google Imagen 3.0 via Gemini API Key for ultra-high quality visuals.
     """
-    gemini_key = database.get_setting("gemini_api_key", "").strip()
+    gemini_key = database.get_platform_setting("gemini_api_key", "GEMINI_API_KEY")
     if not gemini_key:
         return {"success": False, "error": "Se requiere una API Key de Gemini configurada en Ajustes."}
 
@@ -387,7 +387,7 @@ def generate_image_with_gemini_native(prompt: str, product_data: dict, post_type
     Uses Google Imagen 3.0 via google-genai SDK or REST API to create a real AI image based on user's prompt.
     If Imagen 3 is unavailable on the API key, falls back to the Gemini Canvas script.
     """
-    gemini_key = database.get_setting("gemini_api_key", "").strip()
+    gemini_key = database.get_platform_setting("gemini_api_key", "GEMINI_API_KEY")
     if not gemini_key:
         return {"success": False, "error": "Se requiere una API Key de Gemini configurada en Ajustes."}
 

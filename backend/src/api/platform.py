@@ -50,7 +50,7 @@ def get_platform_credentials(_: dict = Depends(require_platform_admin)):
         tn_client_id = (os.getenv("TIENDANUBE_CLIENT_ID") or database.get_setting("tiendanube_client_id", "") or database.get_setting("tn_client_id", "")).strip()
         tn_secret = (os.getenv("TIENDANUBE_CLIENT_SECRET") or database.get_setting("tiendanube_client_secret", "") or database.get_setting("tn_client_secret", "")).strip()
 
-        gemini_key = (os.getenv("GEMINI_API_KEY") or database.get_setting("gemini_api_key", "")).strip()
+        gemini_key = database.get_platform_setting("gemini_api_key", "GEMINI_API_KEY")
 
         gdrive_folder = (os.getenv("GOOGLE_DRIVE_FOLDER_ID") or database.get_setting("google_drive_folder_id", "")).strip()
 
@@ -176,7 +176,7 @@ def test_platform_service(service: str, _: dict = Depends(require_platform_admin
         tn_client_id = (os.getenv("TIENDANUBE_CLIENT_ID") or database.get_setting("tiendanube_client_id", "")).strip()
         tn_secret = (os.getenv("TIENDANUBE_CLIENT_SECRET") or database.get_setting("tiendanube_client_secret", "")).strip()
 
-        gemini_key = (os.getenv("GEMINI_API_KEY") or database.get_setting("gemini_api_key", "")).strip()
+        gemini_key = database.get_platform_setting("gemini_api_key", "GEMINI_API_KEY")
 
         gdrive_folder = (os.getenv("GOOGLE_DRIVE_FOLDER_ID") or database.get_setting("google_drive_folder_id", "")).strip()
 

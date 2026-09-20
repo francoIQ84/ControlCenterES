@@ -35,19 +35,14 @@ DEFAULT_USER_AGENT = "ControlCenterES (soporte@controlcenter.com.ar)"
 # ---------------------------------------------------------------------------
 
 def get_client_id() -> str:
-    return (
-        os.environ.get("TIENDANUBE_CLIENT_ID")
-        or database.get_setting("tn_client_id", "")
-        or ""
-    ).strip()
+    # Mismo orden que el resto de las credenciales: lo propio del negocio, la
+    # App de plataforma guardada en el Maestro, y la variable de entorno al
+    # final. Ver database.get_platform_setting.
+    return database.get_platform_setting("tn_client_id", "TIENDANUBE_CLIENT_ID")
 
 
 def get_client_secret() -> str:
-    return (
-        os.environ.get("TIENDANUBE_CLIENT_SECRET")
-        or database.get_setting("tn_client_secret", "")
-        or ""
-    ).strip()
+    return database.get_platform_setting("tn_client_secret", "TIENDANUBE_CLIENT_SECRET")
 
 
 def get_redirect_uri() -> str:

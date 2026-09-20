@@ -276,7 +276,7 @@ def _llamar_gemini(prompt: str, max_tokens: int = 4096, json_mode: bool = False)
     cuenta real, pedirlo solo por prompt devolvia prosa cada tanto y la
     sugerencia de atributos se perdia.
     """
-    clave = database.get_setting("gemini_api_key", "").strip()
+    clave = database.get_platform_setting("gemini_api_key", "GEMINI_API_KEY")
     if not clave:
         return None, None, "No hay una clave de Gemini configurada en Ajustes"
 

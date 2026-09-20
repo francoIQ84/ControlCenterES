@@ -144,7 +144,7 @@ def _descargar(url: str):
 
 def _generar_con_gemini(bytes_origen: bytes, instruccion: str):
     """Imagen-a-imagen. Devuelve (bytes_png, modelo, error)."""
-    clave = (database.get_setting('gemini_api_key', '') or '').strip()
+    clave = database.get_platform_setting("gemini_api_key", "GEMINI_API_KEY")
     if not clave:
         return None, None, "No hay una clave de Gemini configurada"
 

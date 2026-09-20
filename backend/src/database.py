@@ -675,6 +675,44 @@ def get_setting(key, default=None):
     except psycopg2.Error:
         return default
 
+def get_platform_setting(key, env_var=None, default=""):
+    """Credencial que el negocio puede tener propia, con respaldo de plataforma.
+
+    Resuelve, en este orden:
+
+      1. El valor del propio inquilino, si lo configuró.
+      2. El del Tenant Maestro, que es donde el panel Superadmin guarda las
+         credenciales globales del desarrollador.
+      3. La variable de entorno.
+
+    Los dos primeros pasos hacían falta porque `settings` tiene RLS: desde el
+    contexto de un inquilino, `get_setting('gemini_api_key')` no ve la fila del
+    Maestro. O sea que la clave cargada en el panel Superadmin era invisible
+    para todos los negocios, y las funciones de IA sólo andaban si además
+    estaba la variable de entorno.
+
+    El paso 3 va último a propósito. Cuando iba primero, definir la variable en
+    el `.env` del servidor pisaba en silencio —sin error y sin aviso— lo que
+    cada negocio hubiera cargado en su propia Configuración.
+    """
+    own = (get_setting(key) or "").strip()
+    if own:
+        return own
+
+    if tenancy.get_current_tenant_id() != tenancy.MASTER_TENANT_ID:
+        try:
+            with tenancy.tenant_context(tenancy.MASTER_TENANT_ID):
+                shared = (get_setting(key) or "").strip()
+            if shared:
+                return shared
+        except Exception:
+            pass
+
+    if env_var:
+        return (os.getenv(env_var) or "").strip() or default
+    return default
+
+
 def get_merchant_name(default: str = "ControlCenterES") -> str:
     """Nombre comercial del inquilino activo.
 

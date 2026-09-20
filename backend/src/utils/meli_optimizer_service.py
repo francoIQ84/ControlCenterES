@@ -615,7 +615,7 @@ def _call_gemini(prompt: str, temperature: float = 0.25) -> str:
     """Llama a Gemini AI con fallback de modelos, 8192 tokens y responseMimeType."""
     import requests
 
-    gemini_key = database.get_setting("gemini_api_key", "").strip()
+    gemini_key = database.get_platform_setting("gemini_api_key", "GEMINI_API_KEY")
     if not gemini_key:
         raise Exception("Se requiere una API Key de Gemini configurada en Ajustes para optimizar publicaciones.")
 

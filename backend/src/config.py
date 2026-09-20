@@ -1,4 +1,5 @@
-from src.database import get_setting, set_setting, delete_setting
+from src.database import (get_setting, set_setting, delete_setting,
+                          get_platform_setting)
 import os
 
 # Default configuration values
@@ -16,46 +17,19 @@ COUNTRIES = {
     'PE': {'name': 'Perú', 'auth_url': 'https://auth.mercadolibre.com.pe', 'site_id': 'MPE'},
 }
 
-def _tenant_first(setting_key: str, env_var: str) -> str:
-    """Valor propio del inquilino, con la credencial de plataforma de respaldo.
-
-    El orden importa y antes estaba al revés: se leía la variable de entorno
-    primero, así que con `MELI_CLIENT_ID` definida en el `.env` del servidor
-    TODOS los negocios quedaban usando la aplicación de Mercado Libre del
-    desarrollador, y el App ID que cada uno cargaba en Configuración se
-    ignoraba en silencio —sin error, sin aviso—.
-
-    Ahora manda lo que el negocio configuró. Si no configuró nada, recién ahí
-    se usa la credencial global: primero la del Tenant Maestro (que es donde
-    las guarda el panel de plataforma) y por último la variable de entorno.
-    Así la app compartida sigue siendo un default útil sin pisar a quien
-    registró la suya.
-    """
-    own = get_setting(setting_key, '')
-    if own:
-        return own
-
-    from src import tenancy
-    if tenancy.get_current_tenant_id() != tenancy.MASTER_TENANT_ID:
-        try:
-            with tenancy.tenant_context(tenancy.MASTER_TENANT_ID):
-                shared = get_setting(setting_key, '')
-            if shared:
-                return shared
-        except Exception:
-            pass
-
-    return os.getenv(env_var) or ''
-
-
 def get_client_id():
-    return _tenant_first('meli_client_id', 'MELI_CLIENT_ID')
+    # Lo que configuró el negocio, con la App de plataforma como respaldo.
+    # Antes se leía la variable de entorno primero, así que con
+    # `MELI_CLIENT_ID` en el `.env` del servidor TODOS los negocios usaban la
+    # aplicación del desarrollador y el App ID que cada uno cargaba en
+    # Configuración se ignoraba en silencio. Ver database.get_platform_setting.
+    return get_platform_setting('meli_client_id', 'MELI_CLIENT_ID')
 
 def set_client_id(val):
     set_setting('meli_client_id', val)
 
 def get_client_secret():
-    return _tenant_first('meli_client_secret', 'MELI_CLIENT_SECRET')
+    return get_platform_setting('meli_client_secret', 'MELI_CLIENT_SECRET')
 
 def set_client_secret(val):
     set_setting('meli_client_secret', val)

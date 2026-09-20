@@ -51,7 +51,7 @@ def generate_ai_answer(question_text: str, item_data: dict, buyer_nickname: str 
     Invoca la API de Gemini AI para redactar la respuesta comercial del producto.
     Retorna (respuesta_generada, modelo_utilizado)
     """
-    gemini_key = database.get_setting("gemini_api_key", "").strip()
+    gemini_key = database.get_platform_setting("gemini_api_key", "GEMINI_API_KEY")
     if not gemini_key:
         # Fallback genérico amable si no hay API key configurada
         stock = item_data.get('available_quantity', 0)

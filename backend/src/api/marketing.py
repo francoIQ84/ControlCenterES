@@ -322,7 +322,7 @@ def generate_ai_post_copy(req: GeneratePostRequest, _=Depends(verify_session)):
             reordered = [sel] + [i for i in raw_imgs if i != sel and get_high_res_image_url(i) != clean_sel]
             product["images"] = ",".join(reordered)
 
-    gemini_key = (os.getenv("GEMINI_API_KEY") or database.get_setting("gemini_api_key", "")).strip()
+    gemini_key = database.get_platform_setting("gemini_api_key", "GEMINI_API_KEY")
     if not gemini_key:
         raise HTTPException(
             status_code=400, 
@@ -459,7 +459,7 @@ def generate_ai_video(req: GenerateVideoRequest, _=Depends(verify_session)):
 @router.get("/ai-models")
 def list_available_ai_models(_=Depends(verify_session)):
     """Lists all available Veo and Imagen models from the configured Gemini API Key."""
-    gemini_key = (os.getenv("GEMINI_API_KEY") or database.get_setting("gemini_api_key", "")).strip()
+    gemini_key = database.get_platform_setting("gemini_api_key", "GEMINI_API_KEY")
     if not gemini_key:
         return {"success": False, "error": "No hay API Key de Gemini configurada."}
     
@@ -569,7 +569,7 @@ def reply_to_social_comment(req: ReplyCommentRequest, _=Depends(verify_session))
 
 @router.post("/comments/ai-suggest")
 def suggest_ai_comment_reply(req: AISuggestReplyRequest, _=Depends(verify_session)):
-    gemini_key = (os.getenv("GEMINI_API_KEY") or database.get_setting("gemini_api_key", "")).strip()
+    gemini_key = database.get_platform_setting("gemini_api_key", "GEMINI_API_KEY")
     if not gemini_key:
         raise HTTPException(
             status_code=400, 

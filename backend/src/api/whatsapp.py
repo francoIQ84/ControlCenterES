@@ -86,7 +86,7 @@ def get_whatsapp_config(_=Depends(verify_session)):
     return {
         "enabled": database.get_setting("whatsapp_enabled", "0") == "1",
         "read_only": database.get_setting("whatsapp_read_only", "0") == "1",
-        "gemini_api_key": (os.getenv("GEMINI_API_KEY") or database.get_setting("gemini_api_key", "")).strip(),
+        "gemini_api_key": database.get_platform_setting("gemini_api_key", "GEMINI_API_KEY"),
         "bot_instructions": database.get_setting("whatsapp_bot_instructions", (
             f"Eres un asistente virtual experto y amable para la tienda "
             f"'{database.get_merchant_name()}'. "
@@ -273,7 +273,7 @@ def process_silent_inquiry_tracking(sender: str, user_text: str, catalog_context
         catalog_context = "\n".join(catalog_lines)
 
     if not gemini_key:
-        gemini_key = (os.getenv("GEMINI_API_KEY") or database.get_setting("gemini_api_key", "")).strip()
+        gemini_key = database.get_platform_setting("gemini_api_key", "GEMINI_API_KEY")
 
     inquiries_found = []
     tokens_recorded = False
@@ -413,7 +413,7 @@ def _handle_webhook(req: WebhookReq):
         print(f"[Catalog Context Error] {e}")
     catalog_context = "\n".join(catalog_lines)
 
-    gemini_key = database.get_setting("gemini_api_key", "").strip()
+    gemini_key = database.get_platform_setting("gemini_api_key", "GEMINI_API_KEY")
 
     # If in READ-ONLY mode (normal mode disabled, but read-only enabled):
     # Track inquiries silently and DO NOT send any reply to the client
