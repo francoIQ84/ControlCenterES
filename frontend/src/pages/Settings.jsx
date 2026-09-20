@@ -1331,14 +1331,20 @@ export default function Settings() {
     window.location.reload()
   }
 
-  const handleAuth = () => {
-    if (!config.client_id) {
-      alert("Por favor ingresa primero tu App ID (Client ID) y presiona 'Guardar API Config'.")
-      return
+  const handleAuth = async () => {
+    try {
+      const redirectUri = window.location.origin + '/settings'
+      const res = await fetch(`/api/settings/meli/auth-url?redirect_uri=${encodeURIComponent(redirectUri)}`)
+      if (res.ok) {
+        const data = await res.json()
+        window.location.href = data.url
+      } else {
+        const err = await res.json()
+        alert("Error: " + (err.detail || "No se pudo generar la URL de vinculación."))
+      }
+    } catch (e) {
+      alert("Error de conexión: " + e.message)
     }
-    const redirectUri = config.redirect_uri || (window.location.origin + '/settings')
-    const url = `https://auth.mercadolibre.com.ar/authorization?response_type=code&client_id=${config.client_id}&redirect_uri=${encodeURIComponent(redirectUri)}`
-    window.location.href = url
   }
 
   const handleCode = async () => {
@@ -1806,27 +1812,6 @@ export default function Settings() {
             <div className="card" style={{flex: 1, minWidth: 300}}>
               <h3>API de Mercado Libre / Mercado Pago (ML / MP)</h3>
               <div style={{display: 'flex', flexDirection: 'column', gap: 15}}>
-                <label>App ID (Client ID)
-                  <input type="text" value={config.client_id} onChange={e => setConfig({...config, client_id: e.target.value})} style={{width: '100%', marginTop: 5}}/>
-                </label>
-                <label>Client Secret
-                  <input type="password" value={config.client_secret} onChange={e => setConfig({...config, client_secret: e.target.value})} style={{width: '100%', marginTop: 5}}/>
-                </label>
-                <label>Redirect URI
-                  <div style={{display: 'flex', gap: 8, marginTop: 5}}>
-                    <input type="text" value={config.redirect_uri} onChange={e => setConfig({...config, redirect_uri: e.target.value})} style={{flex: 1}}/>
-                    <button 
-                      type="button" 
-                      className="btn" 
-                      style={{fontSize: '0.75rem', padding: '6px 10px', whiteSpace: 'nowrap'}} 
-                      onClick={() => setConfig({...config, redirect_uri: window.location.origin + '/settings'})}
-                      title="Usar la URL actual de tu navegador"
-                    >
-                      Usar URL actual
-                    </button>
-                  </div>
-                </label>
-
                 <label style={{display: 'flex', flexDirection: 'column', gap: 5, fontSize: '0.9rem', marginTop: 5}}>
                   Intervalo de Sincronización Automática
                   <select 
@@ -1924,6 +1909,29 @@ export default function Settings() {
                 <div style={{color: 'var(--accent-red)', fontWeight: 'bold', padding: '10px 14px', borderRadius: '6px', backgroundColor: 'rgba(239, 68, 68, 0.1)', border: '1px solid var(--accent-red)', display: 'flex', alignItems: 'center', gap: 8}}>
                   <span>✗</span>
                   <span>No autenticado (Ninguna cuenta de Mercado Libre vinculada)</span>
+                </div>
+              )}
+
+              {status.token_warning && (
+                <div style={{
+                  margin: '15px 0',
+                  padding: '12px 14px',
+                  borderRadius: '8px',
+                  backgroundColor: 'rgba(245, 158, 11, 0.15)',
+                  border: '1px solid #f59e0b',
+                  color: '#d97706',
+                  fontSize: '0.85rem',
+                  display: 'flex',
+                  alignItems: 'flex-start',
+                  gap: 10
+                }}>
+                  <span style={{fontSize: '1.2rem', lineHeight: 1}}>⚠️</span>
+                  <div>
+                    <strong>Atención con la sesión:</strong> {status.token_warning}
+                    <div style={{marginTop: 4, color: 'var(--text-secondary)'}}>
+                      Hacé clic en el botón amarillo abajo para revincular con permisos completos de renovación automática.
+                    </div>
+                  </div>
                 </div>
               )}
 
@@ -2437,105 +2445,16 @@ export default function Settings() {
               ) : (
                 <div style={{display: 'flex', flexDirection: 'column', gap: 14}}>
                   <div style={{fontSize: '0.85rem', color: 'var(--text-secondary)', backgroundColor: 'var(--bg-hover)', padding: '10px 12px', borderRadius: '8px', lineHeight: 1.4}}>
-                    🔑 Ingresa tu <strong>App ID</strong> y <strong>Client Secret</strong> de Tiendanube Partners para habilitar la vinculación automática.
+                    Para conectar tu cuenta de Tiendanube, haz clic en el botón de abajo.
                   </div>
-
-                  <div>
-                    <label style={{fontSize: '0.85rem', fontWeight: 600, display: 'block', marginBottom: 4, color: 'var(--text-primary)'}}>
-                      App ID (Client ID):
-                    </label>
-                    <input 
-                      type="text" 
-                      value={tnConfig.client_id || ''}
-                      onChange={e => setTnConfig({ ...tnConfig, client_id: e.target.value })}
-                      placeholder="ej. 41040"
-                      style={{width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)', fontSize: '0.88rem'}}
-                    />
-                  </div>
-
-                  <div>
-                    <label style={{fontSize: '0.85rem', fontWeight: 600, display: 'block', marginBottom: 4, color: 'var(--text-primary)'}}>
-                      Client Secret:
-                    </label>
-                    <div style={{display: 'flex', gap: 6}}>
-                      <input 
-                        type={showTnSecret ? "text" : "password"} 
-                        value={tnConfig.client_secret || ''}
-                        onChange={e => setTnConfig({ ...tnConfig, client_secret: e.target.value })}
-                        placeholder="Pega el Client Secret copiado de Tiendanube"
-                        style={{flex: 1, padding: '8px 10px', borderRadius: 6, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)', fontSize: '0.88rem'}}
-                      />
-                      <button 
-                        type="button" 
-                        className="btn btn-secondary"
-                        onClick={() => setShowTnSecret(!showTnSecret)}
-                        style={{padding: '6px 12px', fontSize: '0.8rem'}}
-                      >
-                        {showTnSecret ? 'Ocultar' : 'Ver'}
-                      </button>
-                    </div>
-                  </div>
-
-                  <div>
-                    <label style={{fontSize: '0.85rem', fontWeight: 600, display: 'block', marginBottom: 4, color: 'var(--text-primary)'}}>
-                      URL de Redirección (para Tiendanube Partners ➔ Configuración):
-                    </label>
-                    <div style={{display: 'flex', gap: 6}}>
-                      <input 
-                        type="text" 
-                        readOnly 
-                        value="https://admin.hidroponiarosario.com/api/tiendanube/callback"
-                        style={{flex: 1, padding: '8px 10px', borderRadius: 6, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-hover)', color: 'var(--text-secondary)', fontSize: '0.78rem', fontFamily: 'monospace'}}
-                      />
-                      <button 
-                        type="button" 
-                        className="btn btn-secondary"
-                        onClick={() => {
-                          navigator.clipboard.writeText("https://admin.hidroponiarosario.com/api/tiendanube/callback")
-                          alert("URL de redirección copiada al portapapeles.")
-                        }}
-                        style={{padding: '6px 12px', fontSize: '0.8rem'}}
-                      >
-                        📋 Copiar
-                      </button>
-                    </div>
-                    <span style={{fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: 4, display: 'block'}}>
-                      Pega esta URL en Tiendanube Partners ➔ Pestaña <strong>Configuración</strong> ➔ <strong>URLs de redireccionamiento</strong>.
-                    </span>
-                  </div>
-
-                  <button 
-                    type="button" 
-                    className="btn"
-                    onClick={handleSaveTnConfig}
-                    disabled={tnSavingConfig}
-                    style={{backgroundColor: 'var(--accent-blue)', color: '#fff', padding: '9px 14px', fontSize: '0.85rem', fontWeight: 600}}
-                  >
-                    {tnSavingConfig ? 'Guardando...' : '💾 Guardar Credenciales de Tiendanube'}
-                  </button>
-
-                  {tnConfigMsg && (
-                    <div style={{
-                      padding: '8px 12px',
-                      borderRadius: 6,
-                      fontSize: '0.8rem',
-                      backgroundColor: tnConfigMsg.type === 'success' ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)',
-                      border: `1px solid ${tnConfigMsg.type === 'success' ? 'var(--accent-emerald)' : 'var(--accent-red)'}`,
-                      color: tnConfigMsg.type === 'success' ? 'var(--accent-emerald)' : 'var(--accent-red)'
-                    }}>
-                      {tnConfigMsg.text}
-                    </div>
-                  )}
-
-                  <hr style={{border: 'none', borderTop: '1px solid var(--border-color)', margin: '4px 0'}} />
 
                   <button
                     className="btn"
                     onClick={handleTnConnect}
-                    disabled={!tnConfig.client_id}
+                    disabled={false}
                     style={{
-                      backgroundColor: tnConfig.client_id ? '#0080FF' : 'var(--bg-hover)',
-                      color: tnConfig.client_id ? '#fff' : 'var(--text-secondary)',
+                      backgroundColor: '#0080FF',
+                      color: '#fff',
                       fontWeight: '700',
                       padding: '12px 18px',
                       fontSize: '0.95rem',
@@ -2544,8 +2463,8 @@ export default function Settings() {
                       justifyContent: 'center',
                       gap: 8,
                       borderRadius: 8,
-                      boxShadow: tnConfig.client_id ? '0 4px 12px rgba(0, 128, 255, 0.3)' : 'none',
-                      cursor: tnConfig.client_id ? 'pointer' : 'not-allowed'
+                      boxShadow: '0 4px 12px rgba(0, 128, 255, 0.3)',
+                      cursor: 'pointer'
                     }}
                   >
                     <span>🛍️</span>

@@ -187,6 +187,26 @@ def exchange_code(req: CodeRequest, _=Depends(require_permission("settings"))):
     else:
         raise HTTPException(status_code=400, detail=err)
 
+@router.get("/meli/auth-url")
+def get_meli_auth_url(redirect_uri: Optional[str] = None, _=Depends(require_permission("settings"))):
+    client_id = config.get_client_id()
+    if not client_id:
+        raise HTTPException(status_code=400, detail="App ID no configurado en el sistema.")
+    
+    # Use provided redirect_uri or fallback to database/default config
+    final_redirect = redirect_uri or config.get_redirect_uri()
+    
+    # Construct OAuth URL for Mercado Libre Argentina
+    from urllib.parse import urlencode
+    params = {
+        "response_type": "code",
+        "client_id": client_id,
+        "redirect_uri": final_redirect,
+        "scope": "offline_access"
+    }
+    url = f"https://auth.mercadolibre.com.ar/authorization?{urlencode(params)}"
+    return {"url": url}
+
 @router.post("/disconnect-meli")
 def disconnect_meli(req: DisconnectMeliRequest, _=Depends(require_permission("settings"))):
     """Desvincula Mercado Libre y opcionalmente limpia el catálogo y órdenes asociadas."""

@@ -1,4 +1,5 @@
 from src.database import get_setting, set_setting, delete_setting
+import os
 
 # Default configuration values
 DEFAULT_REDIRECT_URI = "http://localhost:8088/meli_callback"
@@ -16,13 +17,13 @@ COUNTRIES = {
 }
 
 def get_client_id():
-    return get_setting('meli_client_id', '')
+    return os.getenv('MELI_CLIENT_ID') or get_setting('meli_client_id', '')
 
 def set_client_id(val):
     set_setting('meli_client_id', val)
 
 def get_client_secret():
-    return get_setting('meli_client_secret', '')
+    return os.getenv('MELI_CLIENT_SECRET') or get_setting('meli_client_secret', '')
 
 def set_client_secret(val):
     set_setting('meli_client_secret', val)
