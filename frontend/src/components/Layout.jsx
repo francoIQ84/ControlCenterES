@@ -334,7 +334,7 @@ export default function Layout() {
             if (configRes.ok) {
               const configData = await configRes.json();
               if (configData.client_id && configData.redirect_uri) {
-                window.location.href = `https://auth.mercadolibre.com.ar/authorization?response_type=code&client_id=${configData.client_id}&redirect_uri=${configData.redirect_uri}`;
+                window.location.href = `https://auth.mercadolibre.com.ar/authorization?response_type=code&client_id=${configData.client_id}&redirect_uri=${configData.redirect_uri}&scope=offline_access`;
                 return;
               }
             }
@@ -438,17 +438,20 @@ export default function Layout() {
   };
 
   const handleAuthMeliClick = async () => {
-    if (meliStatus && meliStatus.is_authenticated) {
+    // Si la cuenta está vinculada y sin advertencias de sesión, navega a Configuración
+    if (meliStatus && meliStatus.is_authenticated && !meliStatus.token_warning) {
       navigate('/settings');
       return;
     }
+    // Si no está autenticado o tiene advertencia de token (falta refresh_token),
+    // inicia directamente el flujo de autorización de Mercado Libre con offline_access:
     try {
       const configRes = await fetch('/api/settings/config')
       if (configRes.ok) {
         const configData = await configRes.json()
         if (configData.client_id) {
           const redirectUri = configData.redirect_uri || (window.location.origin + '/settings')
-          const url = `https://auth.mercadolibre.com.ar/authorization?response_type=code&client_id=${configData.client_id}&redirect_uri=${encodeURIComponent(redirectUri)}`
+          const url = `https://auth.mercadolibre.com.ar/authorization?response_type=code&client_id=${configData.client_id}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=offline_access`
           window.location.href = url
         } else {
           alert("Primero ingresá tu App ID (Client ID) en Configuración > Conexión ML / MP.")

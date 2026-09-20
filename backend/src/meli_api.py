@@ -98,7 +98,7 @@ def get_auth_url():
     country_info = config.COUNTRIES.get(country_code, config.COUNTRIES['AR'])
     auth_base = country_info['auth_url']
     
-    return f"{auth_base}/authorization?response_type=code&client_id={client_id}&redirect_uri={redirect_uri}"
+    return f"{auth_base}/authorization?response_type=code&client_id={client_id}&redirect_uri={redirect_uri}&scope=offline_access"
 
 def resolve_account_identity():
     """Devuelve (nickname, email) de la cuenta de Mercado Libre vinculada.
@@ -219,7 +219,8 @@ def authenticate_with_code(code):
                       "incluyó refresh_token. La conexión se perderá cuando "
                       "el access_token expire (~6h). Esto puede ocurrir si "
                       "la app de ML no tiene permisos offline_access.")
-            config.set_refresh_token(new_refresh)
+            else:
+                config.set_refresh_token(new_refresh)
             config.set_token_expiry(time.time() + res_data.get('expires_in', 21600))
             new_user_id = str(res_data.get('user_id', ''))
             config.set_user_id(new_user_id)
