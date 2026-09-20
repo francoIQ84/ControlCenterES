@@ -41,14 +41,14 @@ def _get_service_account_path() -> str:
 def get_platform_credentials(_: dict = Depends(require_platform_admin)):
     """Obtiene el estado de las credenciales globales de infraestructura del desarrollador."""
     with tenancy.tenant_context(tenancy.MASTER_TENANT_ID):
-        meli_app_id = (os.getenv("MELI_APP_ID") or database.get_setting("meli_app_id", "")).strip()
+        meli_app_id = (os.getenv("MELI_APP_ID") or database.get_setting("meli_app_id", "") or database.get_setting("meli_client_id", "")).strip()
         meli_secret = (os.getenv("MELI_CLIENT_SECRET") or database.get_setting("meli_client_secret", "")).strip()
 
         meta_app_id = (os.getenv("META_APP_ID") or database.get_setting("meta_app_id", "")).strip()
         meta_secret = (os.getenv("META_APP_SECRET") or database.get_setting("meta_app_secret", "")).strip()
 
-        tn_client_id = (os.getenv("TIENDANUBE_CLIENT_ID") or database.get_setting("tiendanube_client_id", "")).strip()
-        tn_secret = (os.getenv("TIENDANUBE_CLIENT_SECRET") or database.get_setting("tiendanube_client_secret", "")).strip()
+        tn_client_id = (os.getenv("TIENDANUBE_CLIENT_ID") or database.get_setting("tiendanube_client_id", "") or database.get_setting("tn_client_id", "")).strip()
+        tn_secret = (os.getenv("TIENDANUBE_CLIENT_SECRET") or database.get_setting("tiendanube_client_secret", "") or database.get_setting("tn_client_secret", "")).strip()
 
         gemini_key = (os.getenv("GEMINI_API_KEY") or database.get_setting("gemini_api_key", "")).strip()
 
@@ -96,6 +96,7 @@ def save_platform_credentials(payload: PlatformCredentialsPayload,
     with tenancy.tenant_context(tenancy.MASTER_TENANT_ID):
         if payload.meli_app_id is not None:
             database.set_setting("meli_app_id", payload.meli_app_id.strip())
+            database.set_setting("meli_client_id", payload.meli_app_id.strip())
         if payload.meli_client_secret is not None:
             secret = payload.meli_client_secret.strip()
             if secret and not secret.startswith("••"):
@@ -110,10 +111,12 @@ def save_platform_credentials(payload: PlatformCredentialsPayload,
 
         if payload.tiendanube_client_id is not None:
             database.set_setting("tiendanube_client_id", payload.tiendanube_client_id.strip())
+            database.set_setting("tn_client_id", payload.tiendanube_client_id.strip())
         if payload.tiendanube_client_secret is not None:
             secret = payload.tiendanube_client_secret.strip()
             if secret and not secret.startswith("••"):
                 database.set_setting("tiendanube_client_secret", secret)
+                database.set_setting("tn_client_secret", secret)
 
         if payload.gemini_api_key is not None:
             key = payload.gemini_api_key.strip()
