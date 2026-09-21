@@ -348,7 +348,13 @@ def run_background_sync(limit: int, date_from: Optional[str]):
         # Finalized successfully
         update_progress(status="completed", progress=100, message="Sincronización histórica (Mercado Libre + Mercado Pago) finalizada exitosamente.")
     except Exception as e:
-        update_progress(status="failed", message=str(e))
+        import traceback
+        print(f"[Sync Error] {e}")
+        traceback.print_exc()
+        error_msg = str(e)
+        if len(error_msg) > 300:
+            error_msg = error_msg[:300] + "... (ver logs del servidor)"
+        update_progress(status="failed", message=error_msg)
 
 @router.post("/sync-all")
 def trigger_sync_all(req: SyncAllRequest, background_tasks: BackgroundTasks):

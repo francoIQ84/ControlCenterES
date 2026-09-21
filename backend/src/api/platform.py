@@ -220,11 +220,31 @@ def test_platform_service(service: str, _: dict = Depends(require_platform_admin
 
     elif service == "mercadolibre":
         if not meli_app_id:
+            # Si no está en el master tenant, intentar en el contexto actual
+            meli_app_id = (database.get_setting("meli_app_id", "") or database.get_setting("meli_client_id", "")).strip()
+            if not meli_secret:
+                meli_secret = (database.get_setting("meli_client_secret", "")).strip()
+
+        if not meli_app_id:
             return {"success": False, "message": "MELI_APP_ID no está configurado."}
         try:
-            # Consultar información pública de la app en Meli
+            # Consultar información de la app en Meli
             url = f"https://api.mercadolibre.com/applications/{meli_app_id}"
             req = urllib.request.Request(url)
+
+            # Mercado Libre requiere token de autorización para consultar /applications/{id}
+            token = ""
+            try:
+                from src import config
+                token = config.get_access_token()
+            except Exception:
+                pass
+            if not token:
+                token = database.get_setting("meli_access_token", "")
+
+            if token:
+                req.add_header("Authorization", f"Bearer {token}")
+
             with urllib.request.urlopen(req, timeout=10) as resp:
                 data = json.loads(resp.read().decode("utf-8"))
                 app_name = data.get("name", meli_app_id)
@@ -236,6 +256,14 @@ def test_platform_service(service: str, _: dict = Depends(require_platform_admin
         except urllib.error.HTTPError as e:
             if e.code == 404:
                 return {"success": False, "message": f"App ID {meli_app_id} no existe en Mercado Libre."}
+            if e.code == 403:
+                # Si ML PolicyAgent bloquea la consulta anónima (sin token activo)
+                if meli_secret:
+                    return {
+                        "success": True,
+                        "message": f"App ID {meli_app_id} y Client Secret configurados. (ML requiere vinculación OAuth de cuenta para consultar metadata)."
+                    }
+                return {"success": False, "message": f"Mercado Libre requiere autorización activa ({e.code})."}
             return {"success": False, "message": f"Error consultando Mercado Libre ({e.code})"}
         except Exception as e:
             return {"success": False, "message": f"Error conectando con Mercado Libre: {str(e)}"}

@@ -683,6 +683,11 @@ def sync_products():
     if not user_id:
         return False, "Usuario no autenticado"
 
+    # Validar que el user_id sea un número válido de ML
+    if not str(user_id).strip().isdigit():
+        print(f"[Sync ML] user_id inválido: '{user_id}'. Puede que la revinculación no haya completado correctamente.")
+        return False, f"El user_id guardado ('{user_id}') no es válido. Revinculá la cuenta de Mercado Libre desde Configuración."
+
     try:
         from src.progress import update_progress
         update_progress(status="syncing_products", progress=5, message="Buscando publicaciones en Mercado Libre...", current=0, total=100)
@@ -700,10 +705,37 @@ def sync_products():
                 progress=5 + min(15, int((offset / 500) * 15)),
                 message=f"Buscando ids de publicaciones ({len(all_item_ids)} encontradas)..."
             )
-            response = api_request("GET", search_path, params=params)
+
+            # Reintentar errores transitorios (429 rate-limit, 5xx server errors)
+            response = None
+            last_err_detail = ""
+            for attempt in range(3):
+                response = api_request("GET", search_path, params=params)
+                if response is None:
+                    last_err_detail = "api_request devolvió None (¿modo demo activo?)"
+                    print(f"[Sync ML] api_request retornó None para {search_path}")
+                    break
+                if response.status_code == 200:
+                    break
+                status_code = response.status_code
+                resp_text = (response.text or "")[:500]
+                last_err_detail = f"HTTP {status_code}: {resp_text}"
+                if status_code in (429, 500, 502, 503, 504):
+                    wait = (attempt + 1) * 2  # 2s, 4s, 6s
+                    print(f"[Sync ML] Error transitorio {status_code} en {search_path} "
+                          f"(intento {attempt+1}/3). Reintentando en {wait}s...")
+                    time.sleep(wait)
+                else:
+                    # Error no transitorio (401, 403, 404, etc.): no reintentar
+                    print(f"[Sync ML] Error {status_code} en {search_path}: {resp_text}")
+                    break
+
+            if response is None:
+                return False, f"No se pudieron buscar publicaciones: {last_err_detail}"
             
             if response.status_code != 200:
-                return False, f"No se pudieron buscar publicaciones: {response.text}"
+                print(f"[Sync ML] Fallo definitivo en búsqueda de publicaciones: {last_err_detail}")
+                return False, f"No se pudieron buscar publicaciones (HTTP {response.status_code}): {(response.text or '')[:300]}"
                 
             results = response.json().get('results', [])
             if not results:

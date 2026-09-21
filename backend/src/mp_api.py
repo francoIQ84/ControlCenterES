@@ -229,7 +229,7 @@ def sync_mp_payments(date_from=None, limit=2000):
                                 # CRITICAL: Delete duplicate standalone generic MP order if it exists
                                 cursor.execute("""
                                     DELETE FROM orders_cache 
-                                    WHERE order_id = %s AND source_platform LIKE 'MERCADOPAGO%'
+                                    WHERE order_id = %s AND source_platform LIKE 'MERCADOPAGO%%'
                                 """, (payment_id,))
                                 print(f"[MP Auto-Match] Pago MP #{payment_id} (${total_amount}) vinculado con éxito a la venta local #{matched_oid}")
                 except Exception as e_match:
