@@ -106,6 +106,64 @@ def get_ip_location(ip: str) -> dict:
         pass
     return {"country": "Desconocido", "region": "Desconocido", "city": "Desconocido"}
 
+_session_activity_cache: dict[str, tuple[float, str]] = {}
+
+def check_and_record_session_access(token: str, request: Request):
+    """
+    Registra automáticamente el acceso en login_history para sesiones persistentes
+    cuando hayan transcurrido al menos 8 horas desde el último registro o cuando
+    cambie la dirección IP del usuario.
+    """
+    try:
+        ip = get_client_ip(request)
+        now_ts = time.time()
+        cached = _session_activity_cache.get(token)
+
+        # Si se verificó hace menos de 15 minutos y la IP sigue siendo la misma, saltamos rápido
+        if cached and (now_ts - cached[0] < 900) and (cached[1] == ip):
+            return
+
+        info = database.get_session_activity_info(token)
+        if not info:
+            return
+
+        last_logged = info.get("last_history_logged_at")
+        last_ip = info.get("last_ip")
+
+        should_log = False
+        if not last_logged:
+            should_log = True
+        else:
+            elapsed_hours = (datetime.now() - last_logged).total_seconds() / 3600.0
+            if elapsed_hours >= 8.0 or (last_ip and last_ip != ip):
+                should_log = True
+
+        if should_log:
+            loc = get_ip_location(ip)
+            user_agent = request.headers.get("User-Agent", "Desconocido")
+            database.add_login_history_entry(
+                username=info.get("username") or "Desconocido",
+                ip_address=ip,
+                country=loc.get("country", "Desconocido"),
+                region=loc.get("region", "Desconocido"),
+                city=loc.get("city", "Desconocido"),
+                status="success (sesión activa)",
+                user_agent=user_agent
+            )
+            database.update_session_activity(token, ip)
+
+        _session_activity_cache[token] = (now_ts, ip)
+
+        # Limpieza periódica si el caché supera 1000 entradas
+        if len(_session_activity_cache) > 1000:
+            cutoff = now_ts - 86400
+            for k in list(_session_activity_cache.keys()):
+                if _session_activity_cache[k][0] < cutoff:
+                    _session_activity_cache.pop(k, None)
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).warning(f"Error registrando acceso de sesión: {e}")
+
 def verify_session(request: Request, authorization: str = Header(None)):
     """FastAPI dependency to secure endpoints by checking active session tokens via Header or Query Param."""
     final_token = None
@@ -118,6 +176,8 @@ def verify_session(request: Request, authorization: str = Header(None)):
         raise HTTPException(status_code=401, detail="No autorizado: Falta token de sesión")
     if not database.validate_session(final_token):
         raise HTTPException(status_code=401, detail="No autorizado: Sesión inválida o expirada")
+        
+    check_and_record_session_access(final_token, request)
     return final_token
 
 def get_current_user(token: str = Depends(verify_session)):
@@ -313,7 +373,8 @@ def login(payload: LoginRequest, request: Request):
         expires_at = datetime.now() + timedelta(days=7)
         
         try:
-            database.create_session(token, user['id'], expires_at)
+            database.create_session(token, user['id'], expires_at, ip=ip)
+            _session_activity_cache[token] = (time.time(), ip)
             database.add_login_history_entry(
                 username=payload.username,
                 ip_address=ip,
@@ -392,7 +453,8 @@ def verify_2fa(payload: Verify2FARequest, request: Request):
     expires_at = datetime.now() + timedelta(days=7)
     
     try:
-        database.create_session(token, rec['user_id'], expires_at)
+        database.create_session(token, rec['user_id'], expires_at, ip=ip)
+        _session_activity_cache[token] = (time.time(), ip)
         database.add_login_history_entry(
             username=rec['username'],
             ip_address=ip,
@@ -452,6 +514,7 @@ def resend_2fa(payload: Resend2FARequest):
 def logout(token: str = Depends(verify_session)):
     try:
         database.delete_session(token)
+        _session_activity_cache.pop(token, None)
         return {"success": True, "message": "Sesión destruida"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error al cerrar sesión: {str(e)}")

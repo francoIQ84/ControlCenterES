@@ -3586,7 +3586,7 @@ export default function Settings() {
                         {item.country === 'Red Local' ? 'Red Local' : `${item.city}, ${item.region}, ${item.country}`}
                       </td>
                       <td data-label="Estado" style={{padding: '12px 10px', fontSize: '0.85rem'}}>
-                        {item.status === 'success' ? (
+                        {item.status?.startsWith('success') ? (
                           <span style={{
                             backgroundColor: 'rgba(16, 185, 129, 0.15)',
                             color: 'var(--accent-emerald)',
@@ -3594,7 +3594,11 @@ export default function Settings() {
                             borderRadius: 12,
                             fontWeight: 600,
                             fontSize: '0.75rem'
-                          }}>Exitoso</span>
+                          }}>
+                            {item.status === 'success' ? 'Exitoso' : 
+                             item.status === 'success (2FA)' ? 'Exitoso (2FA)' : 
+                             item.status.includes('sesión activa') ? 'Exitoso (Sesión activa)' : 'Exitoso'}
+                          </span>
                         ) : (
                           <span style={{
                             backgroundColor: 'rgba(239, 68, 68, 0.15)',

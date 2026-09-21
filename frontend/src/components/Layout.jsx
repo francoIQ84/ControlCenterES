@@ -352,6 +352,23 @@ export default function Layout() {
     initStatusAndSync();
   }, []);
 
+  // Re-verificar perfil y registrar actividad al volver a enfocar la pestaña tras un tiempo
+  useEffect(() => {
+    let lastCheck = Date.now();
+    const handleFocus = () => {
+      const now = Date.now();
+      if (now - lastCheck > 30 * 60 * 1000) {
+        lastCheck = now;
+        const token = localStorage.getItem('adminToken');
+        if (token) {
+          fetch('/api/auth/profile').catch(() => {});
+        }
+      }
+    };
+    window.addEventListener('focus', handleFocus);
+    return () => window.removeEventListener('focus', handleFocus);
+  }, []);
+
   const hasPermission = (perm) => {
     const permsStr = localStorage.getItem('adminPermissions');
     if (permsStr === null || permsStr === "") return true; // default allowed during loading

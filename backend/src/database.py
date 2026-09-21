@@ -321,6 +321,9 @@ def init_db():
                 )
             ''')
             cursor.execute('ALTER TABLE active_sessions ADD COLUMN IF NOT EXISTS user_id INTEGER;')
+            cursor.execute('ALTER TABLE active_sessions ADD COLUMN IF NOT EXISTS last_history_logged_at TIMESTAMP;')
+            cursor.execute('ALTER TABLE active_sessions ADD COLUMN IF NOT EXISTS last_ip VARCHAR(50);')
+            cursor.execute('ALTER TABLE login_history ALTER COLUMN status TYPE VARCHAR(50);')
 
             # Login History table
             cursor.execute('''
@@ -2477,13 +2480,35 @@ def verify_password(password: str, hashed_password: str) -> bool:
     except Exception:
         return False
 
-def create_session(token, user_id, expires_at):
+def create_session(token, user_id, expires_at, ip=None):
     with get_connection() as conn:
         with conn.cursor() as cursor:
             cursor.execute('''
-                INSERT INTO active_sessions (token, user_id, expires_at)
-                VALUES (%s, %s, %s)
-            ''', (token, user_id, expires_at))
+                INSERT INTO active_sessions (token, user_id, expires_at, last_history_logged_at, last_ip)
+                VALUES (%s, %s, %s, %s, %s)
+            ''', (token, user_id, expires_at, datetime.now(), ip))
+
+def get_session_activity_info(token: str):
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute('''
+                SELECT s.user_id, s.last_history_logged_at, s.last_ip, u.username
+                FROM active_sessions s
+                JOIN users u ON u.id = s.user_id
+                WHERE s.token = %s AND s.expires_at > %s
+            ''', (token, datetime.now()))
+            return cursor.fetchone()
+
+def update_session_activity(token: str, ip: str, logged_at: datetime = None):
+    if logged_at is None:
+        logged_at = datetime.now()
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute('''
+                UPDATE active_sessions
+                SET last_history_logged_at = %s, last_ip = %s
+                WHERE token = %s
+            ''', (logged_at, ip, token))
 
 def validate_session(token):
     try:
