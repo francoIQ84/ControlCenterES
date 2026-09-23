@@ -1,6 +1,9 @@
 import urllib.request
 import urllib.error
 import xml.etree.ElementTree as ET
+import ssl
+import re
+import html as html_lib
 from datetime import datetime
 from fastapi import APIRouter, HTTPException, Query
 from typing import Optional
@@ -257,8 +260,111 @@ def consulta_notificaciones(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error al procesar notificaciones del INPI: {str(e)}")
 
+def _fetch_inpi_modelo(acta: str) -> Optional[dict]:
+    """Consulta los datos oficiales de un Modelo o Diseño Industrial en el portal público del INPI."""
+    clean_num = re.sub(r'[^0-9]', '', str(acta).strip())
+    if not clean_num:
+        raise HTTPException(status_code=400, detail="Debe ingresar un número de acta o expediente válido.")
+
+    url = f"https://portaltramites.inpi.gob.ar/ModelosConsultas/Detalle?numero={clean_num}"
+    ctx = ssl.create_default_context()
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
+
+    req = urllib.request.Request(
+        url,
+        headers={
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        }
+    )
+
+    try:
+        with urllib.request.urlopen(req, timeout=15, context=ctx) as res:
+            raw_html = res.read().decode('utf-8', errors='ignore')
+    except urllib.error.HTTPError as e:
+        if e.code in (403, 404, 500):
+            # El portal de INPI devuelve 403 o 500 cuando el acta no existe en el padrón
+            return None
+        raise HTTPException(status_code=502, detail=f"Error del portal INPI (HTTP {e.code})")
+    except Exception as e:
+        raise HTTPException(status_code=504, detail=f"No se pudo conectar con el portal de Modelos del INPI: {str(e)}")
+
+    def extract_field(label: str) -> str:
+        pattern = r'' + re.escape(label) + r'[:\s]*</h4>\s*</div>\s*<div[^>]*>\s*<h4[^>]*>(.*?)</h4>'
+        m = re.search(pattern, raw_html, re.DOTALL | re.IGNORECASE)
+        if m:
+            clean = re.sub(r'<[^>]+>', ' ', m.group(1)).strip()
+            return html_lib.unescape(clean)
+        return ''
+
+    naturaleza = extract_field('Naturaleza')
+    if not naturaleza or 'ViewBag' in naturaleza:
+        return None
+
+    titulares = extract_field('Titulares')
+    fecha_deposito = extract_field('Fecha Depósito')
+    clase = extract_field('Clase/Subclase Internacional')
+    prioridad = extract_field('Prioridad')
+    resolucion = extract_field('Resolución')
+
+    renovaciones = []
+    renov_block = re.search(r'Plazos para presentar renovaciones:.*?</div>\s*<div[^>]*>(.*?)</div>', raw_html, re.DOTALL | re.IGNORECASE)
+    if renov_block:
+        h4s = re.findall(r'<h4[^>]*>(.*?)</h4>', renov_block.group(1), re.DOTALL | re.IGNORECASE)
+        for h in h4s:
+            cleaned = html_lib.unescape(re.sub(r'<[^>]+>', ' ', h).strip())
+            if cleaned:
+                renovaciones.append(re.sub(r'\s+', ' ', cleaned))
+
+    img_match = re.search(r'(data:image/[a-zA-Z0-9\+\/\=]+;base64,[a-zA-Z0-9\+\/\=\r\n]+)', raw_html)
+    image_url = img_match.group(1) if (img_match and len(img_match.group(1)) > 50) else None
+
+    fecha_concesion = None
+    f_match = re.search(r'(\d{2}/\d{2}/\d{4})', resolucion)
+    if f_match:
+        fecha_concesion = f_match.group(1)
+
+    return {
+        'acta': clean_num,
+        'denominacion': naturaleza,
+        'titulares': titulares,
+        'fecha_ingreso': fecha_deposito,
+        'fecha_concesion': fecha_concesion,
+        'clasificacion': clase,
+        'prioridad': prioridad,
+        'estado': resolucion or 'Concedida',
+        'renovaciones_oficiales': renovaciones,
+        'image_url': image_url,
+        'asset_type': 'diseno_industrial',
+        'tipo_marca': 'Modelo / Diseño Industrial'
+    }
+
+@router.get("/consulta-modelo")
+def consulta_modelo(acta: str = Query(..., description="Número de acta o expediente del modelo o diseño industrial")):
+    """
+    Consulta en tiempo real los datos oficiales de un Modelo o Diseño Industrial en el portal del INPI.
+    """
+    try:
+        raw_data = _fetch_inpi_modelo(acta)
+        if not raw_data:
+            return {
+                "success": False,
+                "message": f"No se encontró ningún Modelo o Diseño Industrial con el Acta / Número '{acta}' en el INPI."
+            }
+        enriched = ip_legal.enrich_ip_asset_data(raw_data)
+        enriched['renovaciones_oficiales'] = raw_data.get('renovaciones_oficiales', [])
+        return {
+            "success": True,
+            "result": enriched
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error consultando modelo en INPI: {str(e)}")
+
 # --- Endpoints de Portafolio en Seguimiento ---
 from pydantic import BaseModel
+from src.utils import ip_legal
 
 class AddMonitoredItem(BaseModel):
     Acta: Optional[str] = None
@@ -277,76 +383,149 @@ class AddMonitoredItem(BaseModel):
     estado: Optional[str] = None
     Fecha_Ingreso: Optional[str] = None
     fecha_ingreso: Optional[str] = None
+    fecha_concesion: Optional[str] = None
     fecha_concesion_estimada: Optional[str] = None
     fecha_vencimiento_10anos: Optional[str] = None
     requiere_djumt: Optional[bool] = False
     djumt_codigo: Optional[str] = None
     djumt_mensaje: Optional[str] = None
     image_url: Optional[str] = None
+    document_url: Optional[str] = None
     notes: Optional[str] = None
+    # Nuevos campos de activos de PI:
+    asset_type: Optional[str] = 'marca'
+    subtipo: Optional[str] = None
+    inventores_disenadores: Optional[str] = None
+    clasificacion: Optional[str] = None
+    quinquenio_actual: Optional[int] = 1
+    anualidades_pagadas: Optional[int] = 0
+    proxima_anualidad: Optional[int] = None
+    alerta_estado: Optional[str] = None
+    alerta_mensaje: Optional[str] = None
+
+class UpdateMonitoredItem(BaseModel):
+    denominacion: Optional[str] = None
+    titulares: Optional[str] = None
+    inventores_disenadores: Optional[str] = None
+    clasificacion: Optional[str] = None
+    estado: Optional[str] = None
+    fecha_ingreso: Optional[str] = None
+    fecha_concesion: Optional[str] = None
+    quinquenio_actual: Optional[int] = None
+    anualidades_pagadas: Optional[int] = None
+    notes: Optional[str] = None
+    image_url: Optional[str] = None
+    document_url: Optional[str] = None
 
 class UpdateImageItem(BaseModel):
     image_url: str
 
 @router.get("/monitored")
-def list_monitored_trademarks():
+def list_monitored_trademarks(asset_type: Optional[str] = Query(None, description="Filtrar por tipo: marca, patente, modelo_utilidad, diseno_industrial, all")):
     """
-    Retorna el listado de marcas en seguimiento guardadas en la base de datos.
+    Retorna el listado de activos de PI en seguimiento guardados en la base de datos.
     """
     try:
-        items = database.get_all_monitored_trademarks()
+        items = database.get_all_monitored_trademarks(asset_type=asset_type)
         return {
             "success": True,
             "total": len(items),
             "results": items
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error al consultar portafolio de marcas: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error al consultar portafolio de activos: {str(e)}")
+
+@router.get("/stats")
+def get_ip_stats():
+    """
+    Retorna estadísticas agregadas del portafolio de Propiedad Industrial.
+    """
+    try:
+        items = database.get_all_monitored_trademarks()
+        counts = {
+            "total": len(items),
+            "marcas": sum(1 for i in items if (i.get('asset_type') or 'marca') == 'marca'),
+            "patentes": sum(1 for i in items if i.get('asset_type') == 'patente'),
+            "modelos_utilidad": sum(1 for i in items if i.get('asset_type') == 'modelo_utilidad'),
+            "disenos_industriales": sum(1 for i in items if i.get('asset_type') == 'diseno_industrial'),
+            "alertas_urgentes": sum(1 for i in items if (i.get('djumt_codigo') in ('PRESENTAR_AHORA', 'EN_MORA') or i.get('alerta_estado') in ('PRESENTAR_AHORA', 'EN_MORA')))
+        }
+        return {
+            "success": True,
+            "stats": counts
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error al calcular estadísticas de PI: {str(e)}")
 
 @router.post("/monitored")
 def add_to_monitored(payload: AddMonitoredItem):
     """
-    Agrega una marca al portafolio de seguimiento diario.
+    Agrega un activo de PI (marca, patente, modelo de utilidad, diseño industrial) al portafolio.
     """
     data = payload.dict(exclude_none=True)
     try:
-        # Si la marca no tiene calculada la DJUMT, la calculamos antes de guardar
-        enriched = _enrich_marca_data(data)
+        enriched = ip_legal.enrich_ip_asset_data(data)
         item_id = database.add_monitored_trademark(enriched)
+        tipo_label = enriched.get('asset_type', 'activo').capitalize()
         return {
             "success": True,
             "id": item_id,
-            "message": "Marca agregada al seguimiento diario correctamente."
+            "message": f"{tipo_label} agregado/a al seguimiento correctamente."
         }
     except ValueError as ve:
         raise HTTPException(status_code=400, detail=str(ve))
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error al guardar marca en seguimiento: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error al guardar activo en seguimiento: {str(e)}")
+
+@router.put("/monitored/{acta}")
+def update_monitored(acta: str, payload: UpdateMonitoredItem):
+    """
+    Actualiza datos de un activo de PI (anualidades pagadas, renovación de quinquenio, notas, estado, etc.).
+    """
+    data = payload.dict(exclude_none=True)
+    data['acta'] = acta
+    try:
+        # Obtener el registro previo para preservar asset_type y fecha_ingreso si no vienen
+        existing_list = database.get_all_monitored_trademarks()
+        existing = next((x for x in existing_list if str(x.get('acta')) == str(acta)), None)
+        if existing:
+            merged = dict(existing)
+            merged.update(data)
+            data = merged
+
+        enriched = ip_legal.enrich_ip_asset_data(data)
+        database.update_monitored_trademark(acta, enriched)
+        return {
+            "success": True,
+            "message": f"Activo Acta {acta} actualizado correctamente."
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error al actualizar activo: {str(e)}")
 
 @router.delete("/monitored/{acta}")
 def remove_from_monitored(acta: str):
     """
-    Elimina una marca del seguimiento diario.
+    Elimina un activo del seguimiento diario.
     """
     try:
         database.delete_monitored_trademark(acta)
         return {
             "success": True,
-            "message": f"Marca Acta {acta} eliminada del seguimiento."
+            "message": f"Activo Acta {acta} eliminado del seguimiento."
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error al eliminar marca: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error al eliminar activo: {str(e)}")
 
 @router.put("/monitored/{acta}/image")
 def update_trademark_image(acta: str, payload: UpdateImageItem):
     """
-    Actualiza la URL del logo o imagen para una marca.
+    Actualiza la URL del logo o imagen para un activo.
     """
     try:
         database.update_monitored_trademark_image(acta, payload.image_url)
         return {
             "success": True,
-            "message": "Imagen de marca actualizada correctamente."
+            "message": "Imagen de activo actualizada correctamente."
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error al actualizar imagen: {str(e)}")
@@ -362,12 +541,15 @@ def sync_monitored_trademarks():
         updated_count = 0
 
         for item in tracked_list:
+            # Solo sincronizar marcas con el servicio web de Denominación
+            if (item.get('asset_type') or 'marca') != 'marca':
+                continue
+
             acta = item.get('acta')
             denominacion = item.get('denominacion')
             if not acta and not denominacion:
                 continue
 
-            # Buscar en INPI por Denominacion
             body_xml = f"""<ConsultaDenominacion xmlns="http://tempuri.org/">
               <Denominacion>{denominacion}</Denominacion>
             </ConsultaDenominacion>"""
@@ -389,8 +571,9 @@ def sync_monitored_trademarks():
             "success": True,
             "total_monitored": len(tracked_list),
             "updated_count": updated_count,
-            "message": f"Sincronizadas {updated_count} de {len(tracked_list)} marcas con el INPI."
+            "message": f"Sincronizadas {updated_count} marcas con el INPI."
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error en la sincronización masiva: {str(e)}")
+
 

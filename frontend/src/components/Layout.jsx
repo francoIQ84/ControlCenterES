@@ -109,13 +109,13 @@ const PAGE_HELP = {
   },
   '/inpi': {
     title: '🛡️ Propiedad Industrial',
-    description: 'Monitoreo de marcas registradas en el INPI.',
+    description: 'Gestión integral de Marcas, Patentes, Modelos de Utilidad y Diseños Industriales.',
     features: [
-      'Buscar marcas por denominación, titular o CUIT',
-      'Monitorear marcas propias con alertas automáticas',
-      'Sincronizar estado actualizado desde INPI',
-      'Ver detalle completo de cada marca: clase, estado, vigencia',
-      'Gestión de trámites y expedientes'
+      'Portafolio unificado de activos de propiedad industrial',
+      'Buscar marcas, patentes y diseños en bases INPI e internacionales',
+      'Monitoreo automático de plazos legales (DJUMT, anualidades, quinquenios)',
+      'Sincronización de estado con Web Service INPI',
+      'Gestión de expedientes, resoluciones y documentación técnica'
     ]
   },
   '/marketing': {

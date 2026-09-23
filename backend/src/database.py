@@ -511,6 +511,18 @@ def init_db():
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             ''')
+            cursor.execute("ALTER TABLE monitored_trademarks ADD COLUMN IF NOT EXISTS asset_type VARCHAR(50) DEFAULT 'marca';")
+            cursor.execute("ALTER TABLE monitored_trademarks ADD COLUMN IF NOT EXISTS subtipo VARCHAR(100);")
+            cursor.execute("ALTER TABLE monitored_trademarks ADD COLUMN IF NOT EXISTS inventores_disenadores TEXT;")
+            cursor.execute("ALTER TABLE monitored_trademarks ADD COLUMN IF NOT EXISTS clasificacion VARCHAR(100);")
+            cursor.execute("ALTER TABLE monitored_trademarks ADD COLUMN IF NOT EXISTS fecha_concesion VARCHAR(50);")
+            cursor.execute("ALTER TABLE monitored_trademarks ADD COLUMN IF NOT EXISTS quinquenio_actual INTEGER DEFAULT 1;")
+            cursor.execute("ALTER TABLE monitored_trademarks ADD COLUMN IF NOT EXISTS anualidades_pagadas INTEGER DEFAULT 0;")
+            cursor.execute("ALTER TABLE monitored_trademarks ADD COLUMN IF NOT EXISTS proxima_anualidad INTEGER;")
+            cursor.execute("ALTER TABLE monitored_trademarks ADD COLUMN IF NOT EXISTS fecha_proximo_vencimiento VARCHAR(50);")
+            cursor.execute("ALTER TABLE monitored_trademarks ADD COLUMN IF NOT EXISTS alerta_estado VARCHAR(50);")
+            cursor.execute("ALTER TABLE monitored_trademarks ADD COLUMN IF NOT EXISTS alerta_mensaje TEXT;")
+            cursor.execute("ALTER TABLE monitored_trademarks ADD COLUMN IF NOT EXISTS document_url TEXT;")
 
             # Marketing posts table
             # This table was being INSERTed into by create_marketing_post() without
@@ -3192,21 +3204,31 @@ def delete_lead(lead_id: int):
             cursor.execute("DELETE FROM leads WHERE id = %s", (lead_id,))
             return True
 
-# --- Monitored Trademarks (INPI) ---
+# --- Monitored Intellectual Property Assets (INPI) ---
 
-def get_all_monitored_trademarks():
-    """Obtiene todas las marcas registradas en el portafolio de seguimiento."""
+def get_all_monitored_trademarks(asset_type: str = None):
+    """Obtiene todos los activos de PI (marcas, patentes, modelos de utilidad, diseños) o filtrados por tipo."""
     try:
         with get_connection() as conn:
             with conn.cursor() as cursor:
-                cursor.execute("""
+                query = """
                     SELECT id, acta, denominacion, clase, tipo_marca, titulares,
                            numero_resolucion, estado, fecha_ingreso, fecha_concesion_estimada,
                            fecha_vencimiento_10anos, requiere_djumt, djumt_codigo, djumt_mensaje,
-                           image_url, notes, last_checked_at, created_at
+                           image_url, notes, last_checked_at, created_at,
+                           COALESCE(asset_type, 'marca') as asset_type, subtipo, inventores_disenadores,
+                           clasificacion, fecha_concesion, quinquenio_actual, anualidades_pagadas,
+                           proxima_anualidad, fecha_proximo_vencimiento, alerta_estado, alerta_mensaje,
+                           document_url
                     FROM monitored_trademarks
-                    ORDER BY id DESC
-                """)
+                """
+                params = []
+                if asset_type and asset_type.lower() != 'all':
+                    query += " WHERE COALESCE(asset_type, 'marca') = %s"
+                    params.append(asset_type.lower())
+
+                query += " ORDER BY id DESC"
+                cursor.execute(query, tuple(params))
                 rows = cursor.fetchall()
                 result = []
                 for r in rows:
@@ -3222,30 +3244,47 @@ def get_all_monitored_trademarks():
         return []
 
 def add_monitored_trademark(item: dict):
-    """Agrega una nueva marca al seguimiento diario."""
-    acta = str(item.get('Acta') or item.get('acta') or '').strip()
-    if not acta:
-        raise ValueError("El número de Acta es obligatorio para monitorear una marca.")
+    """Agrega un activo de PI (marca, patente, modelo de utilidad, diseño industrial) al seguimiento."""
+    from src.utils import ip_legal
+    enriched = ip_legal.enrich_ip_asset_data(item)
 
-    denominacion = str(item.get('Denominacion') or item.get('denominacion') or '').strip()
-    clase = item.get('Clase') or item.get('clase')
+    acta = str(enriched.get('Acta') or enriched.get('acta') or '').strip()
+    if not acta:
+        raise ValueError("El número de Acta / Expediente / Registro es obligatorio.")
+
+    denominacion = str(enriched.get('Denominacion') or enriched.get('denominacion') or '').strip()
+    asset_type = str(enriched.get('asset_type') or 'marca').strip().lower()
+    subtipo = str(enriched.get('subtipo') or '')
+    inventores_disenadores = str(enriched.get('inventores_disenadores') or enriched.get('inventores') or enriched.get('disenadores') or '')
+    clasificacion = str(enriched.get('clasificacion') or enriched.get('clase') or '')
+    
+    clase = enriched.get('Clase') or enriched.get('clase')
     try:
         clase = int(clase) if clase else None
-    except ValueError:
+    except (ValueError, TypeError):
         clase = None
 
-    tipo_marca = str(item.get('Tipo_Marca') or item.get('tipo_marca') or '')
-    titulares = str(item.get('Titulares') or item.get('titulares') or '')
-    numero_resolucion = str(item.get('Numero_Resolucion') or item.get('numero_resolucion') or '')
-    estado = str(item.get('Estado') or item.get('estado') or '')
-    fecha_ingreso = str(item.get('Fecha_Ingreso') or item.get('fecha_ingreso') or '')
-    fecha_concesion = str(item.get('fecha_concesion_estimada') or '')
-    fecha_vencimiento = str(item.get('fecha_vencimiento_10anos') or '')
-    requiere_djumt = bool(item.get('requiere_djumt', False))
-    djumt_codigo = str(item.get('djumt_codigo') or 'NO_APLICA')
-    djumt_mensaje = str(item.get('djumt_mensaje') or '')
-    image_url = str(item.get('image_url') or '')
-    notes = str(item.get('notes') or '')
+    tipo_marca = str(enriched.get('Tipo_Marca') or enriched.get('tipo_marca') or '')
+    titulares = str(enriched.get('Titulares') or enriched.get('titulares') or '')
+    numero_resolucion = str(enriched.get('Numero_Resolucion') or enriched.get('numero_resolucion') or '')
+    estado = str(enriched.get('Estado') or enriched.get('estado') or '')
+    fecha_ingreso = str(enriched.get('Fecha_Ingreso') or enriched.get('fecha_ingreso') or '')
+    fecha_concesion = str(enriched.get('fecha_concesion') or enriched.get('fecha_concesion_estimada') or '')
+    fecha_vencimiento = str(enriched.get('fecha_vencimiento_10anos') or enriched.get('fecha_vencimiento_final') or '')
+    requiere_djumt = bool(enriched.get('requiere_djumt', False))
+    djumt_codigo = str(enriched.get('djumt_codigo') or 'NO_APLICA')
+    djumt_mensaje = str(enriched.get('djumt_mensaje') or '')
+    image_url = str(enriched.get('image_url') or '')
+    document_url = str(enriched.get('document_url') or '')
+    notes = str(enriched.get('notes') or '')
+
+    quinquenio_actual = int(enriched.get('quinquenio_actual') or 1)
+    anualidades_pagadas = int(enriched.get('anualidades_pagadas') or 0)
+    proxima_anualidad = enriched.get('proxima_anualidad')
+    proxima_anualidad = int(proxima_anualidad) if proxima_anualidad is not None else None
+    fecha_proximo_vencimiento = str(enriched.get('fecha_proximo_vencimiento') or '')
+    alerta_estado = str(enriched.get('alerta_estado') or 'VIGENTE')
+    alerta_mensaje = str(enriched.get('alerta_mensaje') or '')
 
     with get_connection() as conn:
         with conn.cursor() as cursor:
@@ -3253,8 +3292,14 @@ def add_monitored_trademark(item: dict):
                 INSERT INTO monitored_trademarks (
                     acta, denominacion, clase, tipo_marca, titulares, numero_resolucion,
                     estado, fecha_ingreso, fecha_concesion_estimada, fecha_vencimiento_10anos,
-                    requiere_djumt, djumt_codigo, djumt_mensaje, image_url, notes, last_checked_at
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
+                    requiere_djumt, djumt_codigo, djumt_mensaje, image_url, notes, last_checked_at,
+                    asset_type, subtipo, inventores_disenadores, clasificacion, fecha_concesion,
+                    quinquenio_actual, anualidades_pagadas, proxima_anualidad, fecha_proximo_vencimiento,
+                    alerta_estado, alerta_mensaje, document_url
+                ) VALUES (
+                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP,
+                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+                )
                 ON CONFLICT (tenant_id, acta) DO UPDATE SET
                     denominacion = EXCLUDED.denominacion,
                     clase = EXCLUDED.clase,
@@ -3268,24 +3313,97 @@ def add_monitored_trademark(item: dict):
                     requiere_djumt = EXCLUDED.requiere_djumt,
                     djumt_codigo = EXCLUDED.djumt_codigo,
                     djumt_mensaje = EXCLUDED.djumt_mensaje,
+                    asset_type = EXCLUDED.asset_type,
+                    subtipo = EXCLUDED.subtipo,
+                    inventores_disenadores = EXCLUDED.inventores_disenadores,
+                    clasificacion = EXCLUDED.clasificacion,
+                    fecha_concesion = EXCLUDED.fecha_concesion,
+                    quinquenio_actual = EXCLUDED.quinquenio_actual,
+                    anualidades_pagadas = EXCLUDED.anualidades_pagadas,
+                    proxima_anualidad = EXCLUDED.proxima_anualidad,
+                    fecha_proximo_vencimiento = EXCLUDED.fecha_proximo_vencimiento,
+                    alerta_estado = EXCLUDED.alerta_estado,
+                    alerta_mensaje = EXCLUDED.alerta_mensaje,
+                    image_url = CASE WHEN EXCLUDED.image_url <> '' THEN EXCLUDED.image_url ELSE monitored_trademarks.image_url END,
+                    document_url = CASE WHEN EXCLUDED.document_url <> '' THEN EXCLUDED.document_url ELSE monitored_trademarks.document_url END,
+                    notes = CASE WHEN EXCLUDED.notes <> '' THEN EXCLUDED.notes ELSE monitored_trademarks.notes END,
                     last_checked_at = CURRENT_TIMESTAMP
                 RETURNING id
             ''', (
                 acta, denominacion, clase, tipo_marca, titulares, numero_resolucion,
                 estado, fecha_ingreso, fecha_concesion, fecha_vencimiento,
-                requiere_djumt, djumt_codigo, djumt_mensaje, image_url, notes
+                requiere_djumt, djumt_codigo, djumt_mensaje, image_url, notes,
+                asset_type, subtipo, inventores_disenadores, clasificacion, fecha_concesion,
+                quinquenio_actual, anualidades_pagadas, proxima_anualidad, fecha_proximo_vencimiento,
+                alerta_estado, alerta_mensaje, document_url
             ))
             return cursor.fetchone()['id']
 
+def update_monitored_trademark(acta: str, item: dict):
+    """Actualiza manualmente los datos de un activo de PI (anualidades pagadas, notas, quinquenio, etc.)."""
+    from src.utils import ip_legal
+    enriched = ip_legal.enrich_ip_asset_data(item)
+
+    denominacion = str(enriched.get('denominacion') or enriched.get('Denominacion') or '').strip()
+    titulares = str(enriched.get('titulares') or enriched.get('Titulares') or '')
+    inventores_disenadores = str(enriched.get('inventores_disenadores') or '')
+    clasificacion = str(enriched.get('clasificacion') or '')
+    estado = str(enriched.get('estado') or enriched.get('Estado') or '')
+    fecha_ingreso = str(enriched.get('fecha_ingreso') or enriched.get('Fecha_Ingreso') or '')
+    fecha_concesion = str(enriched.get('fecha_concesion') or enriched.get('fecha_concesion_estimada') or '')
+    fecha_vencimiento = str(enriched.get('fecha_vencimiento_10anos') or enriched.get('fecha_vencimiento_final') or '')
+    quinquenio_actual = int(enriched.get('quinquenio_actual') or 1)
+    anualidades_pagadas = int(enriched.get('anualidades_pagadas') or 0)
+    proxima_anualidad = enriched.get('proxima_anualidad')
+    proxima_anualidad = int(proxima_anualidad) if proxima_anualidad is not None else None
+    fecha_proximo_vencimiento = str(enriched.get('fecha_proximo_vencimiento') or '')
+    alerta_estado = str(enriched.get('alerta_estado') or 'VIGENTE')
+    alerta_mensaje = str(enriched.get('alerta_mensaje') or '')
+    notes = str(enriched.get('notes') or '')
+    image_url = str(enriched.get('image_url') or '')
+    document_url = str(enriched.get('document_url') or '')
+
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute('''
+                UPDATE monitored_trademarks
+                SET denominacion = COALESCE(NULLIF(%s, ''), denominacion),
+                    titulares = %s,
+                    inventores_disenadores = %s,
+                    clasificacion = %s,
+                    estado = %s,
+                    fecha_ingreso = %s,
+                    fecha_concesion = %s,
+                    fecha_vencimiento_10anos = %s,
+                    quinquenio_actual = %s,
+                    anualidades_pagadas = %s,
+                    proxima_anualidad = %s,
+                    fecha_proximo_vencimiento = %s,
+                    alerta_estado = %s,
+                    alerta_mensaje = %s,
+                    notes = %s,
+                    image_url = CASE WHEN %s <> '' THEN %s ELSE image_url END,
+                    document_url = CASE WHEN %s <> '' THEN %s ELSE document_url END,
+                    last_checked_at = CURRENT_TIMESTAMP
+                WHERE acta = %s
+            ''', (
+                denominacion, titulares, inventores_disenadores, clasificacion, estado,
+                fecha_ingreso, fecha_concesion, fecha_vencimiento, quinquenio_actual,
+                anualidades_pagadas, proxima_anualidad, fecha_proximo_vencimiento,
+                alerta_estado, alerta_mensaje, notes, image_url, image_url,
+                document_url, document_url, str(acta).strip()
+            ))
+            return True
+
 def delete_monitored_trademark(acta: str):
-    """Elimina una marca del seguimiento."""
+    """Elimina un activo del seguimiento."""
     with get_connection() as conn:
         with conn.cursor() as cursor:
             cursor.execute("DELETE FROM monitored_trademarks WHERE acta = %s", (str(acta).strip(),))
             return True
 
 def update_monitored_trademark_image(acta: str, image_url: str):
-    """Actualiza la URL del logo o imagen de una marca monitoreada."""
+    """Actualiza la URL del logo o imagen de un activo monitoreado."""
     with get_connection() as conn:
         with conn.cursor() as cursor:
             cursor.execute("UPDATE monitored_trademarks SET image_url = %s WHERE acta = %s", (image_url.strip(), str(acta).strip()))
@@ -3293,13 +3411,19 @@ def update_monitored_trademark_image(acta: str, image_url: str):
 
 def update_monitored_trademark_data(acta: str, item: dict):
     """Actualiza los datos provenientes de la re-consulta en INPI."""
-    numero_resolucion = str(item.get('Numero_Resolucion') or item.get('numero_resolucion') or '')
-    estado = str(item.get('Estado') or item.get('estado') or '')
-    fecha_concesion = str(item.get('fecha_concesion_estimada') or '')
-    fecha_vencimiento = str(item.get('fecha_vencimiento_10anos') or '')
-    requiere_djumt = bool(item.get('requiere_djumt', False))
-    djumt_codigo = str(item.get('djumt_codigo') or 'NO_APLICA')
-    djumt_mensaje = str(item.get('djumt_mensaje') or '')
+    from src.utils import ip_legal
+    enriched = ip_legal.enrich_ip_asset_data(item)
+
+    numero_resolucion = str(enriched.get('Numero_Resolucion') or enriched.get('numero_resolucion') or '')
+    estado = str(enriched.get('Estado') or enriched.get('estado') or '')
+    fecha_concesion = str(enriched.get('fecha_concesion_estimada') or '')
+    fecha_vencimiento = str(enriched.get('fecha_vencimiento_10anos') or '')
+    requiere_djumt = bool(enriched.get('requiere_djumt', False))
+    djumt_codigo = str(enriched.get('djumt_codigo') or 'NO_APLICA')
+    djumt_mensaje = str(enriched.get('djumt_mensaje') or '')
+    alerta_estado = str(enriched.get('alerta_estado') or 'VIGENTE')
+    alerta_mensaje = str(enriched.get('alerta_mensaje') or '')
+    fecha_proximo_vencimiento = str(enriched.get('fecha_proximo_vencimiento') or '')
 
     with get_connection() as conn:
         with conn.cursor() as cursor:
@@ -3312,11 +3436,16 @@ def update_monitored_trademark_data(acta: str, item: dict):
                     requiere_djumt = %s,
                     djumt_codigo = %s,
                     djumt_mensaje = %s,
+                    alerta_estado = %s,
+                    alerta_mensaje = %s,
+                    fecha_proximo_vencimiento = %s,
                     last_checked_at = CURRENT_TIMESTAMP
                 WHERE acta = %s
             ''', (
                 numero_resolucion, estado, fecha_concesion, fecha_vencimiento,
-                requiere_djumt, djumt_codigo, djumt_mensaje, str(acta).strip()
+                requiere_djumt, djumt_codigo, djumt_mensaje,
+                alerta_estado, alerta_mensaje, fecha_proximo_vencimiento,
+                str(acta).strip()
             ))
             return True
 
@@ -3326,38 +3455,76 @@ def get_system_notifications():
     
     with get_connection() as conn:
         with conn.cursor() as cursor:
-            # 1. Alertas de Propiedad Industrial (INPI)
+            # 1. Alertas de Propiedad Industrial (Marcas, Patentes, Modelos, Diseños)
             try:
                 cursor.execute('''
-                    SELECT acta, denominacion, djumt_codigo, djumt_mensaje
+                    SELECT acta, denominacion, djumt_codigo, djumt_mensaje,
+                           COALESCE(asset_type, 'marca') as asset_type,
+                           alerta_estado, alerta_mensaje, fecha_proximo_vencimiento
                     FROM monitored_trademarks
                     WHERE djumt_codigo IN ('PRESENTAR_AHORA', 'EN_MORA')
+                       OR alerta_estado IN ('PRESENTAR_AHORA', 'EN_MORA')
                 ''')
                 rows = cursor.fetchall()
                 for r in rows:
                     acta = r['acta']
                     denom = r['denominacion']
-                    code = r['djumt_codigo']
-                    if code == 'EN_MORA':
+                    a_type = (r.get('asset_type') or 'marca').lower()
+                    code = r.get('djumt_codigo') or r.get('alerta_estado') or ''
+                    alerta_msg = r.get('alerta_mensaje') or r.get('djumt_mensaje') or ''
+                    time_val = r.get('fecha_proximo_vencimiento') or 'Urgente'
+
+                    if a_type == 'patente':
                         notifications.append({
-                            'id': f'inpi_mora_{acta}',
+                            'id': f'inpi_patente_{acta}',
                             'category': 'inpi',
-                            'severity': 'danger',
-                            'title': f'⚠️ DJUMT Vencida: {denom}',
-                            'message': f'La marca (Acta #{acta}) supera los 6 años sin Declaración Jurada de Uso.',
+                            'severity': 'danger' if 'MORA' in code else 'warning',
+                            'title': f'💡 Anualidad Patente: {denom[:28]}',
+                            'message': alerta_msg or f'Atención en vencimiento de anualidad de Patente (Acta #{acta}).',
                             'link': '/inpi',
-                            'time': 'Urgente'
+                            'time': time_val
                         })
-                    elif code == 'PRESENTAR_AHORA':
+                    elif a_type == 'modelo_utilidad':
                         notifications.append({
-                            'id': f'inpi_ahora_{acta}',
+                            'id': f'inpi_modutil_{acta}',
                             'category': 'inpi',
-                            'severity': 'warning',
-                            'title': f'🟠 Presentar DJUMT: {denom}',
-                            'message': f'Ventanilla abierta (5° a 6° año) para Acta #{acta}.',
+                            'severity': 'danger' if 'MORA' in code else 'warning',
+                            'title': f'⚙️ Anualidad Mod. Utilidad: {denom[:26]}',
+                            'message': alerta_msg or f'Atención en anualidad de Modelo de Utilidad (Acta #{acta}).',
                             'link': '/inpi',
-                            'time': 'En ventana'
+                            'time': time_val
                         })
+                    elif a_type == 'diseno_industrial':
+                        notifications.append({
+                            'id': f'inpi_diseno_{acta}',
+                            'category': 'inpi',
+                            'severity': 'danger' if 'MORA' in code else 'warning',
+                            'title': f'🎨 Renovación Diseño: {denom[:28]}',
+                            'message': alerta_msg or f'Ventana de renovación de quinquenio para Diseño Industrial (Acta #{acta}).',
+                            'link': '/inpi',
+                            'time': time_val
+                        })
+                    else: # Marca
+                        if code == 'EN_MORA':
+                            notifications.append({
+                                'id': f'inpi_mora_{acta}',
+                                'category': 'inpi',
+                                'severity': 'danger',
+                                'title': f'⚠️ DJUMT Vencida: {denom}',
+                                'message': f'La marca (Acta #{acta}) supera los 6 años sin Declaración Jurada de Uso.',
+                                'link': '/inpi',
+                                'time': 'Urgente'
+                            })
+                        elif code == 'PRESENTAR_AHORA':
+                            notifications.append({
+                                'id': f'inpi_ahora_{acta}',
+                                'category': 'inpi',
+                                'severity': 'warning',
+                                'title': f'🟠 Presentar DJUMT: {denom}',
+                                'message': f'Ventanilla abierta (5° a 6° año) para Acta #{acta}.',
+                                'link': '/inpi',
+                                'time': 'En ventana'
+                            })
             except Exception as err:
                 print("[Database] Error fetching INPI notifications:", err)
 
