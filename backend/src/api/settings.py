@@ -401,10 +401,10 @@ def get_arca_config(_=Depends(require_permission("settings"))):
         "afip_type_cmp": int(database.get_setting('afip_type_cmp', '11')),
         "afip_concept": int(database.get_setting('afip_concept', '1')),
         "afip_environment": database.get_setting('afip_environment', 'homologacion'),
-        "merchant_name": database.get_merchant_name(),
+        "merchant_name": database.get_setting('afip_razon_social') or database.get_setting('merchant_name', ''),
         "merchant_address": database.get_setting('merchant_address', 'Bv. Oroño 4500, Rosario'),
         "merchant_phone": database.get_setting('merchant_phone', '+54 341 456-7890'),
-        "merchant_commercial_name": database.get_setting('merchant_commercial_name', 'Experiencia Sustentable'),
+        "merchant_commercial_name": database.get_setting('merchant_commercial_name', 'Hidroponía Rosario'),
         "merchant_commercial_address": database.get_setting('merchant_commercial_address', 'Zeballos 1726, Rosario, Santa Fe, Argentina'),
         "merchant_iibb": database.get_setting('merchant_iibb', ''),
         "merchant_iva_condition": database.get_setting('merchant_iva_condition', 'Responsable Monotributo'),
@@ -421,7 +421,7 @@ def save_arca_config(req: ArcaConfigRequest, _=Depends(require_permission("setti
     database.set_setting('afip_type_cmp', str(req.afip_type_cmp))
     database.set_setting('afip_concept', str(req.afip_concept))
     database.set_setting('afip_environment', req.afip_environment)
-    database.set_setting('merchant_name', req.merchant_name.strip())
+    database.set_setting('afip_razon_social', req.merchant_name.strip())
     database.set_setting('merchant_address', req.merchant_address.strip())
     database.set_setting('merchant_phone', req.merchant_phone.strip())
     if req.merchant_commercial_name is not None:

@@ -1,93 +1,123 @@
-# ☁️ Guía de Integración con Google Drive (Google Cloud Service Account)
+# ☁️ Guía de Integración con Google Drive
 
-Esta guía detalla paso a paso cómo vincular **ControlCenterES** con tu cuenta de **Google Drive** para que todos los respaldos (backups de base de datos PostgreSQL y archivos) se suban automáticamente a la nube.
-
----
-
-## 📋 ¿Cómo funciona?
-
-El sistema utiliza una **Cuenta de Servicio (Service Account)** de Google Cloud en lugar de un inicio de sesión interactivo de usuario. 
-Esto permite que:
-- Los respaldos se suban de manera autónoma en segundo plano (incluso de noche o por tareas programadas).
-- No expire la sesión ni requiera volver a iniciar sesión cada semana.
-- La aplicación solo tenga acceso a la carpeta específica de Drive que vos decidas compartirle, manteniendo el resto de tu Google Drive 100% privado y seguro.
+Esta guía detalla paso a paso cómo vincular **ControlCenterES** con tu cuenta de **Google Drive** para que todos los respaldos (base de datos PostgreSQL y archivos multimedia) se suban automáticamente a la nube.
 
 ---
 
-## 🛠️ Paso 1: Habilitar Google Drive API en Google Cloud Console
+## 🌟 Dos Modos de Integración: ¿Cuál elegir?
+
+| Método | Recomendado Para | Espacio Disponible | Dificultad |
+| :--- | :--- | :--- | :--- |
+| **Opción B (OAuth 2.0 - Cuenta Personal)** ⭐ | Cuentas `@gmail.com` habituales | **15 GB a 2 TB** (tu cuota de usuario) | Sencillo (1 clic una vez creado el ID) |
+| **Opción A (Cuenta de Servicio / Service Account)** | Google Workspace con **Unidades Compartidas** | Cuota de la unidad compartida | Requiere compartir carpetas |
+
+> [!WARNING]
+> **¿Por qué la Cuenta de Servicio (Service Account) falla en cuentas `@gmail.com` personales?**
+> Google asigna **0 bytes de almacenamiento propio** a las Cuentas de Servicio. Si intentás subir un archivo a una carpeta de tu cuenta personal `@gmail.com` usando una Service Account, Google la rechaza con el error `storageQuotaExceeded (cuota de Service Account excedida)`.
+> 
+> **Para cuentas personales `@gmail.com`, utilizá SIEMPRE la Opción B (OAuth 2.0)**.
+
+---
+
+## 🚀 Opción B (Recomendada): Conexión con Cuenta Personal (OAuth 2.0)
+
+Con esta opción, conectás tu propia cuenta de Google (`francoag84@gmail.com`) con un solo clic. Los backups se almacenarán usando el espacio disponible de tu cuenta.
+
+### Paso 1: Habilitar Google Drive API en Google Cloud Console
 
 1. Ingresá a [Google Cloud Console](https://console.cloud.google.com/) con tu cuenta de Google / Gmail.
 2. Si no tenés un proyecto creado:
-   - Hacé clic arriba a la izquierda en el selector de proyectos.
-   - Presioná **"Nuevo proyecto"**.
-   - Nombre sugerido: `ControlCenter Backups` (o el nombre de tu empresa).
+   - Hacé clic arriba a la izquierda en el selector de proyectos > **"Nuevo proyecto"**.
+   - Nombre sugerido: `ControlCenter Backups`.
    - Hacé clic en **Crear** y asegúrate de tenerlo seleccionado en la barra superior.
-3. En el menú de navegación lateral (icono de 3 líneas ☰), andá a:
-   **APIs y servicios** > **Biblioteca**.
-4. En el buscador escribí: **`Google Drive API`**.
-5. Hacé clic en el resultado **Google Drive API** y presioná el botón azul **Habilitar**.
+3. En el menú lateral (☰), andá a **APIs y servicios** > **Biblioteca**.
+4. Buscá **`Google Drive API`**, hacé clic y presioná **Habilitar**.
 
 ---
 
-## 🔑 Paso 2: Crear la Cuenta de Servicio y Descargar el Archivo JSON
+### Paso 2: Configurar la Pantalla de Consentimiento OAuth (OAuth consent screen)
+
+1. En el menú lateral, andá a **APIs y servicios** > **Pantalla de consentimiento de OAuth**.
+2. Seleccioná el tipo de usuario: **Externo** y presioná **Crear**.
+3. Completá los campos obligatorios:
+   - **Nombre de la aplicación**: `ControlCenter Backups`
+   - **Correo electrónico de asistencia al usuario**: Tu correo de Gmail.
+   - **Información de contacto del desarrollador**: Tu correo de Gmail.
+4. Hacé clic en **Guardar y continuar**.
+5. En la sección **Permisos (Scopes)**:
+   - Hacé clic en **Agregar o quitar permisos**.
+   - En el filtro buscá `drive.file` o seleccioná:
+     `https://www.googleapis.com/auth/drive.file` *(Ver, crear y editar los archivos de Google Drive que hayas abierto o creado con esta app)*.
+   - Presioná **Actualizar** y luego **Guardar y continuar**.
+6. En la sección **Usuarios de prueba (Test users)** *(Muy importante mientras la app esté en modo prueba)*:
+   - Hacé clic en **+ ADD USERS**.
+   - Ingresá tu correo de Google (ej: `francoag84@gmail.com`).
+   - Presioná **Guardar y continuar** y luego **Volver al panel**.
+
+---
+
+### Paso 3: Crear el ID de Cliente OAuth 2.0
 
 1. En el menú lateral, andá a **APIs y servicios** > **Credenciales**.
-2. En la parte superior hacé clic en **`+ CREAR CREDENCIALES`** y elegí **"Cuenta de servicio"**.
-3. Completá los datos básicos:
-   - **Nombre de la cuenta de servicio**: `backup-bot` (o `controlcenter-backups`).
-   - **ID de la cuenta de servicio**: Se genera automáticamente.
-   - **Descripción**: `Subida automática de respaldos ControlCenterES`.
-4. Hacé clic en **Crear y continuar** y luego en **Listo** (no es necesario otorgar roles de proyecto aquí).
-5. Volverás a la lista de "Cuentas de servicio". Hacé clic sobre el correo electrónico de la cuenta que acabás de crear. 
-   - El correo tiene un formato similar a:
+2. En la parte superior, hacé clic en **`+ CREAR CREDENCIALES`** y elegí **"ID de cliente de OAuth"**.
+3. En **Tipo de aplicación**, seleccioná **"Aplicación web"**.
+4. En **Nombre**, ingresá: `ControlCenter Web`.
+5. En **URIs de redireccionamiento autorizados** (Authorized redirect URIs):
+   - Hacé clic en **+ AGREGAR URI**.
+   - Pegá exactamente la siguiente URL:
      ```text
-     backup-bot@tu-proyecto-123456.iam.gserviceaccount.com
+     https://admin.hidroponiarosario.com/api/backup/google-drive/callback
      ```
-   > 📌 **Copiá este correo electrónico**: Lo necesitarás en el Paso 3 para compartirle la carpeta.
-6. Hacé clic en la pestaña superior **Claves** (Keys).
-7. Hacé clic en **Agregar clave** > **Crear clave nueva**.
-8. Seleccioná el formato **JSON** y presioná **Crear**.
-9. Automáticamente se descargará a tu computadora un archivo `.json` con tus credenciales seguras.
+   *(Si estás probando en desarrollo local, podés agregar también: `http://localhost:8000/api/backup/google-drive/callback`)*.
+6. Hacé clic en **Crear**.
+7. Aparecerá una ventana con:
+   - **ID de cliente** (termina en `.apps.googleusercontent.com`).
+   - **Secreto de cliente**.
+   - Copiá ambos valores.
 
 ---
 
-## 📁 Paso 3: Crear la Carpeta de Destino en Google Drive y Compartirla
+### Paso 4: Cargar las Credenciales en ControlCenterES
 
-1. Abrí [Google Drive](https://drive.google.com/) con tu cuenta de Google habitual.
-2. Creá una carpeta nueva donde quieras almacenar los backups (ej: `Respaldos ControlCenter`).
-3. Entrá a la carpeta y observá la URL en la barra de direcciones de tu navegador:
-   ```text
-   https://drive.google.com/drive/folders/1A2B3C4D5E6F7G8H9I_xyz
-   ```
-   - El código alfanumérico que aparece **después de `/folders/`** es el **ID de la Carpeta Destino**. Copialo.
-4. **Compartir la carpeta con la Cuenta de Servicio**:
-   - Hacé clic derecho sobre la carpeta > **Compartir** > **Compartir** (o el botón Compartir arriba a la derecha).
-   - En el campo para agregar personas, pegá el **correo de la Service Account** que copiaste en el Paso 2 (ej: `backup-bot@tu-proyecto-123456.iam.gserviceaccount.com`).
-   - Asignale el rol de **Editor**.
-   - Desmarcá la opción *"Notificar a los usuarios"* (las cuentas de servicio no tienen buzón de entrada).
-   - Presioná **Compartir**.
+1. Ingresá a tu panel de **ControlCenterES**: `https://admin.hidroponiarosario.com`.
+2. Dirigite a **Configuración** > sección **Configuración de Plataforma**.
+3. Buscá la tarjeta **"Google Drive (OAuth 2.0 & Respaldos)"**:
+   - Pegá tu **Google OAuth Client ID**.
+   - Pegá tu **Google OAuth Client Secret**.
+   - *(Opcional)* Si querés que los backups vayan a una carpeta específica, creá una carpeta en tu Google Drive y pegá el ID de la carpeta en **Google Drive Folder ID** (si lo dejás vacío, se subirán directamente a la raíz de tu Drive).
+4. Hacé clic en **"Guardar Configuración de Plataforma"**.
 
 ---
 
-## ⚙️ Paso 4: Cargar la Configuración en ControlCenterES
+### Paso 5: Conectar con 1 Clic
 
-1. Ingresá a tu panel de **ControlCenterES**.
-2. Andá a **Configuración** > sección **Respaldos & Google Drive** (o pestaña de Base de Datos).
-3. Marcá la casilla:
-   - `[x] Activar subida automática a Google Drive`
-4. En **ID de la Carpeta Destino**:
-   - Pegá el identificador copiado en el Paso 3 (ej: `1A2B3C4D5E6F7G8H9I_xyz`).
-5. En **JSON de Google Cloud Service Account**:
-   - Abrí el archivo `.json` descargado en el Paso 2 con el Bloc de notas o cualquier editor de texto.
-   - Copiá **todo el texto completo** (incluyendo las llaves `{` y `}`).
-   - Pegalo dentro del cuadro de texto.
-6. Hacé clic en **Guardar Configuración**.
+1. En el menú de **Configuración**, andá a la sección/pestaña **"Respaldos de Base de Datos"**.
+2. Verás el panel de Google Drive con un botón azul:
+   **`🔗 Conectar con Google Drive`**.
+3. Hacé clic en el botón. Te redirigirá a la pantalla oficial de inicio de sesión de Google.
+4. Seleccioná tu cuenta de Google.
+   > ℹ️ *Si Google muestra una pantalla diciendo "Google no verificó esta app", hacé clic en "Configuración avanzada" (o Advanced) y luego en "Ir a ControlCenter Backups (no seguro)". Esto es normal en aplicaciones privadas en modo testing.*
+5. Concedé los permisos solicitados y presioná **Continuar**.
+6. Google te redirigirá automáticamente a ControlCenterES con un mensaje de éxito:
+   > ✅ **¡Google Drive conectado exitosamente con tu cuenta personal!**
+7. Verás la tarjeta en verde indicando: **Conectado con cuenta personal (`tu-correo@gmail.com`)**.
 
 ---
 
-## 🧪 Verificación del Funcionamiento
+### Paso 6: Generar y Probar un Respaldo
 
-1. En la misma pantalla de Respaldos, hacé clic en **`📦 Generar Respaldo Manual Ahora`**.
-2. El sistema creará el archivo comprimido `.zip` con la base de datos PostgreSQL y los archivos del sistema.
-3. Si la integración está configurada, el sistema subirá automáticamente una copia a Google Drive en segundo plano.
-4. Abrí tu carpeta en Google Drive y corroborá que el archivo de respaldo aparezca subido correctamente.
+1. En la pantalla de **Respaldos**, hacé clic en el botón **`📦 Generar Respaldo Manual Ahora`**.
+2. El sistema creará el archivo comprimido del sistema (`.zip`) y automáticamente lo subirá a tu Google Drive personal.
+3. También podés hacer clic en el botón **`☁️ Subir a Drive`** en la tabla de respaldos existentes para subir cualquiera de los backups previos.
+
+---
+
+## 🏢 Opción A (Avanzada): Cuenta de Servicio (Service Account)
+
+> ⚠️ **Aviso:** Esta opción requiere que cuentes con una **Unidad Compartida (Shared Drive)** de Google Workspace institucional/empresarial. En cuentas `@gmail.com` gratuitas normales o carpetas compartidas personales no funcionará por limitaciones de cuota de Google.
+
+1. En Google Cloud Console, andá a **APIs y servicios** > **Credenciales** > **Crear credenciales** > **Cuenta de servicio**.
+2. Creá la cuenta de servicio y descargá su clave privada en formato `.json`.
+3. En Google Drive, creá una carpeta dentro de una **Unidad Compartida**.
+4. Compartí esa carpeta con el correo de la cuenta de servicio (ej: `bot@proyecto.iam.gserviceaccount.com`) dándole rol de **Editor**.
+5. En ControlCenterES, pegá el contenido completo del JSON en el campo correspondiente y guardá.

@@ -497,6 +497,7 @@ export default function Settings() {
   const [backups, setBackups] = useState([])
   const [backupsLoading, setBackupsLoading] = useState(false)
   const [creatingBackup, setCreatingBackup] = useState(false)
+  const [uploadingToDrive, setUploadingToDrive] = useState({})
   const [diskSpace, setDiskSpace] = useState(null)
 
   // Google Drive State
@@ -506,6 +507,16 @@ export default function Settings() {
     service_account_json: ''
   })
   const [savingGDrive, setSavingGDrive] = useState(false)
+  const [gdriveStatus, setGdriveStatus] = useState({
+    connected: false,
+    auth_mode: 'none',
+    user_email: '',
+    folder_id: '',
+    has_client_credentials: false,
+    is_oauth_configured: false
+  })
+  const [gdriveStatusLoading, setGdriveStatusLoading] = useState(false)
+  const [connectingGDrive, setConnectingGDrive] = useState(false)
 
   // Restore State
   const [restoreFile, setRestoreFile] = useState(null)
@@ -1151,11 +1162,69 @@ export default function Settings() {
     }
   }
 
+  const fetchGdriveStatus = () => {
+    setGdriveStatusLoading(true)
+    fetch('/api/backup/google-drive/status')
+      .then(r => r.json())
+      .then(data => {
+        if (data && !data.detail) {
+          setGdriveStatus(data)
+        }
+      })
+      .catch(err => console.error("Error fetching gdrive status:", err))
+      .finally(() => setGdriveStatusLoading(false))
+  }
+
+  const handleConnectGDrive = async () => {
+    setConnectingGDrive(true)
+    try {
+      const res = await fetch('/api/backup/google-drive/auth-url')
+      const data = await res.json()
+      if (res.ok && data.auth_url) {
+        window.location.href = data.auth_url
+      } else {
+        alert("⚠️ " + (data.detail || "No se pudo generar la URL de autorización. Verifica haber configurado GOOGLE_OAUTH_CLIENT_ID y CLIENT_SECRET en Configuración > Plataforma."))
+      }
+    } catch(err) {
+      alert("Error de conexión: " + err.message)
+    } finally {
+      setConnectingGDrive(false)
+    }
+  }
+
+  const handleDisconnectGDrive = async () => {
+    if (!window.confirm("¿Deseas desvincular tu cuenta personal de Google Drive?")) return
+    try {
+      const res = await fetch('/api/backup/google-drive/disconnect', { method: 'POST' })
+      const data = await res.json()
+      if (res.ok) {
+        alert("✅ " + (data.message || "Cuenta de Google Drive desvinculada."))
+        fetchGdriveStatus()
+      } else {
+        alert("Error: " + (data.detail || "No se pudo desvincular"))
+      }
+    } catch(err) {
+      alert("Error de conexión: " + err.message)
+    }
+  }
+
   useEffect(() => {
     if (activeTab === "backups") {
       fetchBackups()
       fetchDiskSpace()
       fetchGoogleDriveConfig()
+      fetchGdriveStatus()
+
+      // Comprobar parámetros de retorno de Google OAuth
+      const params = new URLSearchParams(window.location.search)
+      if (params.get('gdrive_connected')) {
+        alert("✅ ¡Cuenta de Google Drive vinculada con éxito!\nTus respaldos ahora se almacenarán en tu Google Drive personal sin límite de cuota de Service Account.")
+        window.history.replaceState({}, '', window.location.pathname + '?tab=backups')
+        fetchGdriveStatus()
+      } else if (params.get('gdrive_error')) {
+        alert("⚠️ Error al vincular Google Drive:\n" + params.get('gdrive_error'))
+        window.history.replaceState({}, '', window.location.pathname + '?tab=backups')
+      }
     }
     if (activeTab === "web_config") {
       fetchFeaturedProducts()
@@ -1252,22 +1321,50 @@ export default function Settings() {
     }
   }
 
-  const handleDownloadBackup = async (filename) => {
+  const handleUploadToDrive = async (backupId) => {
+    if (!window.confirm(`¿Deseas subir el respaldo ${backupId} a Google Drive ahora?`)) return
+    setUploadingToDrive(prev => ({ ...prev, [backupId]: true }))
     try {
-      const res = await fetch(`/api/backup/download/${filename}`)
-      if (!res.ok) {
-        alert("Error al descargar el respaldo")
-        return
+      const res = await fetch(`/api/backup/upload-to-drive/${backupId}`, { method: 'POST' })
+      const data = await res.json()
+      if (res.ok) {
+        alert("✅ Respaldo subido con éxito a Google Drive:\n" + (data.message || "Subida completada"))
+      } else {
+        alert("⚠️ No se pudo subir a Google Drive:\n" + (data.detail || "Error desconocido"))
       }
-      const blob = await res.blob()
-      const url = window.URL.createObjectURL(blob)
+    } catch(err) {
+      alert("Error de conexión: " + err.message)
+    } finally {
+      setUploadingToDrive(prev => ({ ...prev, [backupId]: false }))
+    }
+  }
+
+  const handleDownloadBackup = (filename) => {
+    try {
+      const token = localStorage.getItem('adminToken')
+      const downloadUrl = `/api/backup/download/${encodeURIComponent(filename)}${token ? `?token=${encodeURIComponent(token)}` : ''}`
       const a = document.createElement('a')
-      a.href = url
+      a.href = downloadUrl
       a.download = filename
       document.body.appendChild(a)
       a.click()
       a.remove()
-      window.URL.revokeObjectURL(url)
+    } catch(err) {
+      alert("Error al iniciar la descarga: " + err.message)
+    }
+  }
+
+  const handleDeleteBackup = async (backupId) => {
+    if (!window.confirm(`¿Estás seguro de que deseas eliminar el respaldo '${backupId}'?\nEsta acción borrará los archivos de sistema y medios asociados en el servidor.`)) return
+    try {
+      const res = await fetch(`/api/backup/${backupId}`, { method: 'DELETE' })
+      const data = await res.json()
+      if (res.ok) {
+        fetchBackups()
+        fetchDiskSpace()
+      } else {
+        alert("Error al eliminar: " + (data.detail || "Error desconocido"))
+      }
     } catch(err) {
       alert("Error de conexión: " + err.message)
     }
@@ -3994,16 +4091,82 @@ export default function Settings() {
             padding: '20px',
             width: '100%'
           }}>
-            <h3 style={{marginBottom: 15, display: 'flex', alignItems: 'center', gap: 8}}>
-              ☁️ Integración con Google Drive
-            </h3>
-            <p style={{fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: 20}}>
-              Al configurar una Service Account de Google Cloud, el sistema subirá automáticamente una copia de todos los respaldos generados (tanto manuales como mensuales) a la carpeta especificada en Drive.
-            </p>
-            
-            <div style={{marginTop: 15, fontSize: '0.9rem', color: 'var(--text-secondary)'}}>
-              Los respaldos de la base de datos y archivos multimedia se sincronizan automáticamente con la nube segura de la plataforma todos los días.
+            <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10, marginBottom: 12}}>
+              <h3 style={{margin: 0, display: 'flex', alignItems: 'center', gap: 8}}>
+                ☁️ Integración con Google Drive (Respaldos en la Nube)
+              </h3>
+              <span style={{
+                fontSize: '0.78rem',
+                fontWeight: 600,
+                padding: '3px 10px',
+                borderRadius: 12,
+                backgroundColor: gdriveStatus.is_oauth_configured ? 'rgba(34, 197, 94, 0.15)' : (gdriveStatus.auth_mode === 'service_account' ? 'rgba(59, 130, 246, 0.15)' : 'rgba(156, 163, 175, 0.15)'),
+                color: gdriveStatus.is_oauth_configured ? '#22c55e' : (gdriveStatus.auth_mode === 'service_account' ? '#3b82f6' : 'var(--text-secondary)')
+              }}>
+                {gdriveStatus.is_oauth_configured ? `🟢 Conectado vía OAuth: ${gdriveStatus.user_email || 'Personal'}` : (gdriveStatus.auth_mode === 'service_account' ? '🔵 Service Account (Workspace)' : '⚪ No Conectado')}
+              </span>
             </div>
+
+            {gdriveStatus.is_oauth_configured ? (
+              <div style={{display: 'flex', flexDirection: 'column', gap: 12}}>
+                <div style={{fontSize: '0.88rem', color: 'var(--text-primary)', lineHeight: 1.5}}>
+                  Tus respaldos del sistema y archivos multimedia se sincronizan directamente con tu cuenta personal de Google Drive (<strong>{gdriveStatus.user_email}</strong>) utilizando tu almacenamiento propio sin límite de cuota.
+                </div>
+                <div style={{display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap'}}>
+                  <span style={{fontSize: '0.8rem', color: 'var(--text-secondary)'}}>
+                    📁 Destino: <strong>{gdriveStatus.folder_id ? `Carpeta (${gdriveStatus.folder_id})` : 'Raíz de tu Google Drive'}</strong>
+                  </span>
+                  <button
+                    type="button"
+                    onClick={handleDisconnectGDrive}
+                    className="btn"
+                    style={{fontSize: '0.75rem', padding: '4px 10px', color: '#ef4444', borderColor: '#ef4444', backgroundColor: 'transparent'}}
+                  >
+                    Desvincular cuenta
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div style={{display: 'flex', flexDirection: 'column', gap: 12}}>
+                <p style={{fontSize: '0.85rem', color: 'var(--text-secondary)', margin: 0}}>
+                  Vincula tu cuenta personal de Google Drive (<strong>@gmail.com</strong>) en 1 clic. Tus respaldos se guardarán automáticamente en tu nube personal sin el bloqueo de cuota que impone Google a las Service Accounts.
+                </p>
+
+                <div style={{display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap'}}>
+                  <button
+                    type="button"
+                    onClick={handleConnectGDrive}
+                    disabled={connectingGDrive}
+                    className="btn"
+                    style={{
+                      padding: '8px 16px',
+                      fontSize: '0.85rem',
+                      fontWeight: 600,
+                      backgroundColor: '#0284c7',
+                      color: '#fff',
+                      border: 'none',
+                      cursor: 'pointer',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 8
+                    }}
+                  >
+                    <span>🔗</span> {connectingGDrive ? 'Conectando...' : 'Conectar cuenta de Google Drive con 1 Clic'}
+                  </button>
+
+                  <span style={{fontSize: '0.78rem', color: 'var(--text-secondary)'}}>
+                    ¿Primera vez? Asegúrate de haber cargado el Client ID en{' '}
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab('platform')}
+                      style={{background: 'none', border: 'none', color: 'var(--accent-blue)', textDecoration: 'underline', cursor: 'pointer', padding: 0, fontSize: '0.78rem'}}
+                    >
+                      Ajustes de Plataforma
+                    </button>
+                  </span>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Info Card */}
@@ -4139,6 +4302,39 @@ export default function Settings() {
                               ⬇ Med.
                             </button>
                           )}
+                          <button 
+                            onClick={() => handleUploadToDrive(b.id)}
+                            disabled={uploadingToDrive[b.id]}
+                            className="btn"
+                            style={{
+                              padding: '4px 8px',
+                              fontSize: '0.73rem',
+                              backgroundColor: '#0284c7',
+                              color: '#fff',
+                              border: 'none',
+                              cursor: uploadingToDrive[b.id] ? 'not-allowed' : 'pointer',
+                              display: 'inline-block'
+                            }}
+                            title="Subir este respaldo a Google Drive"
+                          >
+                            {uploadingToDrive[b.id] ? '⏳ Subiendo...' : '☁️ Drive'}
+                          </button>
+                          <button 
+                            onClick={() => handleDeleteBackup(b.id)}
+                            className="btn"
+                            style={{
+                              padding: '4px 8px',
+                              fontSize: '0.73rem',
+                              backgroundColor: 'rgba(239, 68, 68, 0.15)',
+                              color: '#ef4444',
+                              border: '1px solid rgba(239, 68, 68, 0.3)',
+                              cursor: 'pointer',
+                              display: 'inline-block'
+                            }}
+                            title="Eliminar este respaldo del servidor"
+                          >
+                            🗑️
+                          </button>
                         </td>
                       </tr>
                     )

@@ -41,10 +41,11 @@ export function formatDateTimeAR(dateVal, options = {}) {
   try {
     return d.toLocaleString('es-AR', {
       timeZone: ARGENTINA_TIMEZONE,
+      hour12: false,
       ...options
     });
   } catch (e) {
-    return d.toLocaleString('es-AR', options);
+    return d.toLocaleString('es-AR', { hour12: false, ...options });
   }
 }
 
@@ -70,16 +71,24 @@ export function formatDateAR(dateVal, options = {}) {
  * Format a time into Argentine format: HH:mm[:ss]
  * e.g. "14:30"
  */
-export function formatTimeAR(dateVal, options = { hour: '2-digit', minute: '2-digit' }) {
+export function formatTimeAR(dateVal, options = {}) {
   const d = parseToDate(dateVal);
   if (!d) return typeof dateVal === 'string' ? dateVal : '';
 
   try {
     return d.toLocaleTimeString('es-AR', {
       timeZone: ARGENTINA_TIMEZONE,
+      hour12: false,
+      hour: '2-digit',
+      minute: '2-digit',
       ...options
     });
   } catch (e) {
-    return d.toLocaleTimeString('es-AR', options);
+    return d.toLocaleTimeString('es-AR', {
+      hour12: false,
+      hour: '2-digit',
+      minute: '2-digit',
+      ...options
+    });
   }
 }

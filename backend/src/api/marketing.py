@@ -11,6 +11,12 @@ from src import database, tenancy
 from src.api.auth import verify_session
 from src.utils import social_publisher
 from src.utils.image_utils import convert_all_images_str, get_high_res_image_url
+from src.utils.marketing_utils import (
+    get_brand_hashtag,
+    clean_and_enforce_hashtags,
+    clean_and_enforce_marketing_post,
+    sanitize_marketing_text
+)
 
 router = APIRouter()
 
@@ -345,9 +351,12 @@ def generate_ai_post_copy(req: GeneratePostRequest, _=Depends(verify_session)):
     elif req.price_type == "meli":
         price_detail += " (Precio en Mercado Libre)"
 
+    store_name = database.get_merchant_name()
+    brand_hashtag = get_brand_hashtag(store_name)
+
     prompt = f"""
     Eres un experto en Marketing Digital y Community Management especializado en e-commerce y cultivo hidropónico/tradicional en Argentina.
-    Crea un post para redes sociales (Instagram/Facebook/Reels) promocionando este producto de la tienda "{database.get_merchant_name()}":
+    Crea un post para redes sociales (Instagram/Facebook/Reels) promocionando este producto del negocio "{store_name}":
     - Producto: {title}
     - Precio a promocionar: {price_detail}
     - Categoría: {category}
@@ -355,17 +364,23 @@ def generate_ai_post_copy(req: GeneratePostRequest, _=Depends(verify_session)):
     - Objetivo de la campaña: {req.objective}
     - Tono de voz: {req.tone}
 
+    REGLAS ESTRICTAS DE CONTENIDO:
+    - La marca y nombre comercial del negocio es "{store_name}".
+    - NUNCA incluyas nombres de personas físicas, titulares de cuentas ni razones sociales fiscales (bajo ninguna circunstancia menciones nombres personales ni de personas reales).
+    - Si vas a mencionar disponibilidad o stock, utiliza únicamente frases comerciales como "Stock disponible para entrega inmediata" o "Consultar unidades". JAMÁS pongas nombres de personas como stock.
+    - SECCIÓN DE HASHTAGS (#): Es OBLIGATORIO que todos los hashtags comiencen con el símbolo '#'. El PRIMER hashtag debe ser exactamente el hashtag oficial del negocio: {brand_hashtag}. Luego incluye entre 6 y 10 hashtags relevantes con '#' sobre el producto, el nicho y la ciudad (ejemplo: {brand_hashtag} #Hidroponia #Rosario #CultivoHidroponico #HuertaEnCasa). NUNCA generes hashtags con nombres de personas.
+
     Responde en formato JSON estricto con la siguiente estructura:
     {{
         "title": "Un título corto sugerido para la publicación",
         "caption": "El texto completo formateado para Instagram/Facebook con emojis persuasivos, llamado a la acción e información clave",
-        "hashtags": "#Hidroponia #Rosario #CultivoEnCasa ...",
+        "hashtags": "{brand_hashtag} #Hidroponia #Rosario ...",
         "video_script_idea": "Una breve sugerencia de 3 pasos para grabar un Reel corto de 15 segundos con este producto"
     }}
     Responde ÚNICAMENTE con el objeto JSON válido sin bloques markdown extra.
     """
 
-    models_to_try = ["gemini-3.6-flash", "gemini-flash-latest", "gemini-flash-lite-latest", "gemini-3.5-flash-lite", "gemini-2.0-flash"]
+    models_to_try = ["gemini-flash-lite-latest", "gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-flash-latest"]
     last_err = ""
 
     for model_name in models_to_try:
@@ -377,14 +392,20 @@ def generate_ai_post_copy(req: GeneratePostRequest, _=Depends(verify_session)):
             data_bytes = json.dumps(payload).encode('utf-8')
             http_req = urllib.request.Request(url, data=data_bytes, headers={"Content-Type": "application/json"})
 
-            with urllib.request.urlopen(http_req, timeout=12) as response:
+            with urllib.request.urlopen(http_req, timeout=25) as response:
                 res_data = json.loads(response.read().decode('utf-8'))
                 raw_text = res_data['candidates'][0]['content']['parts'][0]['text'].strip()
                 clean_text = raw_text.replace("```json", "").replace("```", "").strip()
                 parsed = json.loads(clean_text)
                 
-                # Combine caption with hashtags
-                full_caption = f"{parsed.get('caption', '')}\n\n{parsed.get('hashtags', '')}".strip()
+                # Garantizar hashtags con '#' y marca comercial del negocio, y sanitizar
+                fiscal_name = (database.get_setting("afip_razon_social") or "").strip()
+                clean_cap, clean_hash, full_caption = clean_and_enforce_marketing_post(
+                    caption=parsed.get('caption', ''),
+                    raw_hashtags=parsed.get('hashtags', ''),
+                    store_name=store_name,
+                    fiscal_name=fiscal_name
+                )
 
                 raw_images = product.get("images") or product.get("thumbnail") or ""
                 high_res_images = convert_all_images_str(raw_images)
@@ -507,12 +528,16 @@ def create_or_schedule_post(req: CreatePostRequest, _=Depends(verify_session)):
 
     clean_media = convert_all_images_str(req.media_urls)
 
+    store_name = database.get_merchant_name()
+    fiscal_name = (database.get_setting("afip_razon_social") or "").strip()
+    sanitized_caption = sanitize_marketing_text(req.caption, store_name, fiscal_name)
+
     post_data = {
         "product_ml_id": req.product_ml_id,
         "title": req.title,
         "post_type": req.post_type,
         "platforms": req.platforms,
-        "caption": req.caption,
+        "caption": sanitized_caption,
         "media_urls": clean_media,
         "scheduled_at": req.scheduled_at,
         "status": status

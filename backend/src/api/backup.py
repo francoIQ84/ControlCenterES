@@ -7,11 +7,15 @@ import zipfile
 import subprocess
 import platform
 from datetime import datetime
+import urllib.parse
+from typing import Optional
 from src.utils.dates import ARGENTINA_TZ, get_now_ar, get_now_ar_iso
-from fastapi import APIRouter, HTTPException, File, UploadFile
-from fastapi.responses import FileResponse
+from fastapi import APIRouter, HTTPException, File, UploadFile, Depends
+from fastapi.responses import FileResponse, RedirectResponse
+from src.api.auth import verify_session, require_platform_admin
 
 router = APIRouter()
+protected_router = APIRouter(dependencies=[Depends(verify_session), Depends(require_platform_admin)])
 
 # ---------------------------------------------------------------------------
 # Keys de configuración de plataforma (developer / infra)
@@ -23,34 +27,38 @@ _PLATFORM_SETTINGS_KEYS = [
     "tiendanube_client_secret", "tn_client_secret",
     "gemini_api_key",
     "google_drive_folder_id",
+    "google_oauth_client_id",
+    "google_oauth_client_secret",
     "public_base_url",
 ]
 
-BACKUP_DIR = "backups"
+BASE_DIR = os.path.realpath(os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))))
+BACKUP_DIR = os.path.join(BASE_DIR, "backups")
 
 # Directories/files to include in the backup beyond the DB dump.
 # Each entry is (source_path_relative_to_cwd, arcname_prefix_in_zip).
 _EXTRA_DIRS = [
-    ("invoices", "invoices"),
-    ("data/afip", "data/afip"),
-    ("whatsapp/auth_state", "whatsapp/auth_state"),
+    (os.path.join(BASE_DIR, "invoices"), "invoices"),
+    (os.path.join(BASE_DIR, "data/afip"), "data/afip"),
+    (os.path.join(BASE_DIR, "whatsapp/auth_state"), "whatsapp/auth_state"),
 ]
 
 _EXTRA_FILES = [
-    ("whatsapp/contacts_cache.json", "whatsapp/contacts_cache.json"),
+    (os.path.join(BASE_DIR, "whatsapp/contacts_cache.json"), "whatsapp/contacts_cache.json"),
 ]
 
 
 def _get_service_account_path() -> str:
     """Busca service_account.json en las ubicaciones habituales."""
     for p in [
+        os.path.join(BASE_DIR, "service_account.json"),
         "service_account.json",
         "/var/www/controlcenter/backend/service_account.json",
         os.path.join(os.getcwd(), "service_account.json"),
     ]:
         if os.path.exists(p):
             return p
-    return "service_account.json"
+    return os.path.join(BASE_DIR, "service_account.json")
 
 
 def _export_platform_config() -> dict:
@@ -153,28 +161,48 @@ def _add_file_to_zip(zipf: zipfile.ZipFile, src_path: str, arcname: str,
     })
 
 
-def prune_old_auto_backups(max_keep: int = 12):
-    """Keeps only the max_keep (default 12 = 1 year) most recent automatic backups."""
+def prune_old_backups(min_retention_days: int = 60, max_auto_keep: int = 12):
+    """Garantiza que ningún respaldo (sistema ni medios) se elimine antes de 60 días.
+    
+    Para respaldos automáticos, conserva como mínimo los últimos max_auto_keep (12 meses).
+    Los respaldos manuales nunca se eliminan automáticamente.
+    """
     if not os.path.exists(BACKUP_DIR):
         return
-    auto_files = []
+    now = datetime.now(ARGENTINA_TZ)
+
+    groups = {}
     for f in os.listdir(BACKUP_DIR):
-        if f.startswith("backup_auto_") and f.endswith(".zip"):
+        if f.endswith('.zip') and not f.startswith('_restore_'):
+            group_id = f.replace('.zip', '').replace('_media', '')
             filepath = os.path.join(BACKUP_DIR, f)
             stat = os.stat(filepath)
-            auto_files.append((filepath, stat.st_ctime))
+            ctime = datetime.fromtimestamp(stat.st_ctime, tz=ARGENTINA_TZ)
 
-    # Sort oldest first
-    auto_files.sort(key=lambda x: x[1])
+            if group_id not in groups:
+                groups[group_id] = {
+                    "id": group_id,
+                    "created_at": ctime,
+                    "is_auto": "auto_" in group_id,
+                    "files": []
+                }
+            groups[group_id]["files"].append(filepath)
 
-    # Delete oldest if count exceeds max_keep
-    while len(auto_files) > max_keep:
-        oldest_path, _ = auto_files.pop(0)
-        try:
-            os.remove(oldest_path)
-            print(f"[Backup] Purged old automatic backup: {oldest_path}")
-        except Exception as e:
-            print(f"[Backup] Error deleting old backup {oldest_path}: {e}")
+    # Solo depurar respaldos automáticos viejos que superen 60 días y el cupo
+    auto_groups = [g for g in groups.values() if g["is_auto"]]
+    auto_groups.sort(key=lambda x: x["created_at"])  # Más viejos primero
+
+    while len(auto_groups) > max_auto_keep:
+        oldest = auto_groups.pop(0)
+        age_days = (now - oldest["created_at"]).days
+        if age_days < min_retention_days:
+            break
+        for fpath in oldest["files"]:
+            try:
+                os.remove(fpath)
+                print(f"[Backup] Purged old backup file: {fpath} ({age_days} days old)")
+            except Exception as e:
+                print(f"[Backup] Error deleting {fpath}: {e}")
 
 
 def run_backup_dump(is_auto: bool = False):
@@ -191,146 +219,139 @@ def run_backup_dump(is_auto: bool = False):
     sql_filename = f"database_{timestamp}.sql"
     sql_path = os.path.join(BACKUP_DIR, sql_filename)
 
-    process = subprocess.run(
-        ["pg_dump", db_url, "-f", sql_path],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE
-    )
-    if process.returncode != 0:
-        print("pg_dump error:", process.stderr.decode())
-        raise Exception("Failed to dump database. Ensure pg_dump is installed.")
+    try:
+        process = subprocess.run(
+            ["pg_dump", db_url, "-f", sql_path],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE
+        )
+        if process.returncode != 0:
+            print("pg_dump error:", process.stderr.decode())
+            raise Exception("Failed to dump database. Ensure pg_dump is installed.")
 
-    # -- Build the ZIP with manifest ------------------------------------------
-    manifest_files: list = []
+        # -- Build the ZIP with manifest ------------------------------------------
+        manifest_files: list = []
 
-    with zipfile.ZipFile(backup_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
-        # 1) Database dump
-        zipf.write(sql_path, arcname=sql_filename)
-        manifest_files.append({
-            "path": sql_filename,
-            "size": os.path.getsize(sql_path),
-            "sha256": _file_checksum(sql_path),
-        })
-
-        # El .env NO se incluye a propósito. Contiene la cadena de conexión a la
-        # base y la clave maestra de cifrado de credenciales; empaquetarlo junto
-        # al volcado convierte cualquier copia del respaldo en un compromiso
-        # total, y anula el cifrado en reposo de tenant_integrations (el dato
-        # cifrado y su llave viajarían en el mismo archivo).
-
-        # 2) Extra directories (uploads, invoices, AFIP certs, WA session)
-        for src_dir, arc_prefix in _EXTRA_DIRS:
-            _add_directory_to_zip(zipf, src_dir, arc_prefix, manifest_files)
-
-        # 3) Extra individual files
-        for src_path, arcname in _EXTRA_FILES:
-            _add_file_to_zip(zipf, src_path, arcname, manifest_files)
-
-        # 4) Platform / developer config export
-        has_platform_config = False
-        try:
-            platform_config = _export_platform_config()
-            platform_json = json.dumps(platform_config, indent=2, ensure_ascii=False)
-            zipf.writestr("platform_config.json", platform_json)
-            has_platform_config = bool(
-                set(platform_config.keys()) - {"_meta", "_export_error"}
-            )
+        with zipfile.ZipFile(backup_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+            # 1) Database dump
+            zipf.write(sql_path, arcname=sql_filename)
             manifest_files.append({
-                "path": "platform_config.json",
-                "size": len(platform_json.encode("utf-8")),
-                "sha256": hashlib.sha256(platform_json.encode("utf-8")).hexdigest(),
+                "path": sql_filename,
+                "size": os.path.getsize(sql_path),
+                "sha256": _file_checksum(sql_path),
             })
-            print(f"[Backup] Configuración de plataforma exportada ({len(platform_config) - 1} keys).")
-        except Exception as e:
-            print(f"[Backup] No se pudo exportar config de plataforma: {e}")
 
-        # 5) service_account.json (Google Drive / API credentials)
-        has_service_account = False
-        sa_path = _get_service_account_path()
-        if os.path.isfile(sa_path):
-            _add_file_to_zip(zipf, sa_path, "service_account.json", manifest_files)
-            has_service_account = True
-            print("[Backup] service_account.json incluido en el respaldo.")
+            # 2) Extra directories (invoices, AFIP certs, WA session)
+            for src_dir, arc_prefix in _EXTRA_DIRS:
+                _add_directory_to_zip(zipf, src_dir, arc_prefix, manifest_files)
 
-        # 6) Build and embed the manifest
-        manifest = {
-            "version": "2.1",
-            "created_at": get_now_ar_iso(),
-            "type": "auto" if is_auto else "manual",
-            "system": {
-                "python": platform.python_version(),
-                "os": f"{platform.system()} {platform.release()}",
-                "pg_version": _pg_version_short(),
-            },
-            "contents": {
-                "database": True,
-                "invoices": os.path.isdir("invoices"),
-                "afip_certs": os.path.isdir("data/afip"),
-                "whatsapp_session": os.path.isdir("whatsapp/auth_state"),
-                "whatsapp_contacts": os.path.isfile("whatsapp/contacts_cache.json"),
-                "platform_config": has_platform_config,
-                "service_account": has_service_account,
-            },
-            "files_count": len(manifest_files),
-            "files": manifest_files,
-        }
-        zipf.writestr("backup_manifest.json", json.dumps(manifest, indent=2, ensure_ascii=False))
+            # 3) Extra individual files
+            for src_path, arcname in _EXTRA_FILES:
+                _add_file_to_zip(zipf, src_path, arcname, manifest_files)
 
-    # -- Build the Media ZIP --
-    if os.path.isdir("uploads"):
-        with zipfile.ZipFile(media_path, 'w', zipfile.ZIP_DEFLATED) as zipm:
-            media_manifest_files = []
-            _add_directory_to_zip(zipm, "uploads", "uploads", media_manifest_files)
-            
-            media_manifest = {
-                "version": "2.0",
-                "created_at": datetime.now().isoformat(),
+            # 4) Platform / developer config export
+            has_platform_config = False
+            try:
+                platform_config = _export_platform_config()
+                platform_json = json.dumps(platform_config, indent=2, ensure_ascii=False)
+                zipf.writestr("platform_config.json", platform_json)
+                has_platform_config = bool(
+                    set(platform_config.keys()) - {"_meta", "_export_error"}
+                )
+                manifest_files.append({
+                    "path": "platform_config.json",
+                    "size": len(platform_json.encode("utf-8")),
+                    "sha256": hashlib.sha256(platform_json.encode("utf-8")).hexdigest(),
+                })
+                print(f"[Backup] Configuración de plataforma exportada ({len(platform_config) - 1} keys).")
+            except Exception as e:
+                print(f"[Backup] No se pudo exportar config de plataforma: {e}")
+
+            # 5) service_account.json (Google Drive / API credentials)
+            has_service_account = False
+            sa_path = _get_service_account_path()
+            if os.path.isfile(sa_path):
+                _add_file_to_zip(zipf, sa_path, "service_account.json", manifest_files)
+                has_service_account = True
+                print("[Backup] service_account.json incluido en el respaldo.")
+
+            # 6) Build and embed the manifest
+            manifest = {
+                "version": "2.1",
+                "created_at": get_now_ar_iso(),
                 "type": "auto" if is_auto else "manual",
-                "is_media_only": True,
-                "contents": {
-                    "uploads": True,
+                "system": {
+                    "python": platform.python_version(),
+                    "os": f"{platform.system()} {platform.release()}",
+                    "pg_version": _pg_version_short(),
                 },
-                "files_count": len(media_manifest_files),
-                "files": media_manifest_files,
+                "contents": {
+                    "database": True,
+                    "invoices": os.path.isdir(os.path.join(BASE_DIR, "invoices")),
+                    "afip_certs": os.path.isdir(os.path.join(BASE_DIR, "data/afip")),
+                    "whatsapp_session": os.path.isdir(os.path.join(BASE_DIR, "whatsapp/auth_state")),
+                    "whatsapp_contacts": os.path.isfile(os.path.join(BASE_DIR, "whatsapp/contacts_cache.json")),
+                    "platform_config": has_platform_config,
+                    "service_account": has_service_account,
+                },
+                "files_count": len(manifest_files),
+                "files": manifest_files,
             }
-            zipm.writestr("backup_manifest.json", json.dumps(media_manifest, indent=2, ensure_ascii=False))
+            zipf.writestr("backup_manifest.json", json.dumps(manifest, indent=2, ensure_ascii=False))
 
-    # Clean up temporary SQL dump
-    if os.path.exists(sql_path):
-        os.remove(sql_path)
+        # -- Build the Media ZIP --
+        uploads_dir = os.path.join(BASE_DIR, "uploads")
+        if not os.path.isdir(uploads_dir) and os.path.isdir("uploads"):
+            uploads_dir = "uploads"
+
+        if os.path.isdir(uploads_dir):
+            with zipfile.ZipFile(media_path, 'w', zipfile.ZIP_DEFLATED) as zipm:
+                media_manifest_files = []
+                _add_directory_to_zip(zipm, uploads_dir, "uploads", media_manifest_files)
+                
+                media_manifest = {
+                    "version": "2.0",
+                    "created_at": datetime.now().isoformat(),
+                    "type": "auto" if is_auto else "manual",
+                    "is_media_only": True,
+                    "contents": {
+                        "uploads": True,
+                    },
+                    "files_count": len(media_manifest_files),
+                    "files": media_manifest_files,
+                }
+                zipm.writestr("backup_manifest.json", json.dumps(media_manifest, indent=2, ensure_ascii=False))
+    finally:
+        # Clean up temporary SQL dump safely
+        if os.path.exists(sql_path):
+            try:
+                os.remove(sql_path)
+            except Exception:
+                pass
 
     # -- Upload to Google Drive if configured for the platform --
     try:
         from src.utils import google_drive
-        import json
-        folder_id = os.getenv("GOOGLE_DRIVE_FOLDER_ID", "").strip()
-        gdrive_creds_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "service_account.json")
-        gdrive_creds = None
-        if os.path.exists(gdrive_creds_path) and folder_id:
-            with open(gdrive_creds_path, 'r', encoding='utf-8') as f:
-                gdrive_creds = json.load(f)
-            
-        if gdrive_creds and folder_id:
-            print(f"[Backup] Subiendo a Google Drive (carpeta {folder_id})...")
-            # Remove folder_id from the credentials passed to google_drive
-            file_id = google_drive.upload_file(backup_path, backup_filename, folder_id, gdrive_creds)
-            if file_id:
-                print(f"[Backup] Subida de sistema a Google Drive exitosa. ID: {file_id}")
-            else:
-                print("[Backup] Error en la subida a Google Drive del archivo de sistema (ver logs).")
-                
+        from src import database, tenancy
+        with tenancy.tenant_context(tenancy.MASTER_TENANT_ID):
+            folder_id = (os.getenv("GOOGLE_DRIVE_FOLDER_ID") or database.get_setting("google_drive_folder_id", "")).strip()
+
+        print(f"[Backup] Intentando subida de respaldo a Google Drive...")
+        file_id = google_drive.upload_file(backup_path, backup_filename, folder_id=folder_id or None)
+        if file_id:
+            print(f"[Backup] Subida de sistema a Google Drive exitosa. ID: {file_id}")
             if os.path.exists(media_path):
                 print(f"[Backup] Subiendo medios a Google Drive...")
-                media_file_id = google_drive.upload_file(media_path, media_filename, folder_id, gdrive_creds)
+                media_file_id = google_drive.upload_file(media_path, media_filename, folder_id=folder_id or None)
                 if media_file_id:
                     print(f"[Backup] Subida de medios a Google Drive exitosa. ID: {media_file_id}")
-                else:
-                    print("[Backup] Error en la subida a Google Drive del archivo de medios (ver logs).")
+        else:
+            print("[Backup] Subida a Google Drive omitida o fallida (ver logs de Google Drive).")
     except Exception as e:
         print(f"[Backup] Error al procesar integración con Google Drive: {e}")
 
     if is_auto:
-        prune_old_auto_backups(max_keep=12)
+        prune_old_backups(min_retention_days=60, max_auto_keep=12)
 
     return backup_filename
 
@@ -368,7 +389,7 @@ def check_and_run_monthly_auto_backup():
 # API Endpoints
 # ---------------------------------------------------------------------------
 
-@router.post("/create")
+@protected_router.post("/create")
 def create_backup():
     try:
         backup_filename = run_backup_dump(is_auto=False)
@@ -377,7 +398,7 @@ def create_backup():
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/list")
+@protected_router.get("/list")
 def list_backups():
     if not os.path.exists(BACKUP_DIR):
         return []
@@ -433,7 +454,7 @@ def list_backups():
     return backups
 
 
-@router.get("/contents/{filename}")
+@protected_router.get("/contents/{filename}")
 def get_backup_contents(filename: str):
     """Preview the contents of a backup ZIP without extracting it."""
     if not filename.endswith('.zip'):
@@ -480,7 +501,7 @@ def get_backup_contents(filename: str):
         raise HTTPException(status_code=400, detail="El archivo no es un ZIP válido")
 
 
-@router.get("/download/{filename}")
+@protected_router.get("/download/{filename}")
 def download_backup(filename: str):
     # `filename` viene de la URL: sin normalizar, un nombre como
     # "../../otro/archivo.zip" se escapaba de BACKUP_DIR y servía cualquier .zip
@@ -504,7 +525,83 @@ def download_backup(filename: str):
     )
 
 
-@router.post("/restore")
+@protected_router.post("/upload-to-drive/{backup_id}")
+def upload_backup_to_drive(backup_id: str):
+    """Sube un respaldo existente (sistema y medios) a Google Drive bajo demanda."""
+    from src.utils import google_drive
+    from src import database, tenancy
+
+    clean_id = os.path.basename(backup_id).replace('.zip', '').replace('_media', '')
+    main_filename = f"{clean_id}.zip"
+    media_filename = f"{clean_id}_media.zip"
+
+    backup_root = os.path.realpath(BACKUP_DIR)
+    main_path = os.path.realpath(os.path.join(backup_root, main_filename))
+    media_path = os.path.realpath(os.path.join(backup_root, media_filename))
+
+    if os.path.commonpath([backup_root, main_path]) != backup_root or not os.path.isfile(main_path):
+        raise HTTPException(status_code=404, detail=f"No se encontró el archivo principal de respaldo: {main_filename}")
+
+    with tenancy.tenant_context(tenancy.MASTER_TENANT_ID):
+        folder_id = (os.getenv("GOOGLE_DRIVE_FOLDER_ID") or database.get_setting("google_drive_folder_id", "")).strip()
+
+    try:
+        main_file_id = google_drive.upload_file(main_path, main_filename, folder_id=folder_id or None, raise_on_error=True)
+    except Exception as e:
+        err_msg = str(e)
+        if "storageQuotaExceeded" in err_msg or "Service Accounts do not have storage quota" in err_msg:
+            detail = (
+                "Google Drive rechazó la subida (cuota de Service Account excedida). "
+                "Las cuentas de servicio tienen 0 GB de cuota en 'Mi Unidad' personal de Gmail. "
+                "Para solucionarlo, vinculá tu cuenta personal con Google Drive OAuth 2.0 desde la tarjeta de Google Drive."
+            )
+        elif "File not found" in err_msg or "notFound" in err_msg:
+            detail = f"La carpeta de Google Drive '{folder_id}' no fue encontrada o la cuenta conectada no tiene permisos sobre ella."
+        else:
+            detail = f"Error al subir a Google Drive: {err_msg}"
+        raise HTTPException(status_code=400, detail=detail)
+
+    media_file_id = None
+    if os.path.isfile(media_path):
+        try:
+            media_file_id = google_drive.upload_file(media_path, media_filename, folder_id=folder_id or None, raise_on_error=True)
+        except Exception as e:
+            print(f"[Backup] Error subiendo archivo de medios a Google Drive: {e}")
+
+    return {
+        "status": "success",
+        "message": "Respaldo subido exitosamente a Google Drive.",
+        "main_file_id": main_file_id,
+        "media_file_id": media_file_id
+    }
+
+
+@protected_router.delete("/{backup_id}")
+def delete_backup(backup_id: str):
+    """Elimina un respaldo del servidor (tanto el archivo de sistema como el de medios)."""
+    clean_id = os.path.basename(backup_id).replace('.zip', '').replace('_media', '')
+    main_filename = f"{clean_id}.zip"
+    media_filename = f"{clean_id}_media.zip"
+
+    backup_root = os.path.realpath(BACKUP_DIR)
+    main_path = os.path.realpath(os.path.join(backup_root, main_filename))
+    media_path = os.path.realpath(os.path.join(backup_root, media_filename))
+
+    deleted = []
+    if os.path.isfile(main_path):
+        os.remove(main_path)
+        deleted.append(main_filename)
+    if os.path.isfile(media_path):
+        os.remove(media_path)
+        deleted.append(media_filename)
+
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Respaldo no encontrado")
+
+    return {"success": True, "deleted": deleted, "message": f"Respaldo '{clean_id}' eliminado exitosamente."}
+
+
+@protected_router.post("/restore")
 async def restore_backup(file: UploadFile = File(...)):
     """Restore the system from a backup ZIP.
 
@@ -701,7 +798,7 @@ async def restore_backup(file: UploadFile = File(...)):
     }
 
 
-@router.get("/disk-space")
+@protected_router.get("/disk-space")
 def get_disk_space():
     try:
         total, used, free = shutil.disk_usage("/")
@@ -713,3 +810,132 @@ def get_disk_space():
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ---------------------------------------------------------------------------
+# Google Drive OAuth 2.0 & Integración
+# ---------------------------------------------------------------------------
+
+@protected_router.get("/google-drive/status")
+def get_google_drive_status():
+    """Consulta el estado de vinculación con Google Drive."""
+    from src.utils import google_drive
+    from src import database, tenancy
+
+    with tenancy.tenant_context(tenancy.MASTER_TENANT_ID):
+        folder_id = (os.getenv("GOOGLE_DRIVE_FOLDER_ID") or database.get_setting("google_drive_folder_id", "")).strip()
+        client_id = (os.getenv("GOOGLE_OAUTH_CLIENT_ID") or database.get_setting("google_oauth_client_id", "")).strip()
+        client_secret = (os.getenv("GOOGLE_OAUTH_CLIENT_SECRET") or database.get_setting("google_oauth_client_secret", "")).strip()
+        refresh_token = (database.get_setting("google_oauth_refresh_token", "") or "").strip()
+        user_email = (database.get_setting("google_oauth_user_email", "") or "").strip()
+
+    service_client, auth_mode = google_drive.get_drive_service()
+    connected = service_client is not None
+
+    if connected and auth_mode == "oauth" and not user_email:
+        profile = google_drive.get_user_profile(service_client)
+        if profile.get("success") and profile.get("email"):
+            user_email = profile["email"]
+            with tenancy.tenant_context(tenancy.MASTER_TENANT_ID):
+                database.set_setting("google_oauth_user_email", user_email)
+
+    return {
+        "connected": connected,
+        "auth_mode": auth_mode,  # 'oauth', 'service_account', 'none'
+        "user_email": user_email,
+        "folder_id": folder_id,
+        "has_client_credentials": bool(client_id and client_secret),
+        "is_oauth_configured": bool(refresh_token),
+    }
+
+
+@protected_router.get("/google-drive/auth-url")
+def get_google_drive_auth_url():
+    """Genera la URL de consentimiento para conectar Google Drive vía OAuth 2.0."""
+    from src.utils import google_drive
+    from src import database, tenancy
+
+    with tenancy.tenant_context(tenancy.MASTER_TENANT_ID):
+        client_id = (os.getenv("GOOGLE_OAUTH_CLIENT_ID") or database.get_setting("google_oauth_client_id", "")).strip()
+        client_secret = (os.getenv("GOOGLE_OAUTH_CLIENT_SECRET") or database.get_setting("google_oauth_client_secret", "")).strip()
+        public_url = (os.getenv("PUBLIC_BASE_URL") or database.get_setting("public_base_url", "https://es.focalserver.com")).strip().rstrip("/")
+
+    if not client_id or not client_secret:
+        raise HTTPException(
+            status_code=400,
+            detail="Faltan credenciales de Google OAuth. Configura GOOGLE_OAUTH_CLIENT_ID y GOOGLE_OAUTH_CLIENT_SECRET en Configuración > Plataforma."
+        )
+
+    redirect_uri = f"{public_url}/api/backup/google-drive/callback"
+    auth_url = google_drive.get_auth_url(client_id, redirect_uri)
+    return {"auth_url": auth_url, "redirect_uri": redirect_uri}
+
+
+@router.get("/google-drive/callback")
+def google_drive_oauth_callback(
+    code: Optional[str] = None,
+    error: Optional[str] = None,
+    state: Optional[str] = None
+):
+    """Callback público invocado por Google tras la autorización del usuario."""
+    if error:
+        return RedirectResponse(url=f"/settings?tab=backups&gdrive_error={urllib.parse.quote(error)}")
+
+    if not code:
+        return RedirectResponse(url="/settings?tab=backups&gdrive_error=no_code_provided")
+
+    from src.utils import google_drive
+    from src import database, tenancy
+
+    with tenancy.tenant_context(tenancy.MASTER_TENANT_ID):
+        client_id = (os.getenv("GOOGLE_OAUTH_CLIENT_ID") or database.get_setting("google_oauth_client_id", "")).strip()
+        client_secret = (os.getenv("GOOGLE_OAUTH_CLIENT_SECRET") or database.get_setting("google_oauth_client_secret", "")).strip()
+        public_url = (os.getenv("PUBLIC_BASE_URL") or database.get_setting("public_base_url", "https://es.focalserver.com")).strip().rstrip("/")
+
+    redirect_uri = f"{public_url}/api/backup/google-drive/callback"
+
+    tokens = google_drive.exchange_code_for_tokens(code, client_id, client_secret, redirect_uri)
+    if "error" in tokens:
+        err_detail = tokens.get("error_description") or tokens.get("error")
+        return RedirectResponse(url=f"/settings?tab=backups&gdrive_error={urllib.parse.quote(str(err_detail))}")
+
+    refresh_token = tokens.get("refresh_token")
+    access_token = tokens.get("access_token")
+
+    with tenancy.tenant_context(tenancy.MASTER_TENANT_ID):
+        if refresh_token:
+            database.set_setting("google_oauth_refresh_token", refresh_token)
+        if access_token:
+            database.set_setting("google_oauth_access_token", access_token)
+
+    # Consultar perfil del usuario para obtener su email
+    try:
+        service_client, _ = google_drive.get_drive_service()
+        if service_client:
+            profile = google_drive.get_user_profile(service_client)
+            if profile.get("success") and profile.get("email"):
+                with tenancy.tenant_context(tenancy.MASTER_TENANT_ID):
+                    database.set_setting("google_oauth_user_email", profile["email"])
+    except Exception as e:
+        print(f"[Google Drive Callback] Error al obtener perfil: {e}")
+
+    return RedirectResponse(url="/settings?tab=backups&gdrive_connected=true")
+
+
+@protected_router.post("/google-drive/disconnect")
+def disconnect_google_drive():
+    """Desvincula la cuenta personal de Google Drive eliminando los tokens guardados."""
+    from src import database, tenancy
+
+    with tenancy.tenant_context(tenancy.MASTER_TENANT_ID):
+        database.delete_setting("google_oauth_refresh_token")
+        database.delete_setting("google_oauth_access_token")
+        database.delete_setting("google_oauth_user_email")
+
+    return {"success": True, "message": "Cuenta de Google Drive desvinculada exitosamente."}
+
+
+# ---------------------------------------------------------------------------
+# Incluir rutas protegidas en el router principal
+# ---------------------------------------------------------------------------
+router.include_router(protected_router)

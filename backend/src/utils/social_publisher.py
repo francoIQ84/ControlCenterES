@@ -549,8 +549,10 @@ def publish_to_facebook_page(media_url: str, caption: str, is_video: bool = Fals
 
 def publish_post_to_all_platforms(post_data: dict):
     platforms = [p.strip().lower() for p in (post_data.get("platforms") or "instagram,facebook").split(",")]
-    post_type = (post_data.get("post_type") or "post").lower()
-    caption = post_data.get("caption") or ""
+    from src.utils.marketing_utils import sanitize_marketing_text
+    store_name = database.get_merchant_name()
+    fiscal_name = (database.get_setting("afip_razon_social") or "").strip()
+    caption = sanitize_marketing_text(post_data.get("caption") or "", store_name, fiscal_name)
     raw_media_url = (post_data.get("media_urls") or "").split(",")[0].strip()
 
     if raw_media_url.startswith("blob:"):

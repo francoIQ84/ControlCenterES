@@ -22,6 +22,8 @@ class PlatformCredentialsPayload(BaseModel):
     tiendanube_client_secret: Optional[str] = None
     gemini_api_key: Optional[str] = None
     google_drive_folder_id: Optional[str] = None
+    google_oauth_client_id: Optional[str] = None
+    google_oauth_client_secret: Optional[str] = None
     public_base_url: Optional[str] = None
 
 
@@ -54,6 +56,11 @@ def get_platform_credentials(_: dict = Depends(require_platform_admin)):
 
         gdrive_folder = (os.getenv("GOOGLE_DRIVE_FOLDER_ID") or database.get_setting("google_drive_folder_id", "")).strip()
 
+        google_oauth_client_id = (os.getenv("GOOGLE_OAUTH_CLIENT_ID") or database.get_setting("google_oauth_client_id", "")).strip()
+        google_oauth_secret = (os.getenv("GOOGLE_OAUTH_CLIENT_SECRET") or database.get_setting("google_oauth_client_secret", "")).strip()
+        google_oauth_refresh_token = (database.get_setting("google_oauth_refresh_token", "") or "").strip()
+        google_oauth_email = (database.get_setting("google_oauth_user_email", "") or "").strip()
+
         public_url = (os.getenv("PUBLIC_BASE_URL") or database.get_setting("public_base_url", "https://es.focalserver.com")).strip()
 
     sa_path = _get_service_account_path()
@@ -78,13 +85,18 @@ def get_platform_credentials(_: dict = Depends(require_platform_admin)):
         "has_tiendanube_client_secret": bool(tn_secret),
         "has_gemini_api_key": bool(gemini_key),
         "google_drive_folder_id": gdrive_folder,
+        "google_oauth_client_id": google_oauth_client_id,
+        "has_google_oauth_client_secret": bool(google_oauth_secret),
+        "is_google_oauth_connected": bool(google_oauth_refresh_token),
+        "google_oauth_user_email": google_oauth_email,
         "has_service_account": has_sa,
         "service_account_email": sa_client_email,
         "public_base_url": clean_public_url,
         "redirect_uris": {
             "mercadolibre": f"{clean_public_url}/api/settings/meli-callback",
             "meta": f"{clean_public_url}/api/marketing/oauth-callback",
-            "tiendanube": f"{clean_public_url}/api/tiendanube/callback"
+            "tiendanube": f"{clean_public_url}/api/tiendanube/callback",
+            "google_drive": f"{clean_public_url}/api/backup/google-drive/callback"
         }
     }
 
@@ -125,6 +137,13 @@ def save_platform_credentials(payload: PlatformCredentialsPayload,
 
         if payload.google_drive_folder_id is not None:
             database.set_setting("google_drive_folder_id", payload.google_drive_folder_id.strip())
+
+        if payload.google_oauth_client_id is not None:
+            database.set_setting("google_oauth_client_id", payload.google_oauth_client_id.strip())
+        if payload.google_oauth_client_secret is not None:
+            secret = payload.google_oauth_client_secret.strip()
+            if secret and not secret.startswith("••"):
+                database.set_setting("google_oauth_client_secret", secret)
 
         if payload.public_base_url is not None:
             database.set_setting("public_base_url", payload.public_base_url.strip())
@@ -277,19 +296,27 @@ def test_platform_service(service: str, _: dict = Depends(require_platform_admin
         }
 
     elif service == "google_drive":
-        sa_path = _get_service_account_path()
-        if not os.path.exists(sa_path):
-            return {"success": False, "message": "No se encontró el archivo service_account.json."}
-        if not gdrive_folder:
-            return {"success": False, "message": "GOOGLE_DRIVE_FOLDER_ID no está configurado."}
-        try:
-            with open(sa_path, "r", encoding="utf-8") as f:
-                sa_data = json.load(f)
+        from src.utils import google_drive
+        service_client, auth_mode = google_drive.get_drive_service()
+        if not service_client:
+            return {
+                "success": False,
+                "message": "No hay credenciales activas. Conecta Google Drive vía OAuth 2.0 o sube un archivo service_account.json."
+            }
+
+        profile = google_drive.get_user_profile(service_client)
+        if profile.get("success"):
+            email_info = profile.get("email") or "Usuario Google"
+            mode_label = "OAuth 2.0 (Cuenta Personal)" if auth_mode == "oauth" else "Service Account"
+            folder_str = f"Carpeta: {gdrive_folder}" if gdrive_folder else "Carpeta: Raíz de Google Drive"
             return {
                 "success": True,
-                "message": f"Service Account válida ({sa_data.get('client_email')}). Folder ID: {gdrive_folder}"
+                "message": f"Conexión activa ({mode_label}) con {email_info}. {folder_str}"
             }
-        except Exception as e:
-            return {"success": False, "message": f"Error leyendo service_account.json: {str(e)}"}
+        else:
+            return {
+                "success": False,
+                "message": f"Error conectando a Google Drive ({auth_mode}): {profile.get('error')}"
+            }
 
     raise HTTPException(status_code=400, detail=f"Servicio desconocido: {service}")

@@ -231,7 +231,24 @@ export default function Layout() {
   const [showNotifications, setShowNotifications] = useState(false)
   const [showHelp, setShowHelp] = useState(false)
   const [activeNotifFilter, setActiveNotifFilter] = useState('all')
-  const [dismissedIds, setDismissedIds] = useState([])
+  const [dismissedIds, setDismissedIds] = useState(() => {
+    try {
+      const saved = localStorage.getItem('cc_dismissed_notifications')
+      return saved ? JSON.parse(saved) : []
+    } catch {
+      return []
+    }
+  })
+
+  const saveDismissedIds = (newIds) => {
+    const unique = Array.from(new Set(newIds)).slice(-500)
+    setDismissedIds(unique)
+    try {
+      localStorage.setItem('cc_dismissed_notifications', JSON.stringify(unique))
+    } catch (e) {
+      console.error("Error saving dismissed notifications:", e)
+    }
+  }
 
   const fetchNotifications = async () => {
     try {
@@ -258,13 +275,18 @@ export default function Layout() {
   const visibleUnreadCount = notifications.filter(n => !dismissedIds.includes(n.id)).length
 
   const handleNotifClick = (n) => {
-    setDismissedIds(prev => [...prev, n.id])
+    saveDismissedIds([...dismissedIds, n.id])
     setShowNotifications(false)
     if (n.link) navigate(n.link)
   }
 
+  const handleDismissSingle = (e, notifId) => {
+    e.stopPropagation()
+    saveDismissedIds([...dismissedIds, notifId])
+  }
+
   const handleClearAllNotifs = () => {
-    setDismissedIds(notifications.map(n => n.id))
+    saveDismissedIds([...dismissedIds, ...notifications.map(n => n.id)])
   }
 
   useEffect(() => {
@@ -1059,10 +1081,27 @@ export default function Layout() {
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                         <Bell size={18} style={{ color: 'var(--accent-blue)' }} />
                         <h4 style={{ margin: 0, fontSize: '0.95rem', fontWeight: 700 }}>Notificaciones</h4>
+                        {visibleUnreadCount > 0 && (
+                          <span style={{ fontSize: '0.7rem', backgroundColor: 'var(--accent-red)', color: '#fff', padding: '1px 6px', borderRadius: '10px', fontWeight: 700 }}>
+                            {visibleUnreadCount}
+                          </span>
+                        )}
                       </div>
-                      <button className="btn-icon" onClick={() => setShowNotifications(false)} style={{ padding: '2px' }}>
-                        <X size={16} />
-                      </button>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        {filteredNotifs.length > 0 && (
+                          <button
+                            type="button"
+                            onClick={handleClearAllNotifs}
+                            style={{ background: 'none', border: 'none', color: 'var(--accent-blue)', fontSize: '0.75rem', fontWeight: 600, cursor: 'pointer' }}
+                            title="Marcar todas como leídas"
+                          >
+                            Limpiar todo
+                          </button>
+                        )}
+                        <button className="btn-icon" onClick={() => setShowNotifications(false)} style={{ padding: '2px' }}>
+                          <X size={16} />
+                        </button>
+                      </div>
                     </div>
 
                     {/* Filter Pills */}
@@ -1135,7 +1174,29 @@ export default function Layout() {
                                 <strong style={{ fontSize: '0.85rem', color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                                   {n.title}
                                 </strong>
-                                <span style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', marginLeft: '6px' }}>{n.time}</span>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginLeft: '6px' }}>
+                                  <span style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>{n.time}</span>
+                                  <button
+                                    type="button"
+                                    onClick={(e) => handleDismissSingle(e, n.id)}
+                                    title="Descartar esta notificación"
+                                    style={{
+                                      background: 'none',
+                                      border: 'none',
+                                      color: 'var(--text-secondary)',
+                                      cursor: 'pointer',
+                                      padding: '2px',
+                                      borderRadius: '4px',
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      opacity: 0.6
+                                    }}
+                                    onMouseEnter={(e) => { e.currentTarget.style.opacity = '1'; e.currentTarget.style.color = 'var(--accent-red)' }}
+                                    onMouseLeave={(e) => { e.currentTarget.style.opacity = '0.6'; e.currentTarget.style.color = 'var(--text-secondary)' }}
+                                  >
+                                    <X size={13} />
+                                  </button>
+                                </div>
                               </div>
                               <p style={{ margin: 0, fontSize: '0.78rem', color: 'var(--text-secondary)', lineHeight: '1.3' }}>
                                 {n.message}

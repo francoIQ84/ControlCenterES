@@ -72,10 +72,9 @@ api_router.include_router(tenants_router, prefix="/tenants", tags=["tenants"], d
 api_router.include_router(integrations_router, prefix="/integrations", tags=["integrations"], dependencies=[Depends(verify_session)])
 
 # Los respaldos vuelcan la base COMPLETA (todos los inquilinos) con pg_dump, así
-# que quedan reservados a la administración de la plataforma. Con
-# require_permission("settings") el administrador de cualquier tenant cliente
-# podría descargarse los datos de todos los demás.
-api_router.include_router(backup_router, prefix="/backup", tags=["backup"], dependencies=[Depends(verify_session), Depends(require_platform_admin)])
+# que quedan reservados a la administración de la plataforma (protegidos en backup.py).
+# El router no lleva dependencias globales para permitir el callback público de Google OAuth.
+api_router.include_router(backup_router, prefix="/backup", tags=["backup"])
 api_router.include_router(whatsapp_router, prefix="/whatsapp", tags=["whatsapp"], dependencies=[Depends(require_module("whatsapp"))])
 api_router.include_router(mercadopago_router, prefix="/mercadopago", tags=["mercadopago"], dependencies=[Depends(verify_session), Depends(require_module("sales"))])
 api_router.include_router(blog_router, prefix="/blog", tags=["blog"], dependencies=[Depends(verify_session), Depends(require_permission("settings")), Depends(require_module("blog"))])

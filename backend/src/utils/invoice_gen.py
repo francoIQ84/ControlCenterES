@@ -342,7 +342,8 @@ def _build_invoice_page(order, copy_type, usable_w):
     """Builds all the flowable elements for one page of the invoice (ORIGINAL or DUPLICADO)."""
 
     # ---- Load merchant settings ----
-    merchant_name = database.get_merchant_name()
+    merchant_name = database.get_setting('merchant_commercial_name') or database.get_merchant_name()
+    merchant_razon_social = database.get_setting('afip_razon_social') or database.get_setting('merchant_name') or merchant_name
     merchant_cuit = database.get_setting('afip_cuit', '30-71234567-9')
     merchant_address = database.get_setting('merchant_address', 'Bv. Oroño 4500, Rosario, Santa Fe')
     merchant_phone = database.get_setting('merchant_phone', '+54 341 456-7890')
@@ -433,7 +434,7 @@ def _build_invoice_page(order, copy_type, usable_w):
     # ══════════════════════════════════════════
     seller = {
         'name': merchant_name,
-        'razon_social': merchant_name,
+        'razon_social': merchant_razon_social,
         'address': merchant_address,
     }
     header = AFIPHeaderFlowable(

@@ -20,13 +20,19 @@ export default function PlatformSettings() {
     has_gemini_api_key: false,
     gemini_api_key: '',
     google_drive_folder_id: '',
+    google_oauth_client_id: '',
+    has_google_oauth_client_secret: false,
+    google_oauth_client_secret: '',
+    is_google_oauth_connected: false,
+    google_oauth_user_email: '',
     has_service_account: false,
     service_account_email: '',
     public_base_url: 'https://es.focalserver.com',
     redirect_uris: {
       mercadolibre: '',
       meta: '',
-      tiendanube: ''
+      tiendanube: '',
+      google_drive: ''
     }
   })
 
@@ -55,6 +61,11 @@ export default function PlatformSettings() {
           has_gemini_api_key: Boolean(d.has_gemini_api_key),
           gemini_api_key: d.has_gemini_api_key ? '••••••••••••••••' : '',
           google_drive_folder_id: d.google_drive_folder_id || '',
+          google_oauth_client_id: d.google_oauth_client_id || '',
+          has_google_oauth_client_secret: Boolean(d.has_google_oauth_client_secret),
+          google_oauth_client_secret: d.has_google_oauth_client_secret ? '••••••••••••••••' : '',
+          is_google_oauth_connected: Boolean(d.is_google_oauth_connected),
+          google_oauth_user_email: d.google_oauth_user_email || '',
           has_service_account: Boolean(d.has_service_account),
           service_account_email: d.service_account_email || '',
           public_base_url: d.public_base_url || 'https://es.focalserver.com',
@@ -98,6 +109,8 @@ export default function PlatformSettings() {
           tiendanube_client_secret: data.tiendanube_client_secret,
           gemini_api_key: data.gemini_api_key,
           google_drive_folder_id: data.google_drive_folder_id,
+          google_oauth_client_id: data.google_oauth_client_id,
+          google_oauth_client_secret: data.google_oauth_client_secret,
           public_base_url: data.public_base_url
         })
       })
@@ -515,30 +528,77 @@ export default function PlatformSettings() {
                 fontWeight: 600,
                 padding: '2px 8px',
                 borderRadius: 12,
-                backgroundColor: data.has_service_account && data.google_drive_folder_id ? 'rgba(34, 197, 94, 0.15)' : 'rgba(239, 68, 68, 0.15)',
-                color: data.has_service_account && data.google_drive_folder_id ? '#22c55e' : '#ef4444'
+                backgroundColor: data.is_google_oauth_connected ? 'rgba(34, 197, 94, 0.15)' : (data.has_service_account ? 'rgba(59, 130, 246, 0.15)' : 'rgba(239, 68, 68, 0.15)'),
+                color: data.is_google_oauth_connected ? '#22c55e' : (data.has_service_account ? '#3b82f6' : '#ef4444')
               }}>
-                {data.has_service_account && data.google_drive_folder_id ? 'Activo' : 'Incompleto'}
+                {data.is_google_oauth_connected ? `OAuth: ${data.google_oauth_user_email || 'Activo'}` : (data.has_service_account ? 'Service Account' : 'Incompleto')}
               </span>
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10, flex: 1 }}>
-              <label style={{ fontSize: '0.8rem' }}>GOOGLE_DRIVE_FOLDER_ID
+              {/* Opción 1: OAuth 2.0 (Recomendado para cuentas personales @gmail.com) */}
+              <div style={{ backgroundColor: 'var(--bg-dark)', padding: 10, borderRadius: 6, border: '1px solid var(--border-color)' }}>
+                <div style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--accent-blue)', marginBottom: 6, display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span>🔑</span> Google OAuth 2.0 (Cuentas Personales @gmail.com)
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  <label style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>GOOGLE_OAUTH_CLIENT_ID
+                    <input
+                      type="text"
+                      value={data.google_oauth_client_id}
+                      onChange={e => setData({ ...data, google_oauth_client_id: e.target.value })}
+                      placeholder="Ej: 123456789-abc.apps.googleusercontent.com"
+                      style={{ width: '100%', marginTop: 3, padding: '6px 8px', borderRadius: 4, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-light)', color: 'var(--text-primary)', fontSize: '0.8rem' }}
+                    />
+                  </label>
+                  <label style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>GOOGLE_OAUTH_CLIENT_SECRET
+                    <input
+                      type="password"
+                      value={data.google_oauth_client_secret}
+                      onChange={e => setData({ ...data, google_oauth_client_secret: e.target.value })}
+                      placeholder={data.has_google_oauth_client_secret ? '••••••••••••••••' : 'Client Secret de Google Cloud'}
+                      style={{ width: '100%', marginTop: 3, padding: '6px 8px', borderRadius: 4, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-light)', color: 'var(--text-primary)', fontSize: '0.8rem' }}
+                    />
+                  </label>
+                  <div style={{ marginTop: 2 }}>
+                    <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', marginBottom: 3 }}>
+                      URI de Redirección Autorizada (pegar en Google Cloud Console):
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, backgroundColor: 'rgba(0,0,0,0.25)', padding: '5px 8px', borderRadius: 4 }}>
+                      <code style={{ fontSize: '0.72rem', flex: 1, wordBreak: 'break-all', color: 'var(--text-primary)' }}>
+                        {data.redirect_uris?.google_drive || `${data.public_base_url}/api/backup/google-drive/callback`}
+                      </code>
+                      <button
+                        type="button"
+                        onClick={() => copyToClipboard(data.redirect_uris?.google_drive || `${data.public_base_url}/api/backup/google-drive/callback`, 'gdrive_uri')}
+                        className="btn"
+                        style={{ fontSize: '0.7rem', padding: '2px 8px', whiteSpace: 'nowrap' }}
+                      >
+                        {copiedKey === 'gdrive_uri' ? 'Copiado!' : 'Copiar'}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Carpeta Destino */}
+              <label style={{ fontSize: '0.8rem' }}>GOOGLE_DRIVE_FOLDER_ID (Opcional)
                 <input
                   type="text"
                   value={data.google_drive_folder_id}
                   onChange={e => setData({ ...data, google_drive_folder_id: e.target.value })}
-                  placeholder="ID de carpeta de Drive"
+                  placeholder="ID de carpeta (vacío = sube a la raíz de Google Drive)"
                   style={{ width: '100%', marginTop: 4, padding: '7px 10px', borderRadius: 6, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-dark)', color: 'var(--text-primary)', fontSize: '0.85rem' }}
                 />
               </label>
 
+              {/* Opción 2: Service Account (para Workspace / Shared Drives) */}
               <div style={{ backgroundColor: 'var(--bg-dark)', padding: 10, borderRadius: 6, border: '1px solid var(--border-color)' }}>
                 <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: 6 }}>
-                  Archivo <code>service_account.json</code>:
+                  Método Alternativo (Google Workspace con Shared Drive): <code>service_account.json</code>
                 </div>
-                <div style={{ fontSize: '0.8rem', fontWeight: 600, color: data.has_service_account ? '#22c55e' : '#ef4444', marginBottom: 6 }}>
-                  {data.has_service_account ? `✅ Presente (${data.service_account_email})` : '❌ No encontrado'}
+                <div style={{ fontSize: '0.8rem', fontWeight: 600, color: data.has_service_account ? '#22c55e' : 'var(--text-secondary)', marginBottom: 6 }}>
+                  {data.has_service_account ? `✅ Presente (${data.service_account_email})` : '⚪ No cargado'}
                 </div>
                 <label className="btn" style={{ fontSize: '0.75rem', padding: '4px 10px', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
                   <Upload size={13} />

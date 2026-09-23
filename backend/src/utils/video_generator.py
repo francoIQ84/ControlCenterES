@@ -5,6 +5,7 @@ import urllib.parse
 import time
 from src import database, tenancy
 from src.utils.image_utils import get_high_res_image_url
+from src.utils.marketing_utils import get_brand_hashtag, clean_and_enforce_hashtags, sanitize_marketing_text
 
 def generate_video_script_with_gemini(product_data: dict, user_prompt: str = ""):
     """
@@ -22,15 +23,20 @@ def generate_video_script_with_gemini(product_data: dict, user_prompt: str = "")
     images_list = [get_high_res_image_url(i.strip()) for i in images_str.split(",") if i.strip()]
 
     merchant_name = database.get_merchant_name()
+    brand_hashtag = get_brand_hashtag(merchant_name)
 
     prompt_text = f"""
     Eres un director creativo publicitario experto en TikTok Reels e Instagram Reels en Argentina.
-    Crea el guión visual y escrito para un Reel corto de 15 segundos promocionando este producto de "{merchant_name}":
+    Crea el guión visual y escrito para un Reel corto de 15 segundos promocionando este producto del negocio "{merchant_name}":
     - Producto: {title}
     - Precio: ${price:,.2f} ARS
     - Categoría: {category}
     - Descripción: {desc}
     - Instrucciones/Prompt adicional del usuario: "{user_prompt or 'Promoción atractiva de ventas'}"
+
+    REGLAS:
+    - La marca comercial del negocio es "{merchant_name}". NUNCA incluyas nombres de personas físicas, titulares ni razones sociales fiscales.
+    - HASHTAGS (#): Es OBLIGATORIO que todos los hashtags comiencen con '#' y que el primer hashtag sea exactamente {brand_hashtag}. Luego incluye hashtags relevantes sobre el producto y ciudad (ej: {brand_hashtag} #Hidroponia #Rosario). NUNCA uses nombres de personas.
 
     Responde en formato JSON ESTRICTO con la siguiente estructura exacta:
     {{
@@ -66,7 +72,7 @@ def generate_video_script_with_gemini(product_data: dict, user_prompt: str = "")
                 "sub_text": "Haz clic para consultar stock"
             }}
         ],
-        "full_caption": "Texto completo para el posteo de Instagram con emojis y hashtags"
+        "full_caption": "Texto completo para el posteo de Instagram con emojis y hashtags comenzando con {brand_hashtag}"
     }}
     Responde ÚNICAMENTE con el objeto JSON válido sin bloques markdown extra.
     """
@@ -89,6 +95,17 @@ def generate_video_script_with_gemini(product_data: dict, user_prompt: str = "")
                 parsed["images"] = images_list
                 parsed["product_title"] = title
                 parsed["product_price"] = price
+
+                if parsed.get("full_caption"):
+                    fiscal_name = (database.get_setting("afip_razon_social") or "").strip()
+                    parsed["full_caption"] = sanitize_marketing_text(parsed["full_caption"], merchant_name, fiscal_name)
+                    if "#" in parsed["full_caption"]:
+                        parts = parsed["full_caption"].split("#", 1)
+                        cap_part = parts[0].strip()
+                        hash_part = "#" + parts[1].strip()
+                        clean_hash = clean_and_enforce_hashtags(hash_part, merchant_name, fiscal_name)
+                        parsed["full_caption"] = f"{cap_part}\n\n{clean_hash}".strip()
+
                 return parsed
         except Exception as e:
             last_err = str(e)

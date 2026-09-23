@@ -717,31 +717,31 @@ def get_platform_setting(key, env_var=None, default=""):
 
 
 def get_merchant_name(default: str = "ControlCenterES") -> str:
-    """Nombre comercial del inquilino activo.
+    """Nombre comercial del inquilino activo (marca pública / fantasía).
 
-    Existe para tener un único lugar del que salga el nombre del negocio. El
-    literal "Hidroponia Rosario" estaba escrito a mano como valor por defecto
-    en una docena de sitios —remitente de correo, instrucciones del bot de
-    WhatsApp, prompts de las publicaciones que genera la IA, autor de los
-    artículos del blog, título de los cobros de Mercado Pago—, así que
-    cualquier negocio nuevo mandaba correos, publicaba y cobraba a nombre de
-    otro hasta que alguien se acordara de cambiar cada ajuste.
-
-    Orden: lo que el negocio configuró, el nombre con el que está dado de alta
-    en el registro de inquilinos, y recién después el genérico.
+    Existe para tener un único lugar del que salga el nombre de la tienda para
+    marketing, redes sociales, chatbot de WhatsApp, tienda web y cobros.
+    
+    Prioridad:
+    1. Nombre oficial del tenant registrado (ej. 'Hidroponía Rosario').
+    2. Nombre comercial configurado en 'merchant_commercial_name'.
+    3. 'merchant_name' (siempre que no sea la razón social fiscal).
+    4. Valor por defecto.
     """
-    configured = (get_setting("merchant_name") or "").strip()
-    if configured:
-        return configured
-
     tenant = tenancy.get_current_tenant()
     if not tenant and tenancy.get_current_tenant_id() == tenancy.MASTER_TENANT_ID:
-        # Los bloques `tenant_context(MASTER_TENANT_ID)` del scheduler fijan el
-        # id pero no la fila, así que sin esto el remitente de los correos
-        # automáticos pasaba de "Hidroponía Rosario" al genérico.
         tenant = tenancy.get_master_tenant()
     if tenant and (tenant.get("name") or "").strip():
         return tenant["name"].strip()
+
+    comm = (get_setting("merchant_commercial_name") or "").strip()
+    if comm and comm.lower() not in ("experiencia sustentable", "controlcenteres"):
+        return comm
+
+    configured = (get_setting("merchant_name") or "").strip()
+    fiscal = (get_setting("afip_razon_social") or "").strip()
+    if configured and configured != fiscal:
+        return configured
 
     return default
 
@@ -2546,10 +2546,11 @@ def get_login_history(limit=100):
                 LIMIT %s
             ''', (limit,))
             rows = cursor.fetchall()
+            from src.utils.dates import to_ar_datetime
             for r in rows:
                 if r['timestamp']:
                     if isinstance(r['timestamp'], datetime):
-                        r['timestamp'] = r['timestamp'].isoformat()
+                        r['timestamp'] = to_ar_datetime(r['timestamp']).isoformat()
                     else:
                         r['timestamp'] = str(r['timestamp'])
             return rows
