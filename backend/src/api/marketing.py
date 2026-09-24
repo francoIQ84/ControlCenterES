@@ -18,9 +18,49 @@ from src.utils.marketing_utils import (
     sanitize_marketing_text
 )
 from src.utils.gemini_service import get_available_gemini_models, extract_gemini_error
+from zoneinfo import ZoneInfo
+from datetime import datetime
+import re
+
+ARGENTINA_TZ = ZoneInfo("America/Argentina/Buenos_Aires")
+
+def normalize_scheduled_time(val: Optional[str]) -> Optional[str]:
+    """
+    Normaliza cualquier formato de fecha/hora (ISO con Z, UTC, o local)
+    a la hora local exacta de Argentina (America/Argentina/Buenos_Aires).
+    """
+    if not val or not str(val).strip():
+        return None
+    val_str = str(val).strip()
+
+    # 1. ISO con Z o UTC offset: e.g. "2026-09-24T15:10:00.000Z"
+    if val_str.endswith("Z") or "+00:00" in val_str or "+0000" in val_str:
+        clean_iso = val_str.replace("Z", "+00:00")
+        try:
+            dt_utc = datetime.fromisoformat(clean_iso)
+            dt_ar = dt_utc.astimezone(ARGENTINA_TZ)
+            return dt_ar.strftime("%Y-%m-%d %H:%M:%S")
+        except Exception:
+            pass
+
+    # 2. ISO con offset explícito: e.g. "2026-09-24T12:10:00-03:00"
+    if re.search(r'[+-]\d{2}:?\d{2}$', val_str):
+        try:
+            dt = datetime.fromisoformat(val_str)
+            dt_ar = dt.astimezone(ARGENTINA_TZ)
+            return dt_ar.strftime("%Y-%m-%d %H:%M:%S")
+        except Exception:
+            pass
+
+    # 3. String local naive: e.g. "2026-09-24T12:10" o "2026-09-24 12:10:00"
+    clean_val = val_str.replace("T", " ")
+    if len(clean_val) == 16:  # "YYYY-MM-DD HH:mm"
+        clean_val += ":00"
+    return clean_val
 
 
 router = APIRouter()
+
 
 class GeneratePostRequest(BaseModel):
     product_ml_id: str
@@ -541,8 +581,9 @@ def list_marketing_posts(status: Optional[str] = None, limit: int = 100, _=Depen
 
 @router.post("/posts")
 def create_or_schedule_post(req: CreatePostRequest, _=Depends(verify_session)):
+    scheduled_time = normalize_scheduled_time(req.scheduled_at)
     status = req.status
-    if req.scheduled_at and status != "published":
+    if scheduled_time and status != "published":
         status = "scheduled"
 
     clean_media = convert_all_images_str(req.media_urls)
@@ -558,7 +599,7 @@ def create_or_schedule_post(req: CreatePostRequest, _=Depends(verify_session)):
         "platforms": req.platforms,
         "caption": sanitized_caption,
         "media_urls": clean_media,
-        "scheduled_at": req.scheduled_at,
+        "scheduled_at": scheduled_time,
         "status": status
     }
     if req.id:

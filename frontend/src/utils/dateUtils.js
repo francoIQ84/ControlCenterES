@@ -92,3 +92,30 @@ export function formatTimeAR(dateVal, options = {}) {
     });
   }
 }
+
+/**
+ * Format a date/time into HTML datetime-local format: YYYY-MM-DDTHH:mm
+ * strictly evaluating the date in Argentina timezone.
+ */
+export function formatForDateTimeLocal(dateVal) {
+  const d = parseToDate(dateVal);
+  if (!d) return '';
+
+  try {
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone: ARGENTINA_TIMEZONE,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false
+    }).formatToParts(d);
+
+    const get = (type) => parts.find(p => p.type === type)?.value || '';
+    return `${get('year')}-${get('month')}-${get('day')}T${get('hour')}:${get('minute')}`;
+  } catch (e) {
+    return '';
+  }
+}
+

@@ -2,7 +2,8 @@ import React, { useState, useEffect, useRef } from 'react'
 import { Megaphone, Sparkles, Calendar, Settings as SettingsIcon, Send, Video, Image as ImageIcon, Trash2, CheckCircle, Clock, AlertCircle, RefreshCw, ExternalLink, MessageSquare, Users, Plus, Mail, Phone, Share2, Play, Check, Layers, UserPlus, X, Move, Maximize2, Download, DollarSign, Tag } from 'lucide-react'
 import { useTenant } from '../TenantContext'
 import MediaBrowser from '../components/MediaBrowser'
-import { formatDateTimeAR, formatDateAR, formatTimeAR } from '../utils/dateUtils'
+import { formatDateTimeAR, formatDateAR, formatTimeAR, formatForDateTimeLocal } from '../utils/dateUtils'
+
 
 const toHighResMlImage = (url) => {
   if (!url) return ''
@@ -746,13 +747,7 @@ export default function Marketing() {
     setMediaUrl(p.media_urls || '')
     setGeneratedServerMediaUrl(p.media_urls || '')
     if (p.scheduled_at) {
-      try {
-        const d = new Date(p.scheduled_at)
-        const isoStr = new Date(d.getTime() - (d.getTimezoneOffset() * 60000)).toISOString().slice(0, 16)
-        setScheduledAt(isoStr)
-      } catch(e) {
-        setScheduledAt('')
-      }
+      setScheduledAt(formatForDateTimeLocal(p.scheduled_at))
     } else {
       setScheduledAt('')
     }
@@ -2315,7 +2310,7 @@ export default function Marketing() {
           platforms: selectedPlatforms,
           caption: caption.trim(),
           media_urls: cleanMediaUrl,
-          scheduled_at: scheduledAt ? new Date(scheduledAt).toISOString() : null,
+          scheduled_at: scheduledAt ? (scheduledAt.includes('T') ? scheduledAt.replace('T', ' ') + (scheduledAt.length === 16 ? ':00' : '') : scheduledAt) : null,
           status: finalStatus
         })
       })
