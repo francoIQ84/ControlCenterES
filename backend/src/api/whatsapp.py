@@ -5,8 +5,9 @@ from src import database, tenancy, whatsapp_bridge
 from src.api.auth import verify_session, require_permission
 import requests
 import re
-import json
 import os
+from src.utils.gemini_service import get_available_gemini_models, FALLBACK_GEMINI_MODELS
+
 
 router = APIRouter()
 
@@ -135,7 +136,7 @@ def test_gemini_key(req: TestKeyReq, _=Depends(verify_session)):
     if not key:
         return {"success": False, "error": "Debes ingresar una API Key de Gemini."}
     
-    models = ["gemini-3.6-flash", "gemini-flash-latest", "gemini-flash-lite-latest", "gemini-3.5-flash-lite", "gemini-2.0-flash"]
+    models = get_available_gemini_models(key)
     first_error = ""
     for model_name in models:
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={key}"
@@ -294,7 +295,7 @@ def process_silent_inquiry_tracking(sender: str, user_text: str, catalog_context
             "No agregues explicaciones ni saludos."
         )
 
-        models_to_try = ["gemini-3.6-flash", "gemini-flash-latest", "gemini-flash-lite-latest", "gemini-3.5-flash-lite", "gemini-2.0-flash"]
+        models_to_try = get_available_gemini_models(gemini_key)
         for model_name in models_to_try:
             url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={gemini_key}"
             headers = {"Content-Type": "application/json"}
@@ -496,7 +497,7 @@ def _handle_webhook(req: WebhookReq):
     contents.append({"role": "user", "parts": [{"text": user_text}]})
 
     # 6. Call Gemini API with Fallback Models
-    models_to_try = ["gemini-3.6-flash", "gemini-flash-latest", "gemini-flash-lite-latest", "gemini-3.5-flash-lite", "gemini-2.0-flash"]
+    models_to_try = get_available_gemini_models(gemini_key)
     last_error_msg = ""
 
     for model_name in models_to_try:

@@ -5,14 +5,10 @@ import json
 from datetime import datetime
 
 from src import database, config, meli_api
+from src.utils.gemini_service import FALLBACK_GEMINI_MODELS, get_available_gemini_models
 
-GEMINI_FALLBACK_MODELS = [
-    "gemini-3.6-flash",
-    "gemini-flash-latest",
-    "gemini-flash-lite-latest",
-    "gemini-3.5-flash-lite",
-    "gemini-2.0-flash"
-]
+GEMINI_FALLBACK_MODELS = list(FALLBACK_GEMINI_MODELS)
+
 
 def sanitize_and_validate_answer(text: str) -> tuple[str, bool, str]:
     """
@@ -105,8 +101,9 @@ REGLAS OBLIGATORIAS:
     }
 
     headers = {"Content-Type": "application/json"}
+    models_to_try = get_available_gemini_models(gemini_key)
 
-    for model_name in GEMINI_FALLBACK_MODELS:
+    for model_name in models_to_try:
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={gemini_key}"
         try:
             res = requests.post(url, headers=headers, json=payload, timeout=12)

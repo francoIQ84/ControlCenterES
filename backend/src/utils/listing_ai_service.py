@@ -19,7 +19,9 @@ import re
 import requests
 
 from src import database
+from src.utils.gemini_service import get_available_gemini_models, FALLBACK_GEMINI_MODELS
 from src.utils.meli_questions_service import GEMINI_FALLBACK_MODELS
+
 
 # Tope de título de Mercado Libre para publicaciones de Argentina.
 MAX_CARACTERES_TITULO = 60
@@ -291,7 +293,7 @@ def _llamar_gemini(prompt: str, max_tokens: int = 4096, json_mode: bool = False)
     headers = {"Content-Type": "application/json"}
     ultimo_error = "No se pudo contactar a ningún modelo"
 
-    for modelo in GEMINI_FALLBACK_MODELS:
+    for modelo in get_available_gemini_models(clave):
         url = (f"https://generativelanguage.googleapis.com/v1beta/models/"
                f"{modelo}:generateContent?key={clave}")
         try:

@@ -7,13 +7,76 @@ from src import database, tenancy
 from src.utils.image_utils import get_high_res_image_url
 from src.utils.marketing_utils import get_brand_hashtag, clean_and_enforce_hashtags, sanitize_marketing_text
 
+from src.utils.gemini_service import get_available_gemini_models, extract_gemini_error
+
+def build_fallback_video_script(product_data: dict, user_prompt: str = "", merchant_name: str = "", brand_hashtag: str = "") -> dict:
+    """
+    Construye un guión comercial estructurado de 4 escenas de alta conversión localmente
+    con los datos reales del producto cuando Gemini no está configurado o no responde.
+    """
+    title = product_data.get("title", "Producto Destacado")
+    price = product_data.get("price_selected") or product_data.get("price_web") or product_data.get("price") or 0
+    images_str = product_data.get("images") or product_data.get("thumbnail") or ""
+    images_list = [get_high_res_image_url(i.strip()) for i in images_str.split(",") if i.strip()]
+    desc = product_data.get("description", "")
+    
+    price_formatted = f"${price:,.0f} ARS" if price else "Consultar Precio"
+
+    caption_text = (
+        f"✨ ¡Descubrí {title} en {merchant_name}! ✨\n\n"
+        f"🌱 Calidad garantizada para tus cultivos y proyectos.\n"
+        f"💳 Precio especial: {price_formatted}\n"
+        f"📦 Envíos a todo el país y atención personalizada.\n\n"
+        f"👉 ¡Hacé tu pedido o consultanos por mensaje privado!\n\n"
+        f"{brand_hashtag} #Hidroponia #Rosario #Cultivo #HuertaEnCasa"
+    )
+
+    return {
+        "video_title": f"Promoción {title}",
+        "theme_color": "emerald",
+        "scenes": [
+            {
+                "scene_num": 1,
+                "duration_sec": 3,
+                "badge_text": "¡NOVEDAD EXCLUSIVA!",
+                "main_headline": title[:40],
+                "sub_text": "Disponible en nuestra tienda"
+            },
+            {
+                "scene_num": 2,
+                "duration_sec": 4,
+                "badge_text": "CALIDAD PREMIUM",
+                "main_headline": "Rendimiento y Durabilidad",
+                "sub_text": "Ideal para tu producción o cultivo"
+            },
+            {
+                "scene_num": 3,
+                "duration_sec": 4,
+                "badge_text": "PRECIO IMPERDIBLE",
+                "main_headline": f"Oferta Especial {price_formatted}",
+                "sub_text": "Envíos rápidos a todo el país"
+            },
+            {
+                "scene_num": 4,
+                "duration_sec": 4,
+                "badge_text": "¡COMPRÁ AHORA!",
+                "main_headline": f"Disponible en {merchant_name}",
+                "sub_text": "Consultanos stock y promociones"
+            }
+        ],
+        "full_caption": caption_text,
+        "images": images_list,
+        "product_title": title,
+        "product_price": price
+    }
+
 def generate_video_script_with_gemini(product_data: dict, user_prompt: str = ""):
     """
     Uses Gemini AI to generate a structured 4-scene video script tailored for a 15-second Reel.
+    Auto-discovers active Gemini models from Google and falls back smoothly if unavailable.
     """
-    gemini_key = database.get_platform_setting("gemini_api_key", "GEMINI_API_KEY")
-    if not gemini_key:
-        raise Exception("Se requiere una API Key de Gemini configurada en Ajustes para generar videos por IA.")
+    merchant_name = database.get_merchant_name()
+    brand_hashtag = get_brand_hashtag(merchant_name)
 
     title = product_data.get("title", "")
     price = product_data.get("price_selected") or product_data.get("price_web") or product_data.get("price") or 0
@@ -22,8 +85,10 @@ def generate_video_script_with_gemini(product_data: dict, user_prompt: str = "")
     images_str = product_data.get("images") or product_data.get("thumbnail") or ""
     images_list = [get_high_res_image_url(i.strip()) for i in images_str.split(",") if i.strip()]
 
-    merchant_name = database.get_merchant_name()
-    brand_hashtag = get_brand_hashtag(merchant_name)
+    gemini_key = database.get_platform_setting("gemini_api_key", "GEMINI_API_KEY")
+    if not gemini_key:
+        print("[VideoGenerator] Sin Gemini API Key: usando guión comercial inteligente.")
+        return build_fallback_video_script(product_data, user_prompt, merchant_name, brand_hashtag)
 
     prompt_text = f"""
     Eres un director creativo publicitario experto en TikTok Reels e Instagram Reels en Argentina.
@@ -77,21 +142,42 @@ def generate_video_script_with_gemini(product_data: dict, user_prompt: str = "")
     Responde ÚNICAMENTE con el objeto JSON válido sin bloques markdown extra.
     """
 
-    models_to_try = ["gemini-3.6-flash", "gemini-flash-latest", "gemini-flash-lite-latest", "gemini-3.5-flash-lite", "gemini-2.0-flash"]
+    models_to_try = get_available_gemini_models(gemini_key)
     last_err = ""
 
     for model_name in models_to_try:
         try:
             url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={gemini_key}"
-            payload = {"contents": [{"parts": [{"text": prompt_text}]}]}
+            payload = {
+                "contents": [{"parts": [{"text": prompt_text}]}],
+                "generationConfig": {
+                    "temperature": 0.4,
+                    "maxOutputTokens": 4096,
+                    "responseMimeType": "application/json"
+                }
+            }
             data_bytes = json.dumps(payload).encode('utf-8')
             http_req = urllib.request.Request(url, data=data_bytes, headers={"Content-Type": "application/json"})
 
-            with urllib.request.urlopen(http_req, timeout=12) as response:
+            try:
+                response = urllib.request.urlopen(http_req, timeout=20)
+            except urllib.error.HTTPError as he:
+                # Si falló por responseMimeType, intentar sin él
+                if he.code == 400:
+                    payload.pop("generationConfig", None)
+                    data_bytes = json.dumps(payload).encode('utf-8')
+                    http_req = urllib.request.Request(url, data=data_bytes, headers={"Content-Type": "application/json"})
+                    response = urllib.request.urlopen(http_req, timeout=20)
+                else:
+                    raise
+
+            with response:
                 res_data = json.loads(response.read().decode('utf-8'))
                 raw_text = res_data['candidates'][0]['content']['parts'][0]['text'].strip()
                 clean_text = raw_text.replace("```json", "").replace("```", "").strip()
-                parsed = json.loads(clean_text)
+                import re
+                json_match = re.search(r'\{.*\}', clean_text, re.DOTALL)
+                parsed = json.loads(json_match.group(0) if json_match else clean_text)
                 parsed["images"] = images_list
                 parsed["product_title"] = title
                 parsed["product_price"] = price
@@ -108,10 +194,11 @@ def generate_video_script_with_gemini(product_data: dict, user_prompt: str = "")
 
                 return parsed
         except Exception as e:
-            last_err = str(e)
+            last_err = extract_gemini_error(e)
             continue
 
-    raise Exception(f"Error al generar guión de video con Gemini IA: {last_err}")
+    print(f"[VideoGenerator] Todos los modelos Gemini fallaron ({last_err}). Usando guión inteligente local estructurado.")
+    return build_fallback_video_script(product_data, user_prompt, merchant_name, brand_hashtag)
 
 def generate_video_with_google_veo(prompt: str, image_url: str = ""):
     """
@@ -387,9 +474,37 @@ def generate_video_with_imagen3(prompt: str, post_type: str = "reel"):
     except Exception:
         pass
 
+    # Try Gemini Flash Image via generateContent (Nano Banana format)
+    try:
+        import requests, base64
+        for img_model in ["gemini-3.1-flash-image", "gemini-2.5-flash-image"]:
+            try:
+                url = f"https://generativelanguage.googleapis.com/v1beta/models/{img_model}:generateContent?key={gemini_key}"
+                payload = {"contents": [{"parts": [{"text": prompt_clean}]}]}
+                res = requests.post(url, json=payload, headers={"Content-Type": "application/json"}, timeout=25)
+                if res.status_code == 200:
+                    candidatos = res.json().get('candidates') or []
+                    partes = (candidatos[0].get('content') or {}).get('parts') or []
+                    for p in partes:
+                        inline = p.get('inlineData') or p.get('inline_data') or {}
+                        raw_b64 = inline.get('data')
+                        if raw_b64:
+                            img_bytes = base64.b64decode(raw_b64)
+                            out_dir = os.path.join("uploads", "reels")
+                            os.makedirs(out_dir, exist_ok=True)
+                            out_filename = f"gemini_img_{int(time.time())}.png"
+                            out_path = os.path.join(out_dir, out_filename)
+                            with open(out_path, "wb") as f:
+                                f.write(img_bytes)
+                            return {"success": True, "video_url": f"/uploads/reels/{out_filename}", "engine": "imagen3"}
+            except Exception:
+                continue
+    except Exception:
+        pass
+
     return {
         "success": False,
-        "error": "No se pudo generar la imagen con Google Imagen 3. Verificá tu API Key de Gemini."
+        "error": "No se pudo generar la imagen con Google Imagen / Gemini Image. Verificá tu API Key de Gemini."
     }
 
 def generate_video_with_pollinations(prompt: str, post_type: str = "reel"):

@@ -604,7 +604,7 @@ def init_db():
                     buyer_nickname VARCHAR(150),
                     question_text TEXT NOT NULL,
                     answer_text TEXT,
-                    ai_model_used VARCHAR(100) DEFAULT 'gemini-3.6-flash',
+                    ai_model_used VARCHAR(100) DEFAULT 'gemini-2.5-flash',
                     status VARCHAR(50) DEFAULT 'ANSWERED_AUTO',
                     auto_replied BOOLEAN DEFAULT TRUE,
                     response_time_ms INTEGER DEFAULT 0,
@@ -3961,7 +3961,7 @@ def create_or_update_meli_question(q_data: dict):
                 q_data.get('buyer_nickname', ''),
                 q_data.get('question_text', ''),
                 q_data.get('answer_text'),
-                q_data.get('ai_model_used', 'gemini-3.6-flash'),
+                q_data.get('ai_model_used', 'gemini-2.5-flash'),
                 q_data.get('status', 'PENDING_APPROVAL'),
                 q_data.get('auto_replied', False),
                 q_data.get('response_time_ms', 0),
@@ -4018,7 +4018,7 @@ def get_meli_question_by_id(question_id):
             return dict(row) if row else None
 
 
-def update_meli_question_answer(question_id, answer_text, status='ANSWERED_AUTO', response_time_ms=0, ai_model_used='gemini-3.6-flash', error_message=None):
+def update_meli_question_answer(question_id, answer_text, status='ANSWERED_AUTO', response_time_ms=0, ai_model_used='gemini-2.5-flash', error_message=None):
     with get_connection() as conn:
         with conn.cursor() as cursor:
             cursor.execute('''

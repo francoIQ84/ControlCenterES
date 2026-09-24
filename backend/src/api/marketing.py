@@ -17,6 +17,8 @@ from src.utils.marketing_utils import (
     clean_and_enforce_marketing_post,
     sanitize_marketing_text
 )
+from src.utils.gemini_service import get_available_gemini_models, extract_gemini_error
+
 
 router = APIRouter()
 
@@ -380,23 +382,40 @@ def generate_ai_post_copy(req: GeneratePostRequest, _=Depends(verify_session)):
     Responde ÚNICAMENTE con el objeto JSON válido sin bloques markdown extra.
     """
 
-    models_to_try = ["gemini-flash-lite-latest", "gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-flash-latest"]
+    models_to_try = get_available_gemini_models(gemini_key)
     last_err = ""
 
     for model_name in models_to_try:
         try:
             url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={gemini_key}"
             payload = {
-                "contents": [{"parts": [{"text": prompt}]}]
+                "contents": [{"parts": [{"text": prompt}]}],
+                "generationConfig": {
+                    "temperature": 0.5,
+                    "responseMimeType": "application/json"
+                }
             }
             data_bytes = json.dumps(payload).encode('utf-8')
             http_req = urllib.request.Request(url, data=data_bytes, headers={"Content-Type": "application/json"})
 
-            with urllib.request.urlopen(http_req, timeout=25) as response:
+            try:
+                response = urllib.request.urlopen(http_req, timeout=25)
+            except urllib.error.HTTPError as he:
+                if he.code == 400:
+                    payload.pop("generationConfig", None)
+                    data_bytes = json.dumps(payload).encode('utf-8')
+                    http_req = urllib.request.Request(url, data=data_bytes, headers={"Content-Type": "application/json"})
+                    response = urllib.request.urlopen(http_req, timeout=25)
+                else:
+                    raise
+
+            with response:
                 res_data = json.loads(response.read().decode('utf-8'))
                 raw_text = res_data['candidates'][0]['content']['parts'][0]['text'].strip()
                 clean_text = raw_text.replace("```json", "").replace("```", "").strip()
-                parsed = json.loads(clean_text)
+                import re
+                json_match = re.search(r'\{.*\}', clean_text, re.DOTALL)
+                parsed = json.loads(json_match.group(0) if json_match else clean_text)
                 
                 # Garantizar hashtags con '#' y marca comercial del negocio, y sanitizar
                 fiscal_name = (database.get_setting("afip_razon_social") or "").strip()
@@ -418,7 +437,7 @@ def generate_ai_post_copy(req: GeneratePostRequest, _=Depends(verify_session)):
                     "images": high_res_images
                 }
         except Exception as e:
-            last_err = str(e)
+            last_err = extract_gemini_error(e)
             continue
 
     raise HTTPException(status_code=500, detail=f"Error al generar post con Gemini IA: {last_err}")
@@ -617,7 +636,7 @@ def suggest_ai_comment_reply(req: AISuggestReplyRequest, _=Depends(verify_sessio
     5. No uses corchetes ni texto descriptivo fuera de la respuesta misma. Responde ÚNICAMENTE con el texto final que se publicará.
     """
 
-    models_to_try = ["gemini-3.6-flash", "gemini-flash-latest", "gemini-flash-lite-latest", "gemini-3.5-flash-lite", "gemini-2.0-flash"]
+    models_to_try = get_available_gemini_models(gemini_key)
     last_err = ""
 
     for model_name in models_to_try:
@@ -627,12 +646,12 @@ def suggest_ai_comment_reply(req: AISuggestReplyRequest, _=Depends(verify_sessio
             data_bytes = json.dumps(payload).encode('utf-8')
             http_req = urllib.request.Request(url, data=data_bytes, headers={"Content-Type": "application/json"})
 
-            with urllib.request.urlopen(http_req, timeout=12) as response:
+            with urllib.request.urlopen(http_req, timeout=15) as response:
                 res_data = json.loads(response.read().decode('utf-8'))
                 suggested_text = res_data['candidates'][0]['content']['parts'][0]['text'].strip()
                 return {"success": True, "suggested_reply": suggested_text}
         except Exception as e:
-            last_err = str(e)
+            last_err = extract_gemini_error(e)
             continue
 
     raise HTTPException(status_code=500, detail=f"Error al generar sugerencia con Gemini IA: {last_err}")
