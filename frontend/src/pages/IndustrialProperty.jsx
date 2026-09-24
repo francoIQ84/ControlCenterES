@@ -105,6 +105,13 @@ export default function IndustrialProperty() {
   const [modelSearchError, setModelSearchError] = useState(null)
   const [addedModelSuccess, setAddedModelSuccess] = useState(false)
 
+  // Single-field Patent & Model Search state (Buscador por un solo campo)
+  const [patentSearchInput, setPatentSearchInput] = useState('')
+  const [searchingPatent, setSearchingPatent] = useState(false)
+  const [patentSearchResult, setPatentSearchResult] = useState(null)
+  const [patentSearchError, setPatentSearchError] = useState(null)
+  const [addedPatentSuccess, setAddedPatentSuccess] = useState(false)
+
   // Quick Patent Incorporate state
   const [quickPatentForm, setQuickPatentForm] = useState({
     acta: '',
@@ -291,12 +298,123 @@ export default function IndustrialProperty() {
     }
   }
 
-  // Quick incorporate patent / utility model
+  // Single-field search for Patent or Model (Google Patents, Espacenet AR, INPI)
+  const handleSearchPatent = async (overrideQuery = null) => {
+    const targetQuery = (overrideQuery || patentSearchInput || '').trim()
+    if (!targetQuery) {
+      alert("Por favor ingresá un número de Patente (ej: AR123630A1), Acta o Modelo.")
+      return
+    }
+
+    setSearchingPatent(true)
+    setPatentSearchError(null)
+    setPatentSearchResult(null)
+    setAddedPatentSuccess(false)
+
+    try {
+      const res = await fetch(`/api/inpi/consulta-patente?query=${encodeURIComponent(targetQuery)}`)
+      const json = await res.json()
+
+      if (res.ok && json.success) {
+        if (json.found && json.result) {
+          setPatentSearchResult({
+            ...json.result,
+            source: json.source
+          })
+        } else if (json.result) {
+          // Trámite no publicado en bases públicas online, pero permitido incorporar directamente
+          setPatentSearchResult({
+            ...json.result,
+            is_unindexed: true,
+            source: 'Trámite Particular / No Publicado',
+            message: json.message
+          })
+        } else {
+          setPatentSearchError(json.message || "No se encontraron antecedentes para esa búsqueda.")
+        }
+      } else {
+        setPatentSearchError(json.detail || json.message || "Error al consultar la patente o modelo.")
+      }
+    } catch (err) {
+      setPatentSearchError("Error de comunicación: " + err.message)
+    } finally {
+      setSearchingPatent(false)
+    }
+  }
+
+  // Add found patent to Monitored Assets with 1 click
+  const handleAddFoundPatent = async (assetToAdd = null) => {
+    const item = assetToAdd || patentSearchResult
+    if (!item) return
+    try {
+      const res = await fetch('/api/inpi/monitored', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(item)
+      })
+      const result = await res.json()
+      if (res.ok && result.success) {
+        setAddedPatentSuccess(true)
+        fetchMonitoredTrademarks()
+        fetchStats()
+      } else {
+        alert("Error al incorporar activo: " + (result.detail || result.message))
+      }
+    } catch (err) {
+      alert("Error de conexión: " + err.message)
+    }
+  }
+
+  // Autofill patent data in quick form
+  const handleAutofillQuickPatent = async () => {
+    const actaToFetch = (quickPatentForm.acta || '').trim()
+    if (!actaToFetch) {
+      alert("Ingresá primero el número en el campo N° de Solicitud/Acta para consultar.")
+      return
+    }
+    try {
+      const res = await fetch(`/api/inpi/consulta-patente?query=${encodeURIComponent(actaToFetch)}`)
+      const json = await res.json()
+      if (res.ok && json.success && json.result) {
+        const r = json.result
+        setQuickPatentForm(prev => ({
+          ...prev,
+          denominacion: r.denominacion || prev.denominacion,
+          titulares: r.titulares || prev.titulares,
+          clasificacion: r.clasificacion || prev.clasificacion,
+          fecha_ingreso: r.fecha_ingreso || prev.fecha_ingreso,
+          asset_type: r.asset_type || prev.asset_type
+        }))
+        if (json.found) {
+          alert(`¡Datos de '${r.acta || actaToFetch}' obtenidos exitosamente desde ${json.source || 'bases oficiales'}!`)
+        } else {
+          alert(`No se hallaron antecedentes públicos online, podés completar o guardar directamente con este identificador.`)
+        }
+      } else {
+        alert("No se obtuvieron datos adicionales.")
+      }
+    } catch (err) {
+      alert("Error al consultar: " + err.message)
+    }
+  }
+
+  // Quick incorporate patent / utility model (Permite 1 solo campo!)
   const handleAddQuickPatent = async (e) => {
     if (e) e.preventDefault()
-    if (!quickPatentForm.acta.trim() || !quickPatentForm.denominacion.trim()) {
-      alert("Por favor ingresá al menos el Número de Solicitud/Acta y el Título de la invención.")
+    const cleanActa = (quickPatentForm.acta || '').trim()
+    const cleanDenom = (quickPatentForm.denominacion || '').trim()
+
+    if (!cleanActa && !cleanDenom) {
+      alert("Por favor ingresá al menos el Número de Solicitud/Acta o el Título de la invención.")
       return
+    }
+
+    const payload = {
+      ...quickPatentForm,
+      acta: cleanActa || `PAT-${Date.now().toString().slice(-6)}`,
+      denominacion: cleanDenom || `Patente ${cleanActa}`,
+      titulares: (quickPatentForm.titulares || '').trim(),
+      clasificacion: (quickPatentForm.clasificacion || '').trim()
     }
 
     setAddingQuickPatent(true)
@@ -305,7 +423,7 @@ export default function IndustrialProperty() {
       const res = await fetch('/api/inpi/monitored', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(quickPatentForm)
+        body: JSON.stringify(payload)
       })
       const result = await res.json()
       if (res.ok && result.success) {
@@ -393,6 +511,27 @@ export default function IndustrialProperty() {
     }
   }
 
+  // Quick Action: Set Annuity Count Directly
+  const handleSetAnnuityDirect = async (item, val) => {
+    const newVal = Math.max(0, parseInt(val) || 0)
+    try {
+      const res = await fetch(`/api/inpi/monitored/${item.acta}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ anualidades_pagadas: newVal })
+      })
+      if (res.ok) {
+        fetchMonitoredTrademarks()
+        fetchStats()
+      } else {
+        const err = await res.json()
+        alert("Error al actualizar anualidades: " + (err.detail || err.message))
+      }
+    } catch (err) {
+      alert("Error de conexión: " + err.message)
+    }
+  }
+
   // Quick Action: +1 Anualidad Pagada
   const handleIncrementAnnuity = async (item) => {
     const current = Number(item.anualidades_pagadas || 0)
@@ -450,11 +589,14 @@ export default function IndustrialProperty() {
     }
   }
 
-  // Handle Save New Asset
+  // Handle Save New Asset (Permite 1 solo campo)
   const handleSaveNewAsset = async (e) => {
     e.preventDefault()
-    if (!newAssetForm.acta.trim() || !newAssetForm.denominacion.trim()) {
-      alert("Por favor completá el Número de Expediente/Acta y el Título/Denominación.")
+    const cleanActa = (newAssetForm.acta || '').trim()
+    const cleanDenom = (newAssetForm.denominacion || '').trim()
+
+    if (!cleanActa && !cleanDenom) {
+      alert("Por favor completá al menos el Número de Expediente/Acta o el Título/Denominación.")
       return
     }
 
@@ -462,9 +604,9 @@ export default function IndustrialProperty() {
     try {
       const payload = {
         ...newAssetForm,
-        acta: newAssetForm.acta.trim(),
-        denominacion: newAssetForm.denominacion.trim(),
-        titulares: newAssetForm.titulares.trim(),
+        acta: cleanActa || `EXP-${Date.now().toString().slice(-6)}`,
+        denominacion: cleanDenom || `Activo ${cleanActa}`,
+        titulares: (newAssetForm.titulares || '').trim(),
         clase: newAssetForm.clase ? parseInt(newAssetForm.clase) : null,
         anualidades_pagadas: parseInt(newAssetForm.anualidades_pagadas) || 0,
         quinquenio_actual: parseInt(newAssetForm.quinquenio_actual) || 1
@@ -506,6 +648,7 @@ export default function IndustrialProperty() {
         estado: editModalItem.estado,
         fecha_ingreso: editModalItem.fecha_ingreso,
         fecha_concesion: editModalItem.fecha_concesion,
+        fecha_proximo_vencimiento: editModalItem.fecha_proximo_vencimiento,
         numero_resolucion: editModalItem.numero_resolucion,
         anualidades_pagadas: parseInt(editModalItem.anualidades_pagadas) || 0,
         quinquenio_actual: parseInt(editModalItem.quinquenio_actual) || 1,
@@ -1322,15 +1465,30 @@ export default function IndustrialProperty() {
                                   </div>
                                 )}
 
-                                <div style={{ marginTop: '8px', display: 'flex', justifyContent: 'flex-end' }}>
+                                <div style={{ marginTop: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '6px' }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                    <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>Pagadas:</span>
+                                    <select
+                                      className="input"
+                                      style={{ padding: '2px 6px', fontSize: '0.75rem', height: '26px', width: 'auto', borderRadius: '4px' }}
+                                      value={item.anualidades_pagadas || 0}
+                                      onChange={(e) => handleSetAnnuityDirect(item, e.target.value)}
+                                      title="Seleccionar directamente las anualidades abonadas ante el INPI"
+                                    >
+                                      {Array.from({ length: (type === 'patente' ? 20 : 10) + 1 }, (_, i) => (
+                                        <option key={i} value={i}>{i} abonada{i === 1 ? '' : 's'}</option>
+                                      ))}
+                                    </select>
+                                  </div>
+
                                   <button
                                     className="btn btn-secondary"
                                     onClick={() => handleIncrementAnnuity(item)}
-                                    style={{ fontSize: '0.75rem', padding: '3px 8px' }}
-                                    title="Confirmar pago de la siguiente anualidad anual"
+                                    style={{ fontSize: '0.75rem', padding: '3px 8px', height: '26px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                                    title="Confirmar pago de la siguiente anualidad anual (+1)"
                                   >
                                     <Plus size={12} />
-                                    <span>+1 Anualidad Pagada</span>
+                                    <span>+1 Pagada</span>
                                   </button>
                                 </div>
                               </div>
@@ -1503,12 +1661,276 @@ export default function IndustrialProperty() {
                     </div>
                   </div>
 
-                  {/* INCORPORAR PATENTE O MODELO DE UTILIDAD DIRECTAMENTE */}
+                  {/* BUSCADOR OFICIAL DE PATENTES Y MODELOS (1 SOLO CAMPO) */}
                   <div className="card" style={{ 
                     padding: '24px', 
                     marginBottom: '24px',
-                    border: '1px solid rgba(234, 179, 8, 0.4)',
-                    background: 'linear-gradient(180deg, rgba(234, 179, 8, 0.04) 0%, var(--bg-card) 100%)',
+                    border: '1px solid rgba(234, 179, 8, 0.45)',
+                    background: 'linear-gradient(180deg, rgba(234, 179, 8, 0.06) 0%, var(--bg-card) 100%)',
+                    borderRadius: '12px',
+                    boxShadow: '0 4px 14px rgba(0,0,0,0.04)'
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px' }}>
+                      <div style={{
+                        width: '42px',
+                        height: '42px',
+                        borderRadius: '10px',
+                        backgroundColor: '#ca8a04',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        color: '#fff',
+                        boxShadow: '0 2px 8px rgba(202, 138, 4, 0.35)'
+                      }}>
+                        <Search size={22} />
+                      </div>
+                      <div>
+                        <h3 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                          <span>Búsqueda Oficial de Patente o Modelo</span>
+                          <span className="badge" style={{ backgroundColor: 'rgba(234, 179, 8, 0.2)', color: '#ca8a04', fontSize: '0.75rem', fontWeight: 700 }}>
+                            1 Solo Campo
+                          </span>
+                          <span className="badge badge-secondary" style={{ fontSize: '0.75rem' }}>
+                            Google Patents / Espacenet AR / INPI
+                          </span>
+                        </h3>
+                        <p style={{ margin: '3px 0 0 0', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+                          Buscá e incorporá con un solo dato: N° de Publicación (ej: <code>AR123630A1</code> o <code>123630</code>), Expediente/Acta (ej: <code>P210102691</code>) o Modelo INPI (ej: <code>96000</code>).
+                        </p>
+                      </div>
+                    </div>
+
+                    <form onSubmit={(e) => { e.preventDefault(); handleSearchPatent(); }} style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', marginBottom: '14px' }}>
+                      <div style={{ position: 'relative', flex: 1, minWidth: '280px' }}>
+                        <input
+                          type="text"
+                          className="input"
+                          placeholder="Ingresá N° de Patente, Publicación o Modelo (ej: AR123630A1, 123630, 96000)..."
+                          value={patentSearchInput}
+                          onChange={(e) => setPatentSearchInput(e.target.value)}
+                          style={{ width: '100%', fontSize: '0.95rem', paddingRight: '36px' }}
+                        />
+                        {patentSearchInput && (
+                          <button
+                            type="button"
+                            onClick={() => setPatentSearchInput('')}
+                            style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', padding: '4px' }}
+                          >
+                            <X size={16} />
+                          </button>
+                        )}
+                      </div>
+                      <button
+                        type="submit"
+                        className="btn btn-primary"
+                        disabled={searchingPatent}
+                        style={{ 
+                          display: 'flex', 
+                          alignItems: 'center', 
+                          gap: '8px', 
+                          backgroundColor: '#ca8a04', 
+                          borderColor: '#ca8a04',
+                          padding: '0 24px',
+                          fontWeight: 600,
+                          minHeight: '42px'
+                        }}
+                      >
+                        {searchingPatent ? <Loader2 size={16} className="spin" /> : <Search size={16} />}
+                        <span>{searchingPatent ? 'Consultando Bases...' : 'Buscar Patente o Modelo'}</span>
+                      </button>
+                    </form>
+
+                    {/* Quick test badges */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                      <span>Ejemplos rápidos:</span>
+                      <button
+                        type="button"
+                        onClick={() => { setPatentSearchInput('AR123630A1'); handleSearchPatent('AR123630A1'); }}
+                        style={{ background: 'var(--bg-dark)', border: '1px solid var(--border-color)', borderRadius: '6px', padding: '3px 8px', fontSize: '0.75rem', cursor: 'pointer', color: 'var(--text-primary)' }}
+                      >
+                        💡 AR123630A1 (Dispositivo rectificador surco - Plantium)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => { setPatentSearchInput('AR100000A1'); handleSearchPatent('AR100000A1'); }}
+                        style={{ background: 'var(--bg-dark)', border: '1px solid var(--border-color)', borderRadius: '6px', padding: '3px 8px', fontSize: '0.75rem', cursor: 'pointer', color: 'var(--text-primary)' }}
+                      >
+                        💡 AR100000A1 (Aerogel superaislante)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => { setPatentSearchInput('96000'); handleSearchPatent('96000'); }}
+                        style={{ background: 'var(--bg-dark)', border: '1px solid var(--border-color)', borderRadius: '6px', padding: '3px 8px', fontSize: '0.75rem', cursor: 'pointer', color: 'var(--text-primary)' }}
+                      >
+                        🎨 96000 (Generador Ozono - Modelo INPI)
+                      </button>
+                    </div>
+
+                    {/* ERROR FEEDBACK */}
+                    {patentSearchError && (
+                      <div style={{ 
+                        marginTop: '16px', 
+                        padding: '12px 16px', 
+                        borderRadius: '8px', 
+                        backgroundColor: 'rgba(239, 68, 68, 0.1)', 
+                        border: '1px solid rgba(239, 68, 68, 0.3)',
+                        color: '#ef4444',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px'
+                      }}>
+                        <AlertTriangle size={18} />
+                        <span style={{ fontSize: '0.85rem' }}>{patentSearchError}</span>
+                      </div>
+                    )}
+
+                    {/* RESULT PREVIEW CARD */}
+                    {patentSearchResult && (
+                      <div style={{ 
+                        marginTop: '20px', 
+                        padding: '20px', 
+                        borderRadius: '10px', 
+                        backgroundColor: 'var(--bg-dark)',
+                        border: '1px solid rgba(234, 179, 8, 0.4)',
+                        boxShadow: '0 4px 16px rgba(0,0,0,0.1)'
+                      }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '16px', marginBottom: '14px' }}>
+                          <div style={{ flex: 1, minWidth: '280px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', marginBottom: '6px' }}>
+                              <span className="badge" style={{ backgroundColor: 'rgba(234, 179, 8, 0.2)', color: '#ca8a04', fontWeight: 700 }}>
+                                {patentSearchResult.asset_type === 'modelo_utilidad' ? '⚙️ Modelo de Utilidad (10 años)' : patentSearchResult.asset_type === 'diseno_industrial' ? '🎨 Modelo / Diseño Industrial' : '💡 Patente de Invención (20 años)'}
+                              </span>
+                              <span className="badge badge-secondary" style={{ fontSize: '0.75rem' }}>
+                                Fuente: {patentSearchResult.source || 'Bases Oficiales'}
+                              </span>
+                              {patentSearchResult.clasificacion && (
+                                <span className="badge" style={{ backgroundColor: 'rgba(59, 130, 246, 0.15)', color: 'var(--accent-blue)', fontSize: '0.75rem' }}>
+                                  CIP: {patentSearchResult.clasificacion}
+                                </span>
+                              )}
+                              <span className={`badge ${patentSearchResult.estado && (patentSearchResult.estado.includes('Concedida') || patentSearchResult.estado === 'C') ? 'badge-green' : 'badge-yellow'}`}>
+                                {patentSearchResult.estado || 'En Trámite'}
+                              </span>
+                            </div>
+
+                            <h3 style={{ margin: '0 0 6px 0', fontSize: '1.2rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                              {patentSearchResult.denominacion || `Patente ${patentSearchResult.acta}`}
+                            </h3>
+
+                            <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
+                              <span><strong>Publicación / Acta:</strong> {patentSearchResult.acta}</span>
+                              {patentSearchResult.solicitud && <span><strong>Solicitud:</strong> {patentSearchResult.solicitud}</span>}
+                              {patentSearchResult.titulares && <span><strong>Titular:</strong> {patentSearchResult.titulares}</span>}
+                              {patentSearchResult.inventores_disenadores && <span><strong>Inventores:</strong> {patentSearchResult.inventores_disenadores}</span>}
+                              {patentSearchResult.fecha_ingreso && <span><strong>Fecha Solicitud:</strong> {patentSearchResult.fecha_ingreso}</span>}
+                              {patentSearchResult.fecha_concesion && <span><strong>Fecha Publicación:</strong> {patentSearchResult.fecha_concesion}</span>}
+                            </div>
+                          </div>
+
+                          {/* ACTION BUTTON */}
+                          <div>
+                            {addedPatentSuccess ? (
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#059669', fontSize: '0.9rem', fontWeight: 700, backgroundColor: 'rgba(5, 150, 105, 0.1)', padding: '8px 16px', borderRadius: '8px', border: '1px solid rgba(5, 150, 105, 0.3)' }}>
+                                <CheckCircle2 size={18} />
+                                <span>¡Incorporado a Mis Activos!</span>
+                              </div>
+                            ) : (
+                              <button
+                                type="button"
+                                className="btn btn-primary"
+                                onClick={() => handleAddFoundPatent()}
+                                style={{
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: '8px',
+                                  backgroundColor: '#ca8a04',
+                                  borderColor: '#ca8a04',
+                                  padding: '10px 22px',
+                                  fontWeight: 700,
+                                  fontSize: '0.9rem',
+                                  boxShadow: '0 2px 8px rgba(202, 138, 4, 0.3)'
+                                }}
+                              >
+                                <Star size={16} fill="#fff" />
+                                <span>+ Agregar al Seguimiento</span>
+                              </button>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Abstract text */}
+                        {patentSearchResult.abstract && (
+                          <div style={{ 
+                            marginTop: '12px', 
+                            padding: '10px 14px', 
+                            borderRadius: '8px', 
+                            backgroundColor: 'var(--bg-card)', 
+                            border: '1px solid var(--border-color)',
+                            fontSize: '0.82rem',
+                            color: 'var(--text-secondary)',
+                            lineHeight: '1.45'
+                          }}>
+                            <strong style={{ color: 'var(--text-primary)', display: 'block', marginBottom: '2px' }}>Resumen Técnico:</strong>
+                            {patentSearchResult.abstract}
+                          </div>
+                        )}
+
+                        {/* Legal Alert Banner */}
+                        {patentSearchResult.alerta_mensaje && (
+                          <div style={{ 
+                            marginTop: '12px', 
+                            padding: '10px 14px', 
+                            borderRadius: '8px', 
+                            backgroundColor: 'rgba(234, 179, 8, 0.08)', 
+                            border: '1px solid rgba(234, 179, 8, 0.3)',
+                            fontSize: '0.85rem',
+                            color: 'var(--text-primary)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '8px'
+                          }}>
+                            <Lightbulb size={18} style={{ color: '#ca8a04', flexShrink: 0 }} />
+                            <span><strong>Diagnóstico Legal:</strong> {patentSearchResult.alerta_mensaje}</span>
+                          </div>
+                        )}
+
+                        {/* External documentation links */}
+                        <div style={{ display: 'flex', gap: '10px', marginTop: '14px', flexWrap: 'wrap' }}>
+                          {patentSearchResult.document_url && (
+                            <a
+                              href={patentSearchResult.document_url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="btn btn-secondary"
+                              style={{ fontSize: '0.8rem', padding: '6px 12px' }}
+                            >
+                              <ExternalLink size={14} />
+                              <span>Ver Ficha en Google Patents</span>
+                            </a>
+                          )}
+                          {patentSearchResult.espacenet_url && (
+                            <a
+                              href={patentSearchResult.espacenet_url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="btn btn-secondary"
+                              style={{ fontSize: '0.8rem', padding: '6px 12px' }}
+                            >
+                              <ExternalLink size={14} />
+                              <span>Consultar en Catálogo Espacenet AR</span>
+                            </a>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* INCORPORAR MANUALMENTE PATENTE O MODELO (FORMULARIO OPCIONAL) */}
+                  <div className="card" style={{ 
+                    padding: '24px', 
+                    marginBottom: '24px',
+                    border: '1px solid rgba(234, 179, 8, 0.3)',
+                    background: 'linear-gradient(180deg, rgba(234, 179, 8, 0.03) 0%, var(--bg-card) 100%)',
                     borderRadius: '12px'
                   }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px' }}>
@@ -1526,13 +1948,13 @@ export default function IndustrialProperty() {
                       </div>
                       <div>
                         <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '8px' }}>
-                          <span>Agregar Mi Patente o Modelo de Utilidad al Seguimiento</span>
+                          <span>Carga Manual o Personalizada</span>
                           <span className="badge" style={{ backgroundColor: 'rgba(234, 179, 8, 0.2)', color: '#ca8a04', fontSize: '0.75rem' }}>
-                            1 Clic
+                            Opcional
                           </span>
                         </h3>
                         <p style={{ margin: '2px 0 0 0', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
-                          Ingresá los datos de tu trámite o solicitud para activar el cálculo automático de anualidades (a partir del 3° año) y vigencia legal.
+                          Podés ingresar solo el N° de solicitud o solo el título para iniciar el cómputo automático de anualidades y vigencia legal.
                         </p>
                       </div>
                     </div>
@@ -1555,31 +1977,41 @@ export default function IndustrialProperty() {
                         </div>
 
                         <div>
-                          <label style={{ display: 'block', fontWeight: 600, fontSize: '0.8rem', marginBottom: '4px' }}>
-                            N° de Solicitud / Acta / Expediente: *
-                          </label>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                            <label style={{ fontWeight: 600, fontSize: '0.8rem' }}>
+                              N° de Solicitud / Acta / Expediente:
+                            </label>
+                            {quickPatentForm.acta && (
+                              <button
+                                type="button"
+                                onClick={handleAutofillQuickPatent}
+                                style={{ background: 'none', border: 'none', color: '#ca8a04', fontSize: '0.75rem', fontWeight: 700, cursor: 'pointer', padding: 0 }}
+                                title="Autocompletar datos con bases oficiales"
+                              >
+                                🪄 Autocompletar
+                              </button>
+                            )}
+                          </div>
                           <input
                             type="text"
                             className="input"
-                            placeholder="Ej: P20210100456 o 20210100456"
+                            placeholder="Ej: AR123630A1 o P20210100456"
                             value={quickPatentForm.acta}
                             onChange={(e) => setQuickPatentForm({ ...quickPatentForm, acta: e.target.value })}
-                            required
                             style={{ width: '100%' }}
                           />
                         </div>
 
                         <div>
                           <label style={{ display: 'block', fontWeight: 600, fontSize: '0.8rem', marginBottom: '4px' }}>
-                            Título o Denominación de la Invención: *
+                            Título o Denominación de la Invención:
                           </label>
                           <input
                             type="text"
                             className="input"
-                            placeholder="Ej: Sistema hidropónico automatizado..."
+                            placeholder="Ej: Sistema hidropónico automatizado... (o dejar vacío)"
                             value={quickPatentForm.denominacion}
                             onChange={(e) => setQuickPatentForm({ ...quickPatentForm, denominacion: e.target.value })}
-                            required
                             style={{ width: '100%' }}
                           />
                         </div>
@@ -1639,7 +2071,7 @@ export default function IndustrialProperty() {
                             </button>.
                           </div>
                         )}
-                        {!quickPatentSuccess && <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>* Campos mínimos para iniciar el monitoreo.</span>}
+                        {!quickPatentSuccess && <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>* Con 1 solo campo (N° de solicitud o título) podés iniciar el monitoreo.</span>}
 
                         <button
                           type="submit"
@@ -2614,21 +3046,68 @@ export default function IndustrialProperty() {
                 </div>
               </div>
 
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '14px', marginBottom: '14px' }}>
+                <div>
+                  <label style={{ display: 'block', fontWeight: 600, marginBottom: '6px', fontSize: '0.85rem' }}>
+                    Fecha de Presentación / Ingreso:
+                  </label>
+                  <input
+                    type="text"
+                    className="input"
+                    placeholder="AAAA-MM-DD o DD/MM/AAAA"
+                    value={editModalItem.fecha_ingreso || ''}
+                    onChange={(e) => setEditModalItem({ ...editModalItem, fecha_ingreso: e.target.value })}
+                    style={{ width: '100%' }}
+                  />
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontWeight: 600, marginBottom: '6px', fontSize: '0.85rem' }}>
+                    Fecha de Concesión:
+                  </label>
+                  <input
+                    type="text"
+                    className="input"
+                    placeholder="AAAA-MM-DD o DD/MM/AAAA"
+                    value={editModalItem.fecha_concesion || ''}
+                    onChange={(e) => setEditModalItem({ ...editModalItem, fecha_concesion: e.target.value })}
+                    style={{ width: '100%' }}
+                  />
+                </div>
+              </div>
+
               {/* Specific for Patent / Utility Model: Annuities */}
               {(editModalItem.asset_type === 'patente' || editModalItem.asset_type === 'modelo_utilidad') && (
                 <div style={{ padding: '12px 14px', borderRadius: '8px', backgroundColor: 'var(--bg-dark)', marginBottom: '14px', border: '1px solid var(--border-color)' }}>
-                  <label style={{ display: 'block', fontWeight: 600, marginBottom: '6px', fontSize: '0.85rem' }}>
-                    Anualidades Pagadas Hasta la Fecha (0 a {editModalItem.asset_type === 'patente' ? '20' : '10'}):
-                  </label>
-                  <input
-                    type="number"
-                    min="0"
-                    max={editModalItem.asset_type === 'patente' ? '20' : '10'}
-                    className="input"
-                    value={editModalItem.anualidades_pagadas || 0}
-                    onChange={(e) => setEditModalItem({ ...editModalItem, anualidades_pagadas: e.target.value })}
-                    style={{ width: '100%' }}
-                  />
+                  <div style={{ marginBottom: '12px' }}>
+                    <label style={{ display: 'block', fontWeight: 600, marginBottom: '6px', fontSize: '0.85rem' }}>
+                      Anualidades Pagadas Hasta la Fecha (0 a {editModalItem.asset_type === 'patente' ? '20' : '10'}):
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      max={editModalItem.asset_type === 'patente' ? '20' : '10'}
+                      className="input"
+                      value={editModalItem.anualidades_pagadas !== undefined ? editModalItem.anualidades_pagadas : 0}
+                      onChange={(e) => setEditModalItem({ ...editModalItem, anualidades_pagadas: e.target.value })}
+                      style={{ width: '100%' }}
+                    />
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', fontWeight: 600, marginBottom: '6px', fontSize: '0.85rem' }}>
+                      Fecha Próximo Vencimiento Oficial INPI (1° Vencimiento):
+                    </label>
+                    <input
+                      type="text"
+                      className="input"
+                      placeholder="ej. 08/04/2027"
+                      value={editModalItem.fecha_proximo_vencimiento || ''}
+                      onChange={(e) => setEditModalItem({ ...editModalItem, fecha_proximo_vencimiento: e.target.value })}
+                      style={{ width: '100%' }}
+                    />
+                    <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', display: 'block', marginTop: '4px' }}>
+                      Podés colocar la fecha exacta que figura en la tabla de anualidades del INPI para la próxima cuota.
+                    </span>
+                  </div>
                 </div>
               )}
 

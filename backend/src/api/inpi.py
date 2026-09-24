@@ -339,23 +339,250 @@ def _fetch_inpi_modelo(acta: str) -> Optional[dict]:
         'tipo_marca': 'Modelo / Diseño Industrial'
     }
 
+def _fetch_patent_data(query: str) -> Optional[dict]:
+    """
+    Consulta datos oficiales de patentes y modelos de utilidad en Google Patents y catálogo oficial AR (Espacenet).
+    Soporta formatos: AR123630A1, 123630, P210102691, etc.
+    """
+    clean_q = str(query).strip()
+    if not clean_q:
+        return None
+
+    upper_q = clean_q.upper().replace(' ', '').replace('-', '').replace(':', '').replace('.', '')
+    candidates = []
+
+    if upper_q.startswith('AR'):
+        candidates.append(upper_q)
+        if not upper_q.endswith(('A1', 'A2', 'B1', 'B2', 'U1', 'U')):
+            candidates.append(upper_q + 'A1')
+            candidates.append(upper_q + 'B1')
+            candidates.append(upper_q + 'U1')
+    elif upper_q.startswith('P') and any(c.isdigit() for c in upper_q):
+        candidates.append(f"AR{upper_q}A")
+        candidates.append(f"AR{upper_q}")
+        candidates.append(upper_q)
+    else:
+        digits = re.sub(r'[^0-9]', '', upper_q)
+        if digits:
+            candidates.append(f"AR{digits}A1")
+            candidates.append(f"AR{digits}B1")
+            candidates.append(f"AR{digits}U1")
+            candidates.append(f"AR{digits}")
+        candidates.append(upper_q)
+
+    ctx = ssl.create_default_context()
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
+
+    for cand in candidates:
+        url = f"https://patents.google.com/patent/{urllib.parse.quote(cand)}/es"
+        req = urllib.request.Request(
+            url,
+            headers={
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
+            }
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=9, context=ctx) as resp:
+                if resp.status == 200:
+                    raw_html = resp.read().decode('utf-8', errors='ignore')
+
+                    # Título
+                    title = ""
+                    m_title = re.search(r'<meta\s+name=["\']DC\.title["\']\s+content=["\'](.*?)["\']', raw_html, re.I | re.DOTALL)
+                    if m_title:
+                        title = html_lib.unescape(m_title.group(1).strip())
+                    if not title:
+                        m_t = re.search(r'<title>(.*?)</title>', raw_html, re.I | re.DOTALL)
+                        if m_t:
+                            title = html_lib.unescape(m_t.group(1).split('-')[0].strip())
+
+                    if not title or ('Google' in title and len(title) < 15):
+                        continue
+
+                    # Resumen técnico (Abstract)
+                    abstract = ""
+                    m_abs = re.search(r'<meta\s+name=["\']DC\.description["\']\s+content=["\'](.*?)["\']', raw_html, re.I | re.DOTALL)
+                    if m_abs:
+                        abstract = html_lib.unescape(m_abs.group(1).strip())
+
+                    # Fechas
+                    dates = re.findall(r'<meta\s+name=["\']DC\.date["\'](?:\s+scheme=["\'](.*?)["\'])?\s+content=["\'](.*?)["\']', raw_html, re.I)
+                    date_sub = None
+                    date_issue = None
+                    for scheme, val in dates:
+                        if scheme == 'dateSubmitted' or not date_sub:
+                            date_sub = val
+                        if scheme == 'issue' or (date_sub and val != date_sub):
+                            date_issue = val
+
+                    # Titulares e Inventores
+                    contributor_tags = re.findall(r'<meta\s+name=["\']DC\.contributor["\'][^>]*>', raw_html, re.I)
+                    inventors = []
+                    assignees = []
+                    for tag in contributor_tags:
+                        m_c = re.search(r'content=["\'](.*?)["\']', tag)
+                        m_s = re.search(r'scheme=["\'](.*?)["\']', tag)
+                        c_val = html_lib.unescape(m_c.group(1).strip()) if m_c else ""
+                        s_val = m_s.group(1).lower().strip() if m_s else ""
+                        if c_val:
+                            if s_val == 'inventor':
+                                inventors.append(c_val)
+                            else:
+                                assignees.append(c_val)
+
+                    # Solicitud y Publicación
+                    app_num = None
+                    m_app = re.search(r'<meta\s+name=["\']citation_patent_application_number["\']\s+content=["\'](.*?)["\']', raw_html, re.I)
+                    if m_app:
+                        app_num = m_app.group(1).strip().replace('AR:', '').replace(':', '')
+
+                    pub_num = cand
+                    m_pub = re.search(r'<meta\s+name=["\']citation_patent_publication_number["\']\s+content=["\'](.*?)["\']', raw_html, re.I)
+                    if m_pub:
+                        cleaned_pub = m_pub.group(1).strip().replace('AR:', '').replace(':', '')
+                        pub_num = f"AR{cleaned_pub}" if not cleaned_pub.startswith('AR') else cleaned_pub
+
+                    # Clasificación CIP / CPC
+                    classifs = re.findall(r'<span itemprop=["\']Code["\']>([A-H][0-9]{2}[A-Z]\s*[0-9]+/[0-9]+)</span>', raw_html, re.I)
+                    if not classifs:
+                        classifs = re.findall(r'\b([A-H]\d{2}[A-Z]\s*\d+/\d+)\b', raw_html)
+
+                    # Tipo de Activo
+                    asset_type = 'patente'
+                    if 'U' in cand or 'modelo de utilidad' in title.lower() or 'utility model' in title.lower():
+                        asset_type = 'modelo_utilidad'
+
+                    titulares_str = ", ".join(list(dict.fromkeys(assignees))) if assignees else ", ".join(list(dict.fromkeys(inventors)))
+                    inventores_str = ", ".join(list(dict.fromkeys(inventors)))
+
+                    return {
+                        'found': True,
+                        'source': 'Google Patents / Espacenet AR',
+                        'asset_type': asset_type,
+                        'acta': pub_num or cand,
+                        'solicitud': app_num,
+                        'denominacion': title,
+                        'abstract': abstract,
+                        'titulares': titulares_str,
+                        'inventores_disenadores': inventores_str,
+                        'fecha_ingreso': date_sub,
+                        'fecha_concesion': date_issue,
+                        'clasificacion': classifs[0] if classifs else None,
+                        'estado': 'Concedida / Publicada' if date_issue else 'En Trámite',
+                        'document_url': f"https://patents.google.com/patent/{cand}/es",
+                        'espacenet_url': f"https://worldwide.espacenet.com/patent/search?q={urllib.parse.quote(cand)}"
+                    }
+        except Exception:
+            continue
+
+    return None
+
+@router.get("/consulta-patente")
+def consulta_patente(
+    query: Optional[str] = Query(None, description="Término o número de patente/modelo a consultar"),
+    q: Optional[str] = Query(None, description="Alias para query"),
+    acta: Optional[str] = Query(None, description="Alias para número de acta")
+):
+    """
+    Permite buscar una Patente o Modelo por un solo campo (N° de publicación, acta, expediente o código).
+    Consulta fuentes oficiales (Google Patents / Espacenet AR) y como alternativa el portal de Modelos del INPI.
+    """
+    val_query = query if isinstance(query, str) else ""
+    val_q = q if isinstance(q, str) else ""
+    val_acta = acta if isinstance(acta, str) else ""
+    search_term = (val_query or val_q or val_acta).strip()
+    if not search_term:
+        raise HTTPException(status_code=400, detail="Debe ingresar un término, número de acta o patente para buscar.")
+
+    try:
+        from src.utils import ip_legal
+
+        # 1. Buscar en registros de patentes / modelos de utilidad (Google Patents / Espacenet AR)
+        patent_data = _fetch_patent_data(search_term)
+        if patent_data:
+            enriched = ip_legal.enrich_ip_asset_data(patent_data)
+            return {
+                "success": True,
+                "found": True,
+                "source": patent_data.get('source', 'Google Patents / Espacenet'),
+                "result": enriched
+            }
+
+        # 2. Si no se encontró en patentes y contiene dígitos, buscar en portal de Modelos/Diseños de INPI
+        digits = re.sub(r'[^0-9]', '', search_term)
+        if digits:
+            inpi_modelo = _fetch_inpi_modelo(digits)
+            if inpi_modelo:
+                enriched = ip_legal.enrich_ip_asset_data(inpi_modelo)
+                enriched['renovaciones_oficiales'] = inpi_modelo.get('renovaciones_oficiales', [])
+                return {
+                    "success": True,
+                    "found": True,
+                    "source": "INPI Argentina (Modelos y Diseños Oficial)",
+                    "result": enriched
+                }
+
+        # 3. No encontrado en bases públicas online -> permitir incorporar trámite con ese solo campo
+        suggested = {
+            "acta": search_term,
+            "denominacion": f"Trámite / Solicitud {search_term}",
+            "asset_type": "patente",
+            "fecha_ingreso": datetime.now().strftime('%Y-%m-%d'),
+            "estado": "En Trámite"
+        }
+        enriched = ip_legal.enrich_ip_asset_data(suggested)
+        return {
+            "success": True,
+            "found": False,
+            "query": search_term,
+            "message": f"No se encontraron antecedentes públicos online para '{search_term}'. Podés incorporarlo directamente para iniciar el seguimiento y cómputo legal.",
+            "result": enriched
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error consultando patente o modelo: {str(e)}")
+
 @router.get("/consulta-modelo")
 def consulta_modelo(acta: str = Query(..., description="Número de acta o expediente del modelo o diseño industrial")):
     """
     Consulta en tiempo real los datos oficiales de un Modelo o Diseño Industrial en el portal del INPI.
+    Si no se encuentra en Modelos, intenta consultar en bases de Patentes y Modelos de Utilidad.
     """
+    clean_acta = acta if isinstance(acta, str) else ""
+    clean_acta = clean_acta.strip()
+    if not clean_acta:
+        raise HTTPException(status_code=400, detail="Debe ingresar un número de acta o expediente.")
+
     try:
-        raw_data = _fetch_inpi_modelo(acta)
-        if not raw_data:
+        from src.utils import ip_legal
+        raw_data = _fetch_inpi_modelo(clean_acta)
+        if raw_data:
+            enriched = ip_legal.enrich_ip_asset_data(raw_data)
+            enriched['renovaciones_oficiales'] = raw_data.get('renovaciones_oficiales', [])
             return {
-                "success": False,
-                "message": f"No se encontró ningún Modelo o Diseño Industrial con el Acta / Número '{acta}' en el INPI."
+                "success": True,
+                "found": True,
+                "source": "INPI Argentina (Modelos Oficial)",
+                "result": enriched
             }
-        enriched = ip_legal.enrich_ip_asset_data(raw_data)
-        enriched['renovaciones_oficiales'] = raw_data.get('renovaciones_oficiales', [])
+
+        # Fallback a Patentes / Modelos de Utilidad
+        patent_data = _fetch_patent_data(clean_acta)
+        if patent_data:
+            enriched = ip_legal.enrich_ip_asset_data(patent_data)
+            return {
+                "success": True,
+                "found": True,
+                "source": patent_data.get('source', 'Google Patents / Espacenet'),
+                "result": enriched
+            }
+
         return {
-            "success": True,
-            "result": enriched
+            "success": False,
+            "found": False,
+            "message": f"No se encontró ningún Modelo o Diseño Industrial con el Acta / Número '{clean_acta}' en el INPI."
         }
     except HTTPException:
         raise
@@ -386,6 +613,7 @@ class AddMonitoredItem(BaseModel):
     fecha_concesion: Optional[str] = None
     fecha_concesion_estimada: Optional[str] = None
     fecha_vencimiento_10anos: Optional[str] = None
+    fecha_proximo_vencimiento: Optional[str] = None
     requiere_djumt: Optional[bool] = False
     djumt_codigo: Optional[str] = None
     djumt_mensaje: Optional[str] = None
@@ -409,13 +637,17 @@ class UpdateMonitoredItem(BaseModel):
     inventores_disenadores: Optional[str] = None
     clasificacion: Optional[str] = None
     estado: Optional[str] = None
+    numero_resolucion: Optional[str] = None
     fecha_ingreso: Optional[str] = None
     fecha_concesion: Optional[str] = None
+    fecha_proximo_vencimiento: Optional[str] = None
     quinquenio_actual: Optional[int] = None
     anualidades_pagadas: Optional[int] = None
     notes: Optional[str] = None
     image_url: Optional[str] = None
     document_url: Optional[str] = None
+    alerta_estado: Optional[str] = None
+    alerta_mensaje: Optional[str] = None
 
 class UpdateImageItem(BaseModel):
     image_url: str
