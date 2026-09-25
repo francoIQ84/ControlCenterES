@@ -649,6 +649,22 @@ def init_db():
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_quotes_created_at ON quotes(created_at DESC);')
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_quotes_order_id ON quotes(order_id);')
 
+            # User notification reads table (tracks per-user read/dismissed state per tenant)
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS user_notification_reads (
+                    id SERIAL PRIMARY KEY,
+                    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                    notification_id VARCHAR(255) NOT NULL,
+                    is_read BOOLEAN NOT NULL DEFAULT TRUE,
+                    is_dismissed BOOLEAN NOT NULL DEFAULT FALSE,
+                    read_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    tenant_id UUID DEFAULT app_current_tenant(),
+                    CONSTRAINT uq_user_notif_read UNIQUE (user_id, notification_id)
+                )
+            ''')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_unr_user_id ON user_notification_reads(user_id);')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_unr_notif_id ON user_notification_reads(notification_id);')
+
             # Seed default admin user if no users exist
             cursor.execute("SELECT COUNT(*) as count FROM users")
             if cursor.fetchone()['count'] == 0:
@@ -3449,8 +3465,9 @@ def update_monitored_trademark_data(acta: str, item: dict):
             ))
             return True
 
-def get_system_notifications():
-    """Compila las notificaciones de eventos importantes (INPI, Ventas, Stock)."""
+def get_system_notifications(user_id=None):
+    """Compila las notificaciones de eventos importantes (INPI, Ventas, Stock, Leads, WhatsApp)
+    con enriquecimiento de detalles completos y estado de lectura/descarte por usuario."""
     notifications = []
     
     with get_connection() as conn:
@@ -3460,6 +3477,8 @@ def get_system_notifications():
                 cursor.execute('''
                     SELECT acta, denominacion, djumt_codigo, djumt_mensaje,
                            COALESCE(asset_type, 'marca') as asset_type,
+                           subtipo, clasificacion, inventores_disenadores, fecha_concesion,
+                           quinquenio_actual, anualidades_pagadas, proxima_anualidad,
                            alerta_estado, alerta_mensaje, fecha_proximo_vencimiento
                     FROM monitored_trademarks
                     WHERE djumt_codigo IN ('PRESENTAR_AHORA', 'EN_MORA')
@@ -3474,6 +3493,21 @@ def get_system_notifications():
                     alerta_msg = r.get('alerta_mensaje') or r.get('djumt_mensaje') or ''
                     time_val = r.get('fecha_proximo_vencimiento') or 'Urgente'
 
+                    details_payload = {
+                        'acta': acta,
+                        'denominacion': denom,
+                        'asset_type': a_type,
+                        'subtipo': r.get('subtipo'),
+                        'clasificacion': r.get('clasificacion'),
+                        'alerta_codigo': code,
+                        'alerta_mensaje': alerta_msg,
+                        'fecha_vencimiento': time_val,
+                        'fecha_concesion': r.get('fecha_concesion'),
+                        'inventores_disenadores': r.get('inventores_disenadores'),
+                        'anualidad_actual': r.get('proxima_anualidad') or r.get('anualidades_pagadas'),
+                        'quinquenio_actual': r.get('quinquenio_actual')
+                    }
+
                     if a_type == 'patente':
                         notifications.append({
                             'id': f'inpi_patente_{acta}',
@@ -3482,7 +3516,8 @@ def get_system_notifications():
                             'title': f'💡 Anualidad Patente: {denom[:28]}',
                             'message': alerta_msg or f'Atención en vencimiento de anualidad de Patente (Acta #{acta}).',
                             'link': '/inpi',
-                            'time': time_val
+                            'time': time_val,
+                            'details': details_payload
                         })
                     elif a_type == 'modelo_utilidad':
                         notifications.append({
@@ -3492,7 +3527,8 @@ def get_system_notifications():
                             'title': f'⚙️ Anualidad Mod. Utilidad: {denom[:26]}',
                             'message': alerta_msg or f'Atención en anualidad de Modelo de Utilidad (Acta #{acta}).',
                             'link': '/inpi',
-                            'time': time_val
+                            'time': time_val,
+                            'details': details_payload
                         })
                     elif a_type == 'diseno_industrial':
                         notifications.append({
@@ -3502,7 +3538,8 @@ def get_system_notifications():
                             'title': f'🎨 Renovación Diseño: {denom[:28]}',
                             'message': alerta_msg or f'Ventana de renovación de quinquenio para Diseño Industrial (Acta #{acta}).',
                             'link': '/inpi',
-                            'time': time_val
+                            'time': time_val,
+                            'details': details_payload
                         })
                     else: # Marca
                         if code == 'EN_MORA':
@@ -3513,7 +3550,8 @@ def get_system_notifications():
                                 'title': f'⚠️ DJUMT Vencida: {denom}',
                                 'message': f'La marca (Acta #{acta}) supera los 6 años sin Declaración Jurada de Uso.',
                                 'link': '/inpi',
-                                'time': 'Urgente'
+                                'time': 'Urgente',
+                                'details': details_payload
                             })
                         elif code == 'PRESENTAR_AHORA':
                             notifications.append({
@@ -3523,7 +3561,8 @@ def get_system_notifications():
                                 'title': f'🟠 Presentar DJUMT: {denom}',
                                 'message': f'Ventanilla abierta (5° a 6° año) para Acta #{acta}.',
                                 'link': '/inpi',
-                                'time': 'En ventana'
+                                'time': 'En ventana',
+                                'details': details_payload
                             })
             except Exception as err:
                 print("[Database] Error fetching INPI notifications:", err)
@@ -3531,10 +3570,12 @@ def get_system_notifications():
             # 2. Nuevas Ventas Recientes (Últimas ventas sincronizadas de MeLi, MP, Web, Local)
             try:
                 cursor.execute('''
-                    SELECT order_id, buyer_nickname, buyer_name, total_amount, source_platform, date_created
+                    SELECT order_id, buyer_nickname, buyer_name, buyer_id, total_amount, currency_id,
+                           source_platform, date_created, status, payment_status, shipping_status,
+                           items_json, payment_method
                     FROM orders_cache
                     ORDER BY date_created DESC
-                    LIMIT 10
+                    LIMIT 15
                 ''')
                 sales_rows = cursor.fetchall()
                 for s in sales_rows:
@@ -3558,6 +3599,21 @@ def get_system_notifications():
                         except Exception:
                             time_str = 'Reciente'
 
+                    items_list = []
+                    if s.get('items_json'):
+                        try:
+                            raw_items = json.loads(s['items_json']) if isinstance(s['items_json'], str) else s['items_json']
+                            if isinstance(raw_items, list):
+                                for itm in raw_items:
+                                    items_list.append({
+                                        'title': itm.get('title') or itm.get('item_title') or 'Artículo',
+                                        'quantity': itm.get('quantity', 1),
+                                        'unit_price': float(itm.get('unit_price') or itm.get('price') or 0),
+                                        'sku': itm.get('seller_sku') or itm.get('sku') or ''
+                                    })
+                        except Exception:
+                            pass
+
                     notifications.append({
                         'id': f'sale_{sale_id}',
                         'category': 'sales',
@@ -3565,7 +3621,22 @@ def get_system_notifications():
                         'title': f'🛒 Nueva Venta ({platform}): ${total:,.2f}',
                         'message': f'Comprador: {buyer} (Orden #{sale_id})',
                         'link': '/sales',
-                        'time': time_str
+                        'time': time_str,
+                        'details': {
+                            'order_id': sale_id,
+                            'buyer_name': s.get('buyer_name'),
+                            'buyer_nickname': s.get('buyer_nickname'),
+                            'buyer_id': s.get('buyer_id'),
+                            'total_amount': total,
+                            'currency_id': s.get('currency_id') or 'ARS',
+                            'platform': platform,
+                            'status': s.get('status'),
+                            'payment_status': s.get('payment_status'),
+                            'payment_method': s.get('payment_method'),
+                            'shipping_status': s.get('shipping_status'),
+                            'date_created': str(raw_date or ''),
+                            'items': items_list
+                        }
                     })
             except Exception as err:
                 print("[Database] Error fetching sales notifications:", err)
@@ -3573,11 +3644,12 @@ def get_system_notifications():
             # 3. Alertas de Stock Crítico (Inventario)
             try:
                 cursor.execute('''
-                    SELECT ml_id, title, available_quantity
+                    SELECT ml_id, title, available_quantity, min_stock, price, price_web, cost_price,
+                           thumbnail, status, permalink
                     FROM products_cache
                     WHERE available_quantity <= 3 AND COALESCE(is_hidden, 0) = 0
                     ORDER BY available_quantity ASC
-                    LIMIT 5
+                    LIMIT 8
                 ''')
                 stock_rows = cursor.fetchall()
                 for p in stock_rows:
@@ -3591,7 +3663,19 @@ def get_system_notifications():
                         'title': f'📦 Stock Crítico ({stk} u.): {title[:28]}',
                         'message': 'Sin stock' if stk == 0 else f'Quedan solo {stk} unidades disponibles.',
                         'link': '/inventory',
-                        'time': 'Inventario'
+                        'time': 'Inventario',
+                        'details': {
+                            'ml_id': ml_id,
+                            'title': title,
+                            'available_quantity': stk,
+                            'min_stock': p.get('min_stock', 0),
+                            'price': float(p.get('price') or 0),
+                            'price_web': float(p.get('price_web') or 0),
+                            'cost_price': float(p.get('cost_price') or 0),
+                            'thumbnail': p.get('thumbnail'),
+                            'status': p.get('status'),
+                            'permalink': p.get('permalink')
+                        }
                     })
             except Exception as err:
                 print("[Database] Error fetching stock notifications:", err)
@@ -3599,10 +3683,10 @@ def get_system_notifications():
             # 4. Alertas de Leads / Suscriptores Recientes
             try:
                 cursor.execute('''
-                    SELECT id, name, email, country, created_at
+                    SELECT id, name, email, country, source, pdf_sent, created_at
                     FROM leads
                     ORDER BY id DESC
-                    LIMIT 5
+                    LIMIT 8
                 ''')
                 lead_rows = cursor.fetchall()
                 for l in lead_rows:
@@ -3618,7 +3702,16 @@ def get_system_notifications():
                         'title': f'🌱 Nuevo Lead: {name_disp}',
                         'message': f'Email: {email_disp} ({country_disp})',
                         'link': '/settings?tab=lead_popup',
-                        'time': time_str
+                        'time': time_str,
+                        'details': {
+                            'lead_id': lead_id,
+                            'name': name_disp,
+                            'email': email_disp,
+                            'country': country_disp,
+                            'source': l.get('source') or 'Formulario Web',
+                            'pdf_sent': bool(l.get('pdf_sent')),
+                            'created_at': l['created_at'].isoformat() if hasattr(l.get('created_at'), 'isoformat') else str(l.get('created_at') or '')
+                        }
                     })
             except Exception as err:
                 print("[Database] Error fetching lead notifications:", err)
@@ -3626,7 +3719,7 @@ def get_system_notifications():
             # 5. Notificaciones de WhatsApp (Solicitudes de Atención Humana y Consultas)
             try:
                 cursor.execute('''
-                    SELECT sender, reason, created_at
+                    SELECT sender, paused_until, reason, created_at
                     FROM whatsapp_paused_chats
                     ORDER BY created_at DESC
                     LIMIT 5
@@ -3642,15 +3735,108 @@ def get_system_notifications():
                         'title': f'💬 Atención Humana: +{sender}',
                         'message': 'El cliente solicitó hablar con un asesor o se pausó el bot.',
                         'link': '/settings?tab=whatsapp',
-                        'time': time_str
+                        'time': time_str,
+                        'details': {
+                            'sender': sender,
+                            'reason': p.get('reason'),
+                            'paused_until': p['paused_until'].isoformat() if hasattr(p.get('paused_until'), 'isoformat') else str(p.get('paused_until') or ''),
+                            'created_at': p['created_at'].isoformat() if hasattr(p.get('created_at'), 'isoformat') else str(p.get('created_at') or '')
+                        }
                     })
             except Exception as err:
                 print("[Database] Error fetching WhatsApp paused chat notifications:", err)
 
+            # Tracking de estado por usuario (lectura y descarte independiente por tenant)
+            user_states = {}
+            if user_id:
+                try:
+                    cursor.execute('''
+                        SELECT notification_id, is_read, is_dismissed
+                        FROM user_notification_reads
+                        WHERE user_id = %s
+                    ''', (user_id,))
+                    for row in cursor.fetchall():
+                        user_states[row['notification_id']] = {
+                            'is_read': bool(row.get('is_read')),
+                            'is_dismissed': bool(row.get('is_dismissed'))
+                        }
+                except Exception as err:
+                    print("[Database] Warning: user_notification_reads lookup error:", err)
+
+            active_notifications = []
+            for n in notifications:
+                st = user_states.get(n['id'], {})
+                n['is_read'] = st.get('is_read', False)
+                n['is_dismissed'] = st.get('is_dismissed', False)
+                if not n['is_dismissed']:
+                    active_notifications.append(n)
+
+            unread_count = sum(1 for n in active_notifications if not n.get('is_read', False))
+
     return {
-        'notifications': notifications,
-        'unread_count': len(notifications)
+        'notifications': active_notifications,
+        'unread_count': unread_count
     }
+
+def mark_notification_as_read(user_id: int, notification_id: str):
+    """Marca una notificación individual como leída para el usuario indicado."""
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute('''
+                INSERT INTO user_notification_reads (user_id, notification_id, is_read, read_at)
+                VALUES (%s, %s, TRUE, CURRENT_TIMESTAMP)
+                ON CONFLICT (user_id, notification_id)
+                DO UPDATE SET is_read = TRUE, read_at = CURRENT_TIMESTAMP
+            ''', (user_id, notification_id))
+            return True
+
+def dismiss_notification(user_id: int, notification_id: str):
+    """Descarta (elimina de la vista activa) una notificación individual para el usuario indicado."""
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute('''
+                INSERT INTO user_notification_reads (user_id, notification_id, is_read, is_dismissed, read_at)
+                VALUES (%s, %s, TRUE, TRUE, CURRENT_TIMESTAMP)
+                ON CONFLICT (user_id, notification_id)
+                DO UPDATE SET is_read = TRUE, is_dismissed = TRUE, read_at = CURRENT_TIMESTAMP
+            ''', (user_id, notification_id))
+            return True
+
+def mark_all_notifications_as_read(user_id: int, notification_ids: list = None):
+    """Marca todas las notificaciones activas como leídas para este usuario."""
+    if not notification_ids:
+        all_notifs = get_system_notifications(user_id=None).get('notifications', [])
+        notification_ids = [n['id'] for n in all_notifs]
+    if not notification_ids:
+        return True
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            for n_id in notification_ids:
+                cursor.execute('''
+                    INSERT INTO user_notification_reads (user_id, notification_id, is_read, read_at)
+                    VALUES (%s, %s, TRUE, CURRENT_TIMESTAMP)
+                    ON CONFLICT (user_id, notification_id)
+                    DO UPDATE SET is_read = TRUE, read_at = CURRENT_TIMESTAMP
+                ''', (user_id, n_id))
+            return True
+
+def clear_all_notifications(user_id: int, notification_ids: list = None):
+    """Descarta (limpia) todas las notificaciones activas para este usuario."""
+    if not notification_ids:
+        all_notifs = get_system_notifications(user_id=None).get('notifications', [])
+        notification_ids = [n['id'] for n in all_notifs]
+    if not notification_ids:
+        return True
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            for n_id in notification_ids:
+                cursor.execute('''
+                    INSERT INTO user_notification_reads (user_id, notification_id, is_read, is_dismissed, read_at)
+                    VALUES (%s, %s, TRUE, TRUE, CURRENT_TIMESTAMP)
+                    ON CONFLICT (user_id, notification_id)
+                    DO UPDATE SET is_read = TRUE, is_dismissed = TRUE, read_at = CURRENT_TIMESTAMP
+                ''', (user_id, n_id))
+            return True
 
 # --- Marketing Operations ---
 

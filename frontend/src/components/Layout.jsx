@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react'
 import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom'
-import { LayoutDashboard, Package, Receipt, Users, Settings, Sun, Moon, RefreshCw, Zap, Image, LogOut, Menu, FileText, Wallet, BookOpen, ShieldCheck, Bell, CheckCircle2, X, Megaphone, UserCheck, MessageSquare, Building2, HelpCircle, Eye, Layers, Sparkles, ClipboardList } from 'lucide-react'
+import { LayoutDashboard, Package, Receipt, Users, Settings, Sun, Moon, RefreshCw, Zap, Image, LogOut, Menu, FileText, Wallet, BookOpen, ShieldCheck, Bell, CheckCircle2, X, Megaphone, UserCheck, MessageSquare, Building2, HelpCircle, Eye, Layers, Sparkles, ClipboardList, ChevronRight, Check } from 'lucide-react'
 import { useTenant } from '../TenantContext'
+import NotificationDetailModal from './NotificationDetailModal'
 
 // Mapa de ayuda contextual por ruta — se muestra al pulsar el botón "?"
 const PAGE_HELP = {
@@ -226,36 +227,25 @@ export default function Layout() {
   const [showProgressModal, setShowProgressModal] = useState(false)
   const [tnStatus, setTnStatus] = useState(null)
 
-  // Notification Center State
+  // Notification Center State (Per-user tenant isolation)
   const [notifications, setNotifications] = useState([])
+  const [unreadCount, setUnreadCount] = useState(0)
   const [showNotifications, setShowNotifications] = useState(false)
+  const [selectedNotification, setSelectedNotification] = useState(null)
   const [showHelp, setShowHelp] = useState(false)
   const [activeNotifFilter, setActiveNotifFilter] = useState('all')
-  const [dismissedIds, setDismissedIds] = useState(() => {
-    try {
-      const saved = localStorage.getItem('cc_dismissed_notifications')
-      return saved ? JSON.parse(saved) : []
-    } catch {
-      return []
-    }
-  })
-
-  const saveDismissedIds = (newIds) => {
-    const unique = Array.from(new Set(newIds)).slice(-500)
-    setDismissedIds(unique)
-    try {
-      localStorage.setItem('cc_dismissed_notifications', JSON.stringify(unique))
-    } catch (e) {
-      console.error("Error saving dismissed notifications:", e)
-    }
-  }
 
   const fetchNotifications = async () => {
     try {
       const res = await fetch('/api/dashboard/notifications')
       if (res.ok) {
         const data = await res.json()
-        setNotifications(data.notifications || [])
+        const notifs = data.notifications || []
+        setNotifications(notifs)
+        const unread = typeof data.unread_count === 'number'
+          ? data.unread_count
+          : notifs.filter(n => !n.is_read).length
+        setUnreadCount(unread)
       }
     } catch (err) {
       console.error("Error fetching notifications:", err)
@@ -264,29 +254,76 @@ export default function Layout() {
 
   useEffect(() => {
     fetchNotifications()
-    const interval = setInterval(fetchNotifications, 60000)
+    const interval = setInterval(fetchNotifications, 45000)
     return () => clearInterval(interval)
   }, [])
 
   const filteredNotifs = notifications
-    .filter(n => !dismissedIds.includes(n.id))
     .filter(n => activeNotifFilter === 'all' || n.category === activeNotifFilter)
 
-  const visibleUnreadCount = notifications.filter(n => !dismissedIds.includes(n.id)).length
-
-  const handleNotifClick = (n) => {
-    saveDismissedIds([...dismissedIds, n.id])
+  const handleNotifClick = async (n) => {
+    setSelectedNotification(n)
     setShowNotifications(false)
-    if (n.link) navigate(n.link)
+    if (!n.is_read) {
+      setNotifications(prev => prev.map(item => item.id === n.id ? { ...item, is_read: true } : item))
+      setUnreadCount(prev => Math.max(0, prev - 1))
+      try {
+        await fetch(`/api/dashboard/notifications/${encodeURIComponent(n.id)}/read`, {
+          method: 'POST'
+        })
+      } catch (err) {
+        console.error("Error marking notification as read:", err)
+      }
+    }
   }
 
-  const handleDismissSingle = (e, notifId) => {
-    e.stopPropagation()
-    saveDismissedIds([...dismissedIds, notifId])
+  const handleDismissSingle = async (e, notifId) => {
+    if (e && e.stopPropagation) e.stopPropagation()
+    const target = notifications.find(n => n.id === notifId)
+    setNotifications(prev => prev.filter(n => n.id !== notifId))
+    if (target && !target.is_read) {
+      setUnreadCount(prev => Math.max(0, prev - 1))
+    }
+    if (selectedNotification && selectedNotification.id === notifId) {
+      setSelectedNotification(null)
+    }
+    try {
+      await fetch(`/api/dashboard/notifications/${encodeURIComponent(notifId)}/dismiss`, {
+        method: 'POST'
+      })
+    } catch (err) {
+      console.error("Error dismissing notification:", err)
+    }
   }
 
-  const handleClearAllNotifs = () => {
-    saveDismissedIds([...dismissedIds, ...notifications.map(n => n.id)])
+  const handleClearAllNotifs = async () => {
+    const ids = notifications.map(n => n.id)
+    setNotifications([])
+    setUnreadCount(0)
+    try {
+      await fetch('/api/dashboard/notifications/clear-all', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ notification_ids: ids })
+      })
+    } catch (err) {
+      console.error("Error clearing all notifications:", err)
+    }
+  }
+
+  const handleMarkAllAsRead = async () => {
+    const ids = notifications.map(n => n.id)
+    setNotifications(prev => prev.map(n => ({ ...n, is_read: true })))
+    setUnreadCount(0)
+    try {
+      await fetch('/api/dashboard/notifications/mark-all-read', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ notification_ids: ids })
+      })
+    } catch (err) {
+      console.error("Error marking all notifications as read:", err)
+    }
   }
 
   useEffect(() => {
@@ -1044,7 +1081,7 @@ export default function Layout() {
                   style={{ position: 'relative' }}
                 >
                   <Bell size={20} />
-                  {visibleUnreadCount > 0 && (
+                  {unreadCount > 0 && (
                     <span style={{
                       position: 'absolute',
                       top: '-4px',
@@ -1059,7 +1096,7 @@ export default function Layout() {
                       border: '2px solid var(--bg-card)',
                       boxShadow: '0 0 6px rgba(239, 68, 68, 0.5)'
                     }}>
-                      {visibleUnreadCount}
+                      {unreadCount}
                     </span>
                   )}
                 </button>
@@ -1081,9 +1118,9 @@ export default function Layout() {
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                         <Bell size={18} style={{ color: 'var(--accent-blue)' }} />
                         <h4 style={{ margin: 0, fontSize: '0.95rem', fontWeight: 700 }}>Notificaciones</h4>
-                        {visibleUnreadCount > 0 && (
+                        {unreadCount > 0 && (
                           <span style={{ fontSize: '0.7rem', backgroundColor: 'var(--accent-red)', color: '#fff', padding: '1px 6px', borderRadius: '10px', fontWeight: 700 }}>
-                            {visibleUnreadCount}
+                            {unreadCount}
                           </span>
                         )}
                       </div>
@@ -1093,7 +1130,7 @@ export default function Layout() {
                             type="button"
                             onClick={handleClearAllNotifs}
                             style={{ background: 'none', border: 'none', color: 'var(--accent-blue)', fontSize: '0.75rem', fontWeight: 600, cursor: 'pointer' }}
-                            title="Marcar todas como leídas"
+                            title="Descartar todas las alertas"
                           >
                             Limpiar todo
                           </button>
@@ -1104,8 +1141,8 @@ export default function Layout() {
                       </div>
                     </div>
 
-                    {/* Filter Pills */}
-                    <div style={{ display: 'flex', gap: '6px', padding: '8px 12px', borderBottom: '1px solid var(--border-color)', backgroundColor: 'var(--bg-card)', overflowX: 'auto' }}>
+                    {/* Filter Pills without ugly scrollbar */}
+                    <div className="notif-filter-scroll">
                       {[
                         { id: 'all', label: 'Todas' },
                         { id: 'inpi', label: '🛡️ INPI' },
@@ -1146,19 +1183,11 @@ export default function Layout() {
                           <div
                             key={n.id}
                             onClick={() => handleNotifClick(n)}
-                            style={{
-                              padding: '12px 16px',
-                              borderBottom: '1px solid var(--border-color)',
-                              cursor: 'pointer',
-                              display: 'flex',
-                              gap: '12px',
-                              alignItems: 'flex-start',
-                              backgroundColor: 'transparent',
-                              transition: 'background-color 0.15s'
-                            }}
-                            onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--bg-hover)'}
-                            onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                            className={`notif-item-card ${!n.is_read ? 'is-unread' : ''}`}
+                            title="Tocar para ver detalle completo en pantalla"
                           >
+                            {!n.is_read && <span className="notif-unread-dot" title="No leída" />}
+
                             <div style={{
                               padding: '6px',
                               borderRadius: '8px',
@@ -1171,11 +1200,18 @@ export default function Layout() {
 
                             <div style={{ flex: 1, minWidth: 0 }}>
                               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2px' }}>
-                                <strong style={{ fontSize: '0.85rem', color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                <strong style={{
+                                  fontSize: '0.85rem',
+                                  color: 'var(--text-primary)',
+                                  fontWeight: n.is_read ? 500 : 700,
+                                  whiteSpace: 'nowrap',
+                                  overflow: 'hidden',
+                                  textOverflow: 'ellipsis'
+                                }}>
                                   {n.title}
                                 </strong>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginLeft: '6px' }}>
-                                  <span style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>{n.time}</span>
+                                  <span style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>{n.time}</span>
                                   <button
                                     type="button"
                                     onClick={(e) => handleDismissSingle(e, n.id)}
@@ -1198,9 +1234,13 @@ export default function Layout() {
                                   </button>
                                 </div>
                               </div>
-                              <p style={{ margin: 0, fontSize: '0.78rem', color: 'var(--text-secondary)', lineHeight: '1.3' }}>
+                              <p style={{ margin: 0, fontSize: '0.78rem', color: 'var(--text-secondary)', lineHeight: '1.3', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                                 {n.message}
                               </p>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginTop: '4px', fontSize: '0.7rem', color: 'var(--accent-blue)', fontWeight: 600 }}>
+                                <span>Ver detalle</span>
+                                <ChevronRight size={12} />
+                              </div>
                             </div>
                           </div>
                         ))
@@ -1209,12 +1249,27 @@ export default function Layout() {
 
                     {/* Footer */}
                     {filteredNotifs.length > 0 && (
-                      <div style={{ padding: '8px 16px', borderTop: '1px solid var(--border-color)', backgroundColor: 'var(--bg-dark)', textAlign: 'center' }}>
+                      <div style={{
+                        padding: '10px 16px',
+                        borderTop: '1px solid var(--border-color)',
+                        backgroundColor: 'var(--bg-dark)',
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center'
+                      }}>
                         <button
-                          onClick={handleClearAllNotifs}
+                          type="button"
+                          onClick={handleMarkAllAsRead}
                           style={{ background: 'none', border: 'none', color: 'var(--accent-blue)', fontSize: '0.78rem', fontWeight: 600, cursor: 'pointer' }}
                         >
                           Marcar todas como leídas
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleClearAllNotifs}
+                          style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', fontSize: '0.75rem', cursor: 'pointer' }}
+                        >
+                          Limpiar todo
                         </button>
                       </div>
                     )}
@@ -1383,6 +1438,19 @@ export default function Layout() {
           </div>
         </div>
       )}
+
+      {/* Notification Detail Modal (Responsive & mobile-ready for iPhone / smartphones) */}
+      <NotificationDetailModal
+        notification={selectedNotification}
+        isOpen={Boolean(selectedNotification)}
+        onClose={() => setSelectedNotification(null)}
+        onDismiss={(id) => handleDismissSingle(null, id)}
+        onNavigate={(link) => {
+          setSelectedNotification(null)
+          setShowNotifications(false)
+          navigate(link)
+        }}
+      />
     </div>
   )
 }
