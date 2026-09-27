@@ -2,7 +2,7 @@ import React, { useEffect, useState, useMemo } from 'react'
 import { 
   DollarSign, TrendingUp, ShoppingBag, AlertTriangle, Eye, Globe, 
   TrendingDown, ChevronDown, ChevronUp, BarChart3, MapPin, 
-  ExternalLink 
+  ExternalLink, Award, Package, Store
 } from 'lucide-react'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
 import { useTenant } from '../TenantContext'
@@ -353,10 +353,10 @@ export default function Dashboard() {
 
       {!isSimpleView && (
         <>
-          {/* Row 1: Sales Trend Chart & Top Products Widget */}
+          {/* Row 1: Sales Trend Chart & Top Selling Products (Top 30 across ML, TN, Local) */}
           <div className="dashboard-widgets-grid">
             <SalesTrendWidget chartData={chartData} totalRevenue={stats.total_revenue} />
-            <TopProductsWidget products={stats.top_products || []} />
+            <TopSellingProductsWidget products={stats.top_selling_products || []} />
           </div>
 
           {/* Critical Stock Alert List (Collapsible) */}
@@ -364,10 +364,13 @@ export default function Dashboard() {
             <LowStockAlertWidget products={stats.low_stock_products} />
           )}
 
-          {/* Row 2: Web Visits Breakdown (Domains & Countries) */}
+          {/* Row 2: Most Viewed Products & Web Traffic Sources */}
           <div className="dashboard-widgets-grid">
-            <DomainVisitsWidget visits={stats.visits_by_domain || []} />
-            <CountryVisitsWidget visits={stats.visits_by_country || []} />
+            <TopProductsWidget products={stats.top_products || []} />
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
+              <DomainVisitsWidget visits={stats.visits_by_domain || []} />
+              <CountryVisitsWidget visits={stats.visits_by_country || []} />
+            </div>
           </div>
         </>
       )}
@@ -550,6 +553,610 @@ function SalesTrendWidget({ chartData = [], totalRevenue = 0 }) {
         </div>
       ) : (
         <p className="kpi-subtitle" style={{ margin: '30px 0', textAlign: 'center' }}>No hay datos suficientes</p>
+      )}
+    </DashboardCollapsibleCard>
+  )
+}
+
+// =============================================================================
+// TOP SELLING PRODUCTS WIDGET (Top 30 Best-Sellers across ML, TN, Local)
+// =============================================================================
+function TopSellingProductsWidget({ products = [] }) {
+  const [search, setSearch] = useState('')
+  const [channelFilter, setChannelFilter] = useState('all') // 'all', 'meli', 'tn', 'local'
+  const [sortBy, setSortBy] = useState('qty') // 'qty' (unidades), 'revenue' (facturación)
+  const [displayLimit, setDisplayLimit] = useState(5)
+  const [expandedIds, setExpandedIds] = useState({})
+  const isMobile = useIsMobile()
+  const [showFilters, setShowFilters] = useState(!isMobileViewport())
+
+  const toggleExpand = (id) => {
+    setExpandedIds(prev => ({ ...prev, [id]: !prev[id] }))
+  }
+
+  const filteredAndSorted = useMemo(() => {
+    let list = [...products]
+
+    // 1. Text Search Filter
+    if (search.trim()) {
+      const q = search.toLowerCase().trim()
+      list = list.filter(p => 
+        (p.title || '').toLowerCase().includes(q) || 
+        (p.id || '').toLowerCase().includes(q)
+      )
+    }
+
+    // 2. Channel Filter
+    if (channelFilter === 'meli') {
+      list = list.filter(p => (p.meli_qty || 0) > 0)
+    } else if (channelFilter === 'tn') {
+      list = list.filter(p => (p.tn_qty || 0) > 0)
+    } else if (channelFilter === 'local') {
+      list = list.filter(p => (p.local_qty || 0) > 0)
+    }
+
+    // 3. Sort Order
+    list.sort((a, b) => {
+      let aQty = a.total_qty || 0
+      let bQty = b.total_qty || 0
+      let aRev = a.total_revenue || 0
+      let bRev = b.total_revenue || 0
+
+      if (channelFilter === 'meli') {
+        aQty = a.meli_qty || 0
+        bQty = b.meli_qty || 0
+        aRev = a.meli_revenue || 0
+        bRev = b.meli_revenue || 0
+      } else if (channelFilter === 'tn') {
+        aQty = a.tn_qty || 0
+        bQty = b.tn_qty || 0
+        aRev = a.tn_revenue || 0
+        bRev = b.tn_revenue || 0
+      } else if (channelFilter === 'local') {
+        aQty = a.local_qty || 0
+        bQty = b.local_qty || 0
+        aRev = a.local_revenue || 0
+        bRev = b.local_revenue || 0
+      }
+
+      if (sortBy === 'revenue') {
+        return bRev - aRev || bQty - aQty
+      } else {
+        return bQty - aQty || bRev - aRev
+      }
+    })
+
+    // Top 30 restriction
+    return list.slice(0, 30)
+  }, [products, search, channelFilter, sortBy])
+
+  const visibleList = filteredAndSorted.slice(0, displayLimit)
+
+  // Totals for current filtered list
+  const totalUnits = useMemo(() => {
+    return filteredAndSorted.reduce((sum, p) => {
+      if (channelFilter === 'meli') return sum + (p.meli_qty || 0)
+      if (channelFilter === 'tn') return sum + (p.tn_qty || 0)
+      if (channelFilter === 'local') return sum + (p.local_qty || 0)
+      return sum + (p.total_qty || 0)
+    }, 0)
+  }, [filteredAndSorted, channelFilter])
+
+  const totalRevenue = useMemo(() => {
+    return filteredAndSorted.reduce((sum, p) => {
+      if (channelFilter === 'meli') return sum + (p.meli_revenue || 0)
+      if (channelFilter === 'tn') return sum + (p.tn_revenue || 0)
+      if (channelFilter === 'local') return sum + (p.local_revenue || 0)
+      return sum + (p.total_revenue || 0)
+    }, 0)
+  }, [filteredAndSorted, channelFilter])
+
+  const maxQty = useMemo(() => {
+    if (filteredAndSorted.length === 0) return 1
+    return Math.max(...filteredAndSorted.map(p => {
+      if (channelFilter === 'meli') return p.meli_qty || 0
+      if (channelFilter === 'tn') return p.tn_qty || 0
+      if (channelFilter === 'local') return p.local_qty || 0
+      return p.total_qty || 0
+    }), 1)
+  }, [filteredAndSorted, channelFilter])
+
+  const areAllExpanded = visibleList.length > 0 && visibleList.every(p => expandedIds[p.id])
+
+  const toggleExpandAll = () => {
+    if (areAllExpanded) {
+      setExpandedIds({})
+    } else {
+      const newExp = {}
+      visibleList.forEach(p => { newExp[p.id] = true })
+      setExpandedIds(newExp)
+    }
+  }
+
+  return (
+    <DashboardCollapsibleCard
+      title="Productos más Vendidos"
+      icon={Award}
+      iconColor="var(--accent-emerald)"
+      badge={isMobile ? `Top 30` : `Top 30 (${totalUnits.toLocaleString()} u. | $${Math.round(totalRevenue).toLocaleString()})`}
+      badgeColor="var(--accent-emerald)"
+      badgeBg="rgba(16, 185, 129, 0.12)"
+      defaultOpen={true}
+      mobileDefaultOpen={false}
+      storageKey="topSellingProducts"
+      extraHeaderActions={
+        visibleList.length > 0 ? (
+          <button
+            type="button"
+            className="dashboard-pill"
+            onClick={toggleExpandAll}
+            style={{
+              backgroundColor: 'var(--bg-dark)',
+              border: '1px solid var(--border-color)',
+              color: 'var(--text-secondary)',
+              cursor: 'pointer',
+              fontSize: '0.7rem'
+            }}
+            title={areAllExpanded ? 'Plegar todos los detalles' : 'Desplegar todos los detalles'}
+          >
+            {areAllExpanded ? 'Plegar todo' : 'Desplegar todo'}
+          </button>
+        ) : null
+      }
+    >
+      {/* Mobile toggle for filters */}
+      {isMobile && (
+        <button
+          type="button"
+          className="dashboard-pill"
+          onClick={() => setShowFilters(v => !v)}
+          style={{
+            width: '100%',
+            marginBottom: 8,
+            backgroundColor: 'var(--bg-dark)',
+            border: '1px solid var(--border-color)',
+            color: 'var(--text-secondary)',
+            cursor: 'pointer',
+            fontWeight: 600,
+            justifyContent: 'space-between'
+          }}
+        >
+          <span>Canales y filtros</span>
+          {showFilters ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+        </button>
+      )}
+
+      {/* Search & Channel Controls */}
+      <div style={{ display: (!isMobile || showFilters) ? 'flex' : 'none', flexDirection: 'column', gap: 8, marginBottom: 12 }}>
+        {/* Row 1: Search & Channel Dropdown */}
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+          <div style={{ position: 'relative', flex: '1 1 180px', minWidth: '150px' }}>
+            <input 
+              type="text" 
+              placeholder="Buscar producto más vendido o ID..." 
+              value={search} 
+              onChange={e => setSearch(e.target.value)} 
+              style={{
+                width: '100%', 
+                padding: '6px 28px 6px 10px', 
+                fontSize: '0.8rem', 
+                backgroundColor: 'var(--bg-dark)', 
+                color: 'var(--text-primary)', 
+                border: '1px solid var(--border-color)', 
+                borderRadius: 6,
+                minHeight: '34px'
+              }}
+            />
+            {search && (
+              <button 
+                type="button" 
+                onClick={() => setSearch('')} 
+                style={{
+                  position: 'absolute', 
+                  right: 8, 
+                  top: '50%', 
+                  transform: 'translateY(-50%)', 
+                  background: 'none', 
+                  border: 'none', 
+                  color: 'var(--text-secondary)', 
+                  cursor: 'pointer', 
+                  fontSize: '0.85rem',
+                  minHeight: 'auto',
+                  padding: 2
+                }}
+              >
+                ✕
+              </button>
+            )}
+          </div>
+
+          <div style={{ flex: '0 0 auto' }}>
+            <select 
+              value={channelFilter} 
+              onChange={e => setChannelFilter(e.target.value)}
+              style={{
+                padding: '5px 8px', 
+                fontSize: '0.76rem', 
+                borderRadius: 6, 
+                border: '1px solid var(--border-color)',
+                backgroundColor: 'var(--bg-dark)', 
+                color: 'var(--text-primary)', 
+                cursor: 'pointer',
+                minHeight: '34px',
+                fontWeight: 600
+              }}
+            >
+              <option value="all">📦 Todos los canales</option>
+              <option value="meli">💛 Mercado Libre</option>
+              <option value="tn">🌐 Tienda Nube</option>
+              <option value="local">🏪 Local Comercial</option>
+            </select>
+          </div>
+        </div>
+
+        {/* Row 2: Sort Buttons & Quick Stats */}
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: 6,
+          flexWrap: 'wrap',
+          backgroundColor: 'var(--bg-dark)',
+          padding: '6px 8px',
+          borderRadius: 8
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
+            <span style={{ fontSize: '0.72rem', fontWeight: 600, color: 'var(--text-secondary)', marginRight: 2 }}>
+              Ordenar:
+            </span>
+            <button 
+              type="button" 
+              className="dashboard-pill"
+              onClick={() => setSortBy('qty')}
+              style={{
+                border: 'none', cursor: 'pointer', fontWeight: 600,
+                backgroundColor: sortBy === 'qty' ? 'var(--accent-emerald)' : 'var(--bg-card)',
+                color: sortBy === 'qty' ? '#fff' : 'var(--text-primary)'
+              }}
+            >
+              📦 Unidades
+            </button>
+            <button 
+              type="button" 
+              className="dashboard-pill"
+              onClick={() => setSortBy('revenue')}
+              style={{
+                border: 'none', cursor: 'pointer', fontWeight: 600,
+                backgroundColor: sortBy === 'revenue' ? 'var(--accent-blue)' : 'var(--bg-card)',
+                color: sortBy === 'revenue' ? '#fff' : 'var(--text-primary)'
+              }}
+            >
+              💵 Facturación
+            </button>
+          </div>
+
+          <div style={{ display: 'flex', gap: 8, color: 'var(--text-secondary)', fontSize: '0.72rem', flexWrap: 'wrap' }}>
+            <span>Total: <b style={{ color: 'var(--accent-emerald)' }}>{totalUnits.toLocaleString()} u.</b></span>
+            <span>(${Math.round(totalRevenue).toLocaleString()})</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Product List */}
+      {visibleList.length > 0 ? (
+        <div>
+          {visibleList.map((p, idx) => {
+            const isExpanded = !!expandedIds[p.id]
+            const displayQty = channelFilter === 'meli' ? (p.meli_qty || 0) :
+                               channelFilter === 'tn' ? (p.tn_qty || 0) :
+                               channelFilter === 'local' ? (p.local_qty || 0) :
+                               (p.total_qty || 0)
+            const displayRev = channelFilter === 'meli' ? (p.meli_revenue || 0) :
+                               channelFilter === 'tn' ? (p.tn_revenue || 0) :
+                               channelFilter === 'local' ? (p.local_revenue || 0) :
+                               (p.total_revenue || 0)
+            const pctOfMax = Math.min(100, Math.max(4, (displayQty / maxQty) * 100))
+
+            // Rank badge style
+            let rankBg = 'var(--bg-dark)'
+            let rankColor = 'var(--text-secondary)'
+            let rankBorder = '1px solid var(--border-color)'
+            let rankBoxShadow = 'none'
+
+            if (idx === 0) {
+              rankBg = 'linear-gradient(135deg, #f59e0b, #d97706)'
+              rankColor = '#ffffff'
+              rankBorder = 'none'
+              rankBoxShadow = '0 2px 6px rgba(245, 158, 11, 0.35)'
+            } else if (idx === 1) {
+              rankBg = 'linear-gradient(135deg, #94a3b8, #64748b)'
+              rankColor = '#ffffff'
+              rankBorder = 'none'
+            } else if (idx === 2) {
+              rankBg = 'linear-gradient(135deg, #ea580c, #c2410c)'
+              rankColor = '#ffffff'
+              rankBorder = 'none'
+            }
+
+            return (
+              <div 
+                key={p.id || idx} 
+                className={`dashboard-product-row ${isExpanded ? 'is-expanded' : ''}`}
+                style={{
+                  borderLeft: idx < 3 ? `3px solid ${idx === 0 ? '#f59e0b' : idx === 1 ? '#94a3b8' : '#ea580c'}` : undefined
+                }}
+              >
+                {/* Compact Row Header */}
+                <div 
+                  className="dashboard-product-summary"
+                  onClick={() => toggleExpand(p.id)}
+                  title="Toca para desplegar desglose por canal"
+                >
+                  {/* Left: Rank + Thumbnail + Info */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, flex: 1 }}>
+                    <span style={{
+                      fontSize: '0.72rem',
+                      fontWeight: 700,
+                      background: rankBg,
+                      color: rankColor,
+                      border: rankBorder,
+                      boxShadow: rankBoxShadow,
+                      padding: '2px 6px',
+                      borderRadius: 6,
+                      minWidth: '26px',
+                      textAlign: 'center',
+                      flexShrink: 0
+                    }}>
+                      #{idx + 1}
+                    </span>
+
+                    {p.thumbnail ? (
+                      <img 
+                        src={p.thumbnail} 
+                        alt="" 
+                        style={{
+                          width: 34,
+                          height: 34,
+                          borderRadius: 6,
+                          objectFit: 'cover',
+                          border: '1px solid var(--border-color)',
+                          flexShrink: 0,
+                          backgroundColor: '#ffffff'
+                        }}
+                        loading="lazy"
+                        onError={(e) => { e.target.style.display = 'none' }}
+                      />
+                    ) : (
+                      <div style={{
+                        width: 34,
+                        height: 34,
+                        borderRadius: 6,
+                        backgroundColor: 'var(--bg-card)',
+                        border: '1px solid var(--border-color)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        flexShrink: 0
+                      }}>
+                        <Package size={16} style={{ color: 'var(--text-secondary)' }} />
+                      </div>
+                    )}
+
+                    <div style={{ minWidth: 0, flex: 1 }}>
+                      <div style={{
+                        fontSize: '0.84rem',
+                        fontWeight: 600,
+                        color: 'var(--text-primary)',
+                        whiteSpace: 'nowrap',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis'
+                      }} title={p.title}>
+                        {p.title}
+                      </div>
+
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 2, flexWrap: 'wrap' }}>
+                        <span style={{ fontSize: '0.68rem', color: 'var(--text-secondary)', fontFamily: 'monospace' }}>
+                          {p.id}
+                        </span>
+
+                        {p.current_stock !== null && p.current_stock !== undefined && (
+                          <span style={{
+                            fontSize: '0.66rem',
+                            fontWeight: 600,
+                            padding: '1px 5px',
+                            borderRadius: 4,
+                            backgroundColor: p.current_stock <= 3 ? 'rgba(239, 68, 68, 0.15)' : 'rgba(16, 185, 129, 0.12)',
+                            color: p.current_stock <= 3 ? 'var(--accent-red)' : 'var(--accent-emerald)'
+                          }}>
+                            Stock: {p.current_stock}
+                          </span>
+                        )}
+
+                        {/* Channel Badges */}
+                        {p.meli_qty > 0 && (
+                          <span style={{
+                            fontSize: '0.66rem',
+                            fontWeight: 600,
+                            padding: '1px 5px',
+                            borderRadius: 4,
+                            backgroundColor: 'rgba(245, 158, 11, 0.12)',
+                            color: 'var(--accent-amber)'
+                          }} title={`Mercado Libre: ${p.meli_qty} u.`}>
+                            ML: {p.meli_qty}
+                          </span>
+                        )}
+                        {p.tn_qty > 0 && (
+                          <span style={{
+                            fontSize: '0.66rem',
+                            fontWeight: 600,
+                            padding: '1px 5px',
+                            borderRadius: 4,
+                            backgroundColor: 'rgba(6, 182, 212, 0.12)',
+                            color: 'var(--accent-cyan)'
+                          }} title={`Tienda Nube: ${p.tn_qty} u.`}>
+                            TN: {p.tn_qty}
+                          </span>
+                        )}
+                        {p.local_qty > 0 && (
+                          <span style={{
+                            fontSize: '0.66rem',
+                            fontWeight: 600,
+                            padding: '1px 5px',
+                            borderRadius: 4,
+                            backgroundColor: 'rgba(16, 185, 129, 0.12)',
+                            color: 'var(--accent-emerald)'
+                          }} title={`Local Comercial: ${p.local_qty} u.`}>
+                            Local: {p.local_qty}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Right: Quantity & Revenue */}
+                  <div style={{ textAlign: 'right', flexShrink: 0, paddingLeft: 6 }}>
+                    <div style={{ fontSize: '0.86rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                      {displayQty} <span style={{ fontSize: '0.72rem', fontWeight: 500, color: 'var(--text-secondary)' }}>u.</span>
+                    </div>
+                    <div style={{ fontSize: '0.72rem', fontWeight: 600, color: 'var(--accent-emerald)' }}>
+                      ${Math.round(displayRev).toLocaleString()}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Relative Volume Progress Bar */}
+                <div style={{ width: '100%', height: 3, backgroundColor: 'var(--bg-card)', overflow: 'hidden' }}>
+                  <div style={{
+                    width: `${pctOfMax}%`,
+                    height: '100%',
+                    backgroundColor: idx === 0 ? 'var(--accent-amber)' : 'var(--accent-emerald)',
+                    transition: 'width 0.3s ease'
+                  }} />
+                </div>
+
+                {/* Expanded Details Card */}
+                {isExpanded && (
+                  <div className="dashboard-product-details">
+                    <div style={{
+                      display: 'grid',
+                      gridTemplateColumns: 'repeat(3, 1fr)',
+                      gap: 6,
+                      marginBottom: 10,
+                      textAlign: 'center'
+                    }}>
+                      <div style={{ padding: '6px 4px', backgroundColor: 'var(--bg-card)', borderRadius: 6, border: '1px solid var(--border-color)' }}>
+                        <div style={{ fontSize: '0.68rem', color: 'var(--accent-amber)', fontWeight: 600 }}>Mercado Libre</div>
+                        <div style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-primary)' }}>{p.meli_qty || 0} u.</div>
+                        <div style={{ fontSize: '0.68rem', color: 'var(--text-secondary)' }}>${Math.round(p.meli_revenue || 0).toLocaleString()}</div>
+                      </div>
+                      <div style={{ padding: '6px 4px', backgroundColor: 'var(--bg-card)', borderRadius: 6, border: '1px solid var(--border-color)' }}>
+                        <div style={{ fontSize: '0.68rem', color: 'var(--accent-cyan)', fontWeight: 600 }}>Tienda Nube</div>
+                        <div style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-primary)' }}>{p.tn_qty || 0} u.</div>
+                        <div style={{ fontSize: '0.68rem', color: 'var(--text-secondary)' }}>${Math.round(p.tn_revenue || 0).toLocaleString()}</div>
+                      </div>
+                      <div style={{ padding: '6px 4px', backgroundColor: 'var(--bg-card)', borderRadius: 6, border: '1px solid var(--border-color)' }}>
+                        <div style={{ fontSize: '0.68rem', color: 'var(--accent-emerald)', fontWeight: 600 }}>Local Comercial</div>
+                        <div style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-primary)' }}>{p.local_qty || 0} u.</div>
+                        <div style={{ fontSize: '0.68rem', color: 'var(--text-secondary)' }}>${Math.round(p.local_revenue || 0).toLocaleString()}</div>
+                      </div>
+                    </div>
+
+                    <div style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      fontSize: '0.74rem',
+                      color: 'var(--text-secondary)',
+                      flexWrap: 'wrap',
+                      gap: 6
+                    }}>
+                      <div>
+                        Precio prom.: <strong style={{ color: 'var(--text-primary)' }}>${Math.round(p.avg_price || 0).toLocaleString()}</strong>
+                        {p.orders_count > 0 && (
+                          <span style={{ marginLeft: 8 }}>
+                            en <strong style={{ color: 'var(--text-primary)' }}>{p.orders_count}</strong> orden(es)
+                          </span>
+                        )}
+                      </div>
+                      <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                        {p.id && p.id.startsWith('MLA') && (
+                          <a
+                            href={`https://articulo.mercadolibre.com.ar/${p.id.replace(/^MLA(\d+)/, 'MLA-$1')}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            style={{
+                              color: 'var(--accent-blue)',
+                              textDecoration: 'none',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 3,
+                              fontWeight: 600
+                            }}
+                          >
+                            MeLi <ExternalLink size={11} />
+                          </a>
+                        )}
+                        <a
+                          href="/inventory"
+                          style={{
+                            color: 'var(--accent-emerald)',
+                            textDecoration: 'none',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 3,
+                            fontWeight: 600
+                          }}
+                        >
+                          Inventario ➔
+                        </a>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )
+          })}
+
+          {/* Pagination Controls */}
+          <div style={{ display: 'flex', justifyContent: 'center', gap: 10, marginTop: 12 }}>
+            {filteredAndSorted.length > displayLimit && (
+              <button 
+                type="button" 
+                className="dashboard-pill"
+                onClick={() => setDisplayLimit(prev => Math.min(prev + 10, filteredAndSorted.length))}
+                style={{
+                  backgroundColor: 'var(--bg-dark)', 
+                  border: '1px solid var(--border-color)', 
+                  color: 'var(--accent-emerald)', 
+                  cursor: 'pointer',
+                  fontWeight: 600
+                }}
+              >
+                Ver más productos ({filteredAndSorted.length - displayLimit} restantes de Top 30)
+              </button>
+            )}
+
+            {displayLimit > 5 && (
+              <button 
+                type="button" 
+                className="dashboard-pill"
+                onClick={() => setDisplayLimit(5)}
+                style={{
+                  backgroundColor: 'var(--bg-dark)', 
+                  border: '1px solid var(--border-color)', 
+                  color: 'var(--text-secondary)', 
+                  cursor: 'pointer'
+                }}
+              >
+                Ver menos (Top 5)
+              </button>
+            )}
+          </div>
+        </div>
+      ) : (
+        <p className="kpi-subtitle" style={{ margin: '25px 0', textAlign: 'center', color: 'var(--text-secondary)' }}>
+          No se registraron ventas en este período para el filtro seleccionado.
+        </p>
       )}
     </DashboardCollapsibleCard>
   )

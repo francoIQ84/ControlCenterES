@@ -2302,24 +2302,129 @@ def get_dashboard_metrics(period="total", start_date_str=None, end_date_str=None
             cursor.execute(items_query, tuple(orders_params))
             orders_items = cursor.fetchall()
             
-            cursor.execute("SELECT ml_id, cost_price, cost_meli FROM products_cache")
-            costs = {r['ml_id']: (r['cost_price'], r['cost_meli']) for r in cursor.fetchall()}
+            cursor.execute("""
+                SELECT ml_id, title, thumbnail, available_quantity, cost_price, cost_meli, status, permalink, tn_id, tn_variant_id 
+                FROM products_cache
+            """)
+            all_prods_cache = cursor.fetchall()
+            costs = {r['ml_id']: (r['cost_price'] or 0.0, r['cost_meli'] or 0.0) for r in all_prods_cache if r.get('ml_id')}
             
+            by_ml_id = {r['ml_id']: r for r in all_prods_cache if r.get('ml_id')}
+            by_tn_id = {str(r['tn_id']).strip(): r for r in all_prods_cache if r.get('tn_id')}
+            by_tn_var = {str(r['tn_variant_id']).strip(): r for r in all_prods_cache if r.get('tn_variant_id')}
+            by_title = {r['title'].strip().lower(): r for r in all_prods_cache if r.get('title')}
+
             total_cost = 0.0
+            sold_products_map = {}
+
             for row in orders_items:
-                source_platform = row.get('source_platform', 'MERCADOLIBRE')
-                items = json.loads(row['items_json']) if row.get('items_json') else []
-                for item in items:
-                    ml_id = item.get('id')
-                    quantity = item.get('quantity', 1)
-                    cost_base, cost_ml = costs.get(ml_id, (0.0, 0.0))
+                source_platform_raw = (row.get('source_platform') or 'MERCADOLIBRE').strip().upper()
+                
+                # Clasificar canal: MERCADOLIBRE, TIENDANUBE, o LOCAL (tienda fisica, manual, otros)
+                if 'TIENDA' in source_platform_raw or source_platform_raw == 'TN':
+                    plat_category = 'TIENDANUBE'
+                elif 'MELI' in source_platform_raw or 'MERCADOLIBRE' in source_platform_raw:
+                    plat_category = 'MERCADOLIBRE'
+                else:
+                    plat_category = 'LOCAL'
                     
-                    if source_platform == 'MERCADOLIBRE':
+                items = []
+                if row.get('items_json'):
+                    try:
+                        items = json.loads(row['items_json'])
+                    except Exception:
+                        items = []
+                        
+                for item in items:
+                    raw_id = str(item.get('id') or item.get('item_id') or item.get('sku') or '').strip()
+                    raw_title = str(item.get('title') or item.get('name') or raw_id or 'Producto sin nombre').strip()
+                    
+                    try:
+                        quantity = int(item.get('quantity') or item.get('qty') or 1)
+                    except (ValueError, TypeError):
+                        quantity = 1
+                    quantity = max(1, quantity)
+                    
+                    try:
+                        unit_price = float(item.get('price') or item.get('unit_price') or 0.0)
+                    except (ValueError, TypeError):
+                        unit_price = 0.0
+                        
+                    subtotal = unit_price * quantity
+                    
+                    # Cost calculation
+                    cost_base, cost_ml = costs.get(raw_id, (0.0, 0.0))
+                    if plat_category == 'MERCADOLIBRE':
                         cost = cost_base + cost_ml
                     else:
                         cost = cost_base
-                        
                     total_cost += cost * quantity
+                    
+                    # Vincular con el catalogo de productos
+                    prod = (by_ml_id.get(raw_id) or 
+                            by_tn_var.get(raw_id) or 
+                            by_tn_id.get(raw_id) or 
+                            by_title.get(raw_title.lower()))
+                            
+                    if prod:
+                        group_key = prod['ml_id']
+                        p_id = prod['ml_id']
+                        p_title = prod['title']
+                        p_thumb = prod.get('thumbnail') or ''
+                        p_stock = prod.get('available_quantity')
+                        p_status = prod.get('status', 'active')
+                        p_permalink = prod.get('permalink') or ''
+                    else:
+                        group_key = raw_id if raw_id else raw_title.lower()
+                        p_id = raw_id or group_key
+                        p_title = raw_title
+                        p_thumb = ''
+                        p_stock = None
+                        p_status = 'active'
+                        p_permalink = ''
+                        
+                    if group_key not in sold_products_map:
+                        sold_products_map[group_key] = {
+                            'id': p_id,
+                            'title': p_title,
+                            'thumbnail': p_thumb,
+                            'current_stock': p_stock,
+                            'status': p_status,
+                            'permalink': p_permalink,
+                            'total_qty': 0,
+                            'total_revenue': 0.0,
+                            'orders_count': 0,
+                            'meli_qty': 0,
+                            'meli_revenue': 0.0,
+                            'tn_qty': 0,
+                            'tn_revenue': 0.0,
+                            'local_qty': 0,
+                            'local_revenue': 0.0,
+                        }
+                        
+                    entry = sold_products_map[group_key]
+                    entry['total_qty'] += quantity
+                    entry['total_revenue'] += subtotal
+                    entry['orders_count'] += 1
+                    
+                    if plat_category == 'MERCADOLIBRE':
+                        entry['meli_qty'] += quantity
+                        entry['meli_revenue'] += subtotal
+                    elif plat_category == 'TIENDANUBE':
+                        entry['tn_qty'] += quantity
+                        entry['tn_revenue'] += subtotal
+                    else:
+                        entry['local_qty'] += quantity
+                        entry['local_revenue'] += subtotal
+
+            for p in sold_products_map.values():
+                p['total_revenue'] = round(p['total_revenue'], 2)
+                p['meli_revenue'] = round(p['meli_revenue'], 2)
+                p['tn_revenue'] = round(p['tn_revenue'], 2)
+                p['local_revenue'] = round(p['local_revenue'], 2)
+                p['avg_price'] = round(p['total_revenue'] / p['total_qty'], 2) if p['total_qty'] > 0 else 0.0
+
+            top_selling_products = sorted(sold_products_map.values(), key=lambda x: (x['total_qty'], x['total_revenue']), reverse=True)[:50]
                     
             # --- EXPENSES CALCULATION ---
             # Variable expenses for the period (excluding money transfers and card payments)
@@ -2445,6 +2550,7 @@ def get_dashboard_metrics(period="total", start_date_str=None, end_date_str=None
                 'total_visits_meli': total_visits_meli,
                 'total_visits_web': total_visits_web,
                 'top_products': top_products,
+                'top_selling_products': top_selling_products,
                 'visits_by_domain': visits_by_domain,
                 'visits_by_country': visits_by_country
             }
