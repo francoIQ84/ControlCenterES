@@ -542,9 +542,13 @@ def init_db():
                     external_post_id TEXT,
                     published_at TEXT,
                     error_message TEXT,
+                    metrics_json TEXT DEFAULT '{}',
+                    metrics_updated_at TIMESTAMP,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             ''')
+            cursor.execute("ALTER TABLE marketing_posts ADD COLUMN IF NOT EXISTS metrics_json TEXT DEFAULT '{}';")
+            cursor.execute("ALTER TABLE marketing_posts ADD COLUMN IF NOT EXISTS metrics_updated_at TIMESTAMP;")
 
             # Diffusion groups table
             cursor.execute('''
@@ -3979,14 +3983,43 @@ def get_marketing_posts(status=None, limit=100):
             sql += " ORDER BY created_at DESC LIMIT %s"
             params.append(limit)
             cursor.execute(sql, params)
-            return [dict(r) for r in cursor.fetchall()]
+            rows = [dict(r) for r in cursor.fetchall()]
+            for r in rows:
+                if 'metrics_json' in r and r['metrics_json']:
+                    try:
+                        r['metrics'] = json.loads(r['metrics_json']) if isinstance(r['metrics_json'], str) else r['metrics_json']
+                    except Exception:
+                        r['metrics'] = {}
+                else:
+                    r['metrics'] = {}
+            return rows
 
 def get_marketing_post_by_id(post_id):
     with get_connection() as conn:
         with conn.cursor() as cursor:
             cursor.execute("SELECT * FROM marketing_posts WHERE id = %s", (post_id,))
             row = cursor.fetchone()
-            return dict(row) if row else None
+            if not row:
+                return None
+            r = dict(row)
+            if 'metrics_json' in r and r['metrics_json']:
+                try:
+                    r['metrics'] = json.loads(r['metrics_json']) if isinstance(r['metrics_json'], str) else r['metrics_json']
+                except Exception:
+                    r['metrics'] = {}
+            else:
+                r['metrics'] = {}
+            return r
+
+def update_marketing_post_metrics(post_id, metrics_dict):
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute('''
+                UPDATE marketing_posts
+                SET metrics_json = %s,
+                    metrics_updated_at = NOW()
+                WHERE id = %s
+            ''', (json.dumps(metrics_dict), post_id))
 
 def update_marketing_post_status(post_id, status, external_post_id=None, error_message=None):
     now = datetime.now().isoformat()

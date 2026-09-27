@@ -568,6 +568,9 @@ def publish_post_to_all_platforms(post_data: dict):
     video_extensions = ['.mp4', '.mov', '.avi', '.webm', '.mkv']
     is_real_video = media_url and any(media_url.lower().split('?')[0].endswith(ext) for ext in video_extensions)
 
+    ig_post_id = None
+    fb_post_id = None
+
     if "instagram" in platforms:
         if not creds["instagram_account_id"]:
             results.append("Instagram: Omitido (ID no configurado)")
@@ -577,8 +580,11 @@ def publish_post_to_all_platforms(post_data: dict):
             else:
                 # If image is provided for a Reel, fallback to Instagram Photo post seamlessly
                 ok, msg = publish_to_instagram_photo(media_url, caption)
+            if ok:
+                successes += 1
+                if "Instagram Post ID: " in msg:
+                    ig_post_id = msg.replace("Instagram Post ID: ", "").strip()
             results.append(f"Instagram: {'OK' if ok else msg}")
-            if ok: successes += 1
 
     if "facebook" in platforms:
         if not creds["facebook_page_id"]:
@@ -586,8 +592,22 @@ def publish_post_to_all_platforms(post_data: dict):
         else:
             is_vid = (post_type == "reel")
             ok, msg = publish_to_facebook_page(media_url, caption, is_video=is_vid)
+            if ok:
+                successes += 1
+                if "Facebook Post ID: " in msg:
+                    fb_post_id = msg.replace("Facebook Post ID: ", "").strip()
             results.append(f"Facebook: {'OK' if ok else msg}")
-            if ok: successes += 1
+
+    if post_data.get('id') and (fb_post_id or ig_post_id):
+        initial_metrics = {}
+        if fb_post_id:
+            initial_metrics['facebook'] = {'id': fb_post_id, 'views': 0, 'reach': 0, 'reactions': 0, 'comments': 0, 'shares': 0}
+        if ig_post_id:
+            initial_metrics['instagram'] = {'id': ig_post_id, 'likes': 0, 'comments': 0}
+        try:
+            database.update_marketing_post_metrics(post_data['id'], initial_metrics)
+        except Exception:
+            pass
 
     overall_ok = (successes > 0)
     summary_msg = " | ".join(results)
@@ -830,4 +850,165 @@ def fetch_and_sync_all_meta_leads():
         "total_leads_found": len(all_leads),
         "synced_count": synced
     }
+
+def sync_social_posts_metrics():
+    """
+    Sincroniza las métricas (vistas/impresiones, alcance, reacciones, likes, comentarios)
+    de las publicaciones recientes en Facebook e Instagram con la tabla marketing_posts.
+    """
+    creds = get_meta_credentials()
+    token = creds.get('access_token')
+    page_id = creds.get('facebook_page_id')
+    ig_id = creds.get('instagram_account_id')
+
+    if not token:
+        return {"success": False, "error": "No hay token de Meta configurado", "updated_count": 0}
+
+    # 1. Obtener publicaciones de Facebook
+    fb_posts = []
+    if page_id:
+        try:
+            url = f"{META_GRAPH_BASE_URL}/{page_id}/posts?fields=id,message,created_time,shares,comments.summary(true),reactions.summary(true)&limit=50&access_token={urllib.parse.quote(token)}"
+            with urllib.request.urlopen(url, timeout=10) as r:
+                fb_posts = json.loads(r.read().decode('utf-8')).get('data', [])
+        except Exception as e:
+            print(f"[Metrics Sync] FB posts err: {e}")
+
+    # Consultar insights de cada post de Facebook
+    fb_insights = {}
+    for p in fb_posts:
+        pid = p['id']
+        views = 0
+        reach = 0
+        clicks = 0
+        ins_url = f"{META_GRAPH_BASE_URL}/{pid}/insights?metric=post_media_view,post_total_media_view_unique,post_clicks&access_token={urllib.parse.quote(token)}"
+        try:
+            with urllib.request.urlopen(ins_url, timeout=4) as ir:
+                idata = json.loads(ir.read().decode('utf-8')).get('data', [])
+                for item in idata:
+                    mname = item.get('name')
+                    val = item.get('values', [{}])[0].get('value', 0)
+                    if mname == 'post_media_view':
+                        views = val
+                    elif mname == 'post_total_media_view_unique':
+                        reach = val
+                    elif mname == 'post_clicks':
+                        clicks = val
+        except Exception:
+            pass
+
+        fb_insights[pid] = {
+            'id': pid,
+            'message': p.get('message', ''),
+            'views': views,
+            'reach': reach,
+            'clicks': clicks,
+            'reactions': p.get('reactions', {}).get('summary', {}).get('total_count', 0),
+            'comments': p.get('comments', {}).get('summary', {}).get('total_count', 0),
+            'shares': p.get('shares', {}).get('count', 0),
+        }
+
+    # 2. Obtener medios de Instagram
+    ig_media = []
+    if ig_id:
+        try:
+            url = f"{META_GRAPH_BASE_URL}/{ig_id}/media?fields=id,caption,media_type,timestamp,like_count,comments_count,permalink&limit=50&access_token={urllib.parse.quote(token)}"
+            with urllib.request.urlopen(url, timeout=10) as r:
+                ig_media = json.loads(r.read().decode('utf-8')).get('data', [])
+        except Exception as e:
+            print(f"[Metrics Sync] IG media err: {e}")
+
+    # Intentar obtener insights de IG si el token dispone de ese permiso
+    for m in ig_media:
+        mid = m['id']
+        mtype = m.get('media_type')
+        ins_metrics = 'reach,plays,total_interactions' if mtype == 'VIDEO' else 'impressions,reach,total_interactions'
+        ins_url = f"{META_GRAPH_BASE_URL}/{mid}/insights?metric={ins_metrics}&access_token={urllib.parse.quote(token)}"
+        try:
+            with urllib.request.urlopen(ins_url, timeout=3) as ir:
+                idata = json.loads(ir.read().decode('utf-8')).get('data', [])
+                for item in idata:
+                    mname = item.get('name')
+                    val = item.get('values', [{}])[0].get('value', 0)
+                    if mname in ('impressions', 'plays', 'views'):
+                        m['views'] = val
+                    elif mname == 'reach':
+                        m['reach'] = val
+        except Exception:
+            pass
+
+    import re
+    def normalize_text(t):
+        if not t: return ""
+        t = re.sub(r'[^a-zA-Z0-9áéíóúÁÉÍÓÚñÑ ]', ' ', t.lower())
+        return " ".join(t.split())
+
+    db_posts = database.get_marketing_posts(limit=100)
+    updated_count = 0
+
+    for post in db_posts:
+        caption_norm = normalize_text(post.get('caption') or '')
+        prefix = caption_norm[:35] if caption_norm else ""
+        ext_id = post.get('external_post_id') or ""
+
+        saved_fb_id = None
+        saved_ig_id = None
+        if "{" in ext_id and "}" in ext_id:
+            try:
+                parsed_ext = json.loads(ext_id)
+                saved_fb_id = parsed_ext.get("facebook_id")
+                saved_ig_id = parsed_ext.get("instagram_id")
+            except Exception:
+                pass
+
+        matched_fb = None
+        if saved_fb_id and saved_fb_id in fb_insights:
+            matched_fb = fb_insights[saved_fb_id]
+        elif prefix:
+            for fbid, finfo in fb_insights.items():
+                fb_msg_norm = normalize_text(finfo['message'])
+                if prefix in fb_msg_norm or (fb_msg_norm and fb_msg_norm[:35] in caption_norm):
+                    matched_fb = finfo
+                    break
+
+        matched_ig = None
+        if saved_ig_id:
+            for ig_item in ig_media:
+                if ig_item.get('id') == saved_ig_id:
+                    matched_ig = ig_item
+                    break
+        if not matched_ig and prefix:
+            for ig_item in ig_media:
+                ig_cap_norm = normalize_text(ig_item.get('caption') or '')
+                if prefix in ig_cap_norm or (ig_cap_norm and ig_cap_norm[:35] in caption_norm):
+                    matched_ig = ig_item
+                    break
+
+        metrics = {}
+        if matched_fb:
+            metrics['facebook'] = {
+                'id': matched_fb['id'],
+                'views': matched_fb['views'],
+                'reach': matched_fb['reach'],
+                'reactions': matched_fb['reactions'],
+                'comments': matched_fb['comments'],
+                'shares': matched_fb['shares']
+            }
+        if matched_ig:
+            metrics['instagram'] = {
+                'id': matched_ig['id'],
+                'likes': matched_ig.get('like_count', 0),
+                'comments': matched_ig.get('comments_count', 0),
+                'permalink': matched_ig.get('permalink', '')
+            }
+            if 'views' in matched_ig:
+                metrics['instagram']['views'] = matched_ig['views']
+            if 'reach' in matched_ig:
+                metrics['instagram']['reach'] = matched_ig['reach']
+
+        if metrics:
+            database.update_marketing_post_metrics(post['id'], metrics)
+            updated_count += 1
+
+    return {"success": True, "updated_count": updated_count}
 

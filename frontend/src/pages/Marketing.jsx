@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react'
-import { Megaphone, Sparkles, Calendar, Settings as SettingsIcon, Send, Video, Image as ImageIcon, Trash2, CheckCircle, Clock, AlertCircle, RefreshCw, ExternalLink, MessageSquare, Users, Plus, Mail, Phone, Share2, Play, Check, Layers, UserPlus, X, Move, Maximize2, Download, DollarSign, Tag } from 'lucide-react'
+import { Megaphone, Sparkles, Calendar, Settings as SettingsIcon, Send, Video, Image as ImageIcon, Trash2, CheckCircle, Clock, AlertCircle, RefreshCw, ExternalLink, MessageSquare, Users, Plus, Mail, Phone, Share2, Play, Check, Layers, UserPlus, X, Move, Maximize2, Download, DollarSign, Tag, Eye, Heart } from 'lucide-react'
 import { useTenant } from '../TenantContext'
 import MediaBrowser from '../components/MediaBrowser'
 import { formatDateTimeAR, formatDateAR, formatTimeAR, formatForDateTimeLocal } from '../utils/dateUtils'
@@ -790,6 +790,8 @@ export default function Marketing() {
     })
   }, [products, productCategoryFilter, productSearch])
 
+  const [syncingMetrics, setSyncingMetrics] = useState(false)
+
   const fetchPosts = () => {
     setLoadingPosts(true)
     fetch('/api/marketing/posts')
@@ -797,6 +799,24 @@ export default function Marketing() {
       .then(data => setPosts(data.posts || []))
       .catch(err => console.error(err))
       .finally(() => setLoadingPosts(false))
+  }
+
+  const handleSyncMetrics = async () => {
+    setSyncingMetrics(true)
+    try {
+      const res = await fetch('/api/marketing/posts/sync-metrics', { method: 'POST' })
+      const data = await res.json()
+      if (res.ok && data.posts) {
+        setPosts(data.posts)
+      } else {
+        fetchPosts()
+      }
+    } catch (err) {
+      console.error(err)
+      fetchPosts()
+    } finally {
+      setSyncingMetrics(false)
+    }
   }
 
   const fetchMetaConfig = () => {
@@ -3590,11 +3610,23 @@ export default function Marketing() {
       {/* TAB 2: Cola y Calendario */}
       {activeTab === 'calendar' && (
         <div className="card">
-          <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15}}>
+          <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15, flexWrap: 'wrap', gap: 10}}>
             <h3 style={{margin: 0}}>Cola de Publicaciones ({posts.length})</h3>
-            <button className="btn" onClick={fetchPosts} style={{padding: '5px 10px', fontSize: '0.8rem', backgroundColor: 'var(--bg-dark)', color: 'var(--text-primary)', border: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', gap: 5}}>
-              <RefreshCw className={loadingPosts ? "animate-spin" : ""} size={14} /> Actualizar
-            </button>
+            <div style={{display: 'flex', alignItems: 'center', gap: 8}}>
+              <button 
+                className="btn" 
+                onClick={handleSyncMetrics} 
+                disabled={syncingMetrics || loadingPosts} 
+                title="Consultar y sincronizar visualizaciones y estadísticas en vivo desde Facebook e Instagram"
+                style={{padding: '5px 12px', fontSize: '0.8rem', backgroundColor: 'var(--bg-dark)', color: 'var(--text-primary)', border: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', gap: 6, borderRadius: '8px'}}
+              >
+                <Eye className={syncingMetrics ? "animate-pulse" : ""} size={14} style={{ color: 'var(--accent-blue)' }} /> 
+                {syncingMetrics ? 'Sincronizando...' : 'Sincronizar Métricas'}
+              </button>
+              <button className="btn" onClick={fetchPosts} style={{padding: '5px 12px', fontSize: '0.8rem', backgroundColor: 'var(--bg-dark)', color: 'var(--text-primary)', border: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', gap: 5, borderRadius: '8px'}}>
+                <RefreshCw className={loadingPosts ? "animate-spin" : ""} size={14} /> Actualizar
+              </button>
+            </div>
           </div>
 
           {loadingPosts ? (
@@ -3684,7 +3716,7 @@ export default function Marketing() {
                     </div>
 
                     {/* Redes & Fecha Programada */}
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', minWidth: 150 }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', minWidth: 155 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                         <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Redes:</span>
                         <span style={{
@@ -3703,6 +3735,35 @@ export default function Marketing() {
                         <Clock size={13} />
                         <span>{p.scheduled_at ? formatDateTimeAR(p.scheduled_at, { dateStyle: 'short', timeStyle: 'short' }) : 'Sin fecha (Borrador)'}</span>
                       </div>
+
+                      {/* Métricas discretas y elegantes */}
+                      {p.status === 'published' && p.metrics && (p.metrics.facebook || p.metrics.instagram) && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '0.75rem', marginTop: '2px' }}>
+                          {p.metrics.facebook && (
+                            <span 
+                              title={`Facebook: ${p.metrics.facebook.views || 0} visualizaciones, ${p.metrics.facebook.reactions || 0} reacciones, ${p.metrics.facebook.comments || 0} comentarios`}
+                              style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', color: '#1877F2', fontWeight: 600, cursor: 'default' }}
+                            >
+                              <Eye size={12} /> FB: {p.metrics.facebook.views || 0}
+                            </span>
+                          )}
+                          {p.metrics.instagram && (
+                            <a 
+                              href={p.metrics.instagram.permalink || '#'} 
+                              target={p.metrics.instagram.permalink ? "_blank" : "_self"}
+                              rel="noreferrer"
+                              title={`Instagram: ${p.metrics.instagram.views !== undefined ? p.metrics.instagram.views + ' vistas • ' : ''}${p.metrics.instagram.likes || 0} me gusta, ${p.metrics.instagram.comments || 0} comentarios${p.metrics.instagram.permalink ? ' (clic para ver post)' : ''}`}
+                              style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', color: '#E1306C', fontWeight: 600, textDecoration: 'none', cursor: p.metrics.instagram.permalink ? 'pointer' : 'default' }}
+                            >
+                              {p.metrics.instagram.views !== undefined ? (
+                                <><Eye size={12} /> IG: {p.metrics.instagram.views}</>
+                              ) : (
+                                <><Heart size={12} /> IG: {p.metrics.instagram.likes || 0}</>
+                              )}
+                            </a>
+                          )}
+                        </div>
+                      )}
                     </div>
 
                     {/* Estado Badge */}

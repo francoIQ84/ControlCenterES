@@ -579,6 +579,15 @@ def list_marketing_posts(status: Optional[str] = None, limit: int = 100, _=Depen
     posts = database.get_marketing_posts(status=status, limit=limit)
     return {"posts": posts}
 
+@router.post("/posts/sync-metrics")
+def sync_posts_metrics(_=Depends(verify_session)):
+    try:
+        res = social_publisher.sync_social_posts_metrics()
+        posts = database.get_marketing_posts(limit=100)
+        return {"success": True, "updated_count": res.get("updated_count", 0), "posts": posts}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
 @router.post("/posts")
 def create_or_schedule_post(req: CreatePostRequest, _=Depends(verify_session)):
     scheduled_time = normalize_scheduled_time(req.scheduled_at)
