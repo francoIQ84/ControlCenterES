@@ -659,10 +659,12 @@ def list_monitored_trademarks(asset_type: Optional[str] = Query(None, descriptio
     """
     try:
         items = database.get_all_monitored_trademarks(asset_type=asset_type)
+        last_synced_at = database.get_setting("inpi_last_synced_at", "")
         return {
             "success": True,
             "total": len(items),
-            "results": items
+            "results": items,
+            "last_synced_at": last_synced_at
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error al consultar portafolio de activos: {str(e)}")
@@ -765,47 +767,160 @@ def update_trademark_image(acta: str, payload: UpdateImageItem):
 @router.post("/monitored/sync")
 def sync_monitored_trademarks():
     """
-    Re-consulta todas las marcas guardadas en el Web Service del INPI
-    y actualiza su estado, número de resolución y alertas DJUMT.
+    Re-consulta todos los activos de Propiedad Industrial guardados (marcas, patentes, modelos y diseños)
+    en las fuentes oficiales del INPI / registros de patentes y actualiza sus estados, resoluciones y alertas legales.
     """
-    try:
-        tracked_list = database.get_all_monitored_trademarks()
-        updated_count = 0
+    from src.utils import ip_legal
 
-        for item in tracked_list:
-            # Solo sincronizar marcas con el servicio web de Denominación
-            if (item.get('asset_type') or 'marca') != 'marca':
-                continue
+    now = datetime.now()
+    now_iso = now.isoformat()
+    tracked_list = database.get_all_monitored_trademarks()
+    updated_count = 0
+    errors = []
 
-            acta = item.get('acta')
-            denominacion = item.get('denominacion')
-            if not acta and not denominacion:
-                continue
+    for item in tracked_list:
+        asset_type = (item.get('asset_type') or 'marca').lower().strip()
+        acta = item.get('acta')
+        if not acta:
+            continue
 
-            body_xml = f"""<ConsultaDenominacion xmlns="http://tempuri.org/">
-              <Denominacion>{denominacion}</Denominacion>
-            </ConsultaDenominacion>"""
+        try:
+            if asset_type == 'marca':
+                denominacion = item.get('denominacion') or ''
+                synced_from_inpi = False
+                if denominacion:
+                    escaped_denom = html_lib.escape(denominacion.strip())
+                    body_xml = f"""<ConsultaDenominacion xmlns="http://tempuri.org/">
+  <Denominacion>{escaped_denom}</Denominacion>
+</ConsultaDenominacion>"""
+                    try:
+                        raw_xml = _call_soap_action("ConsultaDenominacion", body_xml)
+                        root = ET.fromstring(raw_xml)
+                        rows = _parse_grilla_marcas(root)
+                        match = next((r for r in rows if str(r.get('Acta')) == str(acta)), None)
+                        if match:
+                            database.update_monitored_trademark_data(acta, match)
+                            synced_from_inpi = True
+                            updated_count += 1
+                    except Exception as soap_err:
+                        print(f"[sync_monitored_trademarks] Aviso: SOAP INPI no respondió para marca {acta} ({soap_err}), recalculando localmente.")
 
-            try:
-                raw_xml = _call_soap_action("ConsultaDenominacion", body_xml)
-                root = ET.fromstring(raw_xml)
-                rows = _parse_grilla_marcas(root)
-
-                # Buscar la coincidencia por Acta exacto
-                match = next((r for r in rows if str(r.get('Acta')) == str(acta)), None)
-                if match:
-                    database.update_monitored_trademark_data(acta, match)
+                if not synced_from_inpi:
+                    # Recalcular plazos de DJUMT y alertas decenales para la fecha actual
+                    database.update_monitored_trademark_data(acta, item)
                     updated_count += 1
-            except Exception as item_err:
-                print(f"[sync_monitored_trademarks] Error actualizando acta {acta}: {item_err}")
 
+            elif asset_type in ('diseno_industrial', 'modelo_industrial', 'diseno'):
+                synced_from_inpi = False
+                try:
+                    inpi_data = _fetch_inpi_modelo(str(acta))
+                    if inpi_data:
+                        merged = dict(item)
+                        for k, v in inpi_data.items():
+                            if v:
+                                merged[k] = v
+                        database.update_monitored_trademark(acta, merged)
+                        synced_from_inpi = True
+                        updated_count += 1
+                except Exception as d_err:
+                    print(f"[sync_monitored_trademarks] Aviso: portal INPI modelos no respondió para diseño {acta} ({d_err}), recalculando plazos.")
+
+                if not synced_from_inpi:
+                    # Recalcular plazos de quinquenios con la fecha de hoy
+                    database.update_monitored_trademark(acta, item)
+                    updated_count += 1
+
+            elif asset_type in ('patente', 'patente_invencion', 'modelo_utilidad', 'utilidad'):
+                synced_from_inpi = False
+                try:
+                    patent_data = _fetch_patent_data(str(acta))
+                    if patent_data:
+                        merged = dict(item)
+                        for k, v in patent_data.items():
+                            if v:
+                                merged[k] = v
+                        database.update_monitored_trademark(acta, merged)
+                        synced_from_inpi = True
+                        updated_count += 1
+                except Exception as p_err:
+                    print(f"[sync_monitored_trademarks] Aviso: catálogo patentes no respondió para {acta} ({p_err}), recalculando plazos.")
+
+                if not synced_from_inpi:
+                    # Recalcular anualidades y plazos de vencimiento con la fecha de hoy
+                    database.update_monitored_trademark(acta, item)
+                    updated_count += 1
+
+            else:
+                # Cualquier otro activo, enriquecer legalmente
+                database.update_monitored_trademark(acta, item)
+                updated_count += 1
+
+        except Exception as item_err:
+            errors.append(f"Acta {acta}: {str(item_err)}")
+            print(f"[sync_monitored_trademarks] Error actualizando activo {acta}: {item_err}")
+
+    # Guardar timestamp de última sincronización en la configuración del tenant
+    try:
+        database.set_setting("inpi_last_synced_at", now_iso)
+    except Exception as set_err:
+        print(f"[sync_monitored_trademarks] No se pudo guardar inpi_last_synced_at: {set_err}")
+
+    return {
+        "success": True,
+        "total_monitored": len(tracked_list),
+        "updated_count": updated_count,
+        "last_synced_at": now_iso,
+        "errors": errors if errors else None,
+        "message": f"Sincronizados {updated_count} activos de Propiedad Industrial con el INPI."
+    }
+
+def check_and_sync_ip_assets_if_due(tenant: Optional[dict] = None) -> dict:
+    """
+    Verifica si corresponde sincronizar los activos de Propiedad Industrial para el tenant actual.
+    Se ejecuta automáticamente en el scheduler del VPS al menos una vez al día (cada 24 horas).
+    """
+    tracked_list = database.get_all_monitored_trademarks()
+    if not tracked_list:
         return {
-            "success": True,
-            "total_monitored": len(tracked_list),
-            "updated_count": updated_count,
-            "message": f"Sincronizadas {updated_count} marcas con el INPI."
+            "synced": False,
+            "reason": "no_assets",
+            "message": "No hay activos de Propiedad Industrial registrados para monitorear."
         }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error en la sincronización masiva: {str(e)}")
+
+    interval_hours = 24
+    try:
+        interval_hours = int(database.get_setting("inpi_sync_interval_hours", "24"))
+    except Exception:
+        interval_hours = 24
+
+    last_synced = database.get_setting("inpi_last_synced_at", "")
+    now = datetime.now()
+
+    if last_synced:
+        try:
+            last_dt = datetime.fromisoformat(last_synced)
+            elapsed_seconds = (now - last_dt).total_seconds()
+            # Si transcurrió menos del intervalo y sigue siendo el mismo día calendario, omitir
+            if elapsed_seconds < (interval_hours * 3600) and last_dt.date() == now.date():
+                return {
+                    "synced": False,
+                    "reason": "already_synced_recently",
+                    "elapsed_seconds": elapsed_seconds,
+                    "last_synced_at": last_synced
+                }
+        except Exception:
+            pass
+
+    slug = (tenant or {}).get("slug", "unknown")
+    print(f"[Scheduler-IP][{slug}] Ejecutando sincronización diaria de Propiedad Industrial ({len(tracked_list)} activos)...")
+    res = sync_monitored_trademarks()
+    return {
+        "synced": True,
+        "total_monitored": len(tracked_list),
+        "updated_count": res.get("updated_count", 0),
+        "last_synced_at": res.get("last_synced_at", now.isoformat()),
+        "message": res.get("message", "")
+    }
+
 
 

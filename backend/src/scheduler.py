@@ -82,13 +82,14 @@ def _sync_one_tenant(tenant):
     except Exception as q_err:
         print(f"[Scheduler][{slug}] Error en auto-responder de preguntas MeLi: {q_err}")
 
-    # Sincronización diaria de marcas monitoreadas en INPI
+    # Sincronización diaria de Propiedad Industrial (INPI: marcas, patentes, modelos y diseños)
     try:
-        from src.api.inpi import sync_monitored_trademarks
-        sync_res = sync_monitored_trademarks()
-        print(f"[Scheduler][{slug}] Sincronización INPI: {sync_res.get('message')}")
+        from src.api.inpi import check_and_sync_ip_assets_if_due
+        ip_sync_res = check_and_sync_ip_assets_if_due(tenant)
+        if ip_sync_res.get("synced"):
+            print(f"[Scheduler][{slug}] Propiedad Industrial INPI sincronizada: {ip_sync_res.get('updated_count', 0)}/{ip_sync_res.get('total_monitored', 0)} activos actualizados.")
     except Exception as inpi_err:
-        print(f"[Scheduler][{slug}] Error en sincronización INPI: {inpi_err}")
+        print(f"[Scheduler][{slug}] Error en sincronización diaria de Propiedad Industrial: {inpi_err}")
 
     # Programación automática de disponibilidad de envíos MeLi
     try:
@@ -137,6 +138,16 @@ def _sync_one_tenant(tenant):
             print(f"[Scheduler][{slug}] Leads de Meta sincronizados: {leads_res.get('synced_count')} clientes importados.")
     except Exception as meta_err:
         print(f"[Scheduler][{slug}] Error en sincronización de leads de Meta: {meta_err}")
+
+    # Sincronización automática periódica de métricas de publicaciones (Facebook & Instagram)
+    try:
+        from src.utils import social_publisher
+        metrics_res = social_publisher.check_and_sync_social_metrics_if_due(tenant)
+        if metrics_res.get("synced"):
+            print(f"[Scheduler][{slug}] Métricas de publicaciones de Meta sincronizadas: {metrics_res.get('updated_count', 0)} publicaciones actualizadas.")
+    except Exception as metrics_err:
+        print(f"[Scheduler][{slug}] Error en sincronización periódica de métricas de Meta: {metrics_err}")
+
 
 
 

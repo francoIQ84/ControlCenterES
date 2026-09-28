@@ -128,6 +128,7 @@ export default function IndustrialProperty() {
   const [monitoredList, setMonitoredList] = useState([])
   const [loadingMonitored, setLoadingMonitored] = useState(false)
   const [syncingAll, setSyncingAll] = useState(false)
+  const [lastInpiSync, setLastInpiSync] = useState(null)
 
   // Filter state for search results
   const [selectedClase, setSelectedClase] = useState('ALL')
@@ -219,6 +220,9 @@ export default function IndustrialProperty() {
       const result = await res.json()
       if (res.ok && result.success) {
         setMonitoredList(result.results || [])
+        if (result.last_synced_at) {
+          setLastInpiSync(result.last_synced_at)
+        }
       }
     } catch (err) {
       console.error("Error cargando activos monitoreados:", err)
@@ -498,6 +502,9 @@ export default function IndustrialProperty() {
       const res = await fetch('/api/inpi/monitored/sync', { method: 'POST' })
       const result = await res.json()
       if (res.ok && result.success) {
+        if (result.last_synced_at) {
+          setLastInpiSync(result.last_synced_at)
+        }
         alert(`Sincronización finalizada: ${result.message}`)
         fetchMonitoredTrademarks()
         fetchStats()
@@ -1210,15 +1217,35 @@ export default function IndustrialProperty() {
                     </span>
                   </button>
 
+                  {lastInpiSync && (
+                    <span 
+                      style={{ 
+                        display: 'inline-flex', 
+                        alignItems: 'center', 
+                        gap: '5px', 
+                        fontSize: '0.75rem', 
+                        color: 'var(--text-secondary)',
+                        backgroundColor: 'var(--bg-secondary)',
+                        padding: '4px 10px',
+                        borderRadius: '12px',
+                        border: '1px solid var(--border-color)'
+                      }}
+                      title={`Última sincronización con INPI: ${lastInpiSync}`}
+                    >
+                      <Clock size={12} style={{ color: 'var(--accent-blue)' }} />
+                      <span>{new Date(lastInpiSync).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</span>
+                    </span>
+                  )}
+
                   <button 
                     className="btn btn-secondary" 
                     onClick={handleSyncAllMonitored} 
-                    disabled={syncingAll || monitoredList.filter(i => (i.asset_type || 'marca') === 'marca').length === 0}
+                    disabled={syncingAll || monitoredList.length === 0}
                     style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.85rem' }}
-                    title="El Web Service SOAP del INPI actualiza resoluciones y trámites de marcas registradas. Las patentes y diseños se controlan por calendario legal de vigencias y anualidades."
+                    title="Actualiza estados y resoluciones oficiales en INPI para marcas y diseños, consulta bases de patentes y recalcula plazos legales, anualidades y alertas diarias."
                   >
                     <RefreshCw size={15} className={syncingAll ? 'animate-spin' : ''} />
-                    <span>{syncingAll ? 'Sincronizando...' : 'Sincronizar Marcas (SOAP)'}</span>
+                    <span>{syncingAll ? 'Sincronizando...' : 'Sincronizar Activos (INPI)'}</span>
                   </button>
                 </div>
               </div>

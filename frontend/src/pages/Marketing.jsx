@@ -791,12 +791,16 @@ export default function Marketing() {
   }, [products, productCategoryFilter, productSearch])
 
   const [syncingMetrics, setSyncingMetrics] = useState(false)
+  const [lastMetricsSync, setLastMetricsSync] = useState(null)
 
   const fetchPosts = () => {
     setLoadingPosts(true)
     fetch('/api/marketing/posts')
       .then(r => r.ok ? r.json() : { posts: [] })
-      .then(data => setPosts(data.posts || []))
+      .then(data => {
+        setPosts(data.posts || [])
+        if (data.last_synced_at) setLastMetricsSync(data.last_synced_at)
+      })
       .catch(err => console.error(err))
       .finally(() => setLoadingPosts(false))
   }
@@ -808,6 +812,7 @@ export default function Marketing() {
       const data = await res.json()
       if (res.ok && data.posts) {
         setPosts(data.posts)
+        if (data.last_synced_at) setLastMetricsSync(data.last_synced_at)
       } else {
         fetchPosts()
       }
@@ -3611,7 +3616,14 @@ export default function Marketing() {
       {activeTab === 'calendar' && (
         <div className="card">
           <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15, flexWrap: 'wrap', gap: 10}}>
-            <h3 style={{margin: 0}}>Cola de Publicaciones ({posts.length})</h3>
+            <div>
+              <h3 style={{margin: 0}}>Cola de Publicaciones ({posts.length})</h3>
+              {lastMetricsSync && (
+                <div style={{ fontSize: '0.74rem', color: 'var(--text-secondary)', marginTop: '3px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                  <Clock size={12} /> Última sincronización: {formatDateTimeAR(lastMetricsSync, { dateStyle: 'short', timeStyle: 'short' })}
+                </div>
+              )}
+            </div>
             <div style={{display: 'flex', alignItems: 'center', gap: 8}}>
               <button 
                 className="btn" 
@@ -3736,30 +3748,72 @@ export default function Marketing() {
                         <span>{p.scheduled_at ? formatDateTimeAR(p.scheduled_at, { dateStyle: 'short', timeStyle: 'short' }) : 'Sin fecha (Borrador)'}</span>
                       </div>
 
-                      {/* Métricas discretas y elegantes */}
+                      {/* Métricas enriquecidas y elegantes */}
                       {p.status === 'published' && p.metrics && (p.metrics.facebook || p.metrics.instagram) && (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '0.75rem', marginTop: '2px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.74rem', marginTop: '3px', flexWrap: 'wrap' }}>
                           {p.metrics.facebook && (
-                            <span 
-                              title={`Facebook: ${p.metrics.facebook.views || 0} visualizaciones, ${p.metrics.facebook.reactions || 0} reacciones, ${p.metrics.facebook.comments || 0} comentarios`}
-                              style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', color: '#1877F2', fontWeight: 600, cursor: 'default' }}
+                            <div 
+                              title={`Facebook: ${p.metrics.facebook.views || 0} visualizaciones, ${p.metrics.facebook.reactions || 0} me gusta/reacciones, ${p.metrics.facebook.comments || 0} comentarios${p.metrics.facebook.shares ? ', ' + p.metrics.facebook.shares + ' compartidos' : ''}${p.metrics_updated_at ? ' • Actualizado: ' + formatDateTimeAR(p.metrics_updated_at, { dateStyle: 'short', timeStyle: 'short' }) : ''}`}
+                              style={{ 
+                                display: 'inline-flex', 
+                                alignItems: 'center', 
+                                gap: '5px', 
+                                color: '#1877F2', 
+                                backgroundColor: 'rgba(24, 119, 242, 0.08)',
+                                border: '1px solid rgba(24, 119, 242, 0.25)',
+                                padding: '2px 7px',
+                                borderRadius: '6px',
+                                fontWeight: 600, 
+                                cursor: 'default' 
+                              }}
                             >
-                              <Eye size={12} /> FB: {p.metrics.facebook.views || 0}
-                            </span>
+                              <span style={{ fontSize: '0.7rem', fontWeight: 800 }}>FB</span>
+                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '2px' }} title="Vistas">
+                                <Eye size={11} /> {p.metrics.facebook.views || 0}
+                              </span>
+                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '2px' }} title="Me gusta / Reacciones">
+                                <Heart size={11} /> {p.metrics.facebook.reactions || 0}
+                              </span>
+                              {(p.metrics.facebook.comments > 0 || p.metrics.facebook.reactions > 0) && (
+                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '2px' }} title="Comentarios">
+                                  <MessageSquare size={11} /> {p.metrics.facebook.comments || 0}
+                                </span>
+                              )}
+                            </div>
                           )}
                           {p.metrics.instagram && (
                             <a 
                               href={p.metrics.instagram.permalink || '#'} 
                               target={p.metrics.instagram.permalink ? "_blank" : "_self"}
                               rel="noreferrer"
-                              title={`Instagram: ${p.metrics.instagram.views !== undefined ? p.metrics.instagram.views + ' vistas • ' : ''}${p.metrics.instagram.likes || 0} me gusta, ${p.metrics.instagram.comments || 0} comentarios${p.metrics.instagram.permalink ? ' (clic para ver post)' : ''}`}
-                              style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', color: '#E1306C', fontWeight: 600, textDecoration: 'none', cursor: p.metrics.instagram.permalink ? 'pointer' : 'default' }}
+                              title={`Instagram: ${p.metrics.instagram.likes || 0} me gusta, ${p.metrics.instagram.comments || 0} comentarios${p.metrics.instagram.views !== undefined ? ', ' + p.metrics.instagram.views + ' vistas' : ''}${p.metrics_updated_at ? ' • Actualizado: ' + formatDateTimeAR(p.metrics_updated_at, { dateStyle: 'short', timeStyle: 'short' }) : ''}${p.metrics.instagram.permalink ? ' (Clic para ver en Instagram)' : ''}`}
+                              style={{ 
+                                display: 'inline-flex', 
+                                alignItems: 'center', 
+                                gap: '5px', 
+                                color: '#E1306C', 
+                                backgroundColor: 'rgba(225, 48, 108, 0.08)',
+                                border: '1px solid rgba(225, 48, 108, 0.25)',
+                                padding: '2px 7px',
+                                borderRadius: '6px',
+                                fontWeight: 600, 
+                                textDecoration: 'none', 
+                                cursor: p.metrics.instagram.permalink ? 'pointer' : 'default' 
+                              }}
                             >
-                              {p.metrics.instagram.views !== undefined ? (
-                                <><Eye size={12} /> IG: {p.metrics.instagram.views}</>
-                              ) : (
-                                <><Heart size={12} /> IG: {p.metrics.instagram.likes || 0}</>
+                              <span style={{ fontSize: '0.7rem', fontWeight: 800 }}>IG</span>
+                              {p.metrics.instagram.views !== undefined && (
+                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '2px' }} title="Vistas">
+                                  <Eye size={11} /> {p.metrics.instagram.views}
+                                </span>
                               )}
+                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '2px' }} title="Me gusta">
+                                <Heart size={11} /> {p.metrics.instagram.likes || 0}
+                              </span>
+                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '2px' }} title="Comentarios">
+                                <MessageSquare size={11} /> {p.metrics.instagram.comments || 0}
+                              </span>
+                              {p.metrics.instagram.permalink && <ExternalLink size={9} style={{ opacity: 0.7 }} />}
                             </a>
                           )}
                         </div>

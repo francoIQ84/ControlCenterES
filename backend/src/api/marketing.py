@@ -577,14 +577,21 @@ def list_available_ai_models(_=Depends(verify_session)):
 @router.get("/posts")
 def list_marketing_posts(status: Optional[str] = None, limit: int = 100, _=Depends(verify_session)):
     posts = database.get_marketing_posts(status=status, limit=limit)
-    return {"posts": posts}
+    last_synced_at = database.get_setting("meta_metrics_last_synced_at", "")
+    return {"posts": posts, "last_synced_at": last_synced_at}
 
 @router.post("/posts/sync-metrics")
 def sync_posts_metrics(_=Depends(verify_session)):
     try:
         res = social_publisher.sync_social_posts_metrics()
         posts = database.get_marketing_posts(limit=100)
-        return {"success": True, "updated_count": res.get("updated_count", 0), "posts": posts}
+        last_synced_at = res.get("last_synced_at") or database.get_setting("meta_metrics_last_synced_at", "")
+        return {
+            "success": True, 
+            "updated_count": res.get("updated_count", 0), 
+            "posts": posts,
+            "last_synced_at": last_synced_at
+        }
     except Exception as e:
         return {"success": False, "error": str(e)}
 

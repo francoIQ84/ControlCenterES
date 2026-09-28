@@ -109,5 +109,18 @@ class MarketingLoopTest(unittest.TestCase):
         pub.assert_not_called()
 
 
+class MetricsPeriodicSyncInSchedulerTest(unittest.TestCase):
+    def test_sync_one_tenant_ejecuta_check_metricas_meta(self):
+        with patch("src.config.is_configured", return_value=False), \
+             patch("src.config.get_setting", return_value="false"), \
+             patch("src.scheduler._check_vencimientos_alerts_for_tenant"), \
+             patch("src.utils.social_publisher.fetch_and_sync_all_meta_leads", return_value={"synced_count": 0}), \
+             patch("src.utils.social_publisher.check_and_sync_social_metrics_if_due") as mock_check_metrics:
+            mock_check_metrics.return_value = {"synced": True, "updated_count": 2}
+            scheduler._sync_one_tenant(TENANT_A)
+            mock_check_metrics.assert_called_once_with(TENANT_A)
+
+
 if __name__ == "__main__":
     unittest.main()
+

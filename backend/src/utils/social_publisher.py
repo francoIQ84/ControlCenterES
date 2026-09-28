@@ -853,9 +853,12 @@ def fetch_and_sync_all_meta_leads():
 
 def sync_social_posts_metrics():
     """
-    Sincroniza las métricas (vistas/impresiones, alcance, reacciones, likes, comentarios)
-    de las publicaciones recientes en Facebook e Instagram con la tabla marketing_posts.
+    Sincroniza las métricas (vistas/impresiones, alcance, reacciones/likes, comentarios, shares)
+    de las publicaciones recientes en Facebook e Instagram con la tabla marketing_posts del tenant activo.
     """
+    import re
+    from datetime import datetime
+
     creds = get_meta_credentials()
     token = creds.get('access_token')
     page_id = creds.get('facebook_page_id')
@@ -868,8 +871,9 @@ def sync_social_posts_metrics():
     fb_posts = []
     if page_id:
         try:
-            url = f"{META_GRAPH_BASE_URL}/{page_id}/posts?fields=id,message,created_time,shares,comments.summary(true),reactions.summary(true)&limit=50&access_token={urllib.parse.quote(token)}"
-            with urllib.request.urlopen(url, timeout=10) as r:
+            url = f"{META_GRAPH_BASE_URL}/{page_id}/posts?fields=id,message,created_time,shares,comments.summary(true),reactions.summary(true)&limit=100&access_token={urllib.parse.quote(token)}"
+            req = urllib.request.Request(url, headers={"User-Agent": "ControlCenterES/1.0"})
+            with urllib.request.urlopen(req, timeout=12) as r:
                 fb_posts = json.loads(r.read().decode('utf-8')).get('data', [])
         except Exception as e:
             print(f"[Metrics Sync] FB posts err: {e}")
@@ -881,29 +885,45 @@ def sync_social_posts_metrics():
         views = 0
         reach = 0
         clicks = 0
-        ins_url = f"{META_GRAPH_BASE_URL}/{pid}/insights?metric=post_media_view,post_total_media_view_unique,post_clicks&access_token={urllib.parse.quote(token)}"
+        video_views = 0
+        reactions_breakdown = {}
+
+        ins_url = f"{META_GRAPH_BASE_URL}/{pid}/insights?metric=post_media_view,post_total_media_view_unique,post_clicks,post_video_views,post_reactions_by_type_total&access_token={urllib.parse.quote(token)}"
         try:
-            with urllib.request.urlopen(ins_url, timeout=4) as ir:
+            req_ins = urllib.request.Request(ins_url, headers={"User-Agent": "ControlCenterES/1.0"})
+            with urllib.request.urlopen(req_ins, timeout=5) as ir:
                 idata = json.loads(ir.read().decode('utf-8')).get('data', [])
                 for item in idata:
                     mname = item.get('name')
                     val = item.get('values', [{}])[0].get('value', 0)
                     if mname == 'post_media_view':
-                        views = val
+                        views = val if isinstance(val, (int, float)) else 0
                     elif mname == 'post_total_media_view_unique':
-                        reach = val
+                        reach = val if isinstance(val, (int, float)) else 0
                     elif mname == 'post_clicks':
-                        clicks = val
+                        clicks = val if isinstance(val, (int, float)) else 0
+                    elif mname == 'post_video_views':
+                        video_views = val if isinstance(val, (int, float)) else 0
+                    elif mname == 'post_reactions_by_type_total' and isinstance(val, dict):
+                        reactions_breakdown = val
         except Exception:
             pass
+
+        if views == 0 and video_views > 0:
+            views = video_views
+
+        total_reactions = p.get('reactions', {}).get('summary', {}).get('total_count', 0)
+        likes_count = reactions_breakdown.get('like', total_reactions)
 
         fb_insights[pid] = {
             'id': pid,
             'message': p.get('message', ''),
+            'created_time': p.get('created_time', ''),
             'views': views,
             'reach': reach,
             'clicks': clicks,
-            'reactions': p.get('reactions', {}).get('summary', {}).get('total_count', 0),
+            'reactions': total_reactions,
+            'likes': likes_count,
             'comments': p.get('comments', {}).get('summary', {}).get('total_count', 0),
             'shares': p.get('shares', {}).get('count', 0),
         }
@@ -912,8 +932,10 @@ def sync_social_posts_metrics():
     ig_media = []
     if ig_id:
         try:
-            url = f"{META_GRAPH_BASE_URL}/{ig_id}/media?fields=id,caption,media_type,timestamp,like_count,comments_count,permalink&limit=50&access_token={urllib.parse.quote(token)}"
-            with urllib.request.urlopen(url, timeout=10) as r:
+            fields = "id,caption,media_type,media_product_type,timestamp,like_count,comments_count,permalink"
+            url = f"{META_GRAPH_BASE_URL}/{ig_id}/media?fields={fields}&limit=100&access_token={urllib.parse.quote(token)}"
+            req_ig = urllib.request.Request(url, headers={"User-Agent": "ControlCenterES/1.0"})
+            with urllib.request.urlopen(req_ig, timeout=12) as r:
                 ig_media = json.loads(r.read().decode('utf-8')).get('data', [])
         except Exception as e:
             print(f"[Metrics Sync] IG media err: {e}")
@@ -925,21 +947,24 @@ def sync_social_posts_metrics():
         ins_metrics = 'reach,plays,total_interactions' if mtype == 'VIDEO' else 'impressions,reach,total_interactions'
         ins_url = f"{META_GRAPH_BASE_URL}/{mid}/insights?metric={ins_metrics}&access_token={urllib.parse.quote(token)}"
         try:
-            with urllib.request.urlopen(ins_url, timeout=3) as ir:
+            req_igi = urllib.request.Request(ins_url, headers={"User-Agent": "ControlCenterES/1.0"})
+            with urllib.request.urlopen(req_igi, timeout=4) as ir:
                 idata = json.loads(ir.read().decode('utf-8')).get('data', [])
                 for item in idata:
                     mname = item.get('name')
                     val = item.get('values', [{}])[0].get('value', 0)
-                    if mname in ('impressions', 'plays', 'views'):
+                    if mname in ('impressions', 'plays', 'views') and isinstance(val, (int, float)):
                         m['views'] = val
-                    elif mname == 'reach':
+                    elif mname == 'reach' and isinstance(val, (int, float)):
                         m['reach'] = val
+                    elif mname == 'total_interactions' and isinstance(val, (int, float)):
+                        m['interactions'] = val
         except Exception:
             pass
 
-    import re
     def normalize_text(t):
-        if not t: return ""
+        if not t:
+            return ""
         t = re.sub(r'[^a-zA-Z0-9áéíóúÁÉÍÓÚñÑ ]', ' ', t.lower())
         return " ".join(t.split())
 
@@ -948,39 +973,96 @@ def sync_social_posts_metrics():
 
     for post in db_posts:
         caption_norm = normalize_text(post.get('caption') or '')
+        title_norm = normalize_text(post.get('title') or '')
         prefix = caption_norm[:35] if caption_norm else ""
-        ext_id = post.get('external_post_id') or ""
+        ext_id = str(post.get('external_post_id') or "")
+        existing_metrics = post.get('metrics') or {}
 
-        saved_fb_id = None
-        saved_ig_id = None
-        if "{" in ext_id and "}" in ext_id:
-            try:
-                parsed_ext = json.loads(ext_id)
-                saved_fb_id = parsed_ext.get("facebook_id")
-                saved_ig_id = parsed_ext.get("instagram_id")
-            except Exception:
-                pass
-
+        # 1. Matching Facebook
         matched_fb = None
+        saved_fb_id = existing_metrics.get('facebook', {}).get('id')
         if saved_fb_id and saved_fb_id in fb_insights:
             matched_fb = fb_insights[saved_fb_id]
-        elif prefix:
+        elif ext_id:
+            if "{" in ext_id and "}" in ext_id:
+                try:
+                    parsed_ext = json.loads(ext_id)
+                    cand = parsed_ext.get("facebook_id") or parsed_ext.get("fb_id")
+                    if cand and cand in fb_insights:
+                        matched_fb = fb_insights[cand]
+                except Exception:
+                    pass
+            if not matched_fb:
+                fb_match = re.search(r'Facebook Post ID:\s*([0-9_]+)', ext_id)
+                if fb_match:
+                    cand = fb_match.group(1).strip()
+                    if cand in fb_insights:
+                        matched_fb = fb_insights[cand]
+                    else:
+                        for k in fb_insights:
+                            if k.endswith(f"_{cand}") or cand.endswith(f"_{k}"):
+                                matched_fb = fb_insights[k]
+                                break
+
+        if not matched_fb and prefix:
             for fbid, finfo in fb_insights.items():
-                fb_msg_norm = normalize_text(finfo['message'])
-                if prefix in fb_msg_norm or (fb_msg_norm and fb_msg_norm[:35] in caption_norm):
+                fb_msg_norm = normalize_text(finfo.get('message', ''))
+                if not fb_msg_norm:
+                    continue
+                if prefix in fb_msg_norm or fb_msg_norm[:35] in caption_norm:
                     matched_fb = finfo
                     break
 
+        if not matched_fb and title_norm and len(title_norm) > 10:
+            for fbid, finfo in fb_insights.items():
+                fb_msg_norm = normalize_text(finfo.get('message', ''))
+                if title_norm in fb_msg_norm:
+                    matched_fb = finfo
+                    break
+
+        # 2. Matching Instagram
         matched_ig = None
+        saved_ig_id = existing_metrics.get('instagram', {}).get('id')
         if saved_ig_id:
             for ig_item in ig_media:
                 if ig_item.get('id') == saved_ig_id:
                     matched_ig = ig_item
                     break
+
+        if not matched_ig and ext_id:
+            if "{" in ext_id and "}" in ext_id:
+                try:
+                    parsed_ext = json.loads(ext_id)
+                    cand = parsed_ext.get("instagram_id") or parsed_ext.get("ig_id")
+                    if cand:
+                        for ig_item in ig_media:
+                            if ig_item.get('id') == cand:
+                                matched_ig = ig_item
+                                break
+                except Exception:
+                    pass
+            if not matched_ig:
+                ig_match = re.search(r'Instagram Post ID:\s*([0-9_]+)', ext_id)
+                if ig_match:
+                    cand = ig_match.group(1).strip()
+                    for ig_item in ig_media:
+                        if ig_item.get('id') == cand:
+                            matched_ig = ig_item
+                            break
+
         if not matched_ig and prefix:
             for ig_item in ig_media:
                 ig_cap_norm = normalize_text(ig_item.get('caption') or '')
-                if prefix in ig_cap_norm or (ig_cap_norm and ig_cap_norm[:35] in caption_norm):
+                if not ig_cap_norm:
+                    continue
+                if prefix in ig_cap_norm or ig_cap_norm[:35] in caption_norm:
+                    matched_ig = ig_item
+                    break
+
+        if not matched_ig and title_norm and len(title_norm) > 10:
+            for ig_item in ig_media:
+                ig_cap_norm = normalize_text(ig_item.get('caption') or '')
+                if title_norm in ig_cap_norm:
                     matched_ig = ig_item
                     break
 
@@ -988,27 +1070,89 @@ def sync_social_posts_metrics():
         if matched_fb:
             metrics['facebook'] = {
                 'id': matched_fb['id'],
-                'views': matched_fb['views'],
-                'reach': matched_fb['reach'],
-                'reactions': matched_fb['reactions'],
-                'comments': matched_fb['comments'],
-                'shares': matched_fb['shares']
+                'views': matched_fb.get('views', 0),
+                'reach': matched_fb.get('reach', 0),
+                'reactions': matched_fb.get('reactions', 0),
+                'likes': matched_fb.get('likes', matched_fb.get('reactions', 0)),
+                'comments': matched_fb.get('comments', 0),
+                'shares': matched_fb.get('shares', 0),
+                'clicks': matched_fb.get('clicks', 0),
             }
+        elif existing_metrics.get('facebook'):
+            # Conservar métricas previas si ya existían para no borrar histórico
+            metrics['facebook'] = existing_metrics['facebook']
+
         if matched_ig:
             metrics['instagram'] = {
                 'id': matched_ig['id'],
                 'likes': matched_ig.get('like_count', 0),
                 'comments': matched_ig.get('comments_count', 0),
-                'permalink': matched_ig.get('permalink', '')
+                'permalink': matched_ig.get('permalink', ''),
+                'media_type': matched_ig.get('media_type', 'IMAGE'),
             }
             if 'views' in matched_ig:
                 metrics['instagram']['views'] = matched_ig['views']
             if 'reach' in matched_ig:
                 metrics['instagram']['reach'] = matched_ig['reach']
+        elif existing_metrics.get('instagram'):
+            # Conservar métricas previas si ya existían
+            metrics['instagram'] = existing_metrics['instagram']
 
         if metrics:
             database.update_marketing_post_metrics(post['id'], metrics)
             updated_count += 1
 
-    return {"success": True, "updated_count": updated_count}
+    # Registrar fecha y hora de la última sincronización en settings del inquilino
+    now_iso = datetime.now().isoformat()
+    try:
+        database.set_setting("meta_metrics_last_synced_at", now_iso)
+    except Exception as e:
+        print(f"[Metrics Sync] Error guardando meta_metrics_last_synced_at: {e}")
+
+    return {"success": True, "updated_count": updated_count, "last_synced_at": now_iso}
+
+
+def check_and_sync_social_metrics_if_due(tenant=None):
+    """
+    Verifica si corresponde sincronizar métricas de Meta para el tenant actual.
+    Se ejecuta de forma periódica en el scheduler del VPS (al menos una vez al día o cada 12 horas).
+    """
+    from datetime import datetime
+
+    creds = get_meta_credentials()
+    if not creds.get("access_token"):
+        return {"synced": False, "reason": "no_credentials"}
+
+    interval_hours = 12
+    try:
+        interval_hours = int(database.get_setting("meta_metrics_sync_interval_hours", "12"))
+    except Exception:
+        interval_hours = 12
+
+    last_synced = database.get_setting("meta_metrics_last_synced_at", "")
+    now = datetime.now()
+
+    if last_synced:
+        try:
+            last_dt = datetime.fromisoformat(last_synced)
+            elapsed_seconds = (now - last_dt).total_seconds()
+            # Si transcurrió menos del intervalo y sigue siendo el mismo día calendario, omitir
+            if elapsed_seconds < (interval_hours * 3600) and last_dt.date() == now.date():
+                return {
+                    "synced": False,
+                    "reason": "already_synced_recently",
+                    "elapsed_seconds": elapsed_seconds,
+                    "last_synced_at": last_synced
+                }
+        except Exception:
+            pass
+
+    slug = (tenant or {}).get("slug", "unknown")
+    print(f"[Scheduler-Marketing][{slug}] Ejecutando sincronización automática de métricas de Facebook e Instagram...")
+    res = sync_social_posts_metrics()
+    return {
+        "synced": True,
+        "updated_count": res.get("updated_count", 0),
+        "last_synced_at": res.get("last_synced_at", now.isoformat())
+    }
 
