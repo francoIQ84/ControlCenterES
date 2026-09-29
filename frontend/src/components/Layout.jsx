@@ -186,6 +186,8 @@ function getInitials(name) {
   return name.slice(0, 2).toUpperCase()
 }
 
+const defaultAppVersion = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : 'v1.0.0'
+
 export default function Layout() {
   const navigate = useNavigate()
   const location = useLocation()
@@ -194,6 +196,7 @@ export default function Layout() {
     username: localStorage.getItem('adminUsername') || '',
     fullName: localStorage.getItem('adminFullName') || ''
   }))
+  const [systemVersion, setSystemVersion] = useState(defaultAppVersion)
   const [lightMode, setLightMode] = useState(true)
   const [syncing, setSyncing] = useState(false)
   const [collapsed, setCollapsed] = useState(typeof window !== 'undefined' ? window.innerWidth < 768 : false)
@@ -202,6 +205,15 @@ export default function Layout() {
   const logoUrl = formatLogoUrl(tenant?.settings?.logo_url)
   const [isWideLogo, setIsWideLogo] = useState(false)
   const [logoError, setLogoError] = useState(false)
+
+  useEffect(() => {
+    fetch('/api/system/version')
+      .then(r => r.json())
+      .then(data => {
+        if (data && data.version) setSystemVersion(data.version)
+      })
+      .catch(() => {})
+  }, [])
 
   useEffect(() => {
     if (!logoUrl) {
@@ -767,55 +779,84 @@ export default function Layout() {
             borderRadius: '10px',
             backgroundColor: 'var(--bg-card)',
             border: '1px solid var(--border-color)',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '8px',
             boxShadow: '0 1px 3px rgba(0,0,0,0.05)'
           }}>
             <div style={{
-              width: 28,
-              height: 28,
-              borderRadius: '50%',
-              backgroundColor: 'rgba(59, 130, 246, 0.15)',
-              color: 'var(--accent-blue)',
-              border: '1px solid rgba(59, 130, 246, 0.3)',
               display: 'flex',
               alignItems: 'center',
-              justifyContent: 'center',
-              fontWeight: 800,
-              fontSize: '0.78rem',
-              flexShrink: 0
+              gap: '8px'
             }}>
-              {(currentUser.fullName || currentUser.username).charAt(0).toUpperCase()}
-            </div>
-            <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{
-                fontSize: '0.78rem',
-                fontWeight: 700,
-                color: 'var(--text-primary)',
-                whiteSpace: 'nowrap',
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                lineHeight: 1.2
-              }}>
-                {currentUser.fullName || currentUser.username}
-              </div>
-              <div style={{
-                fontSize: '0.68rem',
-                color: 'var(--text-secondary)',
+                width: 28,
+                height: 28,
+                borderRadius: '50%',
+                backgroundColor: 'rgba(59, 130, 246, 0.15)',
+                color: 'var(--accent-blue)',
+                border: '1px solid rgba(59, 130, 246, 0.3)',
                 display: 'flex',
                 alignItems: 'center',
-                gap: '4px',
-                marginTop: 2
+                justifyContent: 'center',
+                fontWeight: 800,
+                fontSize: '0.78rem',
+                flexShrink: 0
               }}>
-                <span style={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: '#10b981', display: 'inline-block' }}></span>
-                <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>@{currentUser.username}</span>
+                {(currentUser.fullName || currentUser.username).charAt(0).toUpperCase()}
               </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{
+                  fontSize: '0.78rem',
+                  fontWeight: 700,
+                  color: 'var(--text-primary)',
+                  whiteSpace: 'nowrap',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  lineHeight: 1.2
+                }}>
+                  {currentUser.fullName || currentUser.username}
+                </div>
+                <div style={{
+                  fontSize: '0.68rem',
+                  color: 'var(--text-secondary)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  marginTop: 2
+                }}>
+                  <span style={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: '#10b981', display: 'inline-block' }}></span>
+                  <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>@{currentUser.username}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Versión del sistema */}
+            <div style={{
+              marginTop: 6,
+              paddingTop: 5,
+              borderTop: '1px solid var(--border-color)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              fontSize: '0.65rem',
+              color: 'var(--text-secondary)'
+            }}>
+              <span style={{ opacity: 0.75 }}>Versión</span>
+              <span style={{
+                fontWeight: 700,
+                fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+                fontSize: '0.68rem',
+                color: 'var(--accent-blue)',
+                backgroundColor: 'rgba(59, 130, 246, 0.08)',
+                padding: '1px 6px',
+                borderRadius: 4,
+                border: '1px solid rgba(59, 130, 246, 0.2)'
+              }}>
+                {systemVersion}
+              </span>
             </div>
           </div>
         )}
         {currentUser.username && collapsed && (
-          <div style={{ display: 'flex', justifyContent: 'center', margin: '0 0 10px' }} title={`Conectado como: ${currentUser.fullName} (@${currentUser.username})`}>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', margin: '0 0 10px', gap: 3 }} title={`Conectado como: ${currentUser.fullName} (@${currentUser.username}) - Versión ${systemVersion}`}>
             <div style={{
               width: 28,
               height: 28,
@@ -831,6 +872,15 @@ export default function Layout() {
             }}>
               {(currentUser.fullName || currentUser.username).charAt(0).toUpperCase()}
             </div>
+            <span style={{
+              fontSize: '0.58rem',
+              fontWeight: 700,
+              color: 'var(--text-secondary)',
+              fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+              opacity: 0.85
+            }}>
+              {systemVersion}
+            </span>
           </div>
         )}
 

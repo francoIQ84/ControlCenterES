@@ -128,6 +128,18 @@ def main():
     if os.path.exists(backend_scheduler):
         sftp.put(backend_scheduler, '/var/www/controlcenter/backend/run_scheduler.py')
 
+    # Detectar tag de versión git y subir version.txt
+    import subprocess
+    try:
+        current_version = subprocess.check_output(["git", "describe", "--tags", "--abbrev=0"]).decode().strip()
+    except Exception:
+        current_version = "v1.0.0"
+    version_file = os.path.join(LOCAL_DIR, 'backend', 'version.txt')
+    with open(version_file, 'w', encoding='utf-8') as vf:
+        vf.write(current_version)
+    sftp.put(version_file, '/var/www/controlcenter/backend/version.txt')
+    print(f"[OK] Versión del sistema configurada: {current_version}")
+
     # Instalar/actualizar archivo de servicio systemd para el Scheduler
     scheduler_service_def = """[Unit]
 Description=ControlCenterES Background Scheduler Daemon

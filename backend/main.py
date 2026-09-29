@@ -101,6 +101,39 @@ app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 # que además filtran por inquilino. El frontend ya usaba esos endpoints: el
 # montaje estático no estaba enlazado desde ninguna parte.
 
+def get_system_version() -> str:
+    env_ver = os.environ.get("APP_VERSION", "").strip()
+    if env_ver:
+        return env_ver
+    candidates = [
+        "version.txt",
+        "backend/version.txt",
+        os.path.join(os.path.dirname(__file__), "version.txt"),
+        os.path.join(os.path.dirname(__file__), "..", "version.txt"),
+        "/var/www/controlcenter/backend/version.txt"
+    ]
+    for p in candidates:
+        if os.path.exists(p):
+            try:
+                with open(p, "r", encoding="utf-8") as f:
+                    ver = f.read().strip()
+                    if ver:
+                        return ver
+            except Exception:
+                pass
+    try:
+        import subprocess
+        ver = subprocess.check_output(["git", "describe", "--tags", "--abbrev=0"], stderr=subprocess.DEVNULL).decode().strip()
+        if ver:
+            return ver
+    except Exception:
+        pass
+    return "v1.0.0"
+
+@app.get("/api/system/version")
+def system_version_endpoint():
+    return {"version": get_system_version()}
+
 # Include API routes
 app.include_router(api_router, prefix="/api")
 
