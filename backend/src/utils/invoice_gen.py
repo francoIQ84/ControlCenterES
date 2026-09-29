@@ -167,30 +167,48 @@ class AFIPHeaderFlowable(Flowable):
 
         y = content_top - 8 * mm
 
-        # Razón Social (large, bold) — next to letter box, limit width
-        c.setFont("Helvetica-Bold", 12)
-        c.setFillColor(colors.HexColor('#1a1a1a'))
-        name = self.seller.get('name', '')
-        display_name = name
-        while c.stringWidth(display_name, "Helvetica-Bold", 12) > max_w_near_box and len(display_name) > 5:
-            display_name = display_name[:-1]
-        if len(display_name) < len(name):
-            display_name = display_name.rstrip() + "…"
-        c.drawString(left_margin, y, display_name)
+        fantasy_name = (self.seller.get('fantasy_name') or '').strip()
+        razon_social = (self.seller.get('razon_social') or self.seller.get('name') or '').strip()
 
-        # Razón Social subtitle
-        razon = self.seller.get('razon_social', self.seller.get('name', ''))
-        if razon and razon != name:
-            y -= 5 * mm
-            c.setFont("Helvetica", 7)
-            c.setFillColor(colors.HexColor('#666666'))
-            razon_text = f"Razón Social: {razon}"
-            display_razon = razon_text
-            while c.stringWidth(display_razon, "Helvetica", 7) > max_w_near_box and len(display_razon) > 15:
-                display_razon = display_razon[:-1]
-            if len(display_razon) < len(razon_text):
-                display_razon = display_razon.rstrip() + "…"
-            c.drawString(left_margin, y, display_razon)
+        if fantasy_name:
+            # 1. Fantasy name as bold header title (e.g. "Experiencia Sustentable" o "Hidroponía Rosario")
+            c.setFillColor(colors.HexColor('#1a1a1a'))
+            display_title = fantasy_name
+            font_size = 12
+            while font_size >= 9 and c.stringWidth(display_title, "Helvetica-Bold", font_size) > max_w_near_box:
+                font_size -= 0.5
+            while c.stringWidth(display_title, "Helvetica-Bold", font_size) > max_w_near_box and len(display_title) > 5:
+                display_title = display_title[:-1]
+            if len(display_title) < len(fantasy_name):
+                display_title = display_title.rstrip() + "…"
+            c.setFont("Helvetica-Bold", font_size)
+            c.drawString(left_margin, y, display_title)
+
+            # 2. Razón Social as subtitle (e.g. "Razón Social: GENTILI FRANCO AGUSTIN")
+            if razon_social and razon_social.lower() != fantasy_name.lower():
+                y -= 5 * mm
+                c.setFont("Helvetica", 7)
+                c.setFillColor(colors.HexColor('#555555'))
+                razon_text = f"Razón Social: {razon_social}"
+                display_razon = razon_text
+                while c.stringWidth(display_razon, "Helvetica", 7) > max_w_near_box and len(display_razon) > 15:
+                    display_razon = display_razon[:-1]
+                if len(display_razon) < len(razon_text):
+                    display_razon = display_razon.rstrip() + "…"
+                c.drawString(left_margin, y, display_razon)
+        else:
+            # No fantasy name: Razón Social is the direct main title (Normativa AFIP RG 1415 estándar)
+            c.setFillColor(colors.HexColor('#1a1a1a'))
+            display_title = razon_social
+            font_size = 11.5
+            while font_size >= 8.5 and c.stringWidth(display_title, "Helvetica-Bold", font_size) > max_w_near_box:
+                font_size -= 0.5
+            while c.stringWidth(display_title, "Helvetica-Bold", font_size) > max_w_near_box and len(display_title) > 5:
+                display_title = display_title[:-1]
+            if len(display_title) < len(razon_social):
+                display_title = display_title.rstrip() + "…"
+            c.setFont("Helvetica-Bold", font_size)
+            c.drawString(left_margin, y, display_title)
 
         # ── Lines below the letter box (full left-column width) ──
         y = box_y - 3 * mm
@@ -262,13 +280,25 @@ class AFIPHeaderFlowable(Flowable):
         c.setFont("Helvetica", 8)
         c.drawString(left_margin + iibb_w, y, str(self.iibb or cuit_fmt))
 
-        # Start date
+        # Start date (+ optional Phone)
         y -= 4.5 * mm
         c.setFont("Helvetica-Bold", 8)
         c.drawString(left_margin, y, "Inicio de Actividades: ")
         start_w = c.stringWidth("Inicio de Actividades: ", "Helvetica-Bold", 8)
         c.setFont("Helvetica", 8)
         c.drawString(left_margin + start_w, y, self.start_date)
+
+        phone = (self.seller.get('phone') or '').strip()
+        if phone:
+            tel_prefix = "Tel: "
+            tel_full = tel_prefix + phone
+            tel_w = c.stringWidth(tel_full, "Helvetica", 7.5)
+            tel_x = center_x - 4 * mm - tel_w
+            if tel_x > left_margin + start_w + c.stringWidth(self.start_date, "Helvetica", 8) + 3 * mm:
+                c.setFont("Helvetica-Bold", 7.5)
+                c.drawString(tel_x, y, tel_prefix)
+                c.setFont("Helvetica", 7.5)
+                c.drawString(tel_x + c.stringWidth(tel_prefix, "Helvetica-Bold", 7.5), y, phone)
 
         # ─── CENTER LETTER BOX ───
         # Box shadow effect
@@ -341,15 +371,57 @@ class AFIPHeaderFlowable(Flowable):
 def _build_invoice_page(order, copy_type, usable_w):
     """Builds all the flowable elements for one page of the invoice (ORIGINAL or DUPLICADO)."""
 
-    # ---- Load merchant settings ----
-    merchant_name = database.get_setting('merchant_commercial_name') or database.get_merchant_name()
-    merchant_razon_social = database.get_setting('afip_razon_social') or database.get_setting('merchant_name') or merchant_name
-    merchant_cuit = database.get_setting('afip_cuit', '30-71234567-9')
-    merchant_address = database.get_setting('merchant_address', 'Bv. Oroño 4500, Rosario, Santa Fe')
-    merchant_phone = database.get_setting('merchant_phone', '+54 341 456-7890')
+    # ---- Load merchant and branding settings ----
+    merchant_razon_social = (
+        database.get_setting('afip_razon_social') 
+        or database.get_setting('merchant_name') 
+        or 'GENTILI FRANCO AGUSTIN'
+    ).strip()
+
+    fantasy_mode = database.get_setting('invoice_fantasy_name_mode', 'channel')
+    custom_fantasy = (database.get_setting('invoice_fantasy_name') or '').strip()
+    local_name = (database.get_setting('invoice_local_commercial_name') or 'Experiencia Sustentable').strip()
+    web_name = (
+        database.get_setting('invoice_web_commercial_name') 
+        or database.get_setting('merchant_commercial_name') 
+        or 'Hidroponía Rosario'
+    ).strip()
+
+    order_source = str(order.get('source_platform') or order.get('source') or '').upper()
+    is_local_sale = (order_source == 'LOCAL' or 'LOCAL' in order_source or order_source == 'MANUAL_LOCAL')
+
+    fantasy_name = None
+    if fantasy_mode == 'none':
+        fantasy_name = None
+    elif fantasy_mode == 'custom':
+        fantasy_name = custom_fantasy if custom_fantasy else None
+    elif fantasy_mode == 'channel':
+        if is_local_sale:
+            fantasy_name = local_name if local_name else None
+        else:
+            fantasy_name = web_name if web_name else None
+
+    fiscal_address = (database.get_setting('merchant_address') or 'COLON 824, VILLA CONSTITUCION, SANTA FE').strip()
+    local_address = (database.get_setting('merchant_commercial_address') or 'Zeballos 1726, Rosario, Santa Fe, Argentina').strip()
+    address_mode = database.get_setting('invoice_address_mode', 'fiscal')
+
+    if address_mode == 'local':
+        display_address = local_address or fiscal_address
+    elif address_mode == 'channel':
+        display_address = local_address if (is_local_sale and local_address) else fiscal_address
+    elif address_mode == 'both' and local_address and local_address != fiscal_address:
+        display_address = f"{fiscal_address} (Local: {local_address})"
+    else:
+        display_address = fiscal_address
+
+    show_phone = database.get_setting('invoice_show_phone', '0') == '1'
+    merchant_phone = (database.get_setting('merchant_phone') or '+54 341 456-7890').strip()
+    merchant_cuit = database.get_setting('afip_cuit', '20-31383248-2')
     merchant_iibb = database.get_setting('merchant_iibb', '')
     merchant_iva_condition = database.get_setting('merchant_iva_condition', 'Responsable Monotributo')
-    merchant_start_date = database.get_setting('merchant_start_date', '01/01/2020')
+    merchant_start_date = database.get_setting('merchant_start_date', '01/10/2018')
+
+    invoice_footer_text = (database.get_setting('invoice_footer_text') or '').strip()
 
     pto_vta_val = int(database.get_setting('afip_pto_vta', '1'))
     tipo_cmp_val = int(order.get('cbte_tipo') or database.get_setting('afip_type_cmp', '11'))
@@ -433,9 +505,11 @@ def _build_invoice_page(order, copy_type, usable_w):
     # 1. MAIN HEADER (ORIGINAL/DUPLICADO + Seller + Letter)
     # ══════════════════════════════════════════
     seller = {
-        'name': merchant_name,
+        'fantasy_name': fantasy_name,
         'razon_social': merchant_razon_social,
-        'address': merchant_address,
+        'name': fantasy_name or merchant_razon_social,
+        'address': display_address,
+        'phone': merchant_phone if show_phone else '',
     }
     header = AFIPHeaderFlowable(
         seller=seller,
@@ -624,7 +698,42 @@ def _build_invoice_page(order, copy_type, usable_w):
         ('BACKGROUND', (0, -1), (-1, -1), LIGHT_GRAY),
     ]))
     story.append(totals_table)
-    story.append(Spacer(1, 5 * mm))
+    story.append(Spacer(1, 4 * mm))
+
+    # ══════════════════════════════════════════
+    # Optional Observations / Footer Note Box
+    # ══════════════════════════════════════════
+    if invoice_footer_text:
+        obs_style = ParagraphStyle(
+            f"obs_{copy_type}",
+            fontName='Helvetica',
+            fontSize=7.5,
+            textColor=colors.HexColor('#333333'),
+            leading=10
+        )
+        obs_title_style = ParagraphStyle(
+            f"obst_{copy_type}",
+            fontName='Helvetica-Bold',
+            fontSize=7.5,
+            textColor=colors.HexColor('#444444'),
+            leading=10
+        )
+        formatted_obs = invoice_footer_text.strip().replace('\n', '<br/>')
+        obs_content = [
+            [Paragraph("<b>Información al Cliente / Observaciones Comerciales:</b>", obs_title_style)],
+            [Paragraph(formatted_obs, obs_style)]
+        ]
+        obs_table = Table(obs_content, colWidths=[usable_w])
+        obs_table.setStyle(TableStyle([
+            ('BOX', (0, 0), (-1, -1), 0.5, colors.HexColor('#aaaaaa')),
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#f0f0f0')),
+            ('TOPPADDING', (0, 0), (-1, -1), 2.5),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 2.5),
+            ('LEFTPADDING', (0, 0), (-1, -1), 6),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 6),
+        ]))
+        story.append(obs_table)
+        story.append(Spacer(1, 3 * mm))
 
     # ══════════════════════════════════════════
     # 5. ARCA FOOTER (QR + CAE + Legalese)

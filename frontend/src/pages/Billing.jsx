@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react'
-import { useSearchParams, useParams } from 'react-router-dom'
+import { useSearchParams, useParams, Link } from 'react-router-dom'
 import { useTenant } from '../TenantContext'
 
 // AFIP Error Translator: convierte errores técnicos de WSFE/WSAA en recomendaciones amigables
@@ -127,6 +127,27 @@ export default function Billing() {
       })
   }
 
+  const [regeneratingId, setRegeneratingId] = useState(null)
+
+  const handleRegenerateInvoice = async (orderId) => {
+    if (!window.confirm("¿Deseas regenerar el PDF de esta factura con la configuración actual de membrete y datos? (Mantiene el mismo CAE, fecha y número fiscal autorizados).")) return
+    setRegeneratingId(orderId)
+    try {
+      const res = await fetch(`/api/sales/${orderId}/invoice/regenerate`, { method: 'POST' })
+      const data = await res.json()
+      if (res.ok) {
+        alert("✅ PDF de factura regenerado exitosamente.")
+        window.open(`/api/sales/${orderId}/invoice/pdf?token=${localStorage.getItem('adminToken')}&t=${Date.now()}`, '_blank')
+      } else {
+        alert("Error al regenerar: " + (data.detail || data.message || "Error desconocido"))
+      }
+    } catch(err) {
+      alert("Error de conexión: " + err.message)
+    } finally {
+      setRegeneratingId(null)
+    }
+  }
+
   const requestSort = (key) => {
     let direction = 'asc'
     if (sortConfig.key === key && sortConfig.direction === 'asc') {
@@ -220,8 +241,19 @@ export default function Billing() {
 
   return (
     <div>
-      <h1 className="page-title">Historial de Facturación</h1>
-      <p className="page-subtitle">Visualiza y descarga todos los comprobantes fiscales válidos autorizados por AFIP/ARCA.</p>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 12 }}>
+        <div>
+          <h1 className="page-title">Historial de Facturación</h1>
+          <p className="page-subtitle">Visualiza y descarga todos los comprobantes fiscales válidos autorizados por AFIP/ARCA.</p>
+        </div>
+        <Link 
+          to="/settings?tab=arca" 
+          className="btn btn-secondary"
+          style={{ display: 'inline-flex', alignItems: 'center', gap: 6, textDecoration: 'none', padding: '9px 15px', fontSize: '0.85rem', fontWeight: 600, marginTop: 5 }}
+        >
+          ⚙️ Personalizar PDF y Membrete
+        </Link>
+      </div>
 
       {/* Summary Cards */}
       <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '20px', marginBottom: '25px', marginTop: '15px' }}>
@@ -467,15 +499,27 @@ export default function Billing() {
                     ${Number(o.total_amount || 0).toLocaleString('es-AR', { minimumFractionDigits: 2 })}
                   </td>
                   <td data-label="Acción" style={{ textAlign: 'center' }}>
-                    <a
-                      href={`/api/sales/${o.order_id}/invoice/pdf?token=${localStorage.getItem('adminToken')}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="btn btn-primary"
-                      style={{ fontSize: '0.8rem', padding: '5px 10px', textDecoration: 'none', display: 'inline-block' }}
-                    >
-                      Ver PDF
-                    </a>
+                    <div style={{ display: 'flex', gap: 6, justifyContent: 'center', alignItems: 'center' }}>
+                      <a
+                        href={`/api/sales/${o.order_id}/invoice/pdf?token=${localStorage.getItem('adminToken')}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="btn btn-primary"
+                        style={{ fontSize: '0.8rem', padding: '5px 10px', textDecoration: 'none', display: 'inline-block' }}
+                      >
+                        Ver PDF
+                      </a>
+                      <button
+                        type="button"
+                        onClick={() => handleRegenerateInvoice(o.order_id)}
+                        disabled={regeneratingId === o.order_id}
+                        className="btn btn-secondary"
+                        title="Regenerar PDF con el membrete y configuración actual (mantiene CAE y fecha)"
+                        style={{ fontSize: '0.8rem', padding: '5px 8px', cursor: 'pointer' }}
+                      >
+                        {regeneratingId === o.order_id ? '⏳' : '🔄'}
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}

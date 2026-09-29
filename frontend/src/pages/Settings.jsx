@@ -109,7 +109,14 @@ export default function Settings() {
   }
   
   // Tabs & Logs
-  const [activeTab, setActiveTab] = useState("channels") // "channels", "connection", "tiendanube", "users", "security", "web_config", "arca"
+  const [activeTab, setActiveTab] = useState(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      return params.get('tab') || "channels";
+    } catch {
+      return "channels";
+    }
+  }) // "channels", "connection", "tiendanube", "users", "security", "web_config", "arca"
   const [history, setHistory] = useState([])
   const [historyLoading, setHistoryLoading] = useState(false)
 
@@ -476,8 +483,16 @@ export default function Settings() {
     merchant_iva_condition: 'Responsable Monotributo',
     merchant_start_date: '',
     afip_cert_uploaded: false,
-    afip_key_generated: false
+    afip_key_generated: false,
+    invoice_fantasy_name_mode: 'channel',
+    invoice_fantasy_name: '',
+    invoice_local_commercial_name: 'Experiencia Sustentable',
+    invoice_web_commercial_name: 'Hidroponía Rosario',
+    invoice_address_mode: 'fiscal',
+    invoice_show_phone: false,
+    invoice_footer_text: ''
   })
+  const [invoicePreviewChannel, setInvoicePreviewChannel] = useState('LOCAL')
   const [searchingCuit, setSearchingCuit] = useState(false)
   const [csrCompanyName, setCsrCompanyName] = useState('Hidroponia Rosario')
   const [generatedCsr, setGeneratedCsr] = useState('')
@@ -951,6 +966,46 @@ export default function Settings() {
     } finally {
       setSearchingCuit(false)
     }
+  }
+
+  const getInvoicePreviewTitleAndSubtitle = () => {
+    const mode = arcaConfig.invoice_fantasy_name_mode || 'channel'
+    const razonSocial = (arcaConfig.merchant_name || 'GENTILI FRANCO AGUSTIN').trim()
+    
+    if (mode === 'none') {
+      return { title: razonSocial, subtitle: null }
+    }
+    
+    let fantasy = ''
+    if (mode === 'custom') {
+      fantasy = (arcaConfig.invoice_fantasy_name || '').trim()
+    } else if (mode === 'channel') {
+      if (invoicePreviewChannel === 'LOCAL') {
+        fantasy = (arcaConfig.invoice_local_commercial_name || 'Experiencia Sustentable').trim()
+      } else {
+        fantasy = (arcaConfig.invoice_web_commercial_name || arcaConfig.merchant_commercial_name || 'Hidroponía Rosario').trim()
+      }
+    }
+    
+    if (!fantasy) {
+      return { title: razonSocial, subtitle: null }
+    }
+    
+    return {
+      title: fantasy,
+      subtitle: fantasy.toLowerCase() !== razonSocial.toLowerCase() ? `Razón Social: ${razonSocial}` : null
+    }
+  }
+
+  const getInvoicePreviewAddress = () => {
+    const mode = arcaConfig.invoice_address_mode || 'fiscal'
+    const fiscal = arcaConfig.merchant_address || 'COLON 824, VILLA CONSTITUCION, SANTA FE'
+    const local = arcaConfig.merchant_commercial_address || 'Zeballos 1726, Rosario, Santa Fe, Argentina'
+    
+    if (mode === 'local') return local || fiscal
+    if (mode === 'channel') return invoicePreviewChannel === 'LOCAL' ? (local || fiscal) : fiscal
+    if (mode === 'both' && local && local !== fiscal) return `${fiscal} (Local: ${local})`
+    return fiscal
   }
 
   // Load history when security tab opens
@@ -3770,54 +3825,23 @@ export default function Settings() {
               </label>
 
               <div style={{
-                padding: '12px 14px', 
+                padding: '14px 16px', 
                 borderRadius: 8, 
-                backgroundColor: 'rgba(59, 130, 246, 0.08)', 
-                border: '1px solid rgba(59, 130, 246, 0.25)',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: 12
-              }}>
-                <div style={{fontWeight: 700, fontSize: '0.88rem', color: 'var(--accent-blue)', display: 'flex', alignItems: 'center', gap: 6}}>
-                  🏢 Membrete Comercial (Presupuestos, Cotizaciones y Atención al Público)
-                </div>
-                <label style={{fontSize: '0.85rem'}}>Nombre Comercial / Fantasía
-                  <input 
-                    type="text" 
-                    placeholder="ej. Experiencia Sustentable"
-                    value={arcaConfig.merchant_commercial_name || ''} 
-                    onChange={e => setArcaConfig({...arcaConfig, merchant_commercial_name: e.target.value})} 
-                    style={{width: '100%', marginTop: 5}}
-                  />
-                  <span style={{fontSize: '0.74rem', color: 'var(--text-secondary)'}}>Nombre de marca que encabeza tus presupuestos.</span>
-                </label>
-
-                <label style={{fontSize: '0.85rem'}}>Dirección Comercial del Local / Showroom
-                  <input 
-                    type="text" 
-                    placeholder="ej. Zeballos 1726, Rosario, Santa Fe, Argentina"
-                    value={arcaConfig.merchant_commercial_address || ''} 
-                    onChange={e => setArcaConfig({...arcaConfig, merchant_commercial_address: e.target.value})} 
-                    style={{width: '100%', marginTop: 5}}
-                  />
-                  <span style={{fontSize: '0.74rem', color: 'var(--text-secondary)'}}>Dirección comercial física donde atiendes o entregas (aparece en presupuestos).</span>
-                </label>
-              </div>
-
-              <div style={{
-                padding: '12px 14px', 
-                borderRadius: 8, 
-                backgroundColor: 'var(--bg-hover)', 
-                border: '1px solid var(--border-color)',
+                backgroundColor: 'rgba(59, 130, 246, 0.05)', 
+                border: '1px solid rgba(59, 130, 246, 0.2)',
                 display: 'flex',
                 flexDirection: 'column',
                 gap: 12,
                 marginTop: 2
               }}>
-                <div style={{fontWeight: 700, fontSize: '0.88rem', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: 6}}>
-                  🏛️ Datos Fiscales Oficiales (Exclusivos para Facturación AFIP / ARCA)
+                <div style={{fontWeight: 700, fontSize: '0.92rem', color: '#003A70', display: 'flex', alignItems: 'center', gap: 6}}>
+                  🏛️ Datos Fiscales Oficiales (Obligatorios por RG 1415 AFIP / ARCA)
                 </div>
-                <label style={{fontSize: '0.85rem'}}>Razón Social (Oficial ante AFIP)
+                <div style={{fontSize: '0.78rem', color: 'var(--text-secondary)', lineHeight: 1.4}}>
+                  🛡️ <strong>Exigidos por Ley:</strong> Razón Social, CUIT, Domicilio Fiscal ante AFIP, Condición frente al IVA, IIBB, Inicio de Actividades y Punto de Venta son de inclusión obligatoria para la validez legal del comprobante fiscal.
+                </div>
+
+                <label style={{fontSize: '0.85rem'}}>Razón Social / Apellido y Nombre (Oficial ante AFIP)
                   <input 
                     type="text" 
                     required
@@ -3839,104 +3863,408 @@ export default function Settings() {
                   />
                   <span style={{fontSize: '0.74rem', color: 'var(--text-secondary)'}}>Domicilio fiscal legal para emisión de comprobantes electrónicos oficiales.</span>
                 </label>
-              </div>
 
-              <label>Teléfono de Contacto
-                <input 
-                  type="text" 
-                  placeholder="ej. +54 341 456-7890"
-                  value={arcaConfig.merchant_phone} 
-                  onChange={e => setArcaConfig({...arcaConfig, merchant_phone: e.target.value})} 
-                  style={{width: '100%', marginTop: 5}}
-                />
-              </label>
-
-              <label>N° de Ingresos Brutos (IIBB)
-                <input 
-                  type="text" 
-                  placeholder="ej. 20313832482 (o mismo que CUIT)"
-                  value={arcaConfig.merchant_iibb} 
-                  onChange={e => setArcaConfig({...arcaConfig, merchant_iibb: e.target.value})} 
-                  style={{width: '100%', marginTop: 5}}
-                />
-              </label>
-
-              <div style={{display: 'flex', gap: 15}}>
-                <label style={{flex: 1}}>Condición frente al IVA
-                  <select
-                    value={arcaConfig.merchant_iva_condition}
-                    onChange={e => setArcaConfig({...arcaConfig, merchant_iva_condition: e.target.value})}
-                    style={{width: '100%', marginTop: 5}}
-                  >
-                    <option value="Responsable Monotributo">Responsable Monotributo</option>
-                    <option value="Responsable Inscripto">Responsable Inscripto</option>
-                    <option value="Exento">Exento</option>
-                    <option value="No Responsable">No Responsable</option>
-                  </select>
-                </label>
-                <label style={{flex: 1}}>Fecha de Inicio de Actividades
+                <label style={{fontSize: '0.85rem'}}>N° de Ingresos Brutos (IIBB)
                   <input 
                     type="text" 
-                    placeholder="ej. 01/01/2020"
-                    value={arcaConfig.merchant_start_date} 
-                    onChange={e => setArcaConfig({...arcaConfig, merchant_start_date: e.target.value})} 
-                    style={{width: '100%', marginTop: 5}}
-                  />
-                </label>
-              </div>
-
-              <div style={{display: 'flex', gap: 15}}>
-                <label style={{flex: 1}}>Punto de Venta
-                  <input 
-                    type="number" 
-                    required
-                    min="1"
-                    value={arcaConfig.afip_pto_vta} 
-                    onChange={e => setArcaConfig({...arcaConfig, afip_pto_vta: parseInt(e.target.value) || 1})} 
+                    placeholder="ej. 1016798064 (o CUIT)"
+                    value={arcaConfig.merchant_iibb} 
+                    onChange={e => setArcaConfig({...arcaConfig, merchant_iibb: e.target.value})} 
                     style={{width: '100%', marginTop: 5}}
                   />
                 </label>
 
-                <label style={{flex: 1}}>Tipo de Comprobante
-                  <select 
-                    value={arcaConfig.afip_type_cmp} 
-                    onChange={e => setArcaConfig({...arcaConfig, afip_type_cmp: parseInt(e.target.value) || 11})} 
-                    style={{width: '100%', marginTop: 5}}
-                  >
-                    <option value={11}>Factura C (Monotributo)</option>
-                    <option value={6}>Factura B (Consumidor Final)</option>
-                    <option value={1}>Factura A (Responsable Inscripto a CUIT)</option>
-                  </select>
-                </label>
+                <div style={{display: 'flex', gap: 15}}>
+                  <label style={{flex: 1, fontSize: '0.85rem'}}>Condición frente al IVA
+                    <select
+                      value={arcaConfig.merchant_iva_condition}
+                      onChange={e => setArcaConfig({...arcaConfig, merchant_iva_condition: e.target.value})}
+                      style={{width: '100%', marginTop: 5}}
+                    >
+                      <option value="Responsable Monotributo">Responsable Monotributo</option>
+                      <option value="Responsable Inscripto">Responsable Inscripto</option>
+                      <option value="Exento">Exento</option>
+                      <option value="No Responsable">No Responsable</option>
+                    </select>
+                  </label>
+                  <label style={{flex: 1, fontSize: '0.85rem'}}>Inicio de Actividades
+                    <input 
+                      type="text" 
+                      placeholder="ej. 01/10/2018"
+                      value={arcaConfig.merchant_start_date} 
+                      onChange={e => setArcaConfig({...arcaConfig, merchant_start_date: e.target.value})} 
+                      style={{width: '100%', marginTop: 5}}
+                    />
+                  </label>
+                </div>
+
+                <div style={{display: 'flex', gap: 15}}>
+                  <label style={{flex: 1, fontSize: '0.85rem'}}>Punto de Venta
+                    <input 
+                      type="number" 
+                      required
+                      min="1"
+                      value={arcaConfig.afip_pto_vta} 
+                      onChange={e => setArcaConfig({...arcaConfig, afip_pto_vta: parseInt(e.target.value) || 1})} 
+                      style={{width: '100%', marginTop: 5}}
+                    />
+                  </label>
+
+                  <label style={{flex: 1, fontSize: '0.85rem'}}>Tipo de Comprobante
+                    <select 
+                      value={arcaConfig.afip_type_cmp} 
+                      onChange={e => setArcaConfig({...arcaConfig, afip_type_cmp: parseInt(e.target.value) || 11})} 
+                      style={{width: '100%', marginTop: 5}}
+                    >
+                      <option value={11}>Factura C (Monotributo)</option>
+                      <option value={6}>Factura B (Consumidor Final)</option>
+                      <option value={1}>Factura A (Responsable Inscripto a CUIT)</option>
+                    </select>
+                  </label>
+                </div>
+
+                <div style={{display: 'flex', gap: 15}}>
+                  <label style={{flex: 1, fontSize: '0.85rem'}}>Concepto Factura
+                    <select 
+                      value={arcaConfig.afip_concept} 
+                      onChange={e => setArcaConfig({...arcaConfig, afip_concept: parseInt(e.target.value) || 1})} 
+                      style={{width: '100%', marginTop: 5}}
+                    >
+                      <option value={1}>Productos</option>
+                      <option value={2}>Servicios</option>
+                      <option value={3}>Productos & Servicios</option>
+                    </select>
+                  </label>
+
+                  <label style={{flex: 1, fontSize: '0.85rem'}}>Entorno
+                    <select 
+                      value={arcaConfig.afip_environment} 
+                      onChange={e => setArcaConfig({...arcaConfig, afip_environment: e.target.value})} 
+                      style={{width: '100%', marginTop: 5}}
+                    >
+                      <option value="homologacion">Homologación (Prueba)</option>
+                      <option value="produccion">Producción (Real)</option>
+                    </select>
+                  </label>
+                </div>
               </div>
 
-              <div style={{display: 'flex', gap: 15}}>
-                <label style={{flex: 1}}>Concepto Factura
-                  <select 
-                    value={arcaConfig.afip_concept} 
-                    onChange={e => setArcaConfig({...arcaConfig, afip_concept: parseInt(e.target.value) || 1})} 
-                    style={{width: '100%', marginTop: 5}}
+              {/* SECTION: PERSONALIZACIÓN DEL PDF DE FACTURA */}
+              <div style={{
+                padding: '14px 16px', 
+                borderRadius: 8, 
+                backgroundColor: 'rgba(16, 185, 129, 0.05)', 
+                border: '1px solid rgba(16, 185, 129, 0.25)',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 14,
+                marginTop: 6
+              }}>
+                <div style={{fontWeight: 700, fontSize: '0.92rem', color: '#047857', display: 'flex', alignItems: 'center', gap: 6}}>
+                  📄 Personalización del PDF de Factura (Campos Opcionales de Ley)
+                </div>
+                
+                <div style={{
+                  fontSize: '0.78rem', 
+                  color: 'var(--text-secondary)', 
+                  lineHeight: 1.45,
+                  padding: '8px 12px',
+                  backgroundColor: 'rgba(255, 255, 255, 0.6)',
+                  borderRadius: 6,
+                  border: '1px solid rgba(16, 185, 129, 0.15)'
+                }}>
+                  ⚖️ <strong>Normativa AFIP RG 1415:</strong> El <em>Nombre de Fantasía</em> es optativo (la norma dice <em>"de poseerlo"</em>). 
+                  Si <strong>no</strong> quieres que diga "Hidroponía Rosario" ni ninguna marca, puedes desactivarlo y la factura encabezará directamente con tu Razón Social oficial. 
+                  O si deseas que diga <strong>Experiencia Sustentable</strong> (local comercial) para ventas presenciales y otro nombre para ventas web/Mercado Libre, puedes configurarlo aquí.
+                </div>
+
+                {/* MODO DE NOMBRE DE FANTASÍA */}
+                <label style={{fontSize: '0.85rem', fontWeight: 600}}>
+                  Nombre de Fantasía en el Encabezado del PDF
+                  <select
+                    value={arcaConfig.invoice_fantasy_name_mode || 'channel'}
+                    onChange={e => setArcaConfig({...arcaConfig, invoice_fantasy_name_mode: e.target.value})}
+                    style={{width: '100%', marginTop: 5, padding: '8px 10px', fontWeight: 500}}
                   >
-                    <option value={1}>Productos</option>
-                    <option value={2}>Servicios</option>
-                    <option value={3}>Productos & Servicios</option>
+                    <option value="none">🚫 Sin Nombre de Fantasía (Solo Razón Social oficial: {arcaConfig.merchant_name || 'GENTILI FRANCO AGUSTIN'})</option>
+                    <option value="custom">🏪 Nombre de Fantasía Fijo (Personalizado para todas las facturas)</option>
+                    <option value="channel">🔄 Dinámico según Canal de Venta (Local Comercial vs Web / Mercado Libre)</option>
                   </select>
                 </label>
 
-                <label style={{flex: 1}}>Entorno
-                  <select 
-                    value={arcaConfig.afip_environment} 
-                    onChange={e => setArcaConfig({...arcaConfig, afip_environment: e.target.value})} 
-                    style={{width: '100%', marginTop: 5}}
-                  >
-                    <option value="homologacion">Homologación (Prueba)</option>
-                    <option value="produccion">Producción (Real)</option>
-                  </select>
+                {/* Conditional Inputs depending on mode */}
+                {arcaConfig.invoice_fantasy_name_mode === 'custom' && (
+                  <label style={{fontSize: '0.85rem'}}>
+                    Nombre de Fantasía Fijo para la Factura
+                    <input 
+                      type="text" 
+                      placeholder="ej. Experiencia Sustentable"
+                      value={arcaConfig.invoice_fantasy_name || ''} 
+                      onChange={e => setArcaConfig({...arcaConfig, invoice_fantasy_name: e.target.value})} 
+                      style={{width: '100%', marginTop: 5}}
+                    />
+                    <span style={{fontSize: '0.74rem', color: 'var(--text-secondary)'}}>
+                      Se imprimirá como título principal en grande y abajo como subtítulo tu Razón Social oficial.
+                    </span>
+                  </label>
+                )}
+
+                {arcaConfig.invoice_fantasy_name_mode === 'channel' && (
+                  <div style={{display: 'flex', gap: 15, flexWrap: 'wrap'}}>
+                    <label style={{flex: 1, minWidth: 200, fontSize: '0.85rem'}}>
+                      🏪 Nombre para Local Comercial (Ventas LOCAL / Mostrador)
+                      <input 
+                        type="text" 
+                        placeholder="ej. Experiencia Sustentable"
+                        value={arcaConfig.invoice_local_commercial_name || ''} 
+                        onChange={e => setArcaConfig({...arcaConfig, invoice_local_commercial_name: e.target.value})} 
+                        style={{width: '100%', marginTop: 5}}
+                      />
+                      <span style={{fontSize: '0.74rem', color: 'var(--text-secondary)'}}>
+                        Se usará en facturas de ventas directas de tu local físico.
+                      </span>
+                    </label>
+
+                    <label style={{flex: 1, minWidth: 200, fontSize: '0.85rem'}}>
+                      🌐 Nombre para Ventas Online (Mercado Libre, Tiendanube, Web)
+                      <input 
+                        type="text" 
+                        placeholder="ej. Hidroponía Rosario"
+                        value={arcaConfig.invoice_web_commercial_name || ''} 
+                        onChange={e => setArcaConfig({...arcaConfig, invoice_web_commercial_name: e.target.value})} 
+                        style={{width: '100%', marginTop: 5}}
+                      />
+                      <span style={{fontSize: '0.74rem', color: 'var(--text-secondary)'}}>
+                        Se usará en facturas de ventas electrónicas / ecommerce.
+                      </span>
+                    </label>
+                  </div>
+                )}
+
+                {/* DOMICILIO EN EL COMPROBANTE */}
+                <div style={{display: 'flex', gap: 15, flexWrap: 'wrap'}}>
+                  <label style={{flex: 1, minWidth: 220, fontSize: '0.85rem'}}>
+                    Domicilio a Exhibir en el Encabezado
+                    <select
+                      value={arcaConfig.invoice_address_mode || 'fiscal'}
+                      onChange={e => setArcaConfig({...arcaConfig, invoice_address_mode: e.target.value})}
+                      style={{width: '100%', marginTop: 5}}
+                    >
+                      <option value="fiscal">Domicilio Fiscal Registrado en AFIP</option>
+                      <option value="local">Domicilio Comercial del Local / Showroom</option>
+                      <option value="channel">Dinámico (Local para ventas del salón, Fiscal para online)</option>
+                      <option value="both">Ambos Domicilios (Fiscal y Local Comercial)</option>
+                    </select>
+                  </label>
+
+                  <label style={{flex: 1, minWidth: 220, fontSize: '0.85rem'}}>
+                    Dirección Comercial del Local / Showroom
+                    <input 
+                      type="text" 
+                      placeholder="ej. Zeballos 1726, Rosario, Santa Fe, Argentina"
+                      value={arcaConfig.merchant_commercial_address || ''} 
+                      onChange={e => setArcaConfig({...arcaConfig, merchant_commercial_address: e.target.value})} 
+                      style={{width: '100%', marginTop: 5}}
+                    />
+                  </label>
+                </div>
+
+                {/* TELÉFONO EN EL MEMBRETE */}
+                <div style={{display: 'flex', gap: 15, alignItems: 'center', flexWrap: 'wrap'}}>
+                  <label style={{flex: 1, minWidth: 200, fontSize: '0.85rem'}}>
+                    Teléfono de Contacto
+                    <input 
+                      type="text" 
+                      placeholder="ej. +54 341 456-7890"
+                      value={arcaConfig.merchant_phone || ''} 
+                      onChange={e => setArcaConfig({...arcaConfig, merchant_phone: e.target.value})} 
+                      style={{width: '100%', marginTop: 5}}
+                    />
+                  </label>
+
+                  <div style={{display: 'flex', alignItems: 'center', gap: 8, marginTop: 18}}>
+                    <input 
+                      type="checkbox"
+                      id="invoice_show_phone_chk"
+                      checked={!!arcaConfig.invoice_show_phone}
+                      onChange={e => setArcaConfig({...arcaConfig, invoice_show_phone: e.target.checked})}
+                      style={{width: 16, height: 16, cursor: 'pointer'}}
+                    />
+                    <label htmlFor="invoice_show_phone_chk" style={{fontSize: '0.82rem', cursor: 'pointer', margin: 0}}>
+                      Mostrar teléfono en el encabezado de la factura
+                    </label>
+                  </div>
+                </div>
+
+                {/* OBSERVACIONES / LEYENDA AL PIE */}
+                <label style={{fontSize: '0.85rem'}}>
+                  Observaciones / Leyenda Comercial al Pie de la Factura (Opcional)
+                  <textarea 
+                    rows={2}
+                    placeholder="ej. Garantía de 90 días en equipos. Cambios con factura dentro de los 30 días en nuestro local de Zeballos 1726, Rosario."
+                    value={arcaConfig.invoice_footer_text || ''} 
+                    onChange={e => setArcaConfig({...arcaConfig, invoice_footer_text: e.target.value})} 
+                    style={{width: '100%', marginTop: 5, padding: '8px 10px', fontSize: '0.82rem', borderRadius: 6, border: '1px solid var(--border-color)', resize: 'vertical'}}
+                  />
+                  <span style={{fontSize: '0.74rem', color: 'var(--text-secondary)'}}>
+                    Aparecerá en un recuadro formal de observaciones comerciales encima del bloque de CAE y código QR oficial.
+                  </span>
                 </label>
+
+                {/* VISTA PREVIA INTERACTIVA EN TIEMPO REAL */}
+                {(() => {
+                  const preview = getInvoicePreviewTitleAndSubtitle()
+                  const previewAddr = getInvoicePreviewAddress()
+                  return (
+                    <div style={{
+                      marginTop: 8, 
+                      padding: '12px 14px', 
+                      borderRadius: 8, 
+                      backgroundColor: '#f8fafc', 
+                      border: '1.5px dashed #94a3b8',
+                      color: '#1e293b'
+                    }}>
+                      <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, flexWrap: 'wrap', gap: 8}}>
+                        <span style={{fontWeight: 700, fontSize: '0.82rem', color: '#0f172a'}}>
+                          👁️ Vista Previa en Vivo del Encabezado de la Factura
+                        </span>
+                        {arcaConfig.invoice_fantasy_name_mode === 'channel' && (
+                          <div style={{display: 'flex', gap: 6}}>
+                            <button
+                              type="button"
+                              onClick={() => setInvoicePreviewChannel('LOCAL')}
+                              className="btn"
+                              style={{
+                                fontSize: '0.72rem', 
+                                padding: '3px 8px', 
+                                backgroundColor: invoicePreviewChannel === 'LOCAL' ? '#003A70' : '#e2e8f0',
+                                color: invoicePreviewChannel === 'LOCAL' ? '#fff' : '#475569',
+                                border: 'none',
+                                borderRadius: 4,
+                                cursor: 'pointer'
+                              }}
+                            >
+                              🏪 Venta Local Comercial
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setInvoicePreviewChannel('MERCADOLIBRE')}
+                              className="btn"
+                              style={{
+                                fontSize: '0.72rem', 
+                                padding: '3px 8px', 
+                                backgroundColor: invoicePreviewChannel === 'MERCADOLIBRE' ? '#003A70' : '#e2e8f0',
+                                color: invoicePreviewChannel === 'MERCADOLIBRE' ? '#fff' : '#475569',
+                                border: 'none',
+                                borderRadius: 4,
+                                cursor: 'pointer'
+                              }}
+                            >
+                              🌐 Venta Mercado Libre / Web
+                            </button>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Mockup del Header Box de AFIP */}
+                      <div style={{
+                        backgroundColor: '#fff', 
+                        border: '1.5px solid #333', 
+                        borderRadius: 4, 
+                        overflow: 'hidden', 
+                        fontSize: '11px', 
+                        fontFamily: 'Helvetica, Arial, sans-serif'
+                      }}>
+                        {/* Banda ORIGINAL */}
+                        <div style={{backgroundColor: '#f0f0f0', borderBottom: '1px solid #333', textAlign: 'center', padding: '3px 0', fontWeight: 'bold', fontSize: '9.5px', color: '#333'}}>
+                          ORIGINAL
+                        </div>
+
+                        {/* Grid de 3 columnas */}
+                        <div style={{display: 'grid', gridTemplateColumns: '1fr 50px 1fr', minHeight: 110}}>
+                          {/* Columna Izquierda: Emisor */}
+                          <div style={{padding: '8px 10px', display: 'flex', flexDirection: 'column', gap: 2, borderRight: '1px solid #333'}}>
+                            <div style={{fontSize: '14px', fontWeight: 'bold', color: '#111', lineHeight: '18px'}}>
+                              {preview.title}
+                            </div>
+                            {preview.subtitle && (
+                              <div style={{fontSize: '9px', color: '#555', marginBottom: 2}}>
+                                {preview.subtitle}
+                              </div>
+                            )}
+                            <div style={{fontSize: '9.5px', color: '#444', marginTop: 2}}>
+                              <strong>Domicilio Comercial: </strong>{previewAddr}
+                            </div>
+                            <div style={{fontSize: '9.5px', color: '#444'}}>
+                              <strong>Condición frente al IVA: </strong>{arcaConfig.merchant_iva_condition || 'Responsable Monotributo'}
+                            </div>
+                            <div style={{borderBottom: '1px solid #ddd', margin: '3px 0'}}></div>
+                            <div style={{fontSize: '9.5px', color: '#222'}}>
+                              <strong>CUIT: </strong>{arcaConfig.afip_cuit || '20-31383248-2'}
+                            </div>
+                            <div style={{fontSize: '9.5px', color: '#222'}}>
+                              <strong>Ingresos Brutos: </strong>{arcaConfig.merchant_iibb || arcaConfig.afip_cuit || '1016798064'}
+                            </div>
+                            <div style={{fontSize: '9.5px', color: '#222'}}>
+                              <strong>Inicio de Actividades: </strong>{arcaConfig.merchant_start_date || '01/10/2018'}
+                              {arcaConfig.invoice_show_phone && arcaConfig.merchant_phone && (
+                                <span style={{marginLeft: 8}}><strong>Tel: </strong>{arcaConfig.merchant_phone}</span>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Columna Central: Letra C */}
+                          <div style={{display: 'flex', flexDirection: 'column', alignItems: 'center', paddingTop: 6, position: 'relative'}}>
+                            <div style={{
+                              width: 36, 
+                              height: 36, 
+                              border: '1.5px solid #333', 
+                              backgroundColor: '#fff', 
+                              display: 'flex', 
+                              flexDirection: 'column', 
+                              alignItems: 'center', 
+                              justifyContent: 'center',
+                              boxShadow: '1px 1px 0px #bbb'
+                            }}>
+                              <span style={{fontSize: '17px', fontWeight: 'bold', color: '#111', lineHeight: 1}}>
+                                {arcaConfig.afip_type_cmp === 1 ? 'A' : arcaConfig.afip_type_cmp === 6 ? 'B' : 'C'}
+                              </span>
+                              <span style={{fontSize: '6.5px', fontWeight: 'bold', color: '#666', marginTop: 1}}>
+                                COD. {String(arcaConfig.afip_type_cmp || 11).padStart(3, '0')}
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* Columna Derecha: Factura y Comprobante */}
+                          <div style={{padding: '8px 10px', display: 'flex', flexDirection: 'column', gap: 4}}>
+                            <div style={{fontSize: '15px', fontWeight: 'bold', color: '#111'}}>
+                              FACTURA
+                            </div>
+                            <div style={{fontSize: '9.5px', color: '#333'}}>
+                              <strong>Punto de Venta: </strong>{String(arcaConfig.afip_pto_vta || 1).padStart(4, '0')}
+                              <span style={{marginLeft: 8}}><strong>Comp. Nro: </strong>00001833</span>
+                            </div>
+                            <div style={{fontSize: '9.5px', color: '#333'}}>
+                              <strong>Fecha de Emisión: </strong>{new Date().toLocaleDateString('es-AR')}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Preview de Observaciones al Pie */}
+                      {arcaConfig.invoice_footer_text && (
+                        <div style={{marginTop: 6, padding: '5px 8px', backgroundColor: '#f1f5f9', border: '1px solid #cbd5e1', borderRadius: 4, fontSize: '9px', color: '#334155'}}>
+                          <strong>Información al Cliente / Observaciones Comerciales:</strong>
+                          <div style={{whiteSpace: 'pre-line', marginTop: 1}}>{arcaConfig.invoice_footer_text}</div>
+                        </div>
+                      )}
+                    </div>
+                  )
+                })()}
               </div>
 
-              <button className="btn" type="submit" style={{marginTop: 10}}>
-                Guardar Configuración ARCA
+              <button className="btn" type="submit" style={{marginTop: 14, backgroundColor: '#003A70', color: '#fff', padding: '10px 18px', fontSize: '0.9rem', fontWeight: 600}}>
+                💾 Guardar Configuración de Facturación ARCA
               </button>
             </form>
           </div>
