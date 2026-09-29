@@ -484,10 +484,10 @@ export default function Settings() {
     merchant_start_date: '',
     afip_cert_uploaded: false,
     afip_key_generated: false,
-    invoice_fantasy_name_mode: 'channel',
-    invoice_fantasy_name: '',
+    invoice_fantasy_name_mode: 'custom',
+    invoice_fantasy_name: 'Experiencia Sustentable',
     invoice_local_commercial_name: 'Experiencia Sustentable',
-    invoice_web_commercial_name: 'Hidroponía Rosario',
+    invoice_web_commercial_name: 'Experiencia Sustentable',
     invoice_address_mode: 'fiscal',
     invoice_show_phone: false,
     invoice_footer_text: ''
@@ -969,8 +969,9 @@ export default function Settings() {
   }
 
   const getInvoicePreviewTitleAndSubtitle = () => {
-    const mode = arcaConfig.invoice_fantasy_name_mode || 'channel'
+    const mode = arcaConfig.invoice_fantasy_name_mode || 'custom'
     const razonSocial = (arcaConfig.merchant_name || 'GENTILI FRANCO AGUSTIN').trim()
+    const commercialFallback = (arcaConfig.invoice_fantasy_name || arcaConfig.merchant_commercial_name || 'Experiencia Sustentable').trim()
     
     if (mode === 'none') {
       return { title: razonSocial, subtitle: null }
@@ -978,12 +979,12 @@ export default function Settings() {
     
     let fantasy = ''
     if (mode === 'custom') {
-      fantasy = (arcaConfig.invoice_fantasy_name || '').trim()
+      fantasy = (arcaConfig.invoice_fantasy_name || arcaConfig.merchant_commercial_name || '').trim()
     } else if (mode === 'channel') {
       if (invoicePreviewChannel === 'LOCAL') {
-        fantasy = (arcaConfig.invoice_local_commercial_name || 'Experiencia Sustentable').trim()
+        fantasy = (arcaConfig.invoice_local_commercial_name || commercialFallback).trim()
       } else {
-        fantasy = (arcaConfig.invoice_web_commercial_name || arcaConfig.merchant_commercial_name || 'Hidroponía Rosario').trim()
+        fantasy = (arcaConfig.invoice_web_commercial_name || commercialFallback).trim()
       }
     }
     
@@ -3980,31 +3981,35 @@ export default function Settings() {
 
                 {/* MODO DE NOMBRE DE FANTASÍA */}
                 <label style={{fontSize: '0.85rem', fontWeight: 600}}>
-                  Nombre de Fantasía en el Encabezado del PDF
+                  Nombre Comercial / Fantasía en el Encabezado del PDF
                   <select
-                    value={arcaConfig.invoice_fantasy_name_mode || 'channel'}
+                    value={arcaConfig.invoice_fantasy_name_mode || 'custom'}
                     onChange={e => setArcaConfig({...arcaConfig, invoice_fantasy_name_mode: e.target.value})}
                     style={{width: '100%', marginTop: 5, padding: '8px 10px', fontWeight: 500}}
                   >
-                    <option value="none">🚫 Sin Nombre de Fantasía (Solo Razón Social oficial: {arcaConfig.merchant_name || 'GENTILI FRANCO AGUSTIN'})</option>
-                    <option value="custom">🏪 Nombre de Fantasía Fijo (Personalizado para todas las facturas)</option>
+                    <option value="custom">🏪 Nombre Único para Todas las Facturas (Recomendado: {arcaConfig.invoice_fantasy_name || arcaConfig.merchant_commercial_name || 'Experiencia Sustentable'})</option>
                     <option value="channel">🔄 Dinámico según Canal de Venta (Local Comercial vs Web / Mercado Libre)</option>
+                    <option value="none">🚫 Sin Nombre de Fantasía (Solo Razón Social oficial: {arcaConfig.merchant_name || 'GENTILI FRANCO AGUSTIN'})</option>
                   </select>
                 </label>
 
                 {/* Conditional Inputs depending on mode */}
                 {arcaConfig.invoice_fantasy_name_mode === 'custom' && (
                   <label style={{fontSize: '0.85rem'}}>
-                    Nombre de Fantasía Fijo para la Factura
+                    Nombre Comercial / Fantasía para todas las Facturas
                     <input 
                       type="text" 
                       placeholder="ej. Experiencia Sustentable"
-                      value={arcaConfig.invoice_fantasy_name || ''} 
-                      onChange={e => setArcaConfig({...arcaConfig, invoice_fantasy_name: e.target.value})} 
+                      value={arcaConfig.invoice_fantasy_name || arcaConfig.merchant_commercial_name || ''} 
+                      onChange={e => setArcaConfig({
+                        ...arcaConfig, 
+                        invoice_fantasy_name: e.target.value,
+                        merchant_commercial_name: e.target.value
+                      })} 
                       style={{width: '100%', marginTop: 5}}
                     />
                     <span style={{fontSize: '0.74rem', color: 'var(--text-secondary)'}}>
-                      Se imprimirá como título principal en grande y abajo como subtítulo tu Razón Social oficial.
+                      Se imprimirá en grande como título en el membrete de todas las facturas (Locales, Web y Mercado Libre) y abajo la Razón Social oficial.
                     </span>
                   </label>
                 )}
@@ -4029,7 +4034,7 @@ export default function Settings() {
                       🌐 Nombre para Ventas Online (Mercado Libre, Tiendanube, Web)
                       <input 
                         type="text" 
-                        placeholder="ej. Hidroponía Rosario"
+                        placeholder="ej. Experiencia Sustentable"
                         value={arcaConfig.invoice_web_commercial_name || ''} 
                         onChange={e => setArcaConfig({...arcaConfig, invoice_web_commercial_name: e.target.value})} 
                         style={{width: '100%', marginTop: 5}}

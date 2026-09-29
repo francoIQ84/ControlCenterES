@@ -386,10 +386,10 @@ class ArcaConfigRequest(BaseModel):
     merchant_iva_condition: str = 'Responsable Monotributo'
     merchant_start_date: str = ''
     # Opciones de personalización del comprobante PDF (Factura AFIP / ARCA)
-    invoice_fantasy_name_mode: Optional[str] = 'channel'  # 'none', 'custom', 'channel'
+    invoice_fantasy_name_mode: Optional[str] = 'custom'  # 'none', 'custom', 'channel'
     invoice_fantasy_name: Optional[str] = ''
     invoice_local_commercial_name: Optional[str] = 'Experiencia Sustentable'
-    invoice_web_commercial_name: Optional[str] = 'Hidroponía Rosario'
+    invoice_web_commercial_name: Optional[str] = 'Experiencia Sustentable'
     invoice_address_mode: Optional[str] = 'fiscal'  # 'fiscal', 'local', 'channel', 'both'
     invoice_show_phone: Optional[bool] = False
     invoice_footer_text: Optional[str] = ''
@@ -402,6 +402,7 @@ class CsrRequest(BaseModel):
 def get_arca_config(_=Depends(require_permission("settings"))):
     cert_exists = os.path.exists("backend/data/afip/arca.crt") or os.path.exists("data/afip/arca.crt")
     key_exists = os.path.exists("backend/data/afip/arca.key") or os.path.exists("data/afip/arca.key")
+    comm_name = database.get_setting('merchant_commercial_name', 'Experiencia Sustentable')
     return {
         "afip_enabled": database.get_setting('afip_enabled', '0') == '1',
         "afip_cuit": database.get_setting('afip_cuit', ''),
@@ -412,15 +413,15 @@ def get_arca_config(_=Depends(require_permission("settings"))):
         "merchant_name": database.get_setting('afip_razon_social') or database.get_setting('merchant_name', ''),
         "merchant_address": database.get_setting('merchant_address', 'COLON 824, VILLA CONSTITUCION, SANTA FE'),
         "merchant_phone": database.get_setting('merchant_phone', '+54 341 456-7890'),
-        "merchant_commercial_name": database.get_setting('merchant_commercial_name', 'Hidroponía Rosario'),
+        "merchant_commercial_name": comm_name,
         "merchant_commercial_address": database.get_setting('merchant_commercial_address', 'Zeballos 1726, Rosario, Santa Fe, Argentina'),
         "merchant_iibb": database.get_setting('merchant_iibb', ''),
         "merchant_iva_condition": database.get_setting('merchant_iva_condition', 'Responsable Monotributo'),
         "merchant_start_date": database.get_setting('merchant_start_date', '01/10/2018'),
-        "invoice_fantasy_name_mode": database.get_setting('invoice_fantasy_name_mode', 'channel'),
-        "invoice_fantasy_name": database.get_setting('invoice_fantasy_name', ''),
-        "invoice_local_commercial_name": database.get_setting('invoice_local_commercial_name', 'Experiencia Sustentable'),
-        "invoice_web_commercial_name": database.get_setting('invoice_web_commercial_name', database.get_setting('merchant_commercial_name', 'Hidroponía Rosario')),
+        "invoice_fantasy_name_mode": database.get_setting('invoice_fantasy_name_mode', 'custom'),
+        "invoice_fantasy_name": database.get_setting('invoice_fantasy_name', comm_name),
+        "invoice_local_commercial_name": database.get_setting('invoice_local_commercial_name', comm_name),
+        "invoice_web_commercial_name": database.get_setting('invoice_web_commercial_name', comm_name),
         "invoice_address_mode": database.get_setting('invoice_address_mode', 'fiscal'),
         "invoice_show_phone": database.get_setting('invoice_show_phone', '0') == '1',
         "invoice_footer_text": database.get_setting('invoice_footer_text', ''),
@@ -440,7 +441,8 @@ def save_arca_config(req: ArcaConfigRequest, _=Depends(require_permission("setti
     database.set_setting('merchant_address', req.merchant_address.strip())
     database.set_setting('merchant_phone', req.merchant_phone.strip())
     if req.merchant_commercial_name is not None:
-        database.set_setting('merchant_commercial_name', req.merchant_commercial_name.strip())
+        c_name = req.merchant_commercial_name.strip()
+        database.set_setting('merchant_commercial_name', c_name)
     if req.merchant_commercial_address is not None:
         database.set_setting('merchant_commercial_address', req.merchant_commercial_address.strip())
     database.set_setting('merchant_iibb', req.merchant_iibb.strip())
@@ -449,7 +451,10 @@ def save_arca_config(req: ArcaConfigRequest, _=Depends(require_permission("setti
     if req.invoice_fantasy_name_mode is not None:
         database.set_setting('invoice_fantasy_name_mode', req.invoice_fantasy_name_mode.strip())
     if req.invoice_fantasy_name is not None:
-        database.set_setting('invoice_fantasy_name', req.invoice_fantasy_name.strip())
+        f_name = req.invoice_fantasy_name.strip()
+        database.set_setting('invoice_fantasy_name', f_name)
+        if f_name:
+            database.set_setting('merchant_commercial_name', f_name)
     if req.invoice_local_commercial_name is not None:
         database.set_setting('invoice_local_commercial_name', req.invoice_local_commercial_name.strip())
     if req.invoice_web_commercial_name is not None:

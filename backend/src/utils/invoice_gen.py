@@ -378,14 +378,14 @@ def _build_invoice_page(order, copy_type, usable_w):
         or 'GENTILI FRANCO AGUSTIN'
     ).strip()
 
-    fantasy_mode = database.get_setting('invoice_fantasy_name_mode', 'channel')
-    custom_fantasy = (database.get_setting('invoice_fantasy_name') or '').strip()
-    local_name = (database.get_setting('invoice_local_commercial_name') or 'Experiencia Sustentable').strip()
-    web_name = (
-        database.get_setting('invoice_web_commercial_name') 
+    fantasy_mode = database.get_setting('invoice_fantasy_name_mode', 'custom')
+    commercial_name = (
+        database.get_setting('invoice_fantasy_name') 
         or database.get_setting('merchant_commercial_name') 
-        or 'Hidroponía Rosario'
+        or ''
     ).strip()
+    local_name = (database.get_setting('invoice_local_commercial_name') or commercial_name or 'Experiencia Sustentable').strip()
+    web_name = (database.get_setting('invoice_web_commercial_name') or commercial_name or '').strip()
 
     order_source = str(order.get('source_platform') or order.get('source') or '').upper()
     is_local_sale = (order_source == 'LOCAL' or 'LOCAL' in order_source or order_source == 'MANUAL_LOCAL')
@@ -393,13 +393,13 @@ def _build_invoice_page(order, copy_type, usable_w):
     fantasy_name = None
     if fantasy_mode == 'none':
         fantasy_name = None
-    elif fantasy_mode == 'custom':
-        fantasy_name = custom_fantasy if custom_fantasy else None
     elif fantasy_mode == 'channel':
         if is_local_sale:
-            fantasy_name = local_name if local_name else None
+            fantasy_name = local_name if local_name else (commercial_name or None)
         else:
-            fantasy_name = web_name if web_name else None
+            fantasy_name = web_name if web_name else (commercial_name or None)
+    else:  # 'custom' (default general mode)
+        fantasy_name = commercial_name if commercial_name else None
 
     fiscal_address = (database.get_setting('merchant_address') or 'COLON 824, VILLA CONSTITUCION, SANTA FE').strip()
     local_address = (database.get_setting('merchant_commercial_address') or 'Zeballos 1726, Rosario, Santa Fe, Argentina').strip()
@@ -698,7 +698,7 @@ def _build_invoice_page(order, copy_type, usable_w):
         ('BACKGROUND', (0, -1), (-1, -1), LIGHT_GRAY),
     ]))
     story.append(totals_table)
-    story.append(Spacer(1, 4 * mm))
+    story.append(Spacer(1, 2.5 * mm))
 
     # ══════════════════════════════════════════
     # Optional Observations / Footer Note Box
@@ -727,13 +727,13 @@ def _build_invoice_page(order, copy_type, usable_w):
         obs_table.setStyle(TableStyle([
             ('BOX', (0, 0), (-1, -1), 0.5, colors.HexColor('#aaaaaa')),
             ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#f0f0f0')),
-            ('TOPPADDING', (0, 0), (-1, -1), 2.5),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 2.5),
+            ('TOPPADDING', (0, 0), (-1, -1), 2),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 2),
             ('LEFTPADDING', (0, 0), (-1, -1), 6),
             ('RIGHTPADDING', (0, 0), (-1, -1), 6),
         ]))
         story.append(obs_table)
-        story.append(Spacer(1, 3 * mm))
+        story.append(Spacer(1, 2 * mm))
 
     # ══════════════════════════════════════════
     # 5. ARCA FOOTER (QR + CAE + Legalese)
@@ -771,13 +771,13 @@ def _build_invoice_page(order, copy_type, usable_w):
         footer_table.setStyle(TableStyle([
             ('BOX', (0, 0), (-1, -1), 0.5, BORDER),
             ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-            ('TOPPADDING', (0, 0), (-1, -1), 8),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+            ('TOPPADDING', (0, 0), (-1, -1), 6),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
             ('LEFTPADDING', (0, 0), (-1, -1), 6),
             ('RIGHTPADDING', (0, 0), (-1, -1), 6),
         ]))
         story.append(footer_table)
-        story.append(Spacer(1, 3 * mm))
+        story.append(Spacer(1, 2 * mm))
 
     # Legal disclaimer
     disclaimer = Paragraph(
@@ -798,16 +798,17 @@ def generate_invoice_pdf(order):
     filepath = os.path.join(pdf_dir, filename)
 
     page_w, page_h = A4
-    margin = 15 * mm
-    usable_w = page_w - 2 * margin
+    margin_h = 14 * mm
+    margin_v = 10 * mm
+    usable_w = page_w - 2 * margin_h
 
     doc = SimpleDocTemplate(
         filepath,
         pagesize=A4,
-        rightMargin=margin,
-        leftMargin=margin,
-        topMargin=margin,
-        bottomMargin=margin
+        rightMargin=margin_h,
+        leftMargin=margin_h,
+        topMargin=margin_v,
+        bottomMargin=margin_v
     )
 
     # Build both copies: ORIGINAL (page 1) + DUPLICADO (page 2)
