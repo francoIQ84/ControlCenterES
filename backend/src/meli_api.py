@@ -1248,9 +1248,74 @@ def update_stock_and_price(ml_id, quantity, price):
             database.update_product_stock_price(ml_id, quantity, price)
             return True, "Sincronizado con Mercado Libre"
         else:
-            return False, f"Error de API Mercado Libre: {response.text}"
+            err_data = format_meli_error_payload(response.status_code, response.text)
+            err_msg = err_data.get("user_message") or err_data.get("technical_summary") or response.text[:200]
+            return False, err_msg
     except Exception as e:
         return False, f"Excepción de red: {str(e)}"
+
+def format_meli_error_payload(status_code: int, response_text: str) -> dict:
+    """
+    Parsea las respuestas de error de la API de Mercado Libre generando una estructura
+    amigable para el usuario (50% qué pasó + qué hacer) y precisa para debug (50% código, causa, refs, raw).
+    """
+    raw_str = response_text or ""
+    data = {}
+    try:
+        data = json.loads(raw_str)
+    except Exception:
+        pass
+
+    causes = data.get("cause", []) if isinstance(data, dict) else []
+    cause_first = causes[0] if isinstance(causes, list) and len(causes) > 0 and isinstance(causes[0], dict) else {}
+
+    meli_code = cause_first.get("code") or (data.get("error") if isinstance(data, dict) else None) or f"HTTP_{status_code}"
+    meli_message = cause_first.get("message") or (data.get("message") if isinstance(data, dict) else None) or raw_str[:200]
+    references = cause_first.get("references", [])
+    cause_id = cause_first.get("cause_id")
+
+    user_title = "Error al operar con Mercado Libre"
+    user_message = "Mercado Libre no pudo procesar la solicitud."
+    action_required = "Verificá los datos e intentá nuevamente."
+
+    msg_lower = str(meli_message).lower()
+    ref_strs = [str(r).lower() for r in references]
+
+    if meli_code == "item.status.invalid" and ("without stock" in msg_lower or "item.available_quantity" in ref_strs):
+        user_title = "No se puede activar: Sin stock"
+        user_message = "Mercado Libre no permite activar una publicación con 0 unidades de stock disponible."
+        action_required = "Cargá al menos 1 unidad de stock en el producto antes de activarlo."
+    elif meli_code == "item.status.invalid":
+        user_title = "Cambio de estado no permitido"
+        user_message = f"Mercado Libre no admite esta transición de estado: {meli_message}"
+        action_required = "Verificá si la publicación requiere validación previa o fue cerrada en Mercado Libre."
+    elif "price" in str(meli_code).lower() or any("price" in r for r in ref_strs):
+        user_title = "Precio no válido"
+        user_message = f"El precio no cumple con los valores mínimos o políticas de Mercado Libre ({meli_message})."
+        action_required = "Ajustá el precio del producto según el valor mínimo de la categoría."
+    elif status_code == 401 or "token" in str(meli_code).lower() or "unauthorized" in msg_lower:
+        user_title = "Sesión de Mercado Libre vencida"
+        user_message = "El token de conexión con Mercado Libre ha expirado o no es válido."
+        action_required = "Ingresá a Configuración > Mercado Libre y volvé a vincular la cuenta."
+    elif status_code == 404:
+        user_title = "Publicación no encontrada"
+        user_message = "La publicación no existe o fue eliminada definitivamente en Mercado Libre."
+        action_required = "Verificá el identificador MLA de la publicación."
+    else:
+        if meli_message:
+            user_message = f"Mercado Libre rechazó la operación: {meli_message}"
+
+    return {
+        "user_title": user_title,
+        "user_message": user_message,
+        "action_required": action_required,
+        "tech_code": str(meli_code),
+        "status_code": status_code,
+        "cause_id": cause_id,
+        "references": references,
+        "technical_summary": f"HTTP {status_code} | Code: {meli_code}" + (f" (cause_id: {cause_id})" if cause_id else "") + (f" | Ref: {', '.join(references)}" if references else ""),
+        "raw": raw_str
+    }
 
 def update_item_status(ml_id: str, new_status: str, updated_by_user: str = None) -> tuple:
     """
@@ -1273,9 +1338,20 @@ def update_item_status(ml_id: str, new_status: str, updated_by_user: str = None)
             database.update_product_status(ml_id, new_status, updated_by_user=updated_by_user)
             return True, f"Publicación {new_status} exitosamente en Mercado Libre"
         else:
-            return False, f"Error de Mercado Libre ({response.status_code}): {response.text}"
+            err_payload = format_meli_error_payload(response.status_code, response.text)
+            return False, err_payload
     except Exception as e:
-        return False, f"Excepción al actualizar estado: {str(e)}"
+        return False, {
+            "user_title": "Excepción de servidor",
+            "user_message": f"Error interno al comunicar con Mercado Libre: {str(e)}",
+            "action_required": "Verificá la conexión con Mercado Libre o intentá nuevamente.",
+            "tech_code": "EXCEPTION",
+            "status_code": 500,
+            "cause_id": None,
+            "references": [],
+            "technical_summary": f"Excepción al actualizar estado: {str(e)}",
+            "raw": str(e)
+        }
 
 def update_item_handling_time(ml_id: str, days: int):
     """Actualiza la disponibilidad de stock / tiempo de elaboración (MANUFACTURING_TIME) en Mercado Libre."""

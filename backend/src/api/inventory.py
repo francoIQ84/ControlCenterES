@@ -427,26 +427,26 @@ def update_product(ml_id: str, payload: UpdateProductRequest, current_user: dict
     except Exception as tn_err:
         print(f"[Tiendanube Sync on Edit Product Error] {tn_err}")
 
-    # Sync to ML only if the product status is active or paused and NOT local-only AND sync_meli is enabled
+    warning_msg = None
     is_local = ml_id.startswith('LOCAL-') or ml_id.startswith('WEB-')
     if db_status in ('active', 'paused') and not is_local and payload.sync_meli == 1:
         ok, msg = meli_api.update_stock_and_price(ml_id, payload.qty, payload.price)
         if not ok:
-            return {
-                "success": True, 
-                "warning": f"Guardado localmente. Sin embargo, falló la sincronización con Mercado Libre: {msg}"
-            }
+            warning_msg = f"Guardado localmente. Sin embargo, falló la sincronización con Mercado Libre: {msg}"
     elif is_local:
-        return {"success": True, "message": "Updated locally (local-only product)"}
+        pass
     elif payload.sync_meli == 0:
-        return {"success": True, "message": "Updated locally (Mercado Libre sync is disabled for this product)"}
+        pass
     else:
-        return {
-            "success": True, 
-            "warning": f"Guardado localmente. Nota: Este artículo está cerrado ({db_status}) en Mercado Libre, por lo que no se sincronizaron cambios de stock/precio a la plataforma."
-        }
-        
-    return {"success": True, "message": "Updated and synced"}
+        warning_msg = f"Guardado localmente. Nota: Este artículo está cerrado ({db_status}) en Mercado Libre, por lo que no se sincronizaron cambios de stock/precio a la plataforma."
+
+    updated_product = database.get_product_by_ml_id(ml_id)
+    return {
+        "success": True, 
+        "message": "Producto guardado y sincronizado correctamente",
+        "product": updated_product,
+        "warning": warning_msg
+    }
 
 class QuickStockRequest(BaseModel):
     ml_id: str

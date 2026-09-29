@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { useSearchParams, useParams } from 'react-router-dom'
 import { Package, CloudOff, Cloud, RefreshCw, Save, QrCode, Camera, ExternalLink, Eye, EyeOff, Store, Search, X, Gauge, SlidersHorizontal, Plus, User, Sparkles } from 'lucide-react'
 import { Html5QrcodeScanner } from 'html5-qrcode'
 import MediaBrowser from '../components/MediaBrowser'
@@ -8,6 +8,8 @@ import { useTenant } from '../TenantContext'
 import { getCachedData, setCachedData, invalidateCache, CacheKeys } from '../utils/cache'
 import { matchesQuery } from '../utils/searchUtils'
 import { formatDateTimeAR, formatDateAR, formatTimeAR } from '../utils/dateUtils'
+import ErrorModal from '../components/ErrorModal'
+import { parseAppError } from '../utils/errorParser'
 
 export default function Inventory() {
   const cachedInitial = getCachedData(CacheKeys.INVENTORY)
@@ -21,16 +23,22 @@ export default function Inventory() {
   const [qualityDetail, setQualityDetail] = useState(null)
   const [resolviendo, setResolviendo] = useState(null)   // progreso de la generacion en lote
   const [revisionLote, setRevisionLote] = useState(null) // ml_ids a revisar cuando termina
+  const [errorModalData, setErrorModalData] = useState(null)
   const { isSimpleView, isChannelEnabled } = useTenant()
+  const { queryParam } = useParams()
   const [searchParams, setSearchParams] = useSearchParams()
   const activeTab = searchParams.get('tab') === 'optimizer' ? 'optimizer' : 'inventory'
 
   const handleTabChange = (tab) => {
-    if (tab === 'optimizer') {
-      setSearchParams({ tab: 'optimizer' })
-    } else {
-      setSearchParams({})
-    }
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev)
+      if (tab === 'optimizer') {
+        next.set('tab', 'optimizer')
+      } else {
+        next.delete('tab')
+      }
+      return next
+    })
   }
 
   const hasMeliOptimizerAccess = (() => {
@@ -41,8 +49,37 @@ export default function Inventory() {
     return perms.includes('inventory') || perms.includes('settings')
   })()
 
+  const initialUrlSearch = queryParam || searchParams.get('search') || searchParams.get('q') || ""
+  const [query, setQuery] = useState(initialUrlSearch)
+
+  // Sincronizar búsqueda en tiempo real con la URL para que persista al refrescar (F5) y sea compartible
+  useEffect(() => {
+    const currentParam = searchParams.get('search') || searchParams.get('q') || ""
+    const trimmed = query ? query.trim() : ""
+    if (trimmed !== currentParam) {
+      setSearchParams(prev => {
+        const next = new URLSearchParams(prev)
+        if (trimmed) {
+          next.set('search', trimmed)
+          next.delete('q')
+        } else {
+          next.delete('search')
+          next.delete('q')
+        }
+        return next
+      }, { replace: true })
+    }
+  }, [query])
+
+  // Si el usuario navega con Atrás/Adelante en el historial del navegador
+  useEffect(() => {
+    const urlParam = queryParam || searchParams.get('search') || searchParams.get('q') || ""
+    if (urlParam !== query) {
+      setQuery(urlParam)
+    }
+  }, [searchParams, queryParam])
+
   const [loading, setLoading] = useState(() => !cachedInitial)
-  const [query, setQuery] = useState("")
   const [sortConfig, setSortConfig] = useState({ key: null, direction: 'asc' })
   const [drafts, setDrafts] = useState({})
   const [isSavingBulk, setIsSavingBulk] = useState(false)
@@ -522,6 +559,12 @@ export default function Inventory() {
           setCachedData(CacheKeys.INVENTORY, fetched)
         } else if (!qToFetch && fetched.length > allProductsRef.current.length) {
           allProductsRef.current = fetched
+        } else if (qToFetch && allProductsRef.current && fetched.length > 0) {
+          // Si estamos filtrando/buscando, actualizar los productos coincidentes en allProductsRef
+          // para que la memoria global y la caché nunca queden desactualizadas
+          const fetchedMap = new Map(fetched.map(item => [item.ml_id, item]))
+          allProductsRef.current = allProductsRef.current.map(item => fetchedMap.get(item.ml_id) || item)
+          setCachedData(CacheKeys.INVENTORY, allProductsRef.current)
         }
         setLoading(false)
       })
@@ -561,17 +604,60 @@ export default function Inventory() {
 
   const handleToggleStatus = async (p) => {
     if (!p || !p.ml_id) return
-    if (p.status === 'local') {
-      alert("Este producto es exclusivo de la tienda web (local) y no está vinculado a Mercado Libre.")
+    if (p.status === 'local' || p.ml_id.startsWith('LOCAL-') || p.ml_id.startsWith('WEB-')) {
+      setErrorModalData(parseAppError({
+        user_title: "Producto exclusivo de la web",
+        user_message: "Este producto es exclusivo de la tienda web (local) y no está vinculado a una publicación de Mercado Libre.",
+        action_required: "Podés administrar la visibilidad web de este producto directamente desde la columna 'Tienda Web'.",
+        tech_code: "LOCAL_ONLY_PRODUCT",
+        status_code: 400
+      }, 'Producto no vinculado a Mercado Libre', {
+        title: p.title,
+        ml_id: p.ml_id,
+        stock: p.available_quantity
+      }))
       return
     }
+
     const isPaused = p.status === 'paused'
     const newStatus = isPaused ? 'active' : 'paused'
     const actionText = isPaused ? 'ACTIVAR' : 'PAUSAR'
     const actionDesc = isPaused 
       ? 'volverá a estar visible para compradores en Mercado Libre' 
       : 'se pausará en Mercado Libre y los compradores no podrán ofertar'
-    
+
+    // Validación preventiva en cliente: Mercado Libre rechaza activar publicaciones sin stock
+    if (isPaused && (!p.available_quantity || Number(p.available_quantity) <= 0)) {
+      setErrorModalData(parseAppError({
+        user_title: "No se puede activar: Sin stock",
+        user_message: "Mercado Libre no permite activar una publicación con 0 unidades de stock disponible.",
+        action_required: "Cargá al menos 1 unidad de stock en la columna de Stock antes de activar la publicación.",
+        tech_code: "item.status.invalid (Stock en 0)",
+        status_code: 400,
+        cause_id: 323,
+        references: ["item.status", "item.available_quantity"],
+        technical_summary: "Validación preventiva del cliente. Intento de PUT /items/{id} status='active' con available_quantity=0.",
+        raw: JSON.stringify({
+          cause: [{
+            department: "items",
+            cause_id: 323,
+            type: "error",
+            code: "item.status.invalid",
+            references: ["item.status", "item.available_quantity"],
+            message: "Is not possible to activate an item without stock."
+          }],
+          message: "Validation error",
+          error: "validation_error",
+          status: 400
+        }, null, 2)
+      }, 'No se puede activar: Sin stock', {
+        title: p.title,
+        ml_id: p.ml_id,
+        stock: p.available_quantity ?? 0
+      }))
+      return
+    }
+
     const confirmed = window.confirm(
       `¿Estás seguro de que deseas ${actionText} esta publicación en Mercado Libre?\n\n` +
       `📦 Producto: ${p.title}\n` +
@@ -605,10 +691,17 @@ export default function Inventory() {
         alert(`¡Publicación ${newStatus === 'active' ? 'activada' : 'pausada'} correctamente en Mercado Libre!`)
       } else {
         const err = await res.json()
-        alert(`Error al cambiar estado: ${err.detail || 'Error en el servidor'}`)
+        setErrorModalData(parseAppError(err, 'Error al cambiar estado', {
+          title: p.title,
+          ml_id: p.ml_id,
+          stock: p.available_quantity
+        }))
       }
     } catch(e) {
-      alert(`Error de red: ${e.message}`)
+      setErrorModalData(parseAppError(e, 'Error de conexión', {
+        title: p.title,
+        ml_id: p.ml_id
+      }))
     } finally {
       setLoading(false)
     }
@@ -625,11 +718,11 @@ export default function Inventory() {
         fetchProducts(true)
       } else {
         const err = await res.json()
-        alert("Error al actualizar costos MeLi: " + (err.detail || 'Ocurrió un error'))
+        setErrorModalData(parseAppError(err, 'Error al actualizar costos MeLi'))
         setLoading(false)
       }
     } catch(e) {
-      alert("Error de conexión: " + e.message)
+      setErrorModalData(parseAppError(e, 'Error de conexión'))
       setLoading(false)
     }
   }
@@ -793,6 +886,7 @@ export default function Inventory() {
 
   const handleUpdate = async (ml_id, qty, price, cost, cost_meli, price_web, images, description, is_web_active, category_id, sync_meli, min_stock, featured_order = 0, use_meli_description = 1, description_meli = "", cash_discount_pct = 0) => {
     try {
+      setLoading(true)
       const res = await fetch(`/api/inventory/${ml_id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -814,20 +908,68 @@ export default function Inventory() {
           featured_order: parseInt(featured_order) || 0
         })
       })
-      if(res.ok) {
+      if (res.ok) {
         const data = await res.json()
-        if (data.warning) {
-          alert(data.warning)
-        } else {
-          alert("Guardado correctamente (ML + Web)")
+        const updated = data.product
+
+        // 1. Quitar este producto de borradores (drafts)
+        setDrafts(prev => {
+          const next = { ...prev }
+          delete next[ml_id]
+          return next
+        })
+
+        // 2. Actualizar estado local y caché inmediatamente
+        const patchData = updated || {
+          available_quantity: parseInt(qty), 
+          price: parseFloat(price), 
+          cost_price: parseFloat(cost),
+          cost_meli: parseFloat(cost_meli) || 0.0,
+          price_web: parseFloat(price_web) || 0,
+          cash_discount_pct: parseFloat(cash_discount_pct) || 0,
+          images: images || "",
+          description: description || "",
+          use_meli_description: use_meli_description ? 1 : 0,
+          description_meli: description_meli || "",
+          is_web_active: is_web_active ? 1 : 0,
+          category_id: category_id ? parseInt(category_id) : null,
+          sync_meli: sync_meli ? 1 : 0,
+          min_stock: parseInt(min_stock) || 0,
+          featured_order: parseInt(featured_order) || 0
         }
+
+        setProducts(prev => prev.map(item => item.ml_id === ml_id ? { ...item, ...patchData } : item))
+        if (allProductsRef.current) {
+          allProductsRef.current = allProductsRef.current.map(item => item.ml_id === ml_id ? { ...item, ...patchData } : item)
+          setCachedData(CacheKeys.INVENTORY, allProductsRef.current)
+        }
+
+        invalidateCache('inventory')
+        setEditVersion(v => v + 1)
+
+        // 3. Informar al usuario
+        if (data.warning) {
+          setErrorModalData(parseAppError({
+            user_title: "Guardado local con advertencia de Mercado Libre",
+            user_message: data.warning,
+            action_required: "El cambio se registró en la base de datos local, pero Mercado Libre rechazó la sincronización. Revisá el código o estado de la publicación.",
+            tech_code: "SYNC_WARNING",
+            status_code: 200,
+            raw: JSON.stringify(data, null, 2)
+          }, 'Advertencia de sincronización', { ml_id }))
+        } else {
+          alert("¡Guardado y sincronizado correctamente con Mercado Libre y Tienda Web!")
+        }
+
         fetchProducts()
       } else {
         const errData = await res.json()
-        alert("Error al actualizar: " + (errData.detail || "Error del servidor"))
+        setErrorModalData(parseAppError(errData, 'Error al actualizar producto', { ml_id }))
       }
     } catch(e) {
-      alert("Error al guardar cambios")
+      setErrorModalData(parseAppError(e, 'Error al guardar cambios', { ml_id }))
+    } finally {
+      setLoading(false)
     }
   }
 
@@ -3967,6 +4109,13 @@ export default function Inventory() {
           </div>
         </div>
       )}
+
+      {/* Error and Diagnostic Modal (50% User / 50% Debug) */}
+      <ErrorModal
+        isOpen={!!errorModalData}
+        onClose={() => setErrorModalData(null)}
+        errorData={errorModalData}
+      />
         </>
       )}
     </div>
@@ -4379,6 +4528,26 @@ function ProductRow({ p, onSave, onOpenGallery, onDraftChange, categories, categ
       featured_order: parseNum(featuredOrder, true)
     })
   }, [qty, price, cost, costMeli, priceWeb, cashDiscountPct, isWebActive, description, useMeliDescription, descMeli, useMeliImage, customMainUrl, additionalUrls, categoryId, syncMeli, minStock, featuredOrder])
+
+  // Sincronizar inputs si el producto cambia desde la BD/servidor y no está siendo editado actualmente
+  useEffect(() => {
+    if (!isModified) {
+      setQty(p.available_quantity)
+      setPrice(p.price)
+      setCost(p.cost_price)
+      setCostMeli(p.cost_meli || 0)
+      setMinStock(p.min_stock || 0)
+      setPriceWeb(p.price_web || 0)
+      setCashDiscountPct(p.cash_discount_pct !== undefined ? p.cash_discount_pct : 0)
+      setIsWebActive(p.is_web_active === 1)
+      setCategoryId(p.category_id || "")
+      setSyncMeli(p.sync_meli !== 0)
+      setDescription(p.description || "")
+      setUseMeliDescription(p.use_meli_description !== 0)
+      setDescMeli(p.description_meli || "")
+      setFeaturedOrder(p.featured_order || 0)
+    }
+  }, [p, isModified])
 
   if (viewMode === 'compact') {
     return (

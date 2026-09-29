@@ -158,6 +158,7 @@ function App() {
           <Route path="/" element={<Layout />}>
             <Route index element={<PermissionRoute permission="dashboard"><Dashboard /></PermissionRoute>} />
             <Route path="inventory" element={<PermissionRoute permission="inventory"><Inventory /></PermissionRoute>} />
+            <Route path="inventory/search/:queryParam" element={<PermissionRoute permission="inventory"><Inventory /></PermissionRoute>} />
             <Route path="sales" element={<PermissionRoute permission="sales"><Sales /></PermissionRoute>} />
             <Route path="presupuestos" element={<PermissionRoute permission="quotes" module="quotes"><Quotes /></PermissionRoute>} />
             <Route path="billing" element={<PermissionRoute permission="billing"><Billing /></PermissionRoute>} />
