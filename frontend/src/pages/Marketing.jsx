@@ -1,5 +1,6 @@
-import React, { useState, useEffect, useRef } from 'react'
-import { Megaphone, Sparkles, Calendar, Settings as SettingsIcon, Send, Video, Image as ImageIcon, Trash2, CheckCircle, Clock, AlertCircle, RefreshCw, ExternalLink, MessageSquare, Users, Plus, Mail, Phone, Share2, Play, Check, Layers, UserPlus, X, Move, Maximize2, Download, DollarSign, Tag, Eye, Heart } from 'lucide-react'
+import React, { useState, useEffect, useRef, useMemo } from 'react'
+import { useSearchParams, useParams } from 'react-router-dom'
+import { Megaphone, Sparkles, Calendar, Settings as SettingsIcon, Send, Video, Image as ImageIcon, Trash2, CheckCircle, Clock, AlertCircle, RefreshCw, ExternalLink, MessageSquare, Users, Plus, Mail, Phone, Share2, Play, Check, Layers, UserPlus, X, Move, Maximize2, Download, DollarSign, Tag, Eye, Heart, Search } from 'lucide-react'
 import { useTenant } from '../TenantContext'
 import MediaBrowser from '../components/MediaBrowser'
 import { formatDateTimeAR, formatDateAR, formatTimeAR, formatForDateTimeLocal } from '../utils/dateUtils'
@@ -24,7 +25,10 @@ export default function Marketing() {
   const { tenant, isPlatformAdmin, isSimpleView } = useTenant()
   const storeName = tenant?.name || 'Tienda Oficial'
 
-  const [activeTab, setActiveTab] = useState('creator') // 'creator', 'calendar', 'comments', 'config'
+  const { queryParam } = useParams()
+  const [searchParams, setSearchParams] = useSearchParams()
+  const initialTab = searchParams.get('tab') || 'creator'
+  const [activeTab, setActiveTab] = useState(initialTab) // 'creator', 'calendar', 'comments', 'config'
   
   // Data states
   const [products, setProducts] = useState([])
@@ -32,9 +36,77 @@ export default function Marketing() {
   const [posts, setPosts] = useState([])
   const [loadingPosts, setLoadingPosts] = useState(false)
 
-  // Product Filter State in Marketing
-  const [productSearch, setProductSearch] = useState('')
+  const handleTabChange = (t) => {
+    setActiveTab(t)
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev)
+      if (t === 'creator') {
+        next.delete('tab')
+      } else {
+        next.set('tab', t)
+      }
+      return next
+    }, { replace: true })
+  }
+
+  useEffect(() => {
+    const t = searchParams.get('tab')
+    if (t && t !== activeTab) {
+      setActiveTab(t)
+    }
+  }, [searchParams])
+
+  // Search Filters with URL Persistence
+  const initialUrlSearch = queryParam || searchParams.get('search') || searchParams.get('q') || ""
+  const [productSearch, setProductSearch] = useState(initialTab === 'creator' ? initialUrlSearch : '')
+  const [postSearch, setPostSearch] = useState(initialTab === 'calendar' ? initialUrlSearch : '')
   const [productCategoryFilter, setProductCategoryFilter] = useState('ALL')
+
+  const currentTabSearch = activeTab === 'calendar' ? postSearch : (activeTab === 'creator' ? productSearch : '')
+
+  // Sincronizar búsqueda en tiempo real con la URL para que persista al refrescar (F5) y sea compartible
+  useEffect(() => {
+    const currentParam = searchParams.get('search') || searchParams.get('q') || ""
+    const trimmed = currentTabSearch ? currentTabSearch.trim() : ""
+    if (trimmed !== currentParam) {
+      setSearchParams(prev => {
+        const next = new URLSearchParams(prev)
+        if (trimmed) {
+          next.set('search', trimmed)
+          next.delete('q')
+        } else {
+          next.delete('search')
+          next.delete('q')
+        }
+        return next
+      }, { replace: true })
+    }
+  }, [currentTabSearch])
+
+  // Si el usuario navega con Atrás/Adelante en el historial del navegador
+  useEffect(() => {
+    const urlParam = queryParam || searchParams.get('search') || searchParams.get('q') || ""
+    if (activeTab === 'calendar' && urlParam !== postSearch) {
+      setPostSearch(urlParam)
+    } else if (activeTab === 'creator' && urlParam !== productSearch) {
+      setProductSearch(urlParam)
+    }
+  }, [searchParams, queryParam, activeTab])
+
+  // Posts filtrados en la cola de publicaciones
+  const filteredPosts = useMemo(() => {
+    if (!postSearch.trim()) return posts
+    const q = postSearch.toLowerCase().trim()
+    return posts.filter(p => {
+      const titleMatch = (p.title || '').toLowerCase().includes(q)
+      const captionMatch = (p.caption || '').toLowerCase().includes(q)
+      const copyMatch = (p.copy_text || '').toLowerCase().includes(q)
+      const channelMatch = (p.channel || '').toLowerCase().includes(q)
+      const statusMatch = (p.status || '').toLowerCase().includes(q)
+      const typeMatch = (p.post_type || '').toLowerCase().includes(q)
+      return titleMatch || captionMatch || copyMatch || channelMatch || statusMatch || typeMatch
+    })
+  }, [posts, postSearch])
 
   // Creator state
   const [selectedProduct, setSelectedProduct] = useState('')
@@ -2437,7 +2509,7 @@ export default function Marketing() {
       }}>
         <button 
           className="btn" 
-          onClick={() => setActiveTab('creator')}
+          onClick={() => handleTabChange('creator')}
           style={{
             backgroundColor: activeTab === 'creator' ? 'var(--accent-blue)' : 'var(--bg-card)',
             color: activeTab === 'creator' ? '#fff' : 'var(--text-primary)',
@@ -2455,7 +2527,7 @@ export default function Marketing() {
         </button>
         <button 
           className="btn" 
-          onClick={() => setActiveTab('calendar')}
+          onClick={() => handleTabChange('calendar')}
           style={{
             backgroundColor: activeTab === 'calendar' ? 'var(--accent-blue)' : 'var(--bg-card)',
             color: activeTab === 'calendar' ? '#fff' : 'var(--text-primary)',
@@ -2474,7 +2546,7 @@ export default function Marketing() {
         {!isSimpleView && (
         <button 
           className="btn" 
-          onClick={() => { setActiveTab('comments'); fetchComments(); }}
+          onClick={() => { handleTabChange('comments'); fetchComments(); }}
           style={{
             backgroundColor: activeTab === 'comments' ? 'var(--accent-blue)' : 'var(--bg-card)',
             color: activeTab === 'comments' ? '#fff' : 'var(--text-primary)',
@@ -2494,7 +2566,7 @@ export default function Marketing() {
         {!isSimpleView && (
         <button 
           className="btn" 
-          onClick={() => { setActiveTab('diffusion'); fetchDiffusionData(); }}
+          onClick={() => { handleTabChange('diffusion'); fetchDiffusionData(); }}
           style={{
             backgroundColor: activeTab === 'diffusion' ? 'var(--accent-blue)' : 'var(--bg-card)',
             color: activeTab === 'diffusion' ? '#fff' : 'var(--text-primary)',
@@ -2514,7 +2586,7 @@ export default function Marketing() {
         {!isSimpleView && (
         <button 
           className="btn" 
-          onClick={() => setActiveTab('config')}
+          onClick={() => handleTabChange('config')}
           style={{
             backgroundColor: activeTab === 'config' ? 'var(--accent-blue)' : 'var(--bg-card)',
             color: activeTab === 'config' ? '#fff' : 'var(--text-primary)',
@@ -3624,7 +3696,49 @@ export default function Marketing() {
                 </div>
               )}
             </div>
-            <div style={{display: 'flex', alignItems: 'center', gap: 8}}>
+            <div style={{display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap'}}>
+              <div style={{ position: 'relative', width: 240 }}>
+                <Search size={14} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-secondary)' }} />
+                <input
+                  type="text"
+                  placeholder="Buscar en cola..."
+                  value={postSearch}
+                  onChange={e => setPostSearch(e.target.value)}
+                  style={{
+                    paddingLeft: '32px',
+                    paddingRight: postSearch ? '30px' : '10px',
+                    height: '32px',
+                    fontSize: '0.82rem',
+                    borderRadius: '8px',
+                    border: '1px solid var(--border-color)',
+                    backgroundColor: 'var(--bg-dark)',
+                    color: 'var(--text-primary)',
+                    width: '100%'
+                  }}
+                />
+                {postSearch && (
+                  <button
+                    type="button"
+                    onClick={() => setPostSearch('')}
+                    style={{
+                      position: 'absolute',
+                      right: 8,
+                      top: '50%',
+                      transform: 'translateY(-50%)',
+                      background: 'none',
+                      border: 'none',
+                      color: 'var(--text-secondary)',
+                      cursor: 'pointer',
+                      padding: 2,
+                      display: 'flex',
+                      alignItems: 'center'
+                    }}
+                    title="Limpiar búsqueda"
+                  >
+                    <X size={13} />
+                  </button>
+                )}
+              </div>
               <button 
                 className="btn" 
                 onClick={handleSyncMetrics} 
@@ -3648,9 +3762,13 @@ export default function Marketing() {
               <div style={{textAlign: 'center', padding: 30, color: 'var(--text-secondary)'}}>
                 No hay publicaciones agendadas o creadas.
               </div>
+            ) : filteredPosts.length === 0 ? (
+              <div style={{textAlign: 'center', padding: 30, color: 'var(--text-secondary)'}}>
+                No se encontraron publicaciones con "{postSearch}".
+              </div>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', marginTop: '15px' }}>
-                {posts.map(p => (
+                {filteredPosts.map(p => (
                   <div 
                     key={p.id} 
                     style={{

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react'
-import { Plus, Trash2, Wallet, Calendar, DollarSign, Tag, TrendingDown, TrendingUp, PieChart, ArrowUpRight, ArrowDownRight, Layers, FileText, CheckCircle2, AlertTriangle, Search, ChevronDown, ChevronUp, Pencil, RefreshCw, Clock, ExternalLink, Copy, Check, Link2, CreditCard, User, Store, ShoppingBag, Globe } from 'lucide-react'
+import { useSearchParams, useParams } from 'react-router-dom'
+import { Plus, Trash2, Wallet, Calendar, DollarSign, Tag, TrendingDown, TrendingUp, PieChart, ArrowUpRight, ArrowDownRight, Layers, FileText, CheckCircle2, AlertTriangle, Search, ChevronDown, ChevronUp, Pencil, RefreshCw, Clock, ExternalLink, Copy, Check, Link2, CreditCard, User, Store, ShoppingBag, Globe, X } from 'lucide-react'
 import { useTenant } from '../TenantContext'
 
 export default function Expenses() {
@@ -20,8 +21,38 @@ export default function Expenses() {
   const [testPhone, setTestPhone] = useState('')
   const [sendingTestAlert, setSendingTestAlert] = useState(false)
   const [showSalesDetails, setShowSalesDetails] = useState(true)
-  const [salesSearch, setSalesSearch] = useState('')
+  const { queryParam } = useParams()
+  const [searchParams, setSearchParams] = useSearchParams()
+  const initialUrlSearch = queryParam || searchParams.get('search') || searchParams.get('q') || ""
+  const [salesSearch, setSalesSearch] = useState(initialUrlSearch)
   const [salesPlatformFilter, setSalesPlatformFilter] = useState('ALL')
+
+  // Sincronizar búsqueda en tiempo real con la URL para que persista al refrescar (F5) y sea compartible
+  useEffect(() => {
+    const currentParam = searchParams.get('search') || searchParams.get('q') || ""
+    const trimmed = salesSearch ? salesSearch.trim() : ""
+    if (trimmed !== currentParam) {
+      setSearchParams(prev => {
+        const next = new URLSearchParams(prev)
+        if (trimmed) {
+          next.set('search', trimmed)
+          next.delete('q')
+        } else {
+          next.delete('search')
+          next.delete('q')
+        }
+        return next
+      }, { replace: true })
+    }
+  }, [salesSearch])
+
+  // Si el usuario navega con Atrás/Adelante en el historial del navegador
+  useEffect(() => {
+    const urlParam = queryParam || searchParams.get('search') || searchParams.get('q') || ""
+    if (urlParam !== salesSearch) {
+      setSalesSearch(urlParam)
+    }
+  }, [searchParams, queryParam])
   const [summary, setSummary] = useState({
     total_sales: 0,
     total_manual_incomes: 0,
@@ -1612,8 +1643,18 @@ export default function Expenses() {
                         placeholder="Buscar por ID, cliente, plataforma..." 
                         value={salesSearch}
                         onChange={e => setSalesSearch(e.target.value)}
-                        style={{ paddingLeft: 30, fontSize: '0.82rem', height: 32, width: 220 }}
+                        style={{ paddingLeft: 30, paddingRight: salesSearch ? 26 : 10, fontSize: '0.82rem', height: 32, width: 220 }}
                       />
+                      {salesSearch && (
+                        <button
+                          type="button"
+                          onClick={() => setSalesSearch('')}
+                          style={{ position: 'absolute', right: 6, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', padding: 2, display: 'flex', alignItems: 'center' }}
+                          title="Limpiar búsqueda"
+                        >
+                          <X size={13} />
+                        </button>
+                      )}
                     </div>
                     <button 
                       className="btn" 

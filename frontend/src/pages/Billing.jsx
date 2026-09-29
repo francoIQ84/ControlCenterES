@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react'
+import { useSearchParams, useParams } from 'react-router-dom'
 import { useTenant } from '../TenantContext'
 
 // AFIP Error Translator: convierte errores técnicos de WSFE/WSAA en recomendaciones amigables
@@ -27,7 +28,37 @@ export default function Billing() {
   const [sortConfig, setSortConfig] = useState({ key: 'invoice_number', direction: 'desc' })
   const [docFilter, setDocFilter] = useState('all') // 'all', 'cuit', 'dni'
   const [typeFilter, setTypeFilter] = useState('all') // 'all', 'meli', 'local'
-  const [searchTerm, setSearchTerm] = useState('')
+  const { queryParam } = useParams()
+  const [searchParams, setSearchParams] = useSearchParams()
+  const initialUrlSearch = queryParam || searchParams.get('search') || searchParams.get('q') || ""
+  const [searchTerm, setSearchTerm] = useState(initialUrlSearch)
+
+  // Sincronizar búsqueda en tiempo real con la URL para que persista al refrescar (F5) y sea compartible
+  useEffect(() => {
+    const currentParam = searchParams.get('search') || searchParams.get('q') || ""
+    const trimmed = searchTerm ? searchTerm.trim() : ""
+    if (trimmed !== currentParam) {
+      setSearchParams(prev => {
+        const next = new URLSearchParams(prev)
+        if (trimmed) {
+          next.set('search', trimmed)
+          next.delete('q')
+        } else {
+          next.delete('search')
+          next.delete('q')
+        }
+        return next
+      }, { replace: true })
+    }
+  }, [searchTerm])
+
+  // Si el usuario navega con Atrás/Adelante en el historial del navegador
+  useEffect(() => {
+    const urlParam = queryParam || searchParams.get('search') || searchParams.get('q') || ""
+    if (urlParam !== searchTerm) {
+      setSearchTerm(urlParam)
+    }
+  }, [searchParams, queryParam])
   const [ptoVta, setPtoVta] = useState(1)
   const [cbteTipo, setCbteTipo] = useState(11)
   const [syncing, setSyncing] = useState(false)

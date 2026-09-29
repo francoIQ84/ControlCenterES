@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react'
-import { Plus, Edit2, Trash2, BookOpen, UserCheck, Eye, EyeOff, Save, Image as ImageIcon, Search, Check, Sparkles } from 'lucide-react'
+import { useSearchParams, useParams } from 'react-router-dom'
+import { Plus, Edit2, Trash2, BookOpen, UserCheck, Eye, EyeOff, Save, Image as ImageIcon, Search, Check, Sparkles, X } from 'lucide-react'
 import MediaBrowser from '../components/MediaBrowser'
 
 export default function BlogCMS() {
@@ -8,8 +9,38 @@ export default function BlogCMS() {
   // Blog state
   const [posts, setPosts] = useState([])
   const [loadingPosts, setLoadingPosts] = useState(true)
-  const [searchQuery, setSearchQuery] = useState('')
+  const { queryParam } = useParams()
+  const [searchParams, setSearchParams] = useSearchParams()
+  const initialUrlSearch = queryParam || searchParams.get('search') || searchParams.get('q') || ""
+  const [searchQuery, setSearchQuery] = useState(initialUrlSearch)
   const [categoryFilter, setCategoryFilter] = useState('ALL')
+
+  // Sincronizar búsqueda en tiempo real con la URL para que persista al refrescar (F5) y sea compartible
+  useEffect(() => {
+    const currentParam = searchParams.get('search') || searchParams.get('q') || ""
+    const trimmed = searchQuery ? searchQuery.trim() : ""
+    if (trimmed !== currentParam) {
+      setSearchParams(prev => {
+        const next = new URLSearchParams(prev)
+        if (trimmed) {
+          next.set('search', trimmed)
+          next.delete('q')
+        } else {
+          next.delete('search')
+          next.delete('q')
+        }
+        return next
+      }, { replace: true })
+    }
+  }, [searchQuery])
+
+  // Si el usuario navega con Atrás/Adelante en el historial del navegador
+  useEffect(() => {
+    const urlParam = queryParam || searchParams.get('search') || searchParams.get('q') || ""
+    if (urlParam !== searchQuery) {
+      setSearchQuery(urlParam)
+    }
+  }, [searchParams, queryParam])
   
   // Blog Modal state
   const [showModal, setShowModal] = useState(false)
@@ -231,14 +262,24 @@ export default function BlogCMS() {
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, flexWrap: 'wrap', gap: 15 }}>
             <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
               <div style={{ position: 'relative', minWidth: 260 }}>
-                <Search size={16} style={{ position: 'absolute', left: 10, top: 10, color: 'var(--text-secondary)' }} />
+                <Search size={16} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-secondary)' }} />
                 <input
                   type="text"
                   placeholder="Buscar artículos..."
                   value={searchQuery}
                   onChange={e => setSearchQuery(e.target.value)}
-                  style={{ width: '100%', padding: '7px 10px 7px 34px', fontSize: '0.85rem', borderRadius: 6, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)' }}
+                  style={{ width: '100%', padding: searchQuery ? '7px 28px 7px 34px' : '7px 10px 7px 34px', fontSize: '0.85rem', borderRadius: 6, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)' }}
                 />
+                {searchQuery && (
+                  <button
+                    type="button"
+                    onClick={() => setSearchQuery('')}
+                    style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', padding: 2, display: 'flex', alignItems: 'center' }}
+                    title="Limpiar búsqueda"
+                  >
+                    <X size={14} />
+                  </button>
+                )}
               </div>
 
               <select

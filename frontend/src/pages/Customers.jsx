@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { useSearchParams, useParams } from 'react-router-dom'
 import { 
   Users, MessageSquare, TrendingUp, RefreshCw, Sparkles, Filter, Search, Plus, 
   Trash2, Edit2, Download, ExternalLink, Mail, Phone, ShoppingBag, UserCheck, 
@@ -10,22 +10,67 @@ import { useTenant } from '../TenantContext'
 import { matchesQuery, matchesPhoneOrDoc } from '../utils/searchUtils'
 
 export default function Customers() {
-  const [searchParams] = useSearchParams()
+  const { queryParam } = useParams()
+  const [searchParams, setSearchParams] = useSearchParams()
   const initialTab = searchParams.get('tab') || 'customers'
   const [activeTab, setActiveTab] = useState(initialTab) // 'customers' | 'meli_questions' | 'inquiries' | 'leads' | 'whatsapp'
   const { isSimpleView, isChannelEnabled } = useTenant()
 
+  const handleTabChange = (t) => {
+    setActiveTab(t)
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev)
+      if (t === 'customers') {
+        next.delete('tab')
+      } else {
+        next.set('tab', t)
+      }
+      return next
+    }, { replace: true })
+  }
+
   useEffect(() => {
     const t = searchParams.get('tab')
-    if (t) setActiveTab(t)
+    if (t && t !== activeTab) setActiveTab(t)
   }, [searchParams])
-  const [loading, setLoading] = useState(true)
-  const [syncingWa, setSyncingWa] = useState(false)
-  const [syncingMetaLeads, setSyncingMetaLeads] = useState(false)
-  const [analyzingInquiries, setAnalyzingInquiries] = useState(false)
-  const [searchQuery, setSearchQuery] = useState('')
-  const [leadsSearch, setLeadsSearch] = useState('')
-  const [waSearch, setWaSearch] = useState('')
+
+  const initialUrlSearch = queryParam || searchParams.get('search') || searchParams.get('q') || ""
+  const [searchQuery, setSearchQuery] = useState(initialTab === 'customers' ? initialUrlSearch : '')
+  const [leadsSearch, setLeadsSearch] = useState(initialTab === 'leads' ? initialUrlSearch : '')
+  const [waSearch, setWaSearch] = useState(initialTab === 'whatsapp' ? initialUrlSearch : '')
+
+  const currentTabSearch = activeTab === 'customers' ? searchQuery : (activeTab === 'leads' ? leadsSearch : (activeTab === 'whatsapp' ? waSearch : ''))
+
+  // Sincronizar búsqueda en tiempo real con la URL para que persista al refrescar (F5) y sea compartible
+  useEffect(() => {
+    const currentParam = searchParams.get('search') || searchParams.get('q') || ""
+    const trimmed = currentTabSearch ? currentTabSearch.trim() : ""
+    if (trimmed !== currentParam) {
+      setSearchParams(prev => {
+        const next = new URLSearchParams(prev)
+        if (trimmed) {
+          next.set('search', trimmed)
+          next.delete('q')
+        } else {
+          next.delete('search')
+          next.delete('q')
+        }
+        return next
+      }, { replace: true })
+    }
+  }, [currentTabSearch])
+
+  // Si el usuario navega con Atrás/Adelante en el historial del navegador
+  useEffect(() => {
+    const urlParam = queryParam || searchParams.get('search') || searchParams.get('q') || ""
+    if (activeTab === 'customers' && urlParam !== searchQuery) {
+      setSearchQuery(urlParam)
+    } else if (activeTab === 'leads' && urlParam !== leadsSearch) {
+      setLeadsSearch(urlParam)
+    } else if (activeTab === 'whatsapp' && urlParam !== waSearch) {
+      setWaSearch(urlParam)
+    }
+  }, [searchParams, queryParam, activeTab])
   const [platformFilter, setPlatformFilter] = useState('ALL')
   const [syncNotice, setSyncNotice] = useState(null)
 
@@ -593,7 +638,7 @@ export default function Customers() {
         marginBottom: '25px'
       }}>
         <button
-          onClick={() => setActiveTab('customers')}
+          onClick={() => handleTabChange('customers')}
           style={{
             padding: '10px 12px',
             border: activeTab === 'customers' ? '2px solid var(--accent-blue)' : '1px solid var(--border-color)',
@@ -614,7 +659,7 @@ export default function Customers() {
 
         {!isSimpleView && isChannelEnabled('meli') && (
         <button
-          onClick={() => setActiveTab('meli_questions')}
+          onClick={() => handleTabChange('meli_questions')}
           style={{
             padding: '10px 12px',
             border: activeTab === 'meli_questions' ? '2px solid #f59e0b' : '1px solid var(--border-color)',
@@ -636,7 +681,7 @@ export default function Customers() {
 
         {!isSimpleView && (
         <button
-          onClick={() => setActiveTab('inquiries')}
+          onClick={() => handleTabChange('inquiries')}
           style={{
             padding: '10px 12px',
             border: activeTab === 'inquiries' ? '2px solid #8b5cf6' : '1px solid var(--border-color)',
@@ -658,7 +703,7 @@ export default function Customers() {
 
         {!isSimpleView && (
         <button
-          onClick={() => setActiveTab('leads')}
+          onClick={() => handleTabChange('leads')}
           style={{
             padding: '10px 12px',
             border: activeTab === 'leads' ? '2px solid #10b981' : '1px solid var(--border-color)',
@@ -680,7 +725,7 @@ export default function Customers() {
 
         {!isSimpleView && (
         <button
-          onClick={() => setActiveTab('whatsapp')}
+          onClick={() => handleTabChange('whatsapp')}
           style={{
             padding: '10px 12px',
             border: activeTab === 'whatsapp' ? '2px solid #25D366' : '1px solid var(--border-color)',

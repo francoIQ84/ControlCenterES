@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import {
   MessageSquare, Sparkles, RefreshCw, CheckCircle, Clock, AlertCircle,
   Settings, Play, Send, Search, Filter, HelpCircle, ShieldAlert, Zap, Edit3, X, Eye
@@ -11,8 +12,36 @@ export default function MeliQuestions({ embedded = false }) {
   const [syncing, setSyncing] = useState(false)
   
   // Filter states
-  const [search, setSearch] = useState('')
+  const [searchParams, setSearchParams] = useSearchParams()
+  const initialSearch = searchParams.get('search') || searchParams.get('q') || ''
+  const [search, setSearch] = useState(initialSearch)
   const [statusFilter, setStatusFilter] = useState('ALL')
+
+  // Sincronizar búsqueda con URL
+  useEffect(() => {
+    const currentParam = searchParams.get('search') || searchParams.get('q') || ""
+    const trimmed = search ? search.trim() : ""
+    if (trimmed !== currentParam) {
+      setSearchParams(prev => {
+        const next = new URLSearchParams(prev)
+        if (trimmed) {
+          next.set('search', trimmed)
+          next.delete('q')
+        } else {
+          next.delete('search')
+          next.delete('q')
+        }
+        return next
+      }, { replace: true })
+    }
+  }, [search])
+
+  useEffect(() => {
+    const urlParam = searchParams.get('search') || searchParams.get('q') || ""
+    if (urlParam !== search) {
+      setSearch(urlParam)
+    }
+  }, [searchParams])
   
   // Settings modal states
   const [showSettings, setShowSettings] = useState(false)
@@ -66,6 +95,13 @@ export default function MeliQuestions({ embedded = false }) {
     fetchQuestions()
     fetchSettings()
   }, [statusFilter])
+
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      fetchQuestions()
+    }, 400)
+    return () => clearTimeout(handler)
+  }, [search])
 
   const handleSyncNow = async () => {
     setSyncing(true)
@@ -341,11 +377,33 @@ export default function MeliQuestions({ embedded = false }) {
             onChange={(e) => setSearch(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && fetchQuestions()}
             style={{
-              width: '100%', padding: '8px 12px 8px 34px', borderRadius: 8,
+              width: '100%', padding: search ? '8px 30px 8px 34px' : '8px 12px 8px 34px', borderRadius: 8,
               border: '1px solid var(--border-color, #374151)', backgroundColor: 'var(--bg-card, #1f2937)',
               color: 'var(--text-main, #f3f4f6)', fontSize: '0.85rem'
             }}
           />
+          {search && (
+            <button
+              type="button"
+              onClick={() => setSearch('')}
+              style={{
+                position: 'absolute',
+                right: 8,
+                top: '50%',
+                transform: 'translateY(-50%)',
+                background: 'none',
+                border: 'none',
+                color: '#9ca3af',
+                cursor: 'pointer',
+                padding: 4,
+                display: 'flex',
+                alignItems: 'center'
+              }}
+              title="Limpiar búsqueda"
+            >
+              <X size={14} />
+            </button>
+          )}
         </div>
       </div>
 

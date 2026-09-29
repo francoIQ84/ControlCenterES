@@ -160,15 +160,22 @@ function App() {
             <Route path="inventory" element={<PermissionRoute permission="inventory"><Inventory /></PermissionRoute>} />
             <Route path="inventory/search/:queryParam" element={<PermissionRoute permission="inventory"><Inventory /></PermissionRoute>} />
             <Route path="sales" element={<PermissionRoute permission="sales"><Sales /></PermissionRoute>} />
+            <Route path="sales/search/:queryParam" element={<PermissionRoute permission="sales"><Sales /></PermissionRoute>} />
             <Route path="presupuestos" element={<PermissionRoute permission="quotes" module="quotes"><Quotes /></PermissionRoute>} />
+            <Route path="presupuestos/search/:queryParam" element={<PermissionRoute permission="quotes" module="quotes"><Quotes /></PermissionRoute>} />
             <Route path="billing" element={<PermissionRoute permission="billing"><Billing /></PermissionRoute>} />
+            <Route path="billing/search/:queryParam" element={<PermissionRoute permission="billing"><Billing /></PermissionRoute>} />
             <Route path="customers" element={<PermissionRoute permission="customers"><Customers /></PermissionRoute>} />
+            <Route path="customers/search/:queryParam" element={<PermissionRoute permission="customers"><Customers /></PermissionRoute>} />
             <Route path="settings" element={<PermissionRoute permission="settings" module={null}><Settings /></PermissionRoute>} />
             <Route path="cms" element={<PermissionRoute permission="blog"><BlogCMS /></PermissionRoute>} />
+            <Route path="cms/search/:queryParam" element={<PermissionRoute permission="blog"><BlogCMS /></PermissionRoute>} />
             <Route path="media" element={<PermissionRoute permission="media"><MediaManager /></PermissionRoute>} />
             <Route path="expenses" element={<PermissionRoute permission="expenses"><Expenses /></PermissionRoute>} />
+            <Route path="expenses/search/:queryParam" element={<PermissionRoute permission="expenses"><Expenses /></PermissionRoute>} />
             <Route path="inpi" element={<PermissionRoute permission="inpi"><IndustrialProperty /></PermissionRoute>} />
             <Route path="marketing" element={<PermissionRoute permission="marketing"><Marketing /></PermissionRoute>} />
+            <Route path="marketing/search/:queryParam" element={<PermissionRoute permission="marketing"><Marketing /></PermissionRoute>} />
             <Route path="meli-optimizer" element={<Navigate to="/inventory?tab=optimizer" replace />} />
             <Route path="mercadolibre/preguntas" element={<Navigate to="/customers?tab=meli_questions" replace />} />
             {/* Administración de la plataforma. La página se autoprotege y el

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react'
+import { useSearchParams, useParams } from 'react-router-dom'
 import { 
   FileText, Plus, Search, Download, CheckCircle2, Clock, 
   AlertTriangle, XCircle, MessageCircle, User, Trash2, 
@@ -15,7 +16,37 @@ export default function Quotes() {
   const [quotes, setQuotes] = useState(() => cachedQuotes || [])
   const [loading, setLoading] = useState(() => !cachedQuotes)
   const [statusFilter, setStatusFilter] = useState('all')
-  const [searchTerm, setSearchTerm] = useState('')
+  const { queryParam } = useParams()
+  const [searchParams, setSearchParams] = useSearchParams()
+  const initialUrlSearch = queryParam || searchParams.get('search') || searchParams.get('q') || ""
+  const [searchTerm, setSearchTerm] = useState(initialUrlSearch)
+
+  // Sincronizar búsqueda en tiempo real con la URL para que persista al refrescar (F5) y sea compartible
+  useEffect(() => {
+    const currentParam = searchParams.get('search') || searchParams.get('q') || ""
+    const trimmed = searchTerm ? searchTerm.trim() : ""
+    if (trimmed !== currentParam) {
+      setSearchParams(prev => {
+        const next = new URLSearchParams(prev)
+        if (trimmed) {
+          next.set('search', trimmed)
+          next.delete('q')
+        } else {
+          next.delete('search')
+          next.delete('q')
+        }
+        return next
+      }, { replace: true })
+    }
+  }, [searchTerm])
+
+  // Si el usuario navega con Atrás/Adelante en el historial del navegador
+  useEffect(() => {
+    const urlParam = queryParam || searchParams.get('search') || searchParams.get('q') || ""
+    if (urlParam !== searchTerm) {
+      setSearchTerm(urlParam)
+    }
+  }, [searchParams, queryParam])
   const cachedInv = getCachedData(CacheKeys.INVENTORY_SUMMARY) || getCachedData(CacheKeys.INVENTORY)
   const [inventory, setInventory] = useState(() => cachedInv || [])
   

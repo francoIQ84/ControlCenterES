@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useMemo } from 'react'
+import { useSearchParams, useParams } from 'react-router-dom'
 import { ShoppingBag, Globe, Store, Check, Clock, Plus, Trash2, ShoppingCart, DollarSign, Link, MessageSquare, Send, ExternalLink, FileText, UserCheck, User, Search, X, Filter, CheckSquare, Square, Layers, CheckCircle2, AlertCircle, Loader2, RefreshCw, Package, Calendar, Edit2, Eye, CreditCard, Copy } from 'lucide-react'
 import { useTenant } from '../TenantContext'
 import { getCachedData, setCachedData, invalidateCache, CacheKeys } from '../utils/cache'
@@ -47,9 +48,39 @@ export default function Sales() {
   const [bulkIncludeShipping, setBulkIncludeShipping] = useState(true)
 
   // Search & Filter State
-  const [searchQuery, setSearchQuery] = useState('')
+  const { queryParam } = useParams()
+  const [searchParams, setSearchParams] = useSearchParams()
+  const initialUrlSearch = queryParam || searchParams.get('search') || searchParams.get('q') || ""
+  const [searchQuery, setSearchQuery] = useState(initialUrlSearch)
   const [platformFilter, setPlatformFilter] = useState('ALL')
   const [shippingFilter, setShippingFilter] = useState('ALL')
+
+  // Sincronizar búsqueda en tiempo real con la URL para que persista al refrescar (F5) y sea compartible
+  useEffect(() => {
+    const currentParam = searchParams.get('search') || searchParams.get('q') || ""
+    const trimmed = searchQuery ? searchQuery.trim() : ""
+    if (trimmed !== currentParam) {
+      setSearchParams(prev => {
+        const next = new URLSearchParams(prev)
+        if (trimmed) {
+          next.set('search', trimmed)
+          next.delete('q')
+        } else {
+          next.delete('search')
+          next.delete('q')
+        }
+        return next
+      }, { replace: true })
+    }
+  }, [searchQuery])
+
+  // Si el usuario navega con Atrás/Adelante en el historial del navegador
+  useEffect(() => {
+    const urlParam = queryParam || searchParams.get('search') || searchParams.get('q') || ""
+    if (urlParam !== searchQuery) {
+      setSearchQuery(urlParam)
+    }
+  }, [searchParams, queryParam])
 
   // Modal State
   const [showModal, setShowModal] = useState(false)
