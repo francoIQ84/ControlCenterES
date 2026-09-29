@@ -43,6 +43,18 @@ class ManualOrderRequest(BaseModel):
 class UpdateDateRequest(BaseModel):
     date_created: str
 
+class UpdateOrderRequest(BaseModel):
+    buyer_nickname: Optional[str] = None
+    buyer_name: Optional[str] = None
+    total_amount: Optional[float] = None
+    shipping_status: Optional[str] = "delivered"
+    source_platform: Optional[str] = "LOCAL"
+    items: List[ManualOrderProduct]
+    payment_method: Optional[str] = None
+    payment_status: Optional[str] = "paid"
+    date_created: Optional[str] = None
+    update_stock: Optional[bool] = True
+
 @router.get("/")
 def get_sales(search: Optional[str] = None, source_platform: Optional[str] = None):
     orders = database.get_all_orders(source_platform=source_platform, search=search)
@@ -230,6 +242,129 @@ def update_order_date_endpoint(order_id: int, req: UpdateDateRequest):
 
     database.update_order_date(order_id, formatted_date)
     return {"success": True, "date_created": formatted_date}
+
+@router.put("/{order_id}")
+def update_order_endpoint(order_id: str, req: UpdateOrderRequest, current_user: dict = Depends(get_current_user)):
+    existing = database.get_order_by_id(order_id)
+    if not existing:
+        raise HTTPException(status_code=404, detail="Orden no encontrada")
+
+    # Si ya tiene factura electrónica AFIP, validar que no se altere el monto total
+    if existing.get('invoice_number') or existing.get('afip_cae'):
+        old_total = float(existing.get('total_amount') or 0.0)
+        calc_total = sum(it.price * it.quantity for it in req.items)
+        new_total = float(req.total_amount if req.total_amount is not None and req.total_amount > 0 else calc_total)
+        if abs(old_total - new_total) > 0.01:
+            raise HTTPException(
+                status_code=400,
+                detail=f"No se puede alterar el monto total (${old_total:,.2f}) de una venta ya facturada con AFIP (Factura: {existing.get('invoice_number')}, CAE: {existing.get('afip_cae')}). Para corregir el importe debe emitirse una Nota de Crédito."
+            )
+
+    # Procesar fecha si fue provista
+    date_created = None
+    if req.date_created:
+        try:
+            dt = datetime.datetime.fromisoformat(req.date_created)
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=ARGENTINA_TZ)
+            date_created = dt.isoformat()
+        except Exception:
+            date_created = req.date_created
+
+    # Manejo de stock: restaurar stock de ítems previos si correspondía y descontar nuevos
+    items_list = []
+    total_cost = 0.0
+    any_linked = False
+
+    # 1. Si update_stock está activo, restaurar ítems anteriores si estaban vinculados a productos del catálogo
+    if req.update_stock:
+        old_items = existing.get('items') or []
+        for old_it in old_items:
+            old_id = old_it.get('id')
+            old_qty = int(old_it.get('quantity') or 1)
+            # Solo restaurar si es un producto real existente en el inventario
+            if old_id and not str(old_id).startswith('manual-') and str(old_id).lower() != 'varios':
+                try:
+                    prod = database.get_product_by_id(old_id)
+                    if prod:
+                        ok_add, new_qty = database.add_product_stock_by_ml_id(old_id, old_qty)
+                        if ok_add:
+                            # Sincronizar incremento a MeLi si corresponde
+                            is_local = str(old_id).startswith('LOCAL-') or str(old_id).startswith('WEB-')
+                            if not is_local and prod.get('status') in ('active', 'paused') and prod.get('sync_meli', 1) == 1:
+                                try:
+                                    meli_api.update_stock_and_price(old_id, new_qty, prod.get('price', old_it.get('price', 0)))
+                                except Exception as e_sync:
+                                    print(f"[MeLi Sync Restore Stock Error] {e_sync}")
+                except Exception as e_res:
+                    print(f"[Stock Restore on Order Update Error] {e_res}")
+
+    # 2. Procesar ítems nuevos y descontar stock
+    for item in req.items:
+        items_list.append({
+            "id": item.id,
+            "title": item.title,
+            "quantity": item.quantity,
+            "price": item.price
+        })
+
+        if req.update_stock:
+            try:
+                prod = database.get_product_by_id(item.id)
+                if prod:
+                    any_linked = True
+                    qty = max(1, item.quantity)
+                    prod_cost = float(prod.get('cost_price') or 0.0)
+                    total_cost += (prod_cost * qty)
+
+                    ok_deduct, new_qty = database.deduct_product_stock_by_ml_id(item.id, qty)
+                    if ok_deduct:
+                        # Sincronizar stock a Mercado Libre si corresponde
+                        is_local = str(item.id).startswith('LOCAL-') or str(item.id).startswith('WEB-')
+                        if not is_local and prod.get('status') in ('active', 'paused') and prod.get('sync_meli', 1) == 1:
+                            try:
+                                meli_api.update_stock_and_price(item.id, new_qty, prod.get('price', item.price))
+                            except Exception as meli_err:
+                                print(f"[MeLi Sync on Order Update Deduct Error] {meli_err}")
+
+                        # Sincronizar stock a Tiendanube si corresponde
+                        try:
+                            if prod.get("tn_id") and prod.get("tn_variant_id") and prod.get("sync_tn", 1) == 1:
+                                from src import tn_api
+                                if tn_api.is_connected() and not tn_api.is_demo_mode():
+                                    tn_api.update_tn_stock(prod["tn_id"], prod["tn_variant_id"], new_qty)
+                        except Exception as tn_err:
+                            print(f"[TN Sync on Order Update Deduct Error] {tn_err}")
+            except Exception as stock_err:
+                print(f"[Stock Deduction on Order Update Error] {stock_err}")
+
+    # Si total_amount no se especificó o es <= 0, calcular suma de ítems
+    calculated_total = sum(it['price'] * it['quantity'] for it in items_list)
+    total_amount = req.total_amount if req.total_amount is not None and req.total_amount > 0 else calculated_total
+
+    final_buyer_name = req.buyer_name or existing.get('buyer_name') or 'Consumidor Final'
+    final_buyer_nickname = req.buyer_nickname or existing.get('buyer_nickname') or 'consumidor_final'
+    final_source_platform = req.source_platform or existing.get('source_platform') or 'LOCAL'
+    final_payment_method = req.payment_method or existing.get('payment_method') or 'Transferencia Mercado Pago'
+    final_shipping_status = req.shipping_status or existing.get('shipping_status') or 'delivered'
+    final_payment_status = req.payment_status or existing.get('payment_status') or 'approved'
+
+    database.update_manual_order(
+        order_id=order_id,
+        buyer_nickname=final_buyer_nickname,
+        buyer_name=final_buyer_name,
+        total_amount=total_amount,
+        items=items_list,
+        source_platform=final_source_platform,
+        payment_method=final_payment_method,
+        payment_status=final_payment_status,
+        shipping_status=final_shipping_status,
+        cost_amount=total_cost if total_cost > 0 else float(existing.get('cost_amount') or 0.0),
+        inventory_linked=1 if any_linked else (existing.get('inventory_linked') or 0),
+        date_created=date_created
+    )
+
+    return {"success": True, "order_id": order_id}
 
 @router.post("/")
 def create_order(req: ManualOrderRequest, current_user: dict = Depends(get_current_user)):

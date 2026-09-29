@@ -1261,6 +1261,24 @@ def deduct_product_stock_by_ml_id(ml_id: str, qty_to_deduct: int):
             """, (new_qty, current_qty, now, ml_id))
             return True, new_qty
 
+def add_product_stock_by_ml_id(ml_id: str, qty_to_add: int):
+    """Devuelve stock al producto de forma atómica y registra el stock previo."""
+    now = datetime.now().isoformat()
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute("SELECT available_quantity FROM products_cache WHERE ml_id = %s", (ml_id,))
+            row = cursor.fetchone()
+            if not row:
+                return False, 0
+            current_qty = row['available_quantity'] or 0
+            new_qty = current_qty + int(qty_to_add)
+            cursor.execute("""
+                UPDATE products_cache 
+                SET available_quantity = %s, prev_stock = %s, last_modified = %s
+                WHERE ml_id = %s
+            """, (new_qty, current_qty, now, ml_id))
+            return True, new_qty
+
 def upsert_category_from_tn(name: str, tn_id: str, slug: str = None) -> int:
     import re
     clean_name = (name or "").strip()
@@ -2883,6 +2901,61 @@ def create_manual_order(order_id: int, date_created: str, buyer_nickname: str, b
                 inventory_linked,
                 created_by_user
             ))
+
+def update_manual_order(
+    order_id: int,
+    buyer_nickname: str,
+    buyer_name: str,
+    total_amount: float,
+    items: list,
+    source_platform: str = None,
+    payment_method: str = None,
+    payment_status: str = 'approved',
+    shipping_status: str = 'delivered',
+    cost_amount: float = 0.0,
+    inventory_linked: int = 1,
+    date_created: str = None
+):
+    import json
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            # Build dynamic SET clause based on provided parameters
+            fields = [
+                "buyer_nickname = %s",
+                "buyer_name = %s",
+                "total_amount = %s",
+                "items_json = %s",
+                "payment_status = %s",
+                "shipping_status = %s",
+                "cost_amount = %s",
+                "inventory_linked = %s"
+            ]
+            values = [
+                buyer_nickname,
+                buyer_name,
+                total_amount,
+                json.dumps(items),
+                payment_status,
+                shipping_status,
+                cost_amount,
+                inventory_linked
+            ]
+
+            if source_platform:
+                fields.append("source_platform = %s")
+                values.append(source_platform)
+
+            if payment_method:
+                fields.append("payment_method = %s")
+                values.append(payment_method)
+
+            if date_created:
+                fields.append("date_created = %s")
+                values.append(date_created)
+
+            values.append(order_id)
+            set_clause = ", ".join(fields)
+            cursor.execute(f"UPDATE orders_cache SET {set_clause} WHERE order_id = %s", tuple(values))
 
 # --- WhatsApp Operations ---
 

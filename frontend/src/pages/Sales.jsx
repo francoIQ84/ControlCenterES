@@ -145,6 +145,34 @@ export default function Sales() {
     items: [{ id: "manual-1", title: "", quantity: 1, price: 0 }]
   })
 
+  // Edit Existing Sale / Evolve MP Transfer State
+  const [editingOrderId, setEditingOrderId] = useState(null)
+  const [editingOrderIsTransfer, setEditingOrderIsTransfer] = useState(false)
+  const [editingOrderInvoiced, setEditingOrderInvoiced] = useState(false)
+  const [editingOrderOriginalTotal, setEditingOrderOriginalTotal] = useState(0)
+
+  const resetModalState = () => {
+    setEditingOrderId(null)
+    setEditingOrderIsTransfer(false)
+    setEditingOrderInvoiced(false)
+    setEditingOrderOriginalTotal(0)
+    setNewOrder({
+      buyer_nickname: "",
+      buyer_name: "",
+      source_platform: "LOCAL",
+      price_source: "web",
+      shipping_status: "delivered",
+      payment_method: "Efectivo",
+      payment_status: "paid",
+      auto_invoice: false,
+      invoice_type: "B",
+      date_created: getLocalDateTimeLocal(),
+      items: [{ id: "manual-1", title: "", quantity: 1, price: 0 }],
+      update_stock: true,
+      mp_payment_id: null
+    })
+  }
+
   // Sale Detail Modal & Date Editing State
   const [selectedDetailOrder, setSelectedDetailOrder] = useState(null)
   const [isEditingDate, setIsEditingDate] = useState(false)
@@ -901,7 +929,44 @@ export default function Sales() {
     // Calculate total
     const total_amount = newOrder.items.reduce((sum, item) => sum + (item.price * item.quantity), 0)
 
+    // Si se está editando una orden ya facturada ante AFIP, verificar que el monto no varíe
+    if (editingOrderId && editingOrderInvoiced && Math.abs(total_amount - editingOrderOriginalTotal) > 0.01) {
+      alert(`Esta venta ya fue emitida con Factura Electrónica AFIP. No se puede modificar el importe total ($${editingOrderOriginalTotal.toLocaleString()}) sin emitir una Nota de Crédito. Ajusta los precios o cantidades para que sumen el total facturado.`)
+      return
+    }
+
     try {
+      if (editingOrderId) {
+        // Actualizar venta existente / evolucionar transferencia
+        const res = await fetch(`/api/sales/${editingOrderId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            buyer_name: finalBuyerName,
+            buyer_nickname: finalBuyerNickname,
+            items: newOrder.items,
+            total_amount,
+            source_platform: newOrder.source_platform,
+            payment_method: newOrder.payment_method,
+            payment_status: newOrder.payment_status,
+            shipping_status: newOrder.shipping_status,
+            date_created: newOrder.date_created,
+            update_stock: newOrder.update_stock !== false
+          })
+        })
+        const data = await res.json()
+        if (res.ok && data.success) {
+          alert(editingOrderIsTransfer ? "¡Transferencia evolucionada a Venta Comercial con éxito!" : "¡Venta actualizada con éxito!")
+          setShowModal(false)
+          resetModalState()
+          invalidateCache('sales')
+          fetchOrders(true)
+        } else {
+          alert("Error al actualizar la venta: " + (data.detail || data.error || "Ocurrió un error"))
+        }
+        return
+      }
+
       const res = await fetch('/api/sales/', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -918,19 +983,7 @@ export default function Sales() {
         alert("Venta registrada con éxito")
         setShowModal(false)
         const shouldInvoice = newOrder.auto_invoice
-        setNewOrder({
-          buyer_nickname: "",
-          buyer_name: "",
-          source_platform: "LOCAL",
-          price_source: "web",
-          shipping_status: "delivered",
-          payment_method: "Efectivo",
-          payment_status: "paid",
-          auto_invoice: false,
-          invoice_type: "B",
-          date_created: getLocalDateTimeLocal(),
-          items: [{ id: "manual-1", title: "", quantity: 1, price: 0 }]
-        })
+        resetModalState()
         invalidateCache('sales')
         fetchOrders(true)
 
@@ -943,6 +996,76 @@ export default function Sales() {
     } catch(err) {
       alert("Error: " + err.message)
     }
+  }
+
+  const handleOpenEditModal = (order) => {
+    const p = (order.source_platform || '').toUpperCase()
+    const isTransfer = p.startsWith('MERCADOPAGO')
+    const invoiced = isOrderInvoiced(order)
+
+    let parsedItems = []
+    if (Array.isArray(order.items)) {
+      parsedItems = order.items
+    } else if (typeof order.items === 'string') {
+      try {
+        parsedItems = JSON.parse(order.items)
+      } catch {
+        parsedItems = []
+      }
+    }
+
+    let modalItems = []
+    if (parsedItems.length > 0) {
+      modalItems = parsedItems.map((it, idx) => ({
+        id: it.id || it.ml_id || `item-${idx + 1}`,
+        title: it.title || it.name || '',
+        quantity: Number(it.quantity || 1),
+        price: Number(it.price ?? it.unit_price ?? 0)
+      }))
+    } else {
+      modalItems = [{
+        id: "manual-1",
+        title: isTransfer ? "" : "Venta Local",
+        quantity: 1,
+        price: Number(order.total_amount || 0)
+      }]
+    }
+
+    // Si es transferencia y tiene un ítem genérico de placeholder (ej: "Varios" o "Transferencia Recibida")
+    if (isTransfer && modalItems.length === 1) {
+      const t = (modalItems[0].title || '').toLowerCase()
+      if (t.includes('transferencia') || t === 'varios' || !t) {
+        modalItems[0].title = '' // Se limpia el título para que busque el producto del catálogo de inmediato
+        if (!modalItems[0].price || modalItems[0].price === 0) {
+          modalItems[0].price = Number(order.total_amount || 0)
+        }
+      }
+    }
+
+    setEditingOrderId(order.order_id)
+    setEditingOrderIsTransfer(isTransfer)
+    setEditingOrderInvoiced(invoiced)
+    setEditingOrderOriginalTotal(Number(order.total_amount || 0))
+
+    const buyer = order.buyer || {}
+    setNewOrder({
+      buyer_nickname: buyer.nickname || order.buyer_nickname || (isTransfer ? "cliente_local" : "consumidor_final"),
+      buyer_name: buyer.name || order.buyer_name || (isTransfer ? "" : "Consumidor Final"),
+      source_platform: isTransfer ? "LOCAL" : (order.source_platform || "LOCAL"),
+      price_source: "web",
+      shipping_status: order.shipping_status || "delivered",
+      payment_method: order.payment_method || (isTransfer ? "Transferencia (Mercado Pago)" : "Efectivo"),
+      payment_status: order.payment_status || "paid",
+      auto_invoice: false,
+      invoice_type: "B",
+      date_created: getLocalDateTimeLocal(order.date_created),
+      items: modalItems,
+      update_stock: true,
+      mp_payment_id: order.mp_payment_id || null
+    })
+
+    setSelectedDetailOrder(null)
+    setShowModal(true)
   }
 
   const handlePaymentMethodChange = (newMethod) => {
@@ -1314,7 +1437,10 @@ export default function Sales() {
           <button 
             className="btn" 
             style={{display: 'flex', alignItems: 'center', gap: 6, padding: '10px 16px'}}
-            onClick={() => setShowModal(true)}
+            onClick={() => {
+              resetModalState()
+              setShowModal(true)
+            }}
           >
             <Plus size={16} /> Registrar Venta
           </button>
@@ -1442,94 +1568,6 @@ export default function Sales() {
           )}
           </div>
 
-        {/* Bulk Action Banner */}
-        {selectedOrderIds.length > 0 && (() => {
-          const selectedList = orders.filter(o => selectedOrderIds.includes(o.order_id))
-          const selectedTotal = selectedList.reduce((sum, o) => sum + (Number(o.total_amount) || 0), 0)
-          return (
-            <div style={{
-              marginTop: 14,
-              padding: '12px 18px',
-              background: 'linear-gradient(90deg, rgba(16, 185, 129, 0.16) 0%, rgba(59, 130, 246, 0.12) 100%)',
-              border: '1px solid rgba(16, 185, 129, 0.35)',
-              borderRadius: 10,
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              flexWrap: 'wrap',
-              gap: 12
-            }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                <span style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  width: 32,
-                  height: 32,
-                  borderRadius: '50%',
-                  backgroundColor: '#10b981',
-                  color: '#ffffff',
-                  fontWeight: 700,
-                  fontSize: '0.85rem'
-                }}>
-                  {selectedOrderIds.length}
-                </span>
-                <div>
-                  <div style={{ fontWeight: 600, fontSize: '0.92rem', color: 'var(--text-primary)' }}>
-                    {selectedOrderIds.length} {selectedOrderIds.length === 1 ? 'venta seleccionada' : 'ventas seleccionadas'}
-                  </div>
-                  <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
-                    Monto total a facturar: <strong style={{ color: 'var(--accent-emerald)', fontSize: '0.85rem' }}>${selectedTotal.toLocaleString()}</strong>
-                  </div>
-                </div>
-              </div>
-
-              <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setBulkResults(null)
-                    setShowBulkModal(true)
-                  }}
-                  className="btn"
-                  style={{
-                    backgroundColor: '#10b981',
-                    color: '#ffffff',
-                    border: 'none',
-                    borderRadius: 8,
-                    padding: '8px 16px',
-                    fontSize: '0.85rem',
-                    fontWeight: 600,
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: 8,
-                    cursor: 'pointer',
-                    boxShadow: '0 2px 8px rgba(16, 185, 129, 0.35)'
-                  }}
-                >
-                  <FileText size={16} /> Facturar Seleccionadas (Consumidor Final)
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setSelectedOrderIds([])}
-                  className="btn"
-                  style={{
-                    backgroundColor: 'transparent',
-                    color: 'var(--text-secondary)',
-                    border: '1px solid var(--border-color)',
-                    borderRadius: 8,
-                    padding: '8px 12px',
-                    fontSize: '0.82rem',
-                    cursor: 'pointer'
-                  }}
-                >
-                  Deseleccionar todas
-                </button>
-              </div>
-            </div>
-          )
-        })()}
-
         {/* Results counter badge & Quick selector */}
         {(() => {
           const visibleUninvoiced = sortedOrders.filter(o => !isOrderInvoiced(o))
@@ -1568,6 +1606,103 @@ export default function Sales() {
           )
         })()}
       </div>
+
+      {/* Sticky Bulk Action Banner (Follows scroll and stays always visible, like Inventory) */}
+      {selectedOrderIds.length > 0 && (() => {
+        const selectedList = orders.filter(o => selectedOrderIds.includes(o.order_id))
+        const selectedTotal = selectedList.reduce((sum, o) => sum + (Number(o.total_amount) || 0), 0)
+        return (
+          <div style={{
+            position: 'sticky',
+            top: 10,
+            zIndex: 100,
+            marginBottom: 16,
+            padding: '12px 18px',
+            backgroundColor: 'var(--bg-card)',
+            background: 'linear-gradient(90deg, rgba(16, 185, 129, 0.22) 0%, rgba(59, 130, 246, 0.16) 100%)',
+            border: '1px solid rgba(16, 185, 129, 0.45)',
+            borderRadius: 10,
+            boxShadow: '0 6px 20px rgba(16, 185, 129, 0.22), 0 4px 15px rgba(0, 0, 0, 0.25)',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            flexWrap: 'wrap',
+            gap: 12,
+            backdropFilter: 'blur(10px)',
+            transition: 'all 0.2s ease-in-out'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <span style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                width: 32,
+                height: 32,
+                borderRadius: '50%',
+                backgroundColor: '#10b981',
+                color: '#ffffff',
+                fontWeight: 700,
+                fontSize: '0.85rem',
+                boxShadow: '0 2px 6px rgba(16, 185, 129, 0.4)'
+              }}>
+                {selectedOrderIds.length}
+              </span>
+              <div>
+                <div style={{ fontWeight: 700, fontSize: '0.92rem', color: 'var(--text-primary)' }}>
+                  {selectedOrderIds.length} {selectedOrderIds.length === 1 ? 'venta seleccionada' : 'ventas seleccionadas'}
+                </div>
+                <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
+                  Monto total a facturar: <strong style={{ color: 'var(--accent-emerald)', fontSize: '0.88rem' }}>${selectedTotal.toLocaleString()}</strong>
+                </div>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+              <button
+                type="button"
+                onClick={() => {
+                  setBulkResults(null)
+                  setShowBulkModal(true)
+                }}
+                className="btn"
+                style={{
+                  backgroundColor: '#10b981',
+                  color: '#ffffff',
+                  border: 'none',
+                  borderRadius: 8,
+                  padding: '8px 18px',
+                  fontSize: '0.85rem',
+                  fontWeight: 700,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  cursor: 'pointer',
+                  boxShadow: '0 2px 10px rgba(16, 185, 129, 0.4)'
+                }}
+              >
+                <FileText size={16} /> Facturar Seleccionadas (Consumidor Final)
+              </button>
+              <button
+                type="button"
+                onClick={() => setSelectedOrderIds([])}
+                className="btn"
+                style={{
+                  backgroundColor: 'var(--bg-dark)',
+                  color: 'var(--text-secondary)',
+                  border: '1px solid var(--border-color)',
+                  borderRadius: 8,
+                  padding: '8px 14px',
+                  fontSize: '0.82rem',
+                  cursor: 'pointer',
+                  fontWeight: 500
+                }}
+              >
+                Deseleccionar todas
+              </button>
+            </div>
+          </div>
+        )
+      })()}
 
       <div className="card">
         {loading ? <p>Cargando ventas...</p> : sortedOrders.length === 0 ? (
@@ -1689,30 +1824,105 @@ export default function Sales() {
                             ✨ NUEVA
                           </span>
                         )}
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            setSelectedDetailOrder(o)
-                            setIsEditingDate(true)
-                            setEditDateValue(getLocalDateTimeLocal(o.date_created))
-                          }}
-                          title="Editar fecha de esta venta"
-                          style={{
-                            background: 'transparent',
-                            border: '1px solid var(--border-color)',
-                            color: 'var(--text-secondary)',
-                            cursor: 'pointer',
-                            padding: '2px 5px',
-                            borderRadius: 4,
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: 3,
-                            fontSize: '0.68rem'
-                          }}
-                        >
-                          <Edit2 size={10} /> Editar
-                        </button>
+                        {o.source_platform?.startsWith('MERCADOPAGO') ? (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              handleOpenEditModal(o)
+                            }}
+                            title="Evolucionar esta transferencia a Venta Comercial con productos del catálogo"
+                            style={{
+                              background: 'rgba(0, 158, 227, 0.15)',
+                              border: '1px solid rgba(0, 158, 227, 0.4)',
+                              color: '#009ee3',
+                              cursor: 'pointer',
+                              padding: '2px 7px',
+                              borderRadius: 4,
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 3,
+                              fontSize: '0.68rem',
+                              fontWeight: 700
+                            }}
+                          >
+                            ✨ Evolucionar a Venta
+                          </button>
+                        ) : o.source_platform !== 'MERCADOLIBRE' ? (
+                          <div style={{display: 'inline-flex', alignItems: 'center', gap: 3}}>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                handleOpenEditModal(o)
+                              }}
+                              title="Editar productos, precios, cliente o fecha de esta venta"
+                              style={{
+                                background: 'rgba(37, 99, 235, 0.1)',
+                                border: '1px solid rgba(37, 99, 235, 0.3)',
+                                color: 'var(--accent-blue)',
+                                cursor: 'pointer',
+                                padding: '2px 6px',
+                                borderRadius: 4,
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 3,
+                                fontSize: '0.68rem',
+                                fontWeight: 600
+                              }}
+                            >
+                              <Edit2 size={10} /> Editar Venta
+                            </button>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                setSelectedDetailOrder(o)
+                                setIsEditingDate(true)
+                                setEditDateValue(getLocalDateTimeLocal(o.date_created))
+                              }}
+                              title="Modificar solo la fecha"
+                              style={{
+                                background: 'transparent',
+                                border: '1px solid var(--border-color)',
+                                color: 'var(--text-secondary)',
+                                cursor: 'pointer',
+                                padding: '2px 4px',
+                                borderRadius: 4,
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                fontSize: '0.68rem'
+                              }}
+                            >
+                              <Calendar size={10} />
+                            </button>
+                          </div>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              setSelectedDetailOrder(o)
+                              setIsEditingDate(true)
+                              setEditDateValue(getLocalDateTimeLocal(o.date_created))
+                            }}
+                            title="Modificar fecha de esta venta"
+                            style={{
+                              background: 'transparent',
+                              border: '1px solid var(--border-color)',
+                              color: 'var(--text-secondary)',
+                              cursor: 'pointer',
+                              padding: '2px 5px',
+                              borderRadius: 4,
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 3,
+                              fontSize: '0.68rem'
+                            }}
+                          >
+                            <Calendar size={10} /> Fecha
+                          </button>
+                        )}
                       </div>
                     </td>
                   <td data-label="Orden ID" style={{fontFamily: 'monospace', fontSize: '0.8rem'}}>
@@ -2056,6 +2266,51 @@ export default function Sales() {
                       </div>
                     )}
                     <div style={{display: 'flex', justifyContent: 'center', gap: 4, marginTop: 4, flexWrap: 'wrap'}}>
+                      {o.source_platform?.startsWith('MERCADOPAGO') ? (
+                        <button
+                          type="button"
+                          onClick={() => handleOpenEditModal(o)}
+                          className="btn"
+                          title="Evolucionar esta transferencia a Venta Comercial con productos del catálogo"
+                          style={{
+                            padding: '2px 8px',
+                            fontSize: '0.7rem',
+                            backgroundColor: 'rgba(0, 158, 227, 0.15)',
+                            color: '#009ee3',
+                            border: '1px solid rgba(0, 158, 227, 0.4)',
+                            borderRadius: 4,
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 4,
+                            cursor: 'pointer',
+                            fontWeight: 700
+                          }}
+                        >
+                          ✨ Evolucionar
+                        </button>
+                      ) : o.source_platform !== 'MERCADOLIBRE' ? (
+                        <button
+                          type="button"
+                          onClick={() => handleOpenEditModal(o)}
+                          className="btn"
+                          title="Editar ítems, precios, cliente o fecha de esta venta"
+                          style={{
+                            padding: '2px 8px',
+                            fontSize: '0.7rem',
+                            backgroundColor: 'rgba(37, 99, 235, 0.12)',
+                            color: 'var(--accent-blue)',
+                            border: '1px solid rgba(37, 99, 235, 0.3)',
+                            borderRadius: 4,
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 4,
+                            cursor: 'pointer',
+                            fontWeight: 600
+                          }}
+                        >
+                          <Edit2 size={11} /> Editar
+                        </button>
+                      ) : null}
                       <button
                         type="button"
                         onClick={() => {
@@ -2139,12 +2394,30 @@ export default function Sales() {
           <div className="sale-modal-card">
             {/* Header */}
             <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, borderBottom: '1px solid var(--border-color)', paddingBottom: 12}}>
-              <h3 style={{margin: 0, display: 'flex', alignItems: 'center', gap: 8, fontSize: '1.1rem'}}><ShoppingCart size={20} /> Registrar Nueva Venta</h3>
+              <h3 style={{margin: 0, display: 'flex', alignItems: 'center', gap: 8, fontSize: '1.1rem'}}>
+                {editingOrderIsTransfer ? (
+                  <>
+                    <ShoppingCart size={20} style={{color: '#009ee3'}} />
+                    <span>Evolucionar Transferencia #{editingOrderId} a Venta Comercial</span>
+                  </>
+                ) : editingOrderId ? (
+                  <>
+                    <Edit2 size={20} style={{color: 'var(--accent-blue)'}} />
+                    <span>Editar Venta #{editingOrderId}</span>
+                  </>
+                ) : (
+                  <>
+                    <ShoppingCart size={20} />
+                    <span>Registrar Nueva Venta</span>
+                  </>
+                )}
+              </h3>
               <button 
                 className="btn" 
                 style={{backgroundColor: 'var(--bg-dark)', color: 'var(--text-secondary)', padding: '6px 12px', fontSize: '0.85rem'}}
                 onClick={() => {
                   setShowModal(false)
+                  resetModalState()
                   setMobileSearchIdx(null)
                   setActiveSearchIdx(null)
                 }}
@@ -2154,6 +2427,52 @@ export default function Sales() {
             </div>
 
             <form onSubmit={handleCreateManualOrder} style={{flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 14, paddingRight: 4}}>
+              {/* Transfer evolving banner */}
+              {editingOrderIsTransfer && (
+                <div style={{
+                  backgroundColor: 'rgba(0, 158, 227, 0.1)',
+                  border: '1px solid rgba(0, 158, 227, 0.35)',
+                  borderRadius: 8,
+                  padding: '12px 14px',
+                  display: 'flex',
+                  alignItems: 'flex-start',
+                  gap: 10,
+                  fontSize: '0.85rem',
+                  lineHeight: 1.4
+                }}>
+                  <DollarSign size={20} style={{color: '#009ee3', flexShrink: 0, marginTop: 1}} />
+                  <div>
+                    <div style={{fontWeight: 700, color: '#009ee3'}}>
+                      ✨ Asignando productos a la transferencia de Mercado Pago
+                    </div>
+                    <div style={{color: 'var(--text-secondary)', marginTop: 4}}>
+                      Monto recibido: <strong style={{color: 'var(--text-primary)'}}>${editingOrderOriginalTotal.toLocaleString()}</strong>
+                      {newOrder.mp_payment_id && <span> (Comprobante MP #{newOrder.mp_payment_id})</span>}.
+                      Al guardar, este mismo registro evolucionará a una <strong>Venta de Local Comercial</strong> con los productos que selecciones, descontará stock del catálogo y mantendrá el número de pago de Mercado Pago asociado en la misma fila.
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Invoiced warning banner */}
+              {editingOrderInvoiced && (
+                <div style={{
+                  backgroundColor: 'rgba(234, 179, 8, 0.12)',
+                  border: '1px solid rgba(234, 179, 8, 0.4)',
+                  borderRadius: 8,
+                  padding: '10px 14px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 10,
+                  fontSize: '0.83rem',
+                  color: '#ca8a04'
+                }}>
+                  <AlertCircle size={18} style={{flexShrink: 0}} />
+                  <span>
+                    Esta venta ya posee una <strong>Factura Electrónica AFIP</strong>. Para preservar la validez fiscal, el total de los productos debe sumar exactamente <strong>${editingOrderOriginalTotal.toLocaleString()}</strong>.
+                  </span>
+                </div>
+              )}
               {/* Fecha y Hora de la Venta con accesos rápidos */}
               <div style={{
                 backgroundColor: 'var(--bg-hover)',
@@ -2651,43 +2970,69 @@ export default function Sales() {
                 })}
               </div>
 
-              {/* Facturación Electrónica ARCA (ex AFIP) */}
-              <div style={{
-                backgroundColor: 'var(--bg-hover)', 
-                padding: '10px 14px', 
-                borderRadius: 8, 
+              {/* Actualización / Descuento de Stock */}
+              <label style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                cursor: 'pointer',
+                margin: 0,
+                fontSize: '0.84rem',
+                color: 'var(--text-primary)',
+                backgroundColor: 'var(--bg-hover)',
+                padding: '9px 14px',
+                borderRadius: 8,
                 border: '1px solid var(--border-color)',
-                display: 'flex', 
-                alignItems: 'center', 
-                justifyContent: 'space-between',
-                flexWrap: 'wrap',
-                gap: 10
+                userSelect: 'none'
               }}>
-                <label style={{display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', margin: 0, fontWeight: 'bold', fontSize: '0.85rem'}}>
-                  <input 
-                    type="checkbox"
-                    checked={newOrder.auto_invoice}
-                    onChange={e => setNewOrder({ ...newOrder, auto_invoice: e.target.checked })}
-                    style={{width: 18, height: 18, accentColor: 'var(--accent-blue)', cursor: 'pointer'}}
-                  />
-                  📄 Emitir Factura ARCA (AFIP) al registrar
-                </label>
+                <input 
+                  type="checkbox"
+                  checked={newOrder.update_stock !== false}
+                  onChange={e => setNewOrder(prev => ({ ...prev, update_stock: e.target.checked }))}
+                  style={{width: 17, height: 17, accentColor: 'var(--accent-blue)', cursor: 'pointer'}}
+                />
+                <span>📦 <strong>Actualizar / descontar stock</strong> del catálogo automáticamente (y sincronizar Mercado Libre / Tiendanube)</span>
+              </label>
 
-                {newOrder.auto_invoice && (
-                  <div style={{display: 'flex', gap: 10, alignItems: 'center'}}>
-                    <label style={{fontSize: '0.82rem', fontWeight: 'normal', margin: 0}}>Tipo:
-                      <select 
-                        value={newOrder.invoice_type}
-                        onChange={e => setNewOrder({ ...newOrder, invoice_type: e.target.value })}
-                        style={{marginLeft: 6, padding: '4px 8px', borderRadius: 4}}
-                      >
-                        <option value="B">Factura B / C (Consumidor Final)</option>
-                        <option value="A">Factura A (Con CUIT)</option>
-                      </select>
-                    </label>
-                  </div>
-                )}
-              </div>
+              {/* Facturación Electrónica ARCA (ex AFIP) */}
+              {!editingOrderInvoiced && (
+                <div style={{
+                  backgroundColor: 'var(--bg-hover)', 
+                  padding: '10px 14px', 
+                  borderRadius: 8, 
+                  border: '1px solid var(--border-color)',
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  justifyContent: 'space-between',
+                  flexWrap: 'wrap',
+                  gap: 10
+                }}>
+                  <label style={{display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', margin: 0, fontWeight: 'bold', fontSize: '0.85rem'}}>
+                    <input 
+                      type="checkbox"
+                      checked={newOrder.auto_invoice}
+                      onChange={e => setNewOrder({ ...newOrder, auto_invoice: e.target.checked })}
+                      style={{width: 18, height: 18, accentColor: 'var(--accent-blue)', cursor: 'pointer'}}
+                    />
+                    📄 Emitir Factura ARCA (AFIP) al registrar
+                  </label>
+
+                  {newOrder.auto_invoice && (
+                    <div style={{display: 'flex', gap: 10, alignItems: 'center'}}>
+                      <label style={{fontSize: '0.82rem', fontWeight: 'normal', margin: 0}}>Tipo:
+                        <select 
+                          value={newOrder.invoice_type}
+                          onChange={e => setNewOrder({ ...newOrder, invoice_type: e.target.value })}
+                          style={{marginLeft: 6, padding: '4px 8px', borderRadius: 4}}
+                        >
+                          <option value="B">Factura B / C (Consumidor Final)</option>
+                          <option value="A">Factura A (Con CUIT)</option>
+                        </select>
+                      </label>
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* Footer Actions */}
               <div style={{
@@ -2702,19 +3047,38 @@ export default function Sales() {
               }}>
                 <div style={{fontSize: '1.05rem'}}>
                   Total estimado: <strong style={{color: 'var(--accent-green)', fontSize: '1.25rem', marginLeft: 4}}>${newOrder.items.reduce((sum, item) => sum + (item.price * item.quantity), 0).toLocaleString()}</strong>
+                  {editingOrderIsTransfer && (
+                    <span style={{fontSize: '0.78rem', color: 'var(--text-secondary)', marginLeft: 8}}>
+                      (Original MP: ${editingOrderOriginalTotal.toLocaleString()})
+                    </span>
+                  )}
                 </div>
                 <div style={{display: 'flex', gap: 10, flexWrap: 'wrap', flex: '1 1 auto', justifyContent: 'flex-end'}}>
+                  {!editingOrderIsTransfer && !newOrder.mp_payment_id && (
+                    <button 
+                      type="button" 
+                      className="btn" 
+                      disabled={chargeLoading}
+                      style={{padding: '10px 14px', backgroundColor: '#009ee3', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 'bold', fontSize: '0.85rem'}}
+                      onClick={handleGenerateMPCharge}
+                    >
+                      {chargeLoading ? "Generando..." : "📱 Cobrar con QR / MP"}
+                    </button>
+                  )}
                   <button 
-                    type="button" 
+                    type="submit" 
                     className="btn" 
-                    disabled={chargeLoading}
-                    style={{padding: '10px 14px', backgroundColor: '#009ee3', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 'bold', fontSize: '0.85rem'}}
-                    onClick={handleGenerateMPCharge}
+                    style={{
+                      padding: '10px 18px', 
+                      borderRadius: 8, 
+                      fontWeight: 700,
+                      backgroundColor: editingOrderIsTransfer ? '#009ee3' : 'var(--accent-blue)',
+                      color: '#ffffff',
+                      border: 'none',
+                      cursor: 'pointer'
+                    }}
                   >
-                    {chargeLoading ? "Generando..." : "📱 Cobrar con QR / MP"}
-                  </button>
-                  <button type="submit" className="btn" style={{padding: '10px 18px', borderRadius: 8, fontWeight: 700}}>
-                    Registrar Venta
+                    {editingOrderIsTransfer ? '✨ Guardar y Convertir en Venta Comercial' : editingOrderId ? '✓ Guardar Cambios en la Venta' : 'Registrar Venta'}
                   </button>
                 </div>
               </div>
@@ -4058,29 +4422,74 @@ export default function Sales() {
                     </div>
 
                     {!isEditingDate ? (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setIsEditingDate(true)
-                          setEditDateValue(getLocalDateTimeLocal(order.date_created))
-                        }}
-                        className="btn"
-                        style={{
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          gap: 5,
-                          padding: '5px 12px',
-                          fontSize: '0.78rem',
-                          backgroundColor: 'rgba(37, 99, 235, 0.12)',
-                          color: 'var(--accent-blue)',
-                          border: '1px solid rgba(37, 99, 235, 0.3)',
-                          borderRadius: 6,
-                          cursor: 'pointer',
-                          fontWeight: 600
-                        }}
-                      >
-                        <Edit2 size={12} /> Modificar Fecha
-                      </button>
+                      <div style={{display: 'flex', gap: 6, flexWrap: 'wrap'}}>
+                        {order.source_platform?.startsWith('MERCADOPAGO') ? (
+                          <button
+                            type="button"
+                            onClick={() => handleOpenEditModal(order)}
+                            className="btn"
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 5,
+                              padding: '5px 12px',
+                              fontSize: '0.78rem',
+                              backgroundColor: '#009ee3',
+                              color: '#ffffff',
+                              border: 'none',
+                              borderRadius: 6,
+                              cursor: 'pointer',
+                              fontWeight: 700
+                            }}
+                          >
+                            ✨ Evolucionar a Venta Comercial
+                          </button>
+                        ) : order.source_platform !== 'MERCADOLIBRE' ? (
+                          <button
+                            type="button"
+                            onClick={() => handleOpenEditModal(order)}
+                            className="btn"
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 5,
+                              padding: '5px 12px',
+                              fontSize: '0.78rem',
+                              backgroundColor: 'var(--accent-blue)',
+                              color: '#ffffff',
+                              border: 'none',
+                              borderRadius: 6,
+                              cursor: 'pointer',
+                              fontWeight: 600
+                            }}
+                          >
+                            <Edit2 size={12} /> Editar Venta Completa
+                          </button>
+                        ) : null}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsEditingDate(true)
+                            setEditDateValue(getLocalDateTimeLocal(order.date_created))
+                          }}
+                          className="btn"
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 5,
+                            padding: '5px 12px',
+                            fontSize: '0.78rem',
+                            backgroundColor: 'rgba(37, 99, 235, 0.12)',
+                            color: 'var(--accent-blue)',
+                            border: '1px solid rgba(37, 99, 235, 0.3)',
+                            borderRadius: 6,
+                            cursor: 'pointer',
+                            fontWeight: 600
+                          }}
+                        >
+                          <Calendar size={12} /> Modificar Fecha
+                        </button>
+                      </div>
                     ) : null}
                   </div>
 
@@ -4333,19 +4742,43 @@ export default function Sales() {
                       <Package size={18} style={{color: 'var(--accent-blue)'}} />
                       Productos Vendidos ({itemsList.length})
                     </h4>
-                    {order.inventory_linked === 0 && (
-                      <button
-                        type="button"
-                        className="btn"
-                        style={{fontSize: '0.72rem', padding: '3px 8px', backgroundColor: '#f59e0b', color: '#fff', border: 'none', borderRadius: 4, cursor: 'pointer', fontWeight: 600}}
-                        onClick={() => {
-                          setLinkModalOrder(order)
-                          setSelectedDetailOrder(null)
-                        }}
-                      >
-                        🔗 Vincular a Inventario
-                      </button>
-                    )}
+                    <div style={{display: 'flex', gap: 6, alignItems: 'center'}}>
+                      {order.source_platform !== 'MERCADOLIBRE' && (
+                        <button
+                          type="button"
+                          className="btn"
+                          style={{
+                            fontSize: '0.72rem',
+                            padding: '4px 10px',
+                            backgroundColor: order.source_platform?.startsWith('MERCADOPAGO') ? '#009ee3' : 'var(--accent-blue)',
+                            color: '#fff',
+                            border: 'none',
+                            borderRadius: 4,
+                            cursor: 'pointer',
+                            fontWeight: 600,
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 4
+                          }}
+                          onClick={() => handleOpenEditModal(order)}
+                        >
+                          <Edit2 size={11} /> {order.source_platform?.startsWith('MERCADOPAGO') ? 'Evolucionar / Asignar Productos' : 'Editar Ítems y Precios'}
+                        </button>
+                      )}
+                      {order.inventory_linked === 0 && (
+                        <button
+                          type="button"
+                          className="btn"
+                          style={{fontSize: '0.72rem', padding: '3px 8px', backgroundColor: '#f59e0b', color: '#fff', border: 'none', borderRadius: 4, cursor: 'pointer', fontWeight: 600}}
+                          onClick={() => {
+                            setLinkModalOrder(order)
+                            setSelectedDetailOrder(null)
+                          }}
+                        >
+                          🔗 Vincular a Inventario
+                        </button>
+                      )}
+                    </div>
                   </div>
 
                   <div className="sale-detail-table-wrapper">
@@ -4504,22 +4937,46 @@ export default function Sales() {
                   )}
                 </div>
 
-                <button
-                  type="button"
-                  className="btn"
-                  style={{
-                    backgroundColor: 'var(--bg-dark)',
-                    color: 'var(--text-primary)',
-                    border: '1px solid var(--border-color)',
-                    padding: '6px 18px',
-                    fontSize: '0.85rem',
-                    borderRadius: 6,
-                    cursor: 'pointer'
-                  }}
-                  onClick={() => setSelectedDetailOrder(null)}
-                >
-                  Cerrar Detalle
-                </button>
+                <div style={{display: 'flex', gap: 8, alignItems: 'center'}}>
+                  {order.source_platform !== 'MERCADOLIBRE' && (
+                    <button
+                      type="button"
+                      className="btn"
+                      style={{
+                        backgroundColor: order.source_platform?.startsWith('MERCADOPAGO') ? '#009ee3' : 'var(--accent-blue)',
+                        color: '#ffffff',
+                        border: 'none',
+                        padding: '6px 14px',
+                        fontSize: '0.82rem',
+                        borderRadius: 6,
+                        cursor: 'pointer',
+                        fontWeight: 600,
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 6
+                      }}
+                      onClick={() => handleOpenEditModal(order)}
+                    >
+                      {order.source_platform?.startsWith('MERCADOPAGO') ? '✨ Evolucionar a Venta' : <><Edit2 size={13} /> Editar Venta</>}
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    className="btn"
+                    style={{
+                      backgroundColor: 'var(--bg-dark)',
+                      color: 'var(--text-primary)',
+                      border: '1px solid var(--border-color)',
+                      padding: '6px 18px',
+                      fontSize: '0.85rem',
+                      borderRadius: 6,
+                      cursor: 'pointer'
+                    }}
+                    onClick={() => setSelectedDetailOrder(null)}
+                  >
+                    Cerrar Detalle
+                  </button>
+                </div>
               </div>
 
             </div>
