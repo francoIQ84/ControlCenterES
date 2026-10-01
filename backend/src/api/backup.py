@@ -6,13 +6,15 @@ import hashlib
 import zipfile
 import subprocess
 import platform
-from datetime import datetime
+from datetime import date, datetime
+from decimal import Decimal
+import uuid
 import urllib.parse
 from typing import Optional
 from src.utils.dates import ARGENTINA_TZ, get_now_ar, get_now_ar_iso
 from fastapi import APIRouter, HTTPException, File, UploadFile, Depends
 from fastapi.responses import FileResponse, RedirectResponse
-from src.api.auth import verify_session, require_platform_admin
+from src.api.auth import verify_session, require_permission, require_platform_admin
 
 router = APIRouter()
 protected_router = APIRouter(dependencies=[Depends(verify_session), Depends(require_platform_admin)])
@@ -878,11 +880,12 @@ def google_drive_oauth_callback(
     state: Optional[str] = None
 ):
     """Callback público invocado por Google tras la autorización del usuario."""
+    target_url = "/tenants?tab=backups"
     if error:
-        return RedirectResponse(url=f"/settings?tab=backups&gdrive_error={urllib.parse.quote(error)}")
+        return RedirectResponse(url=f"{target_url}&gdrive_error={urllib.parse.quote(error)}")
 
     if not code:
-        return RedirectResponse(url="/settings?tab=backups&gdrive_error=no_code_provided")
+        return RedirectResponse(url=f"{target_url}&gdrive_error=no_code_provided")
 
     from src.utils import google_drive
     from src import database, tenancy
@@ -897,7 +900,7 @@ def google_drive_oauth_callback(
     tokens = google_drive.exchange_code_for_tokens(code, client_id, client_secret, redirect_uri)
     if "error" in tokens:
         err_detail = tokens.get("error_description") or tokens.get("error")
-        return RedirectResponse(url=f"/settings?tab=backups&gdrive_error={urllib.parse.quote(str(err_detail))}")
+        return RedirectResponse(url=f"{target_url}&gdrive_error={urllib.parse.quote(str(err_detail))}")
 
     refresh_token = tokens.get("refresh_token")
     access_token = tokens.get("access_token")
@@ -919,7 +922,7 @@ def google_drive_oauth_callback(
     except Exception as e:
         print(f"[Google Drive Callback] Error al obtener perfil: {e}")
 
-    return RedirectResponse(url="/settings?tab=backups&gdrive_connected=true")
+    return RedirectResponse(url=f"{target_url}&gdrive_connected=true")
 
 
 @protected_router.post("/google-drive/disconnect")
@@ -936,6 +939,288 @@ def disconnect_google_drive():
 
 
 # ---------------------------------------------------------------------------
-# Incluir rutas protegidas en el router principal
+# Respaldo por Negocio / Inquilino (Tenant-scoped Backup)
+# ---------------------------------------------------------------------------
+
+TENANT_BACKUP_DIR = os.path.join(BACKUP_DIR, "tenants")
+tenant_backup_router = APIRouter(
+    prefix="/tenant",
+    dependencies=[Depends(verify_session), Depends(require_permission("settings"))]
+)
+
+TENANT_EXPORT_TABLES = [
+    "customers",
+    "products_cache",
+    "categories",
+    "orders_cache",
+    "incomes",
+    "fixed_expenses",
+    "variable_expenses",
+    "quotes",
+    "leads",
+    "marketing_posts",
+    "marketing_rules",
+    "monitored_trademarks",
+    "whatsapp_chat_history",
+    "whatsapp_paused_chats",
+    "whatsapp_product_inquiries",
+    "blog_posts",
+    "settings",
+    "tenant_settings",
+]
+
+
+def _json_serial(obj):
+    if isinstance(obj, (datetime, date)):
+        return obj.isoformat()
+    if isinstance(obj, Decimal):
+        return float(obj)
+    if isinstance(obj, uuid.UUID):
+        return str(obj)
+    raise TypeError(f"Type {type(obj)} not serializable")
+
+
+def _sql_format_val(val):
+    if val is None:
+        return "NULL"
+    if isinstance(val, bool):
+        return "TRUE" if val else "FALSE"
+    if isinstance(val, (int, float, Decimal)):
+        return str(val)
+    if isinstance(val, (datetime, date)):
+        return f"'{val.isoformat()}'"
+    if isinstance(val, uuid.UUID):
+        return f"'{str(val)}'"
+    if isinstance(val, (dict, list)):
+        escaped = json.dumps(val, default=_json_serial, ensure_ascii=False).replace("'", "''")
+        return f"'{escaped}'"
+    escaped = str(val).replace("'", "''")
+    return f"'{escaped}'"
+
+
+def run_tenant_backup(tenant_id: str, tenant_slug: str, tenant_name: str) -> dict:
+    from src import database, tenancy
+
+    tenant_dir = os.path.join(TENANT_BACKUP_DIR, tenant_id)
+    os.makedirs(tenant_dir, exist_ok=True)
+
+    timestamp = get_now_ar().strftime("%Y%m%d_%H%M%S")
+    clean_slug = "".join(c for c in tenant_slug if c.isalnum() or c in ("-", "_")).lower() or "tenant"
+    filename = f"backup_tenant_{clean_slug}_{timestamp}.zip"
+    filepath = os.path.join(tenant_dir, filename)
+
+    data_by_table = {}
+    sql_lines = [
+        f"-- Respaldo de Negocio: {tenant_name} ({tenant_slug})",
+        f"-- Tenant ID: {tenant_id}",
+        f"-- Fecha: {get_now_ar_iso()}",
+        "",
+    ]
+    counts_by_table = {}
+
+    with database.get_connection() as conn:
+        with conn.cursor() as cur:
+            for table in TENANT_EXPORT_TABLES:
+                try:
+                    cur.execute(f'SELECT * FROM "{table}" WHERE tenant_id = %s', (tenant_id,))
+                    rows = cur.fetchall()
+                    if rows:
+                        row_list = [dict(r) for r in rows]
+                        data_by_table[table] = row_list
+                        counts_by_table[table] = len(row_list)
+
+                        cols = list(row_list[0].keys())
+                        cols_escaped = ", ".join(f'"{c}"' for c in cols)
+                        for r in row_list:
+                            vals = ", ".join(_sql_format_val(r[c]) for c in cols)
+                            sql_lines.append(f'INSERT INTO "{table}" ({cols_escaped}) VALUES ({vals});')
+                        sql_lines.append("")
+                    else:
+                        counts_by_table[table] = 0
+                except Exception as e:
+                    print(f"[Tenant Backup] Advertencia al exportar tabla '{table}': {e}")
+                    counts_by_table[table] = 0
+
+    manifest_files = []
+    with zipfile.ZipFile(filepath, "w", zipfile.ZIP_DEFLATED) as zipf:
+        # 1. JSON data
+        json_data = json.dumps(data_by_table, indent=2, ensure_ascii=False, default=_json_serial)
+        zipf.writestr("tenant_data.json", json_data)
+        manifest_files.append({"path": "tenant_data.json", "size": len(json_data.encode("utf-8"))})
+
+        # 2. SQL data
+        sql_content = "\n".join(sql_lines)
+        zipf.writestr("tenant_data.sql", sql_content)
+        manifest_files.append({"path": "tenant_data.sql", "size": len(sql_content.encode("utf-8"))})
+
+        # 3. Media files
+        is_master = (tenant_id == tenancy.MASTER_TENANT_ID)
+        if is_master:
+            for base_sub in ["uploads", "invoices", "data/afip"]:
+                full_dir = os.path.join(BASE_DIR, base_sub)
+                if os.path.isdir(full_dir):
+                    for root, _dirs, files in os.walk(full_dir):
+                        rel_to_base = os.path.relpath(root, full_dir)
+                        parts = rel_to_base.split(os.sep)
+                        if parts and parts[0] == "t":
+                            continue
+                        for fname in files:
+                            file_p = os.path.join(root, fname)
+                            arcname = os.path.join(base_sub, os.path.relpath(file_p, full_dir))
+                            zipf.write(file_p, arcname=arcname)
+                            manifest_files.append({"path": arcname, "size": os.path.getsize(file_p)})
+        else:
+            for base_name in ["uploads", "invoices", "data/afip"]:
+                tenant_folder = tenancy.tenant_storage_dir(base_name, tenant_id=tenant_id, create=False)
+                if os.path.isdir(tenant_folder):
+                    for root, _dirs, files in os.walk(tenant_folder):
+                        for fname in files:
+                            file_p = os.path.join(root, fname)
+                            arcname = os.path.join(base_name, os.path.relpath(file_p, tenant_folder))
+                            zipf.write(file_p, arcname=arcname)
+                            manifest_files.append({"path": arcname, "size": os.path.getsize(file_p)})
+
+        # 4. Manifest
+        manifest = {
+            "version": "1.0",
+            "backup_type": "tenant",
+            "tenant_id": tenant_id,
+            "tenant_slug": tenant_slug,
+            "tenant_name": tenant_name,
+            "created_at": get_now_ar_iso(),
+            "records_count": counts_by_table,
+            "total_records": sum(counts_by_table.values()),
+            "files_count": len(manifest_files),
+        }
+        zipf.writestr("backup_manifest.json", json.dumps(manifest, indent=2, ensure_ascii=False))
+
+    # Prune old backups (keep latest 10)
+    try:
+        existing = [
+            f for f in os.listdir(tenant_dir)
+            if f.endswith(".zip") and f.startswith("backup_tenant_")
+        ]
+        if len(existing) > 10:
+            existing.sort(key=lambda f: os.path.getctime(os.path.join(tenant_dir, f)))
+            for old_f in existing[:-10]:
+                try:
+                    os.remove(os.path.join(tenant_dir, old_f))
+                except Exception:
+                    pass
+    except Exception as e:
+        print(f"[Tenant Backup] Error depurando respaldos antiguos: {e}")
+
+    file_size = os.path.getsize(filepath)
+    return {
+        "status": "success",
+        "filename": filename,
+        "size_bytes": file_size,
+        "records_count": counts_by_table,
+        "total_records": sum(counts_by_table.values()),
+        "created_at": manifest["created_at"],
+    }
+
+
+@tenant_backup_router.post("/create")
+def create_tenant_backup():
+    """Genera un respaldo exclusivo del negocio actual (datos y archivos)."""
+    from src import tenancy
+    tenant_id = tenancy.get_current_tenant_id()
+    tenant = tenancy.get_current_tenant() or {}
+    tenant_slug = tenant.get("slug") or (tenancy.MASTER_TENANT_SLUG if tenant_id == tenancy.MASTER_TENANT_ID else "negocio")
+    tenant_name = tenant.get("name") or "Mi Negocio"
+
+    try:
+        result = run_tenant_backup(tenant_id, tenant_slug, tenant_name)
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error creando respaldo de negocio: {e}")
+
+
+@tenant_backup_router.get("/list")
+def list_tenant_backups():
+    """Lista las copias de seguridad generadas para el negocio actual."""
+    from src import tenancy
+    tenant_id = tenancy.get_current_tenant_id()
+    tenant_dir = os.path.join(TENANT_BACKUP_DIR, tenant_id)
+
+    if not os.path.isdir(tenant_dir):
+        return []
+
+    backups = []
+    for f in os.listdir(tenant_dir):
+        if f.endswith(".zip") and f.startswith("backup_tenant_"):
+            filepath = os.path.join(tenant_dir, f)
+            stat = os.stat(filepath)
+            created_at = datetime.fromtimestamp(stat.st_ctime, tz=ARGENTINA_TZ).isoformat()
+            manifest = None
+            try:
+                with zipfile.ZipFile(filepath, "r") as zf:
+                    if "backup_manifest.json" in zf.namelist():
+                        manifest = json.loads(zf.read("backup_manifest.json"))
+                        created_at = manifest.get("created_at") or created_at
+            except Exception:
+                pass
+
+            backups.append({
+                "filename": f,
+                "size_bytes": stat.st_size,
+                "created_at": created_at,
+                "manifest": manifest,
+                "total_records": manifest.get("total_records", 0) if manifest else 0,
+                "records_count": manifest.get("records_count", {}) if manifest else {},
+                "files_count": manifest.get("files_count", 0) if manifest else 0,
+            })
+
+    backups.sort(key=lambda x: x["created_at"], reverse=True)
+    return backups
+
+
+@tenant_backup_router.get("/download/{filename}")
+def download_tenant_backup(filename: str):
+    """Descarga una copia de seguridad específica del negocio actual."""
+    from src import tenancy
+    if not filename.endswith(".zip"):
+        raise HTTPException(status_code=404, detail="Respaldo no encontrado")
+
+    tenant_id = tenancy.get_current_tenant_id()
+    tenant_dir = os.path.realpath(os.path.join(TENANT_BACKUP_DIR, tenant_id))
+    filepath = os.path.realpath(os.path.join(tenant_dir, filename))
+
+    if os.path.commonpath([tenant_dir, filepath]) != tenant_dir or not os.path.isfile(filepath):
+        raise HTTPException(status_code=404, detail="Respaldo no encontrado")
+
+    return FileResponse(
+        path=filepath,
+        filename=os.path.basename(filepath),
+        media_type="application/zip",
+    )
+
+
+@tenant_backup_router.delete("/{filename}")
+def delete_tenant_backup(filename: str):
+    """Elimina una copia de seguridad del negocio actual."""
+    from src import tenancy
+    if not filename.endswith(".zip"):
+        raise HTTPException(status_code=404, detail="Respaldo no encontrado")
+
+    tenant_id = tenancy.get_current_tenant_id()
+    tenant_dir = os.path.realpath(os.path.join(TENANT_BACKUP_DIR, tenant_id))
+    filepath = os.path.realpath(os.path.join(tenant_dir, filename))
+
+    if os.path.commonpath([tenant_dir, filepath]) != tenant_dir or not os.path.isfile(filepath):
+        raise HTTPException(status_code=404, detail="Respaldo no encontrado")
+
+    try:
+        os.remove(filepath)
+        return {"success": True, "message": f"Respaldo '{filename}' eliminado con éxito."}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error al eliminar respaldo: {e}")
+
+
+# ---------------------------------------------------------------------------
+# Incluir rutas protegidas y de inquilinos en el router principal
 # ---------------------------------------------------------------------------
 router.include_router(protected_router)
+router.include_router(tenant_backup_router)
+

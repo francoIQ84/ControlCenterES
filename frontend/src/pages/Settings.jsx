@@ -6,7 +6,7 @@ import { useTenant } from '../TenantContext'
 import { formatDateTimeAR, formatDateAR } from '../utils/dateUtils'
 
 export default function Settings() {
-  const { isSimpleView, channels, isChannelEnabled, updateChannels, refresh: refreshTenant } = useTenant()
+  const { isSimpleView, isPlatformAdmin, channels, isChannelEnabled, updateChannels, refresh: refreshTenant } = useTenant()
   const [config, setConfig] = useState({ 
     client_id: '', 
     client_secret: '', 
@@ -1076,10 +1076,10 @@ export default function Settings() {
     }
   }, [activeTab])
   
-  // Load Backups and Disk Space when backups tab opens
+  // Load Backups when backups tab opens
   const fetchBackups = () => {
     setBackupsLoading(true)
-    fetch('/api/backup/list')
+    fetch('/api/backup/tenant/list')
       .then(r => {
         if (!r.ok) throw new Error("Unauthorized or error")
         return r.json()
@@ -1267,20 +1267,6 @@ export default function Settings() {
   useEffect(() => {
     if (activeTab === "backups") {
       fetchBackups()
-      fetchDiskSpace()
-      fetchGoogleDriveConfig()
-      fetchGdriveStatus()
-
-      // Comprobar parámetros de retorno de Google OAuth
-      const params = new URLSearchParams(window.location.search)
-      if (params.get('gdrive_connected')) {
-        alert("✅ ¡Cuenta de Google Drive vinculada con éxito!\nTus respaldos ahora se almacenarán en tu Google Drive personal sin límite de cuota de Service Account.")
-        window.history.replaceState({}, '', window.location.pathname + '?tab=backups')
-        fetchGdriveStatus()
-      } else if (params.get('gdrive_error')) {
-        alert("⚠️ Error al vincular Google Drive:\n" + params.get('gdrive_error'))
-        window.history.replaceState({}, '', window.location.pathname + '?tab=backups')
-      }
     }
     if (activeTab === "web_config") {
       fetchFeaturedProducts()
@@ -1361,12 +1347,11 @@ export default function Settings() {
   const handleCreateBackup = async () => {
     setCreatingBackup(true)
     try {
-      const res = await fetch('/api/backup/create', { method: 'POST' })
+      const res = await fetch('/api/backup/tenant/create', { method: 'POST' })
       const data = await res.json()
       if (res.ok) {
-        alert("Respaldo creado con éxito: " + data.filename)
+        alert("✅ Respaldo de tu negocio creado con éxito: " + data.filename)
         fetchBackups()
-        fetchDiskSpace()
       } else {
         alert("Error al crear respaldo: " + (data.detail || "Error desconocido"))
       }
@@ -1377,28 +1362,10 @@ export default function Settings() {
     }
   }
 
-  const handleUploadToDrive = async (backupId) => {
-    if (!window.confirm(`¿Deseas subir el respaldo ${backupId} a Google Drive ahora?`)) return
-    setUploadingToDrive(prev => ({ ...prev, [backupId]: true }))
-    try {
-      const res = await fetch(`/api/backup/upload-to-drive/${backupId}`, { method: 'POST' })
-      const data = await res.json()
-      if (res.ok) {
-        alert("✅ Respaldo subido con éxito a Google Drive:\n" + (data.message || "Subida completada"))
-      } else {
-        alert("⚠️ No se pudo subir a Google Drive:\n" + (data.detail || "Error desconocido"))
-      }
-    } catch(err) {
-      alert("Error de conexión: " + err.message)
-    } finally {
-      setUploadingToDrive(prev => ({ ...prev, [backupId]: false }))
-    }
-  }
-
   const handleDownloadBackup = (filename) => {
     try {
       const token = localStorage.getItem('adminToken')
-      const downloadUrl = `/api/backup/download/${encodeURIComponent(filename)}${token ? `?token=${encodeURIComponent(token)}` : ''}`
+      const downloadUrl = `/api/backup/tenant/download/${encodeURIComponent(filename)}${token ? `?token=${encodeURIComponent(token)}` : ''}`
       const a = document.createElement('a')
       a.href = downloadUrl
       a.download = filename
@@ -1410,14 +1377,13 @@ export default function Settings() {
     }
   }
 
-  const handleDeleteBackup = async (backupId) => {
-    if (!window.confirm(`¿Estás seguro de que deseas eliminar el respaldo '${backupId}'?\nEsta acción borrará los archivos de sistema y medios asociados en el servidor.`)) return
+  const handleDeleteBackup = async (filename) => {
+    if (!window.confirm(`¿Estás seguro de que deseas eliminar el respaldo '${filename}' de tu negocio?\nEsta acción no se puede deshacer.`)) return
     try {
-      const res = await fetch(`/api/backup/${backupId}`, { method: 'DELETE' })
+      const res = await fetch(`/api/backup/tenant/${encodeURIComponent(filename)}`, { method: 'DELETE' })
       const data = await res.json()
       if (res.ok) {
         fetchBackups()
-        fetchDiskSpace()
       } else {
         alert("Error al eliminar: " + (data.detail || "Error desconocido"))
       }
@@ -4412,128 +4378,84 @@ export default function Settings() {
         </div>
       )}
 
-      {/* Tab 6: Backups */}
+      {/* Tab: Backups de Negocio */}
       {activeTab === 'backups' && (
         <div style={{display: 'flex', gap: 20, alignItems: 'flex-start', flexDirection: 'column'}}>
           
-          {/* Google Drive Integration Card */}
-          <div style={{
-            backgroundColor: 'var(--bg-dark)',
-            border: '1px solid var(--border-color)',
-            borderRadius: '8px',
-            padding: '20px',
-            width: '100%'
-          }}>
-            <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10, marginBottom: 12}}>
-              <h3 style={{margin: 0, display: 'flex', alignItems: 'center', gap: 8}}>
-                ☁️ Integración con Google Drive (Respaldos en la Nube)
-              </h3>
-              <span style={{
-                fontSize: '0.78rem',
-                fontWeight: 600,
-                padding: '3px 10px',
-                borderRadius: 12,
-                backgroundColor: gdriveStatus.is_oauth_configured ? 'rgba(34, 197, 94, 0.15)' : (gdriveStatus.auth_mode === 'service_account' ? 'rgba(59, 130, 246, 0.15)' : 'rgba(156, 163, 175, 0.15)'),
-                color: gdriveStatus.is_oauth_configured ? '#22c55e' : (gdriveStatus.auth_mode === 'service_account' ? '#3b82f6' : 'var(--text-secondary)')
-              }}>
-                {gdriveStatus.is_oauth_configured ? `🟢 Conectado vía OAuth: ${gdriveStatus.user_email || 'Personal'}` : (gdriveStatus.auth_mode === 'service_account' ? '🔵 Service Account (Workspace)' : '⚪ No Conectado')}
-              </span>
+          {/* Banner para Desarrollador / Admin de Plataforma */}
+          {isPlatformAdmin && (
+            <div style={{
+              backgroundColor: 'rgba(37, 99, 235, 0.1)',
+              border: '1px solid var(--accent-blue)',
+              borderRadius: 8,
+              padding: '14px 20px',
+              width: '100%',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              flexWrap: 'wrap',
+              gap: 14
+            }}>
+              <div>
+                <div style={{ fontWeight: 700, fontSize: '0.92rem', color: 'var(--accent-blue)', display: 'flex', alignItems: 'center', gap: 8 }}>
+                  👑 Modo Administrador de Plataforma (Master Tenant)
+                </div>
+                <div style={{ fontSize: '0.84rem', color: 'var(--text-secondary)', marginTop: 4 }}>
+                  Para gestionar los respaldos globales de toda la base de datos (todos los inquilinos) y la sincronización con Google Drive, visitá la sección de desarrollador en <strong>Negocios</strong>.
+                </div>
+              </div>
+              <a
+                href="/tenants?tab=backups"
+                className="btn"
+                style={{
+                  backgroundColor: 'var(--accent-blue)',
+                  color: '#fff',
+                  fontSize: '0.82rem',
+                  padding: '8px 16px',
+                  textDecoration: 'none',
+                  borderRadius: 6,
+                  fontWeight: 600,
+                  whiteSpace: 'nowrap'
+                }}
+              >
+                Ir a Respaldos Globales & Google Drive →
+              </a>
             </div>
+          )}
 
-            {gdriveStatus.is_oauth_configured ? (
-              <div style={{display: 'flex', flexDirection: 'column', gap: 12}}>
-                <div style={{fontSize: '0.88rem', color: 'var(--text-primary)', lineHeight: 1.5}}>
-                  Tus respaldos del sistema y archivos multimedia se sincronizan directamente con tu cuenta personal de Google Drive (<strong>{gdriveStatus.user_email}</strong>) utilizando tu almacenamiento propio sin límite de cuota.
-                </div>
-                <div style={{display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap'}}>
-                  <span style={{fontSize: '0.8rem', color: 'var(--text-secondary)'}}>
-                    📁 Destino: <strong>{gdriveStatus.folder_id ? `Carpeta (${gdriveStatus.folder_id})` : 'Raíz de tu Google Drive'}</strong>
-                  </span>
-                  <button
-                    type="button"
-                    onClick={handleDisconnectGDrive}
-                    className="btn"
-                    style={{fontSize: '0.75rem', padding: '4px 10px', color: '#ef4444', borderColor: '#ef4444', backgroundColor: 'transparent'}}
-                  >
-                    Desvincular cuenta
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <div style={{display: 'flex', flexDirection: 'column', gap: 12}}>
-                <p style={{fontSize: '0.85rem', color: 'var(--text-secondary)', margin: 0}}>
-                  Vincula tu cuenta personal de Google Drive (<strong>@gmail.com</strong>) en 1 clic. Tus respaldos se guardarán automáticamente en tu nube personal sin el bloqueo de cuota que impone Google a las Service Accounts.
-                </p>
-
-                <div style={{display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap'}}>
-                  <button
-                    type="button"
-                    onClick={handleConnectGDrive}
-                    disabled={connectingGDrive}
-                    className="btn"
-                    style={{
-                      padding: '8px 16px',
-                      fontSize: '0.85rem',
-                      fontWeight: 600,
-                      backgroundColor: '#0284c7',
-                      color: '#fff',
-                      border: 'none',
-                      cursor: 'pointer',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: 8
-                    }}
-                  >
-                    <span>🔗</span> {connectingGDrive ? 'Conectando...' : 'Conectar cuenta de Google Drive con 1 Clic'}
-                  </button>
-
-                  <span style={{fontSize: '0.78rem', color: 'var(--text-secondary)'}}>
-                    ¿Primera vez? Asegúrate de haber cargado el Client ID en{' '}
-                    <button
-                      type="button"
-                      onClick={() => setActiveTab('platform')}
-                      style={{background: 'none', border: 'none', color: 'var(--accent-blue)', textDecoration: 'underline', cursor: 'pointer', padding: 0, fontSize: '0.78rem'}}
-                    >
-                      Ajustes de Plataforma
-                    </button>
-                  </span>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Info Card */}
+          {/* Service Agreement / SLA Info Card */}
           <div style={{
-            backgroundColor: 'rgba(59, 130, 246, 0.1)',
-            border: '1px solid var(--accent-blue)',
-            borderRadius: '8px',
-            padding: '15px 20px',
+            backgroundColor: 'rgba(16, 185, 129, 0.08)',
+            border: '1px solid rgba(16, 185, 129, 0.3)',
+            borderRadius: 8,
+            padding: '18px 22px',
             width: '100%',
-            fontSize: '0.9rem',
-            lineHeight: '1.5'
+            fontSize: '0.88rem',
+            lineHeight: 1.55
           }}>
-            <div style={{fontWeight: 'bold', color: 'var(--accent-blue)', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '8px'}}>
-              🕒 Respaldos Automáticos Programados Activos
+            <div style={{ fontWeight: 700, color: 'var(--accent-emerald)', marginBottom: 6, display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.98rem' }}>
+              🛡️ Respaldo de Datos y Acuerdo de Nivel de Servicio (SLA)
             </div>
-            <div style={{marginBottom: 10}}>
-              El sistema realiza un respaldo automático completo <strong>1 vez al mes</strong> y conserva <strong>1 año de historial (los últimos 12 respaldos automáticos)</strong>. Los respaldos manuales se conservan indefinidamente.
+            <div style={{ color: 'var(--text-primary)', marginBottom: 10 }}>
+              Conforme a los Términos de Servicio y Acuerdo de Nivel de Servicio, cada negocio es el custodio legal de su información y es responsable de descargar y preservar copias de seguridad periódicas de sus datos. La plataforma garantiza el aislamiento total de tus registros y te permite exportar una copia completa en cualquier momento.
             </div>
-            <div style={{fontSize: '0.82rem', color: 'var(--text-secondary)', marginTop: 8}}>
-              <strong>📦 Contenido de cada respaldo:</strong>
-              <div style={{display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 6}}>
+            <div style={{ fontSize: '0.82rem', color: 'var(--text-secondary)' }}>
+              <strong>📦 Contenido de tu copia de seguridad (.zip):</strong>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 8 }}>
                 {[
-                  { icon: '🗄️', label: 'Base de datos completa (clientes, ventas, inventario, gastos, settings, marketing)' },
-                  { icon: '🖼️', label: 'Imágenes y archivos (uploads/)' },
-                  { icon: '🧾', label: 'Facturas PDF (invoices/)' },
-                  { icon: '🔐', label: 'Certificados AFIP/ARCA (.crt, .key)' },
-                  { icon: '💬', label: 'Sesión de WhatsApp (auth_state/)' },
-                  { icon: '📇', label: 'Contactos WhatsApp (contacts_cache)' },
+                  { icon: '👥', label: 'Clientes y CRM' },
+                  { icon: '📦', label: 'Inventario, Productos y Stock' },
+                  { icon: '🛒', label: 'Ventas y Pedidos' },
+                  { icon: '🧾', label: 'Facturas Emitidas' },
+                  { icon: '💰', label: 'Finanzas (Gastos e Ingresos)' },
+                  { icon: '📋', label: 'Presupuestos' },
+                  { icon: '🖼️', label: 'Archivos e Imágenes del Negocio' },
                 ].map((item, i) => (
                   <span key={i} style={{
                     padding: '3px 10px',
                     borderRadius: 6,
-                    backgroundColor: 'rgba(59, 130, 246, 0.08)',
-                    border: '1px solid rgba(59, 130, 246, 0.2)',
+                    backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                    border: '1px solid rgba(16, 185, 129, 0.25)',
                     fontSize: '0.76rem',
                     whiteSpace: 'nowrap'
                   }}>
@@ -4545,126 +4467,94 @@ export default function Settings() {
           </div>
 
           {/* Backup List Card */}
-          <div className="card" style={{width: '100%'}}>
-            <h3>Respaldos del Sistema (Backups)</h3>
-            <p style={{fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: 15}}>
-              Archivo ZIP completo con base de datos, configuraciones, imágenes, facturas, certificados AFIP y sesión de WhatsApp.
-            </p>
+          <div className="card" style={{ width: '100%' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12, marginBottom: 16 }}>
+              <div>
+                <h3 style={{ margin: 0 }}>Copias de Seguridad de mi Negocio</h3>
+                <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', margin: '4px 0 0' }}>
+                  Genera una copia en formato ZIP descargable con las bases de datos (SQL y JSON) y archivos multimedia exclusivos de tu cuenta.
+                </p>
+              </div>
+
+              <button 
+                className="btn" 
+                onClick={handleCreateBackup} 
+                disabled={creatingBackup}
+                style={{
+                  backgroundColor: 'var(--accent-emerald)',
+                  color: '#fff',
+                  fontWeight: 600,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  padding: '8px 18px',
+                  borderRadius: 8
+                }}
+              >
+                {creatingBackup ? 'Generando respaldo (puede demorar)...' : '📦 Generar Respaldo de mi Negocio (ZIP)'}
+              </button>
+            </div>
             
-            <button 
-              className="btn" 
-              onClick={handleCreateBackup} 
-              disabled={creatingBackup}
-              style={{marginBottom: 20, backgroundColor: 'var(--accent-emerald)', color: '#fff'}}
-            >
-              {creatingBackup ? 'Creando respaldo (puede demorar)...' : '💾 Crear Nuevo Respaldo Manual'}
-            </button>
-            
-            {backupsLoading ? <p>Cargando respaldos...</p> : (
-              <table className="mobile-cards data-table" style={{width: '100%', borderCollapse: 'collapse'}}>
+            {backupsLoading ? <p style={{ color: 'var(--text-secondary)', textAlign: 'center', padding: 20 }}>Cargando respaldos...</p> : (
+              <table className="mobile-cards data-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
                 <thead>
                   <tr>
-                    <th style={{textAlign: 'left', padding: '12px 10px'}}>Archivo</th>
-                    <th style={{textAlign: 'left', padding: '12px 10px'}}>Tipo</th>
-                    <th style={{textAlign: 'left', padding: '12px 10px'}}>Contenido</th>
-                    <th style={{textAlign: 'left', padding: '12px 10px'}}>Fecha</th>
-                    <th style={{textAlign: 'left', padding: '12px 10px'}}>Tamaño</th>
-                    <th style={{textAlign: 'left', padding: '12px 10px'}}>Acciones</th>
+                    <th style={{ textAlign: 'left', padding: '12px 10px' }}>Archivo</th>
+                    <th style={{ textAlign: 'left', padding: '12px 10px' }}>Registros</th>
+                    <th style={{ textAlign: 'left', padding: '12px 10px' }}>Fecha</th>
+                    <th style={{ textAlign: 'left', padding: '12px 10px' }}>Tamaño</th>
+                    <th style={{ textAlign: 'left', padding: '12px 10px' }}>Acciones</th>
                   </tr>
                 </thead>
                 <tbody>
                   {backups.map(b => {
-                    const isAuto = b.type === 'auto' || b.id.includes('auto_')
-                    const c = b.main_file?.contents || {}
+                    const counts = b.records_count || {}
+                    const totalRec = b.total_records || Object.values(counts).reduce((a, c) => a + (Number(c) || 0), 0)
                     return (
-                      <tr key={b.id} style={{borderBottom: '1px solid var(--border-color)'}}>
-                        <td data-label="Archivo" style={{padding: '12px 10px', fontSize: '0.82rem', fontWeight: 600}}>
-                          {b.id}
+                      <tr key={b.filename} style={{ borderBottom: '1px solid var(--border-color)' }}>
+                        <td data-label="Archivo" style={{ padding: '12px 10px', fontSize: '0.82rem', fontWeight: 600 }}>
+                          {b.filename}
                         </td>
-                        <td data-label="Tipo" style={{padding: '12px 10px', fontSize: '0.82rem'}}>
+                        <td data-label="Registros" style={{ padding: '12px 10px', fontSize: '0.82rem' }}>
                           <span style={{
                             padding: '3px 8px',
                             borderRadius: '4px',
                             fontSize: '0.73rem',
                             fontWeight: '600',
-                            backgroundColor: isAuto ? 'rgba(139, 92, 246, 0.15)' : 'rgba(16, 185, 129, 0.15)',
-                            color: isAuto ? 'var(--accent-purple)' : 'var(--accent-emerald)',
-                            border: `1px solid ${isAuto ? 'rgba(139, 92, 246, 0.3)' : 'rgba(16, 185, 129, 0.3)'}`
+                            backgroundColor: 'rgba(59, 130, 246, 0.12)',
+                            color: 'var(--accent-blue)',
+                            border: '1px solid rgba(59, 130, 246, 0.25)'
                           }}>
-                            {isAuto ? 'Automático' : 'Manual'}
+                            {totalRec} registros
                           </span>
                         </td>
-                        <td data-label="Contenido" style={{padding: '12px 10px', fontSize: '0.82rem'}}>
-                          <div style={{display: 'flex', gap: 4, flexWrap: 'wrap'}}>
-                            {c.database !== false && <span title="Base de datos" style={{cursor: 'default'}}>🗄️</span>}
-                            {b.media_file && <span title="Uploads (imágenes, PDFs)" style={{cursor: 'default'}}>🖼️</span>}
-                            {c.invoices && <span title="Facturas" style={{cursor: 'default'}}>🧾</span>}
-                            {c.afip_certs && <span title="Certificados AFIP/ARCA" style={{cursor: 'default'}}>🔐</span>}
-                            {c.whatsapp_session && <span title="Sesión WhatsApp" style={{cursor: 'default'}}>💬</span>}
-                            {c.whatsapp_contacts && <span title="Contactos WhatsApp" style={{cursor: 'default'}}>📇</span>}
-                            {c.platform_config && <span title="Config Plataforma (Developer)" style={{cursor: 'default'}}>⚙️</span>}
-                            {c.service_account && <span title="Service Account (Google)" style={{cursor: 'default'}}>🔑</span>}
-                            {!b.main_file?.contents && <span style={{fontSize: '0.7rem', color: 'var(--text-secondary)'}} title="Backup legacy sin manifiesto">v1</span>}
-                          </div>
-                        </td>
-                        <td data-label="Fecha" style={{padding: '12px 10px', fontSize: '0.82rem'}}>
+                        <td data-label="Fecha" style={{ padding: '12px 10px', fontSize: '0.82rem' }}>
                           {formatDateTimeAR(b.created_at)}
                         </td>
-                        <td data-label="Tamaño" style={{padding: '12px 10px', fontSize: '0.82rem', whiteSpace: 'nowrap'}}>
-                          {b.main_file && <div>Sis: {(b.main_file.size_bytes / (1024 * 1024)).toFixed(2)} MB</div>}
-                          {b.media_file && <div style={{color: 'var(--text-secondary)'}}>Med: {(b.media_file.size_bytes / (1024 * 1024)).toFixed(2)} MB</div>}
+                        <td data-label="Tamaño" style={{ padding: '12px 10px', fontSize: '0.82rem', whiteSpace: 'nowrap' }}>
+                          {(b.size_bytes / (1024 * 1024)).toFixed(2)} MB
                         </td>
-                        <td data-label="Acciones" style={{padding: '12px 10px', fontSize: '0.82rem', display: 'flex', gap: '4px', flexWrap: 'wrap'}}>
-                          {b.main_file && (
-                            <button 
-                              onClick={() => handleDownloadBackup(b.main_file.filename)}
-                              className="btn"
-                              style={{padding: '4px 8px', fontSize: '0.73rem', backgroundColor: 'var(--accent-blue)', color: '#fff', border: 'none', cursor: 'pointer', display: 'inline-block'}}
-                              title="Descargar Sistema"
-                            >
-                              ⬇ Sist.
-                            </button>
-                          )}
-                          {b.media_file && (
-                            <button 
-                              onClick={() => handleDownloadBackup(b.media_file.filename)}
-                              className="btn"
-                              style={{padding: '4px 8px', fontSize: '0.73rem', backgroundColor: 'var(--accent-purple)', color: '#fff', border: 'none', cursor: 'pointer', display: 'inline-block'}}
-                              title="Descargar Medios"
-                            >
-                              ⬇ Med.
-                            </button>
-                          )}
+                        <td data-label="Acciones" style={{ padding: '12px 10px', fontSize: '0.82rem', display: 'flex', gap: '6px' }}>
                           <button 
-                            onClick={() => handleUploadToDrive(b.id)}
-                            disabled={uploadingToDrive[b.id]}
+                            onClick={() => handleDownloadBackup(b.filename)}
                             className="btn"
-                            style={{
-                              padding: '4px 8px',
-                              fontSize: '0.73rem',
-                              backgroundColor: '#0284c7',
-                              color: '#fff',
-                              border: 'none',
-                              cursor: uploadingToDrive[b.id] ? 'not-allowed' : 'pointer',
-                              display: 'inline-block'
-                            }}
-                            title="Subir este respaldo a Google Drive"
+                            style={{ padding: '5px 12px', fontSize: '0.76rem', backgroundColor: 'var(--accent-blue)', color: '#fff', border: 'none', cursor: 'pointer' }}
+                            title="Descargar este archivo ZIP a tu computadora"
                           >
-                            {uploadingToDrive[b.id] ? '⏳ Subiendo...' : '☁️ Drive'}
+                            ⬇ Descargar ZIP
                           </button>
                           <button 
-                            onClick={() => handleDeleteBackup(b.id)}
+                            onClick={() => handleDeleteBackup(b.filename)}
                             className="btn"
                             style={{
-                              padding: '4px 8px',
-                              fontSize: '0.73rem',
+                              padding: '5px 10px',
+                              fontSize: '0.76rem',
                               backgroundColor: 'rgba(239, 68, 68, 0.15)',
                               color: '#ef4444',
                               border: '1px solid rgba(239, 68, 68, 0.3)',
-                              cursor: 'pointer',
-                              display: 'inline-block'
+                              cursor: 'pointer'
                             }}
-                            title="Eliminar este respaldo del servidor"
+                            title="Eliminar este respaldo"
                           >
                             🗑️
                           </button>
@@ -4674,168 +4564,14 @@ export default function Settings() {
                   })}
                   {backups.length === 0 && (
                     <tr>
-                      <td colSpan="6" style={{padding: '20px', textAlign: 'center', color: 'var(--text-secondary)'}}>
-                        No hay respaldos creados aún.
+                      <td colSpan="5" style={{ padding: '24px', textAlign: 'center', color: 'var(--text-secondary)' }}>
+                        No has generado copias de seguridad de tu negocio todavía. Hacé clic en "Generar Respaldo de mi Negocio (ZIP)" para crear la primera.
                       </td>
                     </tr>
                   )}
                 </tbody>
               </table>
             )}
-          </div>
-
-          {/* Restore Card */}
-          <div className="card" style={{width: '100%'}}>
-            <h3 style={{display: 'flex', alignItems: 'center', gap: 8}}>🔄 Restaurar Sistema desde Respaldo</h3>
-            <p style={{fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: 15}}>
-              Sube un archivo ZIP de respaldo para restaurar completamente el sistema: base de datos, configuraciones, archivos, certificados AFIP y sesión de WhatsApp.
-            </p>
-
-            {/* Warning */}
-            <div style={{
-              backgroundColor: 'rgba(239, 68, 68, 0.08)',
-              border: '1px solid rgba(239, 68, 68, 0.3)',
-              borderRadius: 8,
-              padding: '12px 16px',
-              marginBottom: 18,
-              fontSize: '0.84rem',
-              lineHeight: 1.5,
-            }}>
-              <strong style={{color: 'var(--accent-red)'}}>⚠️ Advertencias importantes:</strong>
-              <ul style={{margin: '6px 0 0 16px', padding: 0, color: 'var(--text-secondary)'}}>
-                <li>Al subir el <strong>ZIP del sistema</strong>, esta acción <strong>reemplaza todos los datos actuales</strong> de la base de datos y configuraciones.</li>
-                <li>Si subís el <strong>ZIP de medios</strong> (fotos/reels), solo se agregarán o actualizarán las imágenes, <strong>sin borrar ni reiniciar la base de datos</strong>.</li>
-                <li>Se crea un respaldo de seguridad automático antes de restaurar el sistema.</li>
-                <li>La sesión de WhatsApp <strong>no puede estar activa en dos servidores a la vez</strong>.</li>
-              </ul>
-            </div>
-
-            {/* File Input */}
-            <div style={{
-              border: '2px dashed var(--border-color)',
-              borderRadius: 10,
-              padding: '25px 20px',
-              textAlign: 'center',
-              marginBottom: 18,
-              backgroundColor: restoreFile ? 'rgba(16, 185, 129, 0.05)' : 'var(--bg-dark)',
-              transition: 'all 0.2s ease',
-            }}>
-              <input
-                type="file"
-                accept=".zip"
-                onChange={handleRestoreFileChange}
-                id="restore-file-input"
-                style={{display: 'none'}}
-              />
-              <label htmlFor="restore-file-input" style={{cursor: 'pointer', display: 'block'}}>
-                {restoreFile ? (
-                  <div>
-                    <div style={{fontSize: '1.5rem', marginBottom: 6}}>📦</div>
-                    <div style={{fontWeight: 600, fontSize: '0.95rem'}}>{restoreFile.name}</div>
-                    <div style={{fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: 4}}>
-                      {(restoreFile.size / (1024 * 1024)).toFixed(2)} MB — Click para cambiar archivo
-                    </div>
-                  </div>
-                ) : (
-                  <div>
-                    <div style={{fontSize: '2rem', marginBottom: 8}}>📁</div>
-                    <div style={{fontWeight: 600, fontSize: '0.9rem'}}>Click aquí para seleccionar archivo ZIP de respaldo</div>
-                    <div style={{fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: 4}}>o arrastra y soltá el archivo</div>
-                  </div>
-                )}
-              </label>
-            </div>
-
-            {/* Restore Button */}
-            {restoreFile && (
-              <button
-                className="btn"
-                onClick={handleRestore}
-                disabled={restoring}
-                style={{
-                  backgroundColor: restoring ? 'var(--text-secondary)' : 'var(--accent-red)',
-                  color: '#fff',
-                  padding: '10px 24px',
-                  fontSize: '0.9rem',
-                  fontWeight: 700,
-                  border: 'none',
-                  cursor: restoring ? 'not-allowed' : 'pointer',
-                  marginBottom: 15,
-                }}
-              >
-                {restoring ? '⏳ Restaurando sistema (esto puede demorar varios minutos)...' : '🔄 Restaurar Sistema desde este Respaldo'}
-              </button>
-            )}
-
-            {/* Restore Result */}
-            {restoreResult && (
-              <div style={{
-                padding: '15px 18px',
-                borderRadius: 8,
-                border: `1px solid ${restoreResult.success ? 'rgba(16, 185, 129, 0.4)' : 'rgba(239, 68, 68, 0.4)'}`,
-                backgroundColor: restoreResult.success ? 'rgba(16, 185, 129, 0.08)' : 'rgba(239, 68, 68, 0.08)',
-                marginTop: 10,
-              }}>
-                <div style={{fontWeight: 700, fontSize: '0.95rem', marginBottom: 8, color: restoreResult.success ? 'var(--accent-emerald)' : 'var(--accent-red)'}}>
-                  {restoreResult.success ? '✅ Restauración completada exitosamente' : '❌ Error en la restauración'}
-                </div>
-                {restoreResult.success && restoreResult.restore_log && (
-                  <div style={{fontSize: '0.82rem', color: 'var(--text-secondary)'}}>
-                    <div>🗄️ Base de datos: {restoreResult.restore_log.database_restored ? '✅ Restaurada' : '❌ No restaurada'}</div>
-                    {restoreResult.restore_log.directories_restored?.length > 0 && (
-                      <div>📁 Directorios restaurados: {restoreResult.restore_log.directories_restored.join(', ')}</div>
-                    )}
-                    {restoreResult.restore_log.files_restored?.length > 0 && (
-                      <div>📄 Archivos restaurados: {restoreResult.restore_log.files_restored.join(', ')}</div>
-                    )}
-                    {restoreResult.restore_log.services_restarted && (
-                      <div>🔄 Servicios reiniciados automáticamente</div>
-                    )}
-                    {restoreResult.restore_log.pre_restore_backup && (
-                      <div>💾 Respaldo pre-restauración: {restoreResult.restore_log.pre_restore_backup}</div>
-                    )}
-                    {restoreResult.restore_log.errors?.length > 0 && (
-                      <div style={{marginTop: 8, color: 'var(--accent-amber)'}}>
-                        ⚠️ Advertencias: {restoreResult.restore_log.errors.join('; ')}
-                      </div>
-                    )}
-                  </div>
-                )}
-                {!restoreResult.success && (
-                  <div style={{fontSize: '0.85rem'}}>{restoreResult.error}</div>
-                )}
-              </div>
-            )}
-          </div>
-
-          {/* Disk Space Card */}
-          <div style={{width: '100%', display: 'flex', flexDirection: 'column', gap: 20}}>
-            <div className="card">
-              <h3>Espacio en la VPS</h3>
-              {diskSpace ? (
-                <div style={{marginTop: 15}}>
-                  <div style={{display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem', marginBottom: 5}}>
-                    <span>{diskSpace.used_gb} GB Usados</span>
-                    <span style={{color: 'var(--text-secondary)'}}>{diskSpace.free_gb} GB Libres</span>
-                  </div>
-                  <div style={{width: '100%', height: 10, backgroundColor: 'var(--bg-dark)', borderRadius: 5, overflow: 'hidden'}}>
-                    <div 
-                      style={{
-                        height: '100%', 
-                        width: `${diskSpace.percent_used}%`, 
-                        backgroundColor: diskSpace.percent_used > 85 ? 'var(--accent-red)' : (diskSpace.percent_used > 70 ? 'var(--accent-amber)' : 'var(--accent-emerald)'),
-                        transition: 'width 0.3s ease'
-                      }}
-                    ></div>
-                  </div>
-                  <div style={{textAlign: 'right', fontSize: '0.75rem', marginTop: 5, color: 'var(--text-secondary)'}}>
-                    Total: {diskSpace.total_gb} GB
-                  </div>
-                </div>
-              ) : (
-                <p style={{fontSize: '0.85rem', color: 'var(--text-secondary)'}}>Cargando información de disco...</p>
-              )}
-            </div>
           </div>
         </div>
       )}

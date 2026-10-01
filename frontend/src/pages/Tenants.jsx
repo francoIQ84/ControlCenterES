@@ -8,6 +8,7 @@ import {
 import { useTenant } from '../TenantContext'
 import BrandLogo from '../components/BrandLogo'
 import PlatformSettings from '../components/PlatformSettings'
+import GlobalBackups from '../components/GlobalBackups'
 import { formatDateAR } from '../utils/dateUtils'
 
 const ALL_MODULES = [
@@ -186,7 +187,14 @@ export default function Tenants() {
   const [tenants, setTenants] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
-  const [platformTab, setPlatformTab] = useState('tenants') // 'tenants' | 'platform'
+  const [platformTab, setPlatformTab] = useState(() => {
+    try {
+      const params = new URLSearchParams(window.location.search)
+      const t = params.get('tab')
+      if (t === 'backups' || t === 'platform') return t
+    } catch (_) {}
+    return 'tenants'
+  }) // 'tenants' | 'platform' | 'backups'
   
   // UI States
   const [showPlansBanner, setShowPlansBanner] = useState(false)
@@ -516,7 +524,10 @@ export default function Tenants() {
 
         <button
           type="button"
-          onClick={() => setPlatformTab('platform')}
+          onClick={() => {
+            setPlatformTab('platform')
+            window.history.replaceState({}, '', window.location.pathname + '?tab=platform')
+          }}
           className="btn"
           style={{
             backgroundColor: platformTab === 'platform' ? 'var(--accent-blue)' : 'transparent',
@@ -533,11 +544,34 @@ export default function Tenants() {
         >
           <Server size={16} /> Integraciones Globales (Desarrollador)
         </button>
+
+        <button
+          type="button"
+          onClick={() => {
+            setPlatformTab('backups')
+            window.history.replaceState({}, '', window.location.pathname + '?tab=backups')
+          }}
+          className="btn"
+          style={{
+            backgroundColor: platformTab === 'backups' ? 'var(--accent-blue)' : 'transparent',
+            color: platformTab === 'backups' ? '#fff' : 'var(--text-secondary)',
+            border: platformTab === 'backups' ? 'none' : '1px solid var(--border-color)',
+            fontWeight: 600,
+            fontSize: '0.9rem',
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 8,
+            padding: '8px 18px',
+            borderRadius: 8
+          }}
+        >
+          <HardDrive size={16} /> Respaldos Globales & Google Drive
+        </button>
       </div>
 
-      {platformTab === 'platform' ? (
-        <PlatformSettings />
-      ) : (
+      {platformTab === 'platform' && <PlatformSettings />}
+      {platformTab === 'backups' && <GlobalBackups />}
+      {platformTab === 'tenants' && (
         <>
       {/* BANNER COMPARATIVO DE PLANES Y LÍMITES */}
       {showPlansBanner && (
