@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from typing import List, Optional
 from datetime import datetime, date, timedelta
 from pydantic import BaseModel
-from src import database, config, whatsapp_bridge
+from src import database, config, whatsapp_bridge, tenancy
 from src.api.auth import get_current_user
 
 router = APIRouter()
@@ -42,65 +42,144 @@ class IncomeCreate(BaseModel):
     amount: float
     category: str
 
+def cleanup_duplicate_fixed_expenses(cursor, month: Optional[int] = None, year: Optional[int] = None):
+    """
+    Elimina registros duplicados de gastos fijos manteniendo únicamente la primera ocurrencia (id menor)
+    para cada combinación de (month, year, description, category).
+    """
+    try:
+        if month and year:
+            cursor.execute(
+                """
+                DELETE FROM fixed_expenses
+                WHERE id IN (
+                    SELECT id FROM (
+                        SELECT id, ROW_NUMBER() OVER (
+                            PARTITION BY month, year, LOWER(TRIM(description)), category
+                            ORDER BY id ASC
+                        ) as rn
+                        FROM fixed_expenses
+                        WHERE month = %s AND year = %s
+                    ) sub
+                    WHERE sub.rn > 1
+                )
+                """,
+                (month, year)
+            )
+        else:
+            cursor.execute(
+                """
+                DELETE FROM fixed_expenses
+                WHERE id IN (
+                    SELECT id FROM (
+                        SELECT id, ROW_NUMBER() OVER (
+                            PARTITION BY month, year, LOWER(TRIM(description)), category
+                            ORDER BY id ASC
+                        ) as rn
+                        FROM fixed_expenses
+                    ) sub
+                    WHERE sub.rn > 1
+                )
+                """
+            )
+    except Exception as e:
+        print(f"[Expenses] Error al limpiar duplicados de gastos fijos: {e}")
+
 def ensure_fixed_expenses_for_month(conn, month: int, year: int):
     """
-    Ensures fixed expenses exist for the specified month and year.
-    If no fixed expenses exist for (month, year), automatically copies 
-    the fixed expenses from the most recent prior month.
-    Also migrates any legacy rows with NULL month/year to July 2026 (7, 2026).
+    Garantiza de forma atómica y sin duplicados que existan gastos fijos para el mes y año solicitados.
+    Si no existen, copia los del mes previo más reciente.
+    Utiliza un bloqueo consultivo (pg_advisory_lock) para evitar condiciones de carrera entre
+    múltiples llamadas concurrentes (ej: /summary y /fixed al cargar la página).
     """
+    tenant_id = tenancy.get_current_tenant_id() if hasattr(tenancy, 'get_current_tenant_id') else 'default'
+    lock_key = f"fixed_exp_{tenant_id}_{year}_{month}"
     with conn.cursor() as cursor:
-        # Migrate legacy rows that have NULL month/year to July 2026 (7, 2026)
-        cursor.execute("UPDATE fixed_expenses SET month = 7, year = 2026 WHERE month IS NULL OR year IS NULL")
-        
-        # Check if records already exist for the requested month/year
-        cursor.execute("SELECT COUNT(*) as count FROM fixed_expenses WHERE month = %s AND year = %s", (month, year))
-        row = cursor.fetchone()
-        count = row['count'] if row else 0
-        
-        if count > 0:
-            return  # Already populated
+        has_lock = False
+        try:
+            cursor.execute("SELECT pg_advisory_lock(hashtext(%s))", (lock_key,))
+            has_lock = True
+        except Exception:
+            pass  # Entornos sin soporte de advisory locks (ej: mocks en tests)
+
+        try:
+            # Migrar filas legadas que no tienen mes/año
+            cursor.execute("UPDATE fixed_expenses SET month = 7, year = 2026 WHERE month IS NULL OR year IS NULL")
             
-        # Find the latest month/year prior to (year, month) that has fixed expenses
-        cursor.execute(
-            """
-            SELECT month, year 
-            FROM fixed_expenses 
-            WHERE (year < %s OR (year = %s AND month < %s))
-            ORDER BY year DESC, month DESC 
-            LIMIT 1
-            """,
-            (year, year, month)
-        )
-        prev = cursor.fetchone()
-        
-        if not prev:
-            # If no prior month exists before target, check if any month exists at all
+            # Limpiar posibles duplicados existentes antes de comprobar
+            cleanup_duplicate_fixed_expenses(cursor, month, year)
+            
+            # Comprobar si ya existen registros para el mes/año pedido
+            cursor.execute("SELECT COUNT(*) as count FROM fixed_expenses WHERE month = %s AND year = %s", (month, year))
+            row = cursor.fetchone()
+            count = row['count'] if row else 0
+            
+            if count > 0:
+                return  # Ya poblado y limpio
+                
+            # Buscar el mes más reciente anterior que tenga gastos fijos
             cursor.execute(
                 """
                 SELECT month, year 
                 FROM fixed_expenses 
-                ORDER BY year ASC, month ASC 
+                WHERE (year < %s OR (year = %s AND month < %s))
+                ORDER BY year DESC, month DESC 
                 LIMIT 1
-                """
+                """,
+                (year, year, month)
             )
             prev = cursor.fetchone()
             
-        if prev:
-            prev_m = prev['month']
-            prev_y = prev['year']
-            # Fetch fixed expenses from that base month
-            cursor.execute(
-                "SELECT description, amount, category FROM fixed_expenses WHERE month = %s AND year = %s",
-                (prev_m, prev_y)
-            )
-            prev_expenses = cursor.fetchall()
-            
-            for exp in prev_expenses:
+            if not prev:
+                # Si no hay mes anterior al pedido, buscar cualquier mes existente
                 cursor.execute(
-                    "INSERT INTO fixed_expenses (description, amount, category, month, year) VALUES (%s, %s, %s, %s, %s)",
-                    (exp['description'], exp['amount'], exp['category'], month, year)
+                    """
+                    SELECT month, year 
+                    FROM fixed_expenses 
+                    ORDER BY year ASC, month ASC 
+                    LIMIT 1
+                    """
                 )
+                prev = cursor.fetchone()
+                
+            if prev:
+                prev_m = prev['month']
+                prev_y = prev['year']
+                # Obtener gastos fijos del mes base deduplicando por descripción y categoría
+                cursor.execute(
+                    """
+                    SELECT DISTINCT ON (LOWER(TRIM(description)), category)
+                           description, amount, category 
+                    FROM fixed_expenses 
+                    WHERE month = %s AND year = %s
+                    ORDER BY LOWER(TRIM(description)), category, id ASC
+                    """,
+                    (prev_m, prev_y)
+                )
+                prev_expenses = cursor.fetchall()
+                
+                for exp in prev_expenses:
+                    # Inserción idempotente: no inserta si ya existe exactamente en el mes destino
+                    cursor.execute(
+                        """
+                        INSERT INTO fixed_expenses (description, amount, category, month, year)
+                        SELECT %s, %s, %s, %s, %s
+                        WHERE NOT EXISTS (
+                            SELECT 1 FROM fixed_expenses 
+                            WHERE month = %s AND year = %s 
+                              AND LOWER(TRIM(description)) = LOWER(TRIM(%s))
+                              AND category = %s
+                        )
+                        """,
+                        (exp['description'], exp['amount'], exp['category'], month, year,
+                         month, year, exp['description'], exp['category'])
+                    )
+        finally:
+            if has_lock:
+                try:
+                    cursor.execute("SELECT pg_advisory_unlock(hashtext(%s))", (lock_key,))
+                except Exception:
+                    pass
 
 @router.get("/fixed")
 def get_fixed_expenses(month: Optional[int] = None, year: Optional[int] = None, current_user: dict = Depends(get_current_user)):
@@ -116,6 +195,8 @@ def get_fixed_expenses(month: Optional[int] = None, year: Optional[int] = None, 
         query += " ORDER BY id ASC"
         
         with conn.cursor() as cursor:
+            if month and year:
+                cleanup_duplicate_fixed_expenses(cursor, month, year)
             cursor.execute(query, tuple(params))
             return cursor.fetchall()
 
@@ -137,11 +218,17 @@ def copy_previous_fixed_expenses(month: int = Query(...), year: int = Query(...)
             if not prev:
                 raise HTTPException(status_code=400, detail="No hay gastos fijos de meses anteriores para copiar.")
             
-            # Clear target month to re-copy
+            # Limpiar mes destino para recopia
             cursor.execute("DELETE FROM fixed_expenses WHERE month = %s AND year = %s", (month, year))
             
             cursor.execute(
-                "SELECT description, amount, category FROM fixed_expenses WHERE month = %s AND year = %s",
+                """
+                SELECT DISTINCT ON (LOWER(TRIM(description)), category)
+                       description, amount, category 
+                FROM fixed_expenses 
+                WHERE month = %s AND year = %s
+                ORDER BY LOWER(TRIM(description)), category, id ASC
+                """,
                 (prev['month'], prev['year'])
             )
             prev_expenses = cursor.fetchall()

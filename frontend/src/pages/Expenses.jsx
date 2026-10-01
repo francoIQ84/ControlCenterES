@@ -308,7 +308,9 @@ export default function Expenses() {
 
   const loadData = async () => {
     setLoading(true)
-    await Promise.all([fetchSummary(), fetchFixed(), fetchVariable(), fetchIncomes(), fetchSalesList(), fetchVencimientos(), fetchForecast()])
+    // Cargar primero los gastos fijos para inicializar limpiamente el mes si es nuevo
+    await fetchFixed()
+    await Promise.all([fetchSummary(), fetchVariable(), fetchIncomes(), fetchSalesList(), fetchVencimientos(), fetchForecast()])
     setLoading(false)
   }
 
