@@ -147,7 +147,7 @@ export default async function Home(props: {
               )}
               <div className="relative h-60 w-full overflow-hidden rounded-xl bg-gray-50 mb-4 flex items-center justify-center p-2">
                 <img 
-                  src={p.images[0] || 'https://via.placeholder.com/400'} 
+                  src={p.images[0] || 'https://placehold.co/400'} 
                   alt={p.title}
                   className="max-h-full max-w-full object-contain group-hover:scale-105 transition-transform duration-300"
                 />

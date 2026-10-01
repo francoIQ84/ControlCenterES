@@ -139,7 +139,7 @@ export default function PlatformSettings() {
     } catch (err) {
       setTestResults(prev => ({
         ...prev,
-        [service]: { success: False, message: 'Error al contactar backend: ' + err.message }
+        [service]: { success: false, message: 'Error al contactar backend: ' + err.message }
       }))
     } finally {
       setTestingService(null)

@@ -88,6 +88,10 @@ export default function Customers() {
     whatsapp_chats: [],
     product_inquiries: []
   })
+  const [loading, setLoading] = useState(true)
+  const [syncingWa, setSyncingWa] = useState(false)
+  const [syncingMetaLeads, setSyncingMetaLeads] = useState(false)
+  const [analyzingInquiries, setAnalyzingInquiries] = useState(false)
 
   // Modal State for Manual Customer
   const [isModalOpen, setIsModalOpen] = useState(false)

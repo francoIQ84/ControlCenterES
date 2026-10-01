@@ -10,7 +10,7 @@ interface ProductImageGalleryProps {
 export default function ProductImageGallery({ images, title }: ProductImageGalleryProps) {
   const [selectedIdx, setSelectedIdx] = useState(0);
 
-  const mainImage = images[selectedIdx] || 'https://via.placeholder.com/800';
+  const mainImage = images[selectedIdx] || 'https://placehold.co/800';
 
   return (
     <div>

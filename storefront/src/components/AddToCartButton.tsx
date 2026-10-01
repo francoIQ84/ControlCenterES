@@ -15,7 +15,7 @@ export default function AddToCartButton({ product }: { product: any }) {
       title: product.title,
       price: product.price,
       qty: qty,
-      image: product.images[0] || 'https://via.placeholder.com/400'
+      image: product.images[0] || 'https://placehold.co/400'
     });
     setAdded(true);
     setTimeout(() => setAdded(false), 2000);

@@ -333,7 +333,7 @@ export default function BlogCMS() {
                     <tr key={post.id} style={{ borderBottom: '1px solid var(--border-color)' }}>
                       <td data-label="Portada" style={{ padding: '10px 15px', width: 70 }}>
                         <img
-                          src={post.cover_image || 'https://via.placeholder.com/60'}
+                          src={post.cover_image || 'https://placehold.co/60'}
                           alt={post.title}
                           style={{ width: 50, height: 50, objectFit: 'cover', borderRadius: 6, border: '1px solid var(--border-color)' }}
                         />

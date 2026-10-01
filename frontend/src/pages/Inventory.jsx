@@ -4174,7 +4174,7 @@ function ProductReadingRow({ p, isChannelEnabled, onPreviewImage }) {
       {/* 1. Foto / Imagen */}
       <td className="reading-cell-photo" style={{padding: '10px 12px', textAlign: 'center'}}>
         <img 
-          src={p.thumbnail || 'https://via.placeholder.com/60'} 
+          src={p.thumbnail || 'https://placehold.co/60'} 
           alt={p.title} 
           onClick={() => p.thumbnail && onPreviewImage(p.thumbnail)}
           style={{
@@ -4572,7 +4572,7 @@ function ProductRow({ p, onSave, onOpenGallery, onDraftChange, categories, categ
           </td>
           <td data-label="Imagen" className="sticky-col-left-2 cell-thumb" style={{padding: '5px 8px'}}>
             <img 
-              src={p.thumbnail || 'https://via.placeholder.com/35'} 
+              src={p.thumbnail || 'https://placehold.co/35'} 
               alt="thumb" 
               style={{width: 35, height: 35, objectFit: 'contain', borderRadius: 4, border: '1px solid var(--border-color)', backgroundColor: '#fff'}}
             />
@@ -5018,7 +5018,7 @@ function ProductRow({ p, onSave, onOpenGallery, onDraftChange, categories, categ
                   <span style={{fontSize: '0.8rem', fontWeight: 'bold'}}>Imagen Web</span>
                   <div style={{display: 'flex', gap: 10, alignItems: 'center'}}>
                     <img 
-                      src={useMeliImage ? (p.thumbnail || 'https://via.placeholder.com/150') : (customMainUrl || 'https://via.placeholder.com/150')} 
+                      src={useMeliImage ? (p.thumbnail || 'https://placehold.co/150') : (customMainUrl || 'https://placehold.co/150')} 
                       alt="Preview" 
                       style={{width: 60, height: 60, objectFit: 'contain', border: '1px solid var(--border-color)', borderRadius: 6, backgroundColor: '#fff'}}
                     />
@@ -5153,7 +5153,7 @@ function ProductRow({ p, onSave, onOpenGallery, onDraftChange, categories, categ
         </td>
         <td data-label="Imagen">
           <img 
-            src={p.thumbnail || 'https://via.placeholder.com/50'} 
+            src={p.thumbnail || 'https://placehold.co/50'} 
             alt="thumb" 
             style={{width: 50, height: 50, objectFit: 'contain', borderRadius: 4, border: '1px solid var(--border-color)', backgroundColor: '#fff'}}
           />
@@ -5454,7 +5454,7 @@ function ProductRow({ p, onSave, onOpenGallery, onDraftChange, categories, categ
                 
                 <div style={{display: 'flex', gap: 12, alignItems: 'center'}}>
                   <img 
-                    src={useMeliImage ? (p.thumbnail || 'https://via.placeholder.com/150') : (customMainUrl || 'https://via.placeholder.com/150')} 
+                    src={useMeliImage ? (p.thumbnail || 'https://placehold.co/150') : (customMainUrl || 'https://placehold.co/150')} 
                     alt="Preview" 
                     style={{width: 80, height: 80, objectFit: 'contain', border: '1px solid var(--border-color)', borderRadius: 6, backgroundColor: '#fff'}}
                   />
@@ -5871,7 +5871,7 @@ function QRScannerModal({ onClose, onStockUpdated }) {
           <div style={{ border: '1px solid var(--border-color)', borderRadius: 12, padding: 16, backgroundColor: 'rgba(0,0,0,0.02)', display: 'flex', flexDirection: 'column', gap: 15 }}>
             <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
               <img
-                src={scannedProduct.thumbnail || 'https://via.placeholder.com/60'}
+                src={scannedProduct.thumbnail || 'https://placehold.co/60'}
                 alt="Product"
                 style={{ width: 65, height: 65, objectFit: 'contain', borderRadius: 8, border: '1px solid var(--border-color)', backgroundColor: '#fff' }}
               />
