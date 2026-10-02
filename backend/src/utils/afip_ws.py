@@ -373,9 +373,66 @@ def get_last_invoice_number(token: str, sign: str, cuit: str, pto_vta: int, cbte
         
     raise Exception("Error al obtener último número de factura")
 
-def request_cae(token: str, sign: str, cuit: str, pto_vta: int, cbte_tipo: int, invoice_number: int, doc_tipo: int, doc_nro: int, amount: float, env: str, concept: int = 1):
+def resolve_condicion_iva_receptor_id(doc_tipo: int, iva_condition_str: str = None, cbte_tipo: int = 11) -> int:
+    """
+    Determines the CondicionIVAReceptorId according to ARCA RG 5616 (FEParamGetCondicionIvaReceptor):
+      1: IVA Responsable Inscripto
+      4: IVA Sujeto Exento
+      5: Consumidor Final
+      6: Responsable Monotributo
+      7: Sujeto No Categorizado
+      8: Proveedor del Exterior
+      9: Cliente del Exterior
+      10: IVA Liberado - Ley N° 19.640
+      13: Monotributista Social
+      15: IVA No Alcanzado
+      16: Monotributo Trabajador Independiente Promovido
+    """
+    cond_id = None
+    if iva_condition_str:
+        norm = str(iva_condition_str).lower().strip()
+        if "social" in norm:
+            cond_id = 13
+        elif "promovido" in norm:
+            cond_id = 16
+        elif "monotribut" in norm:
+            cond_id = 6
+        elif "inscripto" in norm:
+            cond_id = 1
+        elif "exento" in norm:
+            cond_id = 4
+        elif "no alcanzado" in norm:
+            cond_id = 15
+        elif "no categorizado" in norm:
+            cond_id = 7
+        elif "consumidor" in norm or "final" in norm:
+            cond_id = 5
+
+    if cond_id is None:
+        if doc_tipo == 80:  # CUIT
+            # For Factura A, default to RI (1)
+            cond_id = 1
+        else:
+            cond_id = 5  # Consumidor Final (DNI or unindexed)
+
+    # Validate compatibility against comprobante clase:
+    # Factura A (1), ND A (2), NC A (3) -> only RI (1) or Monotributo (6)
+    if cbte_tipo in (1, 2, 3):
+        if cond_id not in (1, 6):
+            cond_id = 1
+    # Factura B (6), ND B (7), NC B (8) -> cannot be RI (1)
+    elif cbte_tipo in (6, 7, 8):
+        if cond_id == 1:
+            cond_id = 5
+
+    return cond_id
+
+def request_cae(token: str, sign: str, cuit: str, pto_vta: int, cbte_tipo: int, invoice_number: int, doc_tipo: int, doc_nro: int, amount: float, env: str, concept: int = 1, condicion_iva_receptor_id: int = None):
     today_str = datetime.now().strftime("%Y%m%d")
     
+    if condicion_iva_receptor_id is None:
+        condicion_iva_receptor_id = resolve_condicion_iva_receptor_id(doc_tipo, cbte_tipo=cbte_tipo)
+
     # Calculate IVA breakdown for Factura A (CbteTipo 1)
     if cbte_tipo == 1:
         imp_neto = round(amount / 1.21, 2)
@@ -420,6 +477,7 @@ def request_cae(token: str, sign: str, cuit: str, pto_vta: int, cbte_tipo: int, 
             <ImpIVA>{imp_iva:.2f}</ImpIVA>
             <MonId>PES</MonId>
             <MonCotiz>1</MonCotiz>
+            <CondicionIVAReceptorId>{condicion_iva_receptor_id}</CondicionIVAReceptorId>
             {iva_xml}
           </FECAEDetRequest>
         </FeDetReq>
@@ -660,6 +718,10 @@ def create_invoice(order: dict):
 
         new_num = last_num + 1
         
+        # Resolve buyer IVA condition ID for ARCA RG 5616
+        buyer_iva_cond = buyer.get('iva_condition') or buyer.get('taxpayer_type')
+        cond_iva_id = resolve_condicion_iva_receptor_id(doc_tipo, buyer_iva_cond, actual_cbte_tipo)
+        
         # Request CAE from WSFE
         try:
             cae, cae_exp = request_cae(
@@ -673,7 +735,8 @@ def create_invoice(order: dict):
                 doc_nro=doc_nro,
                 amount=order['total_amount'],
                 env=env,
-                concept=concept
+                concept=concept,
+                condicion_iva_receptor_id=cond_iva_id
             )
         except Exception as cae_err:
             err_text = str(cae_err).lower()
@@ -691,7 +754,8 @@ def create_invoice(order: dict):
                     doc_nro=doc_nro,
                     amount=order['total_amount'],
                     env=env,
-                    concept=concept
+                    concept=concept,
+                    condicion_iva_receptor_id=cond_iva_id
                 )
             else:
                 raise
@@ -1099,4 +1163,40 @@ def consult_invoice(token: str, sign: str, cuit: str, pto_vta: int, cbte_tipo: i
         raise Exception(err_msg)
         
     raise Exception("No se pudo consultar el comprobante en AFIP")
+
+def get_condiciones_iva_receptor(env: str = "produccion", clase_cmp: str = ""):
+    """
+    Queries ARCA WSFEv1 FEParamGetCondicionIvaReceptor to get the official list
+    of permitted CondicionIVAReceptor values (RG 5616).
+    """
+    cuit_raw = database.get_setting('afip_cuit', '')
+    cuit = cuit_raw.replace("-", "").strip()
+    cert_path = "backend/data/afip/arca.crt" if os.path.exists("backend/data/afip/arca.crt") else "data/afip/arca.crt"
+    key_path = "backend/data/afip/arca.key" if os.path.exists("backend/data/afip/arca.key") else "data/afip/arca.key"
+    
+    token, sign = get_wsaa_token(cuit, cert_path, key_path, env, service="wsfe")
+    
+    clase_tag = f"<ClaseCmp>{clase_cmp}</ClaseCmp>" if clase_cmp else "<ClaseCmp></ClaseCmp>"
+    body = f"""<FEParamGetCondicionIvaReceptor xmlns="http://ar.gov.afip.dif.FEV1/">
+      <Auth>
+        <Token>{token}</Token>
+        <Sign>{sign}</Sign>
+        <Cuit>{cuit}</Cuit>
+      </Auth>
+      {clase_tag}
+    </FEParamGetCondicionIvaReceptor>"""
+    
+    root = call_wsfe("FEParamGetCondicionIvaReceptor", body, env)
+    condiciones = []
+    for item in root.findall(".//{http://ar.gov.afip.dif.FEV1/}CondicionIvaReceptor"):
+        id_node = item.find("{http://ar.gov.afip.dif.FEV1/}Id")
+        desc_node = item.find("{http://ar.gov.afip.dif.FEV1/}Desc")
+        cmp_clase_node = item.find("{http://ar.gov.afip.dif.FEV1/}Cmp_Clase")
+        if id_node is not None and desc_node is not None:
+            condiciones.append({
+                "id": int(id_node.text),
+                "desc": desc_node.text,
+                "cmp_clase": cmp_clase_node.text if cmp_clase_node is not None else ""
+            })
+    return condiciones
 

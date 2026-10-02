@@ -54,3 +54,20 @@ Si la venta proviene de **Mercado Libre**:
 1. El backend genera el PDF oficial con diseño profesional e información fiscal (CAE, Código de Barras, Vencimiento CAE).
 2. Se comunica con la API de Mercado Libre (`/orders/{order_id}/invoices`) y sube el PDF directamente.
 3. El comprador recibe la notificación oficial de Mercado Libre indicándole que su factura ya se encuentra disponible para descarga.
+
+---
+
+## 🏛️ Cumplimiento Normativo ARCA RG 5616 (`CondicionIVAReceptorId`)
+
+A partir de la **Resolución General Nº 5.616 de ARCA (ex AFIP)**, toda solicitud de autorización de comprobantes (`FECAESolicitar` / `FECAEDetRequest`) debe incluir obligatoriamente el campo **`CondicionIVAReceptorId`**.
+
+### Mapeo y Resolución Automática en ControlCenterES:
+El sistema resuelve automáticamente el ID oficial antes de solicitar el CAE:
+* **Consumidor Final (DNI o sin identificar):** Se asigna ID `5` (*Consumidor Final*).
+* **Clientes con CUIT:** A través de la consulta previa a `PersonaServiceA5` (`lookup_cuit`), se detecta la condición fiscal real del receptor:
+  * **Responsable Inscripto:** ID `1`
+  * **Responsable Monotributo:** ID `6`
+  * **IVA Sujeto Exento:** ID `4`
+  * **Monotributista Social:** ID `13`
+* **Guardrails de Compatibilidad:** Valida que el ID asignado sea admisible según la clase de comprobante (A, B o C), evitando el error de validación 10243 de ARCA.
+* **Consulta de Parámetros:** Método `get_condiciones_iva_receptor()` disponible para consultar en tiempo real las tablas vigentes vía `FEParamGetCondicionIvaReceptor`.

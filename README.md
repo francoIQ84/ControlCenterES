@@ -70,6 +70,7 @@ En el comercio moderno, gestionar Mercado Libre, una tienda online propia, factu
 - **Soporte Multicondición Fiscal**:
   - **Monotributo**: Emisión de **Factura C (`COD. 011`)**.
   - **Responsable Inscripto**: Emisión de **Factura B (`COD. 006`)** a Consumidores Finales y **Factura A (`COD. 001`)** a CUITs.
+- **Cumplimiento RG 5616 ARCA (`CondicionIVAReceptorId`)**: Integración estricta del campo obligatorio de condición frente al IVA del receptor en cada solicitud de autorización (`FECAEDetRequest`), con resolución automática según el tipo de cliente (Consumidor Final `5`, Responsable Inscripto `1`, Monotributo `6`, Exento `4`, Monotributista Social `13`) y guardrails de compatibilidad por clase de comprobante (evitando rechazos automáticos y errores 10242/10243).
 - **Facturación Masiva en Lote**: Emisión consecutiva de decenas de comprobantes con correlatividad oficial garantizada (`FECompUltimoAutorizado`), espaciado preventivo de resguardo y **botón de reintento con un solo clic** para órdenes fallidas.
 - **Caché Multi-Nivel del Ticket de Acceso (WSAA)**: Reutilización inteligente del Token y Sign durante sus 12 horas de validez (en RAM, archivo local y PostgreSQL), eliminando el error `El CEE ya posee un TA valido` y acelerando la emisión a 0 ms por comprobante.
 - **Consulta al Padrón AFIP en Tiempo Real (`PersonaServiceA5`)**: Al ingresar un CUIT, autocompleta la Razón Social, Domicilio Fiscal y la **Condición frente al IVA del Comprador**.

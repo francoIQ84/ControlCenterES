@@ -128,6 +128,13 @@ def main():
     if os.path.exists(backend_scheduler):
         sftp.put(backend_scheduler, '/var/www/controlcenter/backend/run_scheduler.py')
 
+    readme_path = os.path.join(LOCAL_DIR, 'README.md')
+    if os.path.exists(readme_path):
+        sftp.put(readme_path, '/var/www/controlcenter/README.md')
+    docs_path = os.path.join(LOCAL_DIR, 'docs')
+    if os.path.exists(docs_path):
+        upload_directory(sftp, docs_path, '/var/www/controlcenter/docs')
+
     # Detectar tag de versión git y subir version.txt
     import subprocess
     try:
