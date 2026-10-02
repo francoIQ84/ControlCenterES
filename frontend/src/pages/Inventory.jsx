@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { useSearchParams, useParams } from 'react-router-dom'
-import { Package, CloudOff, Cloud, RefreshCw, Save, QrCode, Camera, ExternalLink, Eye, EyeOff, Store, Search, X, Gauge, SlidersHorizontal, Plus, User, Sparkles } from 'lucide-react'
+import { Package, CloudOff, Cloud, RefreshCw, Save, QrCode, Camera, ExternalLink, Eye, EyeOff, Store, Search, X, Gauge, SlidersHorizontal, Plus, User, Sparkles, Zap } from 'lucide-react'
 import { Html5QrcodeScanner } from 'html5-qrcode'
 import MediaBrowser from '../components/MediaBrowser'
 import MeliOptimizer from './MeliOptimizer'
@@ -92,6 +92,8 @@ export default function Inventory() {
   const [hiddenFilter, setHiddenFilter] = useState('visible') // 'visible' | 'all' | 'hidden'
   const [outOfStockDays, setOutOfStockDays] = useState(null) // null | 7 | 14 | 30
   const [stockFilter, setStockFilter] = useState('ALL') // 'ALL' | 'IN_STOCK' | 'OUT_OF_STOCK' | 'CRITICAL'
+  const [fullFilter, setFullFilter] = useState('ALL') // 'ALL' | 'FULL' | 'NO_FULL'
+  const [isSyncingFull, setIsSyncingFull] = useState(false)
 
   const toggleReadingMode = () => {
     setIsReadingMode(prev => {
@@ -1112,6 +1114,10 @@ export default function Inventory() {
       if (stockFilter === 'OUT_OF_STOCK' && qty > 0) return false
       if (stockFilter === 'CRITICAL' && qty > minStock) return false
 
+      // 4. Mercado Full Filter
+      if (fullFilter === 'FULL' && (!p.is_full || p.is_full === 0)) return false
+      if (fullFilter === 'NO_FULL' && p.is_full === 1) return false
+
       return true
     })
 
@@ -1150,7 +1156,12 @@ export default function Inventory() {
       })
     }
     return sortableItems
-  }, [products, drafts, categoryFilter, stockFilter, sortConfig, listingHealth, query, categories])
+  }, [products, drafts, categoryFilter, stockFilter, fullFilter, sortConfig, listingHealth, query, categories])
+
+  const fullCount = React.useMemo(() => {
+    return products.filter(p => p.is_full === 1).length
+  }, [products])
+  const noFullCount = products.length - fullCount
 
   const handleToggleSelectProduct = (ml_id) => {
     setSelectedIds(prev => 
@@ -1249,6 +1260,50 @@ export default function Inventory() {
         setLoading(false)
       }
     } catch(e) {
+      alert("Error: " + e.message)
+      setLoading(false)
+    }
+  }
+
+  const handleSyncFull = async () => {
+    try {
+      setIsSyncingFull(true)
+      const res = await fetch('/api/inventory/sync-full', { method: 'POST' })
+      const data = await res.json()
+      if (res.ok) {
+        alert(data.message || "Estado de Mercado Full verificado con éxito")
+        fetchProducts()
+      } else {
+        alert("Error al verificar Mercado Full: " + (data.detail || data.message || "Error desconocido"))
+      }
+    } catch (e) {
+      alert("Error de conexión al verificar Mercado Full: " + e.message)
+    } finally {
+      setIsSyncingFull(false)
+    }
+  }
+
+  const handleBulkFull = async (is_full) => {
+    if (selectedIds.length === 0) return
+    const label = is_full === 1 ? "Mercado Full" : "Estándar (sin Full)"
+    if (!confirm(`¿Deseas marcar ${selectedIds.length} producto(s) como ${label}?`)) return
+    try {
+      setLoading(true)
+      const res = await fetch('/api/inventory/bulk-full', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ml_ids: selectedIds, is_full })
+      })
+      if (res.ok) {
+        const data = await res.json()
+        alert(data.message || "Operación realizada correctamente")
+        clearSelection()
+        fetchProducts()
+      } else {
+        alert("Error al aplicar cambio masivo")
+        setLoading(false)
+      }
+    } catch (e) {
       alert("Error: " + e.message)
       setLoading(false)
     }
@@ -1889,6 +1944,21 @@ export default function Inventory() {
                   <option value="OUT_OF_STOCK">❌ Sin Stock (=0)</option>
                   <option value="CRITICAL">⚠️ Crítico (≤ Mínimo)</option>
                 </select>
+
+                <select
+                  value={fullFilter}
+                  onChange={e => setFullFilter(e.target.value)}
+                  style={{
+                    border: fullFilter !== 'ALL' ? '1px solid #00a650' : undefined,
+                    color: fullFilter !== 'ALL' ? '#00a650' : undefined,
+                    fontWeight: fullFilter !== 'ALL' ? 700 : undefined
+                  }}
+                  title="Filtrar por logística Mercado Full"
+                >
+                  <option value="ALL">⚡ Logística: Todas</option>
+                  <option value="FULL">⚡ Mercado Full ({fullCount})</option>
+                  <option value="NO_FULL">📦 Sin Full ({noFullCount})</option>
+                </select>
               </div>
             )}
 
@@ -2257,6 +2327,30 @@ export default function Inventory() {
               <option value="IN_STOCK">✅ Con Stock (&gt;0)</option>
               <option value="OUT_OF_STOCK">❌ Sin Stock (=0)</option>
               <option value="CRITICAL">⚠️ Stock Crítico (≤ Mínimo)</option>
+            </select>
+            )}
+            {!isSimpleView && (
+            <select
+              value={fullFilter}
+              onChange={e => setFullFilter(e.target.value)}
+              className="search-input"
+              style={{
+                width: 175,
+                marginBottom: 0,
+                padding: '6px 10px',
+                fontSize: '0.82rem',
+                borderRadius: 6,
+                border: fullFilter !== 'ALL' ? '1px solid #00a650' : '1px solid var(--border-color)',
+                backgroundColor: fullFilter !== 'ALL' ? 'rgba(0, 166, 80, 0.15)' : 'var(--bg-card)',
+                color: fullFilter !== 'ALL' ? '#00a650' : 'var(--text-primary)',
+                fontWeight: fullFilter !== 'ALL' ? '700' : 'normal',
+                cursor: 'pointer'
+              }}
+              title="Filtrar publicaciones por logística Mercado Full"
+            >
+              <option value="ALL">⚡ Logística: Todas</option>
+              <option value="FULL">⚡ Mercado Full ({fullCount})</option>
+              <option value="NO_FULL">📦 Sin Full ({noFullCount})</option>
             </select>
             )}
             {!isSimpleView && (
@@ -2649,6 +2743,36 @@ export default function Inventory() {
               title="Programar tiempo de elaboración / disponibilidad de stock semanal para Mercado Libre"
             >
               📅 Disponibilidad MeLi
+            </button>
+            )}
+            {!isSimpleView && isChannelEnabled('meli') && (
+            <button 
+              type="button"
+              className="btn" 
+              style={{
+                backgroundColor: 'rgba(0, 166, 80, 0.12)', 
+                color: '#00a650', 
+                border: '1px solid rgba(0, 166, 80, 0.35)', 
+                display: 'flex', 
+                alignItems: 'center', 
+                gap: 5,
+                fontWeight: 600
+              }} 
+              onClick={handleSyncFull}
+              disabled={isSyncingFull}
+              title="Verificar y sincronizar qué publicaciones están en Mercado Envíos Full desde Mercado Libre"
+            >
+              {isSyncingFull ? (
+                <>
+                  <RefreshCw size={14} className="animate-spin" />
+                  <span>Verificando Full...</span>
+                </>
+              ) : (
+                <>
+                  <Zap size={14} fill="#00a650" strokeWidth={0} />
+                  <span>Sincro Full</span>
+                </>
+              )}
             </button>
             )}
             {!isSimpleView && (
@@ -3077,6 +3201,26 @@ export default function Inventory() {
                   title="Activar Sincro MeLi"
                 >
                   <Cloud size={13} /> Sincro MeLi
+                </button>
+
+                <button 
+                  type="button" 
+                  className="btn" 
+                  style={{padding: '5px 10px', fontSize: '0.78rem', backgroundColor: 'rgba(0, 166, 80, 0.15)', color: '#00a650', border: '1px solid rgba(0, 166, 80, 0.4)', display: 'inline-flex', alignItems: 'center', gap: 4, fontWeight: 700}}
+                  onClick={() => handleBulkFull(1)}
+                  title="Marcar publicaciones seleccionadas como Mercado Envíos Full (almacenadas en depósito MeLi)"
+                >
+                  <Zap size={12} fill="#00a650" strokeWidth={0} /> Marcar Full
+                </button>
+
+                <button 
+                  type="button" 
+                  className="btn" 
+                  style={{padding: '5px 10px', fontSize: '0.78rem', backgroundColor: 'var(--bg-card)', color: 'var(--text-secondary)', border: '1px solid var(--border-color)', display: 'inline-flex', alignItems: 'center', gap: 4}}
+                  onClick={() => handleBulkFull(0)}
+                  title="Quitar marca de Mercado Full de los productos seleccionados"
+                >
+                  Quitar Full
                 </button>
 
                 <div style={{width: 1, height: 20, backgroundColor: 'var(--border-color)', margin: '0 4px'}} />
@@ -4151,6 +4295,7 @@ function ProductReadingRow({ p, isChannelEnabled, onPreviewImage }) {
       <div className="reading-stock-badge stock-none" title="Sin unidades disponibles en inventario">
         <span style={{fontSize: '0.9rem'}}>🔴</span>
         <span>AGOTADO</span>
+        {p.is_full === 1 && <span style={{fontSize: '0.68rem', opacity: 0.9, display: 'block', color: '#00a650', fontWeight: 700}}>⚡ Bodega Full</span>}
       </div>
     )
   } else if (stock <= minStock) {
@@ -4158,6 +4303,7 @@ function ProductReadingRow({ p, isChannelEnabled, onPreviewImage }) {
       <div className="reading-stock-badge stock-low" title={`Stock crítico: quedan ${stock} unidades (mínimo: ${minStock})`}>
         <span style={{fontSize: '0.9rem'}}>🟡</span>
         <span>¡ÚLTIMAS {stock} u.!</span>
+        {p.is_full === 1 && <span style={{fontSize: '0.68rem', opacity: 0.9, display: 'block', color: '#00a650', fontWeight: 700}}>⚡ Bodega Full</span>}
       </div>
     )
   } else {
@@ -4165,6 +4311,7 @@ function ProductReadingRow({ p, isChannelEnabled, onPreviewImage }) {
       <div className="reading-stock-badge stock-high" title={`Stock disponible: ${stock} unidades`}>
         <span style={{fontSize: '0.9rem'}}>🟢</span>
         <span>{stock} en stock</span>
+        {p.is_full === 1 && <span style={{fontSize: '0.68rem', opacity: 0.9, display: 'block', color: '#00a650', fontWeight: 700}}>⚡ Bodega Full</span>}
       </div>
     )
   }
@@ -4244,6 +4391,27 @@ function ProductReadingRow({ p, isChannelEnabled, onPreviewImage }) {
               fontWeight: 500
             }}>
               Sin Categoría
+            </span>
+          )}
+          {p.is_full === 1 && (
+            <span 
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 3,
+                padding: '2px 7px',
+                fontSize: '0.70rem',
+                fontWeight: 800,
+                borderRadius: 4,
+                backgroundColor: '#00a650',
+                color: '#ffffff',
+                letterSpacing: '0.3px',
+                boxShadow: '0 1px 3px rgba(0, 166, 80, 0.35)',
+                cursor: 'help'
+              }}
+              title="⚡ Mercado Envíos FULL: Publicación almacenada en centro de distribución de MeLi (Bodega Full)."
+            >
+              <Zap size={10} fill="#ffffff" strokeWidth={0} /> FULL (Bodega MeLi)
             </span>
           )}
         </div>
@@ -4701,6 +4869,27 @@ function ProductRow({ p, onSave, onOpenGallery, onDraftChange, categories, categ
               )}
               {isChannelEnabled('meli') && p.status !== 'local' && (
                 <>
+                  {p.is_full === 1 && (
+                    <span 
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 3,
+                        padding: '1px 6px',
+                        fontSize: '0.65rem',
+                        fontWeight: 800,
+                        borderRadius: 3,
+                        backgroundColor: '#00a650',
+                        color: '#ffffff',
+                        letterSpacing: '0.3px',
+                        boxShadow: '0 1px 3px rgba(0, 166, 80, 0.35)',
+                        cursor: 'help'
+                      }}
+                      title="⚡ Mercado Envíos FULL: Publicación almacenada y despachada desde el centro de distribución de Mercado Libre. El stock físico se encuentra en las bodegas de MeLi."
+                    >
+                      <Zap size={10} fill="#ffffff" strokeWidth={0} /> FULL
+                    </span>
+                  )}
                   <a 
                     href={p.permalink || `https://articulo.mercadolibre.com.ar/${p.ml_id.replace('MLA', 'MLA-')}`} 
                     target="_blank" 
@@ -4831,18 +5020,41 @@ function ProductRow({ p, onSave, onOpenGallery, onDraftChange, categories, categ
               type="number" 
               value={qty} 
               onChange={e => setQty(e.target.value)} 
+              title={p.is_full === 1 ? 'Producto en Mercado Envíos Full (el stock físico se administra en las bodegas de MeLi)' : undefined}
               style={{
                 width: 72, 
                 padding: '5px 6px', 
                 fontSize: '1.08rem', 
                 fontWeight: 700, 
                 textAlign: 'center', 
-                border: '1px solid var(--border-color)', 
+                border: p.is_full === 1 ? '2px solid #00a650' : '1px solid var(--border-color)', 
                 borderRadius: 6, 
-                backgroundColor: 'var(--bg-card)', 
+                backgroundColor: p.is_full === 1 ? 'rgba(0, 166, 80, 0.06)' : 'var(--bg-card)', 
                 color: 'var(--text-primary)'
               }}
             />
+            {p.is_full === 1 && (
+              <div 
+                title="⚡ Stock en centro de distribución Full (Mercado Libre)"
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 3,
+                  marginTop: 3,
+                  fontSize: '0.66rem',
+                  fontWeight: 800,
+                  color: '#00a650',
+                  backgroundColor: 'rgba(0, 166, 80, 0.12)',
+                  padding: '1px 5px',
+                  borderRadius: 4,
+                  whiteSpace: 'nowrap'
+                }}
+              >
+                <Zap size={9} fill="#00a650" color="#00a650" />
+                Bodega Full
+              </div>
+            )}
             {p.prev_stock !== null && p.prev_stock !== undefined && (
               <div style={{fontSize: '0.80rem', fontWeight: 600, color: 'var(--text-secondary)', marginTop: 3, textAlign: 'center'}}>
                 ant: {p.prev_stock}
@@ -5212,6 +5424,27 @@ function ProductRow({ p, onSave, onOpenGallery, onDraftChange, categories, categ
             )}
             {isChannelEnabled('meli') && p.status !== 'local' && (
               <>
+                {p.is_full === 1 && (
+                  <span 
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 3,
+                      padding: '2px 8px',
+                      fontSize: '0.72rem',
+                      fontWeight: 800,
+                      borderRadius: 4,
+                      backgroundColor: '#00a650',
+                      color: '#ffffff',
+                      letterSpacing: '0.4px',
+                      boxShadow: '0 1px 3px rgba(0, 166, 80, 0.35)',
+                      cursor: 'help'
+                    }}
+                    title="⚡ Mercado Envíos FULL: Publicación almacenada y despachada desde el centro de distribución de Mercado Libre. El stock físico se encuentra en las bodegas de MeLi."
+                  >
+                    <Zap size={11} fill="#ffffff" strokeWidth={0} /> FULL
+                  </span>
+                )}
                 <a 
                   href={p.permalink || `https://articulo.mercadolibre.com.ar/${p.ml_id.replace('MLA', 'MLA-')}`} 
                   target="_blank" 
@@ -5361,7 +5594,44 @@ function ProductRow({ p, onSave, onOpenGallery, onDraftChange, categories, categ
         }}>
           <div style={{display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center'}}>
             <label style={{fontSize: '0.85rem', color: 'var(--text-secondary)'}}>Stock:
-              <input type="number" value={qty} onChange={e => setQty(e.target.value)} style={{width: 72, marginLeft: 5, padding: '5px 6px', fontSize: '1.08rem', fontWeight: 700, textAlign: 'center'}}/>
+              <input 
+                type="number" 
+                value={qty} 
+                onChange={e => setQty(e.target.value)} 
+                title={p.is_full === 1 ? 'Producto en Mercado Envíos Full (el stock físico se administra en las bodegas de MeLi)' : undefined}
+                style={{
+                  width: 72, 
+                  marginLeft: 5, 
+                  padding: '5px 6px', 
+                  fontSize: '1.08rem', 
+                  fontWeight: 700, 
+                  textAlign: 'center',
+                  border: p.is_full === 1 ? '2px solid #00a650' : '1px solid var(--border-color)',
+                  backgroundColor: p.is_full === 1 ? 'rgba(0, 166, 80, 0.06)' : undefined
+                }}
+              />
+              {p.is_full === 1 && (
+                <div 
+                  title="⚡ Stock en centro de distribución Full (Mercado Libre)"
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 3,
+                    marginTop: 3,
+                    fontSize: '0.66rem',
+                    fontWeight: 800,
+                    color: '#00a650',
+                    backgroundColor: 'rgba(0, 166, 80, 0.12)',
+                    padding: '1px 5px',
+                    borderRadius: 4,
+                    whiteSpace: 'nowrap'
+                  }}
+                >
+                  <Zap size={9} fill="#00a650" color="#00a650" />
+                  Bodega Full
+                </div>
+              )}
               {p.prev_stock !== null && p.prev_stock !== undefined && <div style={{fontSize: '0.80rem', fontWeight: 600, color: 'var(--text-secondary)', marginTop: 3, textAlign: 'center'}}>ant: {p.prev_stock}</div>}
             </label>
             <label style={{fontSize: '0.85rem', color: 'var(--text-secondary)'}}>Precio ML:

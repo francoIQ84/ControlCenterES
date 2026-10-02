@@ -213,6 +213,8 @@ def init_db():
             cursor.execute('ALTER TABLE products_cache ADD COLUMN IF NOT EXISTS price_tn REAL DEFAULT 0.0;')
             cursor.execute('ALTER TABLE products_cache ADD COLUMN IF NOT EXISTS created_by_user TEXT;')
             cursor.execute('ALTER TABLE products_cache ADD COLUMN IF NOT EXISTS updated_by_user TEXT;')
+            cursor.execute('ALTER TABLE products_cache ADD COLUMN IF NOT EXISTS logistic_type TEXT;')
+            cursor.execute('ALTER TABLE products_cache ADD COLUMN IF NOT EXISTS is_full INTEGER DEFAULT 0;')
 
             # Orders cache table
             cursor.execute('''
@@ -798,7 +800,7 @@ def save_products(products_list):
     with get_connection() as conn:
         with conn.cursor() as cursor:
             for p in products_list:
-                cursor.execute("SELECT cost_price, cost_meli, price_web, images, description, description_meli, use_meli_description, is_web_active, visits_web FROM products_cache WHERE ml_id = %s", (p['ml_id'],))
+                cursor.execute("SELECT cost_price, cost_meli, price_web, images, description, description_meli, use_meli_description, is_web_active, visits_web, logistic_type, is_full FROM products_cache WHERE ml_id = %s", (p['ml_id'],))
                 row = cursor.fetchone()
                 cost_price = row['cost_price'] if row else 0.0
                 cost_meli = p.get('cost_meli') if (p.get('cost_meli') is not None and p.get('cost_meli') > 0) else (row['cost_meli'] if row else 0.0)
@@ -809,13 +811,15 @@ def save_products(products_list):
                 use_meli_description = p.get('use_meli_description') if p.get('use_meli_description') is not None else (row['use_meli_description'] if (row and row.get('use_meli_description') is not None) else 1)
                 is_web_active = row['is_web_active'] if row else 0
                 visits_web = row['visits_web'] if row else p.get('visits_web', 0)
+                logistic_type = p.get('logistic_type') if p.get('logistic_type') is not None else (row.get('logistic_type') if (row and 'logistic_type' in row) else '')
+                is_full = p.get('is_full') if p.get('is_full') is not None else (row.get('is_full', 0) if (row and 'is_full' in row and row.get('is_full') is not None) else 0)
                 
                 visits_meli = p.get('visits_meli', 0)
 
                 cursor.execute('''
                     INSERT INTO products_cache 
-                    (ml_id, title, price, available_quantity, cost_price, cost_meli, permalink, thumbnail, status, last_sync, price_web, images, description, description_meli, use_meli_description, is_web_active, visits_meli, visits_web)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    (ml_id, title, price, available_quantity, cost_price, cost_meli, permalink, thumbnail, status, last_sync, price_web, images, description, description_meli, use_meli_description, is_web_active, visits_meli, visits_web, logistic_type, is_full)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     ON CONFLICT (tenant_id, ml_id) DO UPDATE SET
                         title = EXCLUDED.title,
                         price = CASE WHEN COALESCE(products_cache.sync_meli, 1) = 1 THEN EXCLUDED.price ELSE products_cache.price END,
@@ -830,9 +834,12 @@ def save_products(products_list):
                         last_sync = EXCLUDED.last_sync,
                         visits_meli = EXCLUDED.visits_meli,
                         images = CASE WHEN products_cache.images IS NULL OR products_cache.images = '' THEN EXCLUDED.images ELSE products_cache.images END,
-                        description_meli = CASE WHEN EXCLUDED.description_meli IS NOT NULL AND EXCLUDED.description_meli != '' THEN EXCLUDED.description_meli ELSE products_cache.description_meli END
+                        description_meli = CASE WHEN EXCLUDED.description_meli IS NOT NULL AND EXCLUDED.description_meli != '' THEN EXCLUDED.description_meli ELSE products_cache.description_meli END,
+                        logistic_type = COALESCE(EXCLUDED.logistic_type, products_cache.logistic_type),
+                        is_full = COALESCE(EXCLUDED.is_full, products_cache.is_full)
                 ''', (p['ml_id'], p['title'], p['price'], p['available_quantity'], cost_price, cost_meli, 
-                      p.get('permalink'), p.get('thumbnail'), p.get('status'), now, price_web, images, description, description_meli, use_meli_description, is_web_active, visits_meli, visits_web))
+                      p.get('permalink'), p.get('thumbnail'), p.get('status'), now, price_web, images, description, description_meli, use_meli_description, is_web_active, visits_meli, visits_web,
+                      logistic_type, is_full))
 
 def get_product_by_id(ml_id):
     with get_connection() as conn:
@@ -848,8 +855,8 @@ def create_product(product_data):
         with conn.cursor() as cursor:
             cursor.execute('''
                 INSERT INTO products_cache 
-                (ml_id, title, price, available_quantity, cost_price, cost_meli, permalink, thumbnail, status, last_sync, price_web, images, description, description_meli, use_meli_description, is_web_active, visits_meli, visits_web, category_id, sync_meli, min_stock, featured_order, cash_discount_pct, last_modified, created_by_user, updated_by_user)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                (ml_id, title, price, available_quantity, cost_price, cost_meli, permalink, thumbnail, status, last_sync, price_web, images, description, description_meli, use_meli_description, is_web_active, visits_meli, visits_web, category_id, sync_meli, min_stock, featured_order, cash_discount_pct, last_modified, created_by_user, updated_by_user, logistic_type, is_full)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             ''', (
                 product_data['ml_id'],
                 product_data['title'],
@@ -876,7 +883,9 @@ def create_product(product_data):
                 product_data.get('cash_discount_pct', 0.0),
                 now,
                 creator,
-                updater
+                updater,
+                product_data.get('logistic_type', ''),
+                product_data.get('is_full', 0)
             ))
 
 def update_product_cost(ml_id, cost_price, cost_meli, updated_by_user=None):
@@ -1092,6 +1101,7 @@ def get_all_products(query=None, status_filter=None, is_web_active=None, categor
                            COALESCE(p.cash_discount_pct, 0.0) as cash_discount_pct,
                            COALESCE(p.price_tn, 0.0) as price_tn,
                            p.created_by_user, p.updated_by_user,
+                           COALESCE(p.is_full, 0) as is_full, p.logistic_type,
                            c.name as category_name, c.slug as category_slug
                      FROM products_cache p
                      LEFT JOIN categories c ON p.category_id = c.id
@@ -1108,6 +1118,7 @@ def get_all_products(query=None, status_filter=None, is_web_active=None, categor
                            COALESCE(p.cash_discount_pct, 0.0) as cash_discount_pct,
                            COALESCE(p.price_tn, 0.0) as price_tn,
                            p.created_by_user, p.updated_by_user,
+                           COALESCE(p.is_full, 0) as is_full, p.logistic_type,
                            c.name as category_name, c.slug as category_slug
                      FROM products_cache p
                      LEFT JOIN categories c ON p.category_id = c.id
@@ -1173,6 +1184,7 @@ def get_product_by_ml_id(ml_id: str):
                        COALESCE(p.cash_discount_pct, 0.0) as cash_discount_pct,
                        COALESCE(p.price_tn, 0.0) as price_tn,
                        p.created_by_user, p.updated_by_user,
+                       COALESCE(p.is_full, 0) as is_full, p.logistic_type,
                        c.name as category_name, c.slug as category_slug
                  FROM products_cache p
                  LEFT JOIN categories c ON p.category_id = c.id
@@ -1180,6 +1192,28 @@ def get_product_by_ml_id(ml_id: str):
             """, (ml_id,))
             row = cursor.fetchone()
             return dict(row) if row else None
+
+def update_product_logistic_type(ml_id: str, logistic_type: str, is_full: int):
+    now = datetime.now().isoformat()
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute("""
+                UPDATE products_cache 
+                SET logistic_type = %s, is_full = %s, last_modified = %s
+                WHERE ml_id = %s
+            """, (logistic_type, int(is_full), now, ml_id))
+
+def bulk_update_products_full(ml_ids: list[str], is_full: int):
+    now = datetime.now().isoformat()
+    log_type = 'fulfillment' if is_full else 'drop_off'
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            for mid in ml_ids:
+                cursor.execute("""
+                    UPDATE products_cache 
+                    SET is_full = %s, logistic_type = %s, last_modified = %s
+                    WHERE ml_id = %s
+                """, (int(is_full), log_type, now, mid))
 
 
 # --- Tiendanube Operations ---

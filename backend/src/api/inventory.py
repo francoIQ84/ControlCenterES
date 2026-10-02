@@ -25,6 +25,8 @@ class UpdateProductRequest(BaseModel):
     featured_order: int = 0
     is_hidden: int = 0
     cash_discount_pct: Optional[float] = 0.0
+    is_full: Optional[int] = 0
+    logistic_type: Optional[str] = ""
 
 class CreateProductRequest(BaseModel):
     title: str
@@ -44,6 +46,8 @@ class CreateProductRequest(BaseModel):
     min_stock: int = 0
     featured_order: int = 0
     cash_discount_pct: Optional[float] = 0.0
+    is_full: Optional[int] = 0
+    logistic_type: Optional[str] = ""
 
 @router.get("/")
 def get_products(query: str = None, status: str = None, show_hidden: bool = False, is_hidden: Optional[int] = None, out_of_stock_30d: bool = False, out_of_stock_days: Optional[int] = None, summary: bool = False):
@@ -65,6 +69,14 @@ def sync_product_costs():
         return {"success": True, "count": count, "message": f"Costos de Mercado Libre actualizados desde la API para {count} publicaciones."}
     else:
         raise HTTPException(status_code=500, detail=f"Error al actualizar costos: {count}")
+
+@router.post("/sync-full")
+def sync_full_status_endpoint():
+    ok, msg = meli_api.sync_full_status()
+    if ok:
+        return {"success": True, "message": msg}
+    else:
+        raise HTTPException(status_code=500, detail=f"Error al verificar estado Full: {msg}")
 
 @router.post("/")
 def create_product(payload: CreateProductRequest, current_user: dict = Depends(get_current_user)):
@@ -116,7 +128,9 @@ def create_product(payload: CreateProductRequest, current_user: dict = Depends(g
         "min_stock": payload.min_stock,
         "cash_discount_pct": payload.cash_discount_pct or 0.0,
         "created_by_user": operator,
-        "updated_by_user": operator
+        "updated_by_user": operator,
+        "logistic_type": payload.logistic_type or "",
+        "is_full": payload.is_full or 0
     }
 
     try:
@@ -143,6 +157,8 @@ class BulkUpdateItem(BaseModel):
     featured_order: int = 0
     is_hidden: int = 0
     cash_discount_pct: Optional[float] = 0.0
+    is_full: Optional[int] = 0
+    logistic_type: Optional[str] = ""
 
 class BulkUpdateRequest(BaseModel):
     items: list[BulkUpdateItem]
@@ -166,6 +182,18 @@ def toggle_product_hidden(ml_id: str, payload: Optional[ToggleHiddenRequest] = N
         
     database.update_product_hidden_status(ml_id, new_hidden)
     return {"success": True, "ml_id": ml_id, "is_hidden": new_hidden, "message": "Estado de visibilidad actualizado correctamente"}
+
+@router.put("/{ml_id}/toggle-full")
+def toggle_product_full_endpoint(ml_id: str):
+    product = database.get_product_by_ml_id(ml_id)
+    if not product:
+        raise HTTPException(status_code=404, detail="Producto no encontrado")
+    current_full = product.get('is_full', 0) or 0
+    new_full = 0 if current_full == 1 else 1
+    log_type = 'fulfillment' if new_full == 1 else 'drop_off'
+    database.update_product_logistic_type(ml_id, log_type, new_full)
+    msg = f"Publicación {ml_id} marcada como {'Mercado Full' if new_full == 1 else 'Estándar (sin Full)'}"
+    return {"success": True, "ml_id": ml_id, "is_full": new_full, "message": msg}
 
 class UpdateStatusRequest(BaseModel):
     status: str
@@ -291,6 +319,18 @@ def bulk_category_products(payload: BulkCategoryRequest):
         raise HTTPException(status_code=400, detail="No se especificaron productos")
     database.bulk_update_category(payload.ml_ids, payload.category_id)
     return {"success": True, "count": len(payload.ml_ids), "message": f"Categoría actualizada para {len(payload.ml_ids)} productos."}
+
+class BulkFullRequest(BaseModel):
+    ml_ids: list[str]
+    is_full: int = 1
+
+@router.put("/bulk-full")
+def bulk_full_products(payload: BulkFullRequest):
+    if not payload.ml_ids:
+        raise HTTPException(status_code=400, detail="No se especificaron productos para la acción masiva")
+    database.bulk_update_products_full(payload.ml_ids, payload.is_full)
+    label = "Mercado Full" if payload.is_full == 1 else "Estándar (sin Full)"
+    return {"success": True, "count": len(payload.ml_ids), "message": f"{len(payload.ml_ids)} productos actualizados a {label} correctamente."}
 
 @router.put("/bulk-sync-meli")
 def bulk_sync_meli_products(payload: BulkSyncMeliRequest):

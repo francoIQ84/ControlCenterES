@@ -673,7 +673,9 @@ def sync_products():
                 'thumbnail': MOCK_THUMBNAILS[i % len(MOCK_THUMBNAILS)],
                 'status': 'active' if qty > 0 else 'paused',
                 'visits_meli': random.randint(50, 1500),
-                'visits_web': random.randint(10, 800)
+                'visits_web': random.randint(10, 800),
+                'logistic_type': 'fulfillment' if (i % 3 == 0) else 'drop_off',
+                'is_full': 1 if (i % 3 == 0) else 0
             })
         database.save_products(products)
         return True, len(products)
@@ -814,6 +816,16 @@ def sync_products():
                     images_str = ",".join(images_list)
                     high_res_thumb = get_high_res_image_url(item.get('thumbnail') or (images_list[0] if images_list else ''))
                     
+                    shipping_info = item.get('shipping') or {}
+                    log_type = shipping_info.get('logistic_type') or item.get('logistic_type') or ''
+                    item_tags = item.get('tags') or []
+                    shipping_tags = shipping_info.get('tags') or []
+                    is_full = 1 if (
+                        log_type == 'fulfillment' 
+                        or 'fulfillment' in item_tags 
+                        or 'fulfillment' in shipping_tags
+                    ) else 0
+
                     products.append({
                         'ml_id': item['id'],
                         'title': item['title'],
@@ -825,7 +837,9 @@ def sync_products():
                         'status': item.get('status'),
                         'visits_meli': visits_dict.get(item['id'], 0),
                         'images': images_str,
-                        'description_meli': desc_dict.get(item['id'], '')
+                        'description_meli': desc_dict.get(item['id'], ''),
+                        'logistic_type': log_type,
+                        'is_full': is_full
                     })
                         
         database.save_products(products)
@@ -1237,15 +1251,35 @@ def update_stock_and_price(ml_id, quantity, price):
         return True, "Actualizado en modo Demo exitosamente"
         
     path = f"/items/{ml_id}"
-    data = {
-        "price": float(price),
-        "available_quantity": int(quantity)
-    }
+
+    # Verificar si la publicación está en Mercado Envíos Full (bodega de Mercado Libre)
+    is_full = False
+    try:
+        prod = database.get_product_by_ml_id(ml_id)
+        if prod and (prod.get('is_full') == 1 or prod.get('logistic_type') == 'fulfillment'):
+            is_full = True
+    except Exception:
+        pass
+
+    if is_full:
+        # En Mercado Full el stock físico se gestiona en el centro de distribución de MeLi.
+        # Enviar available_quantity en la API resulta en error 400 de Mercado Libre.
+        # Sincronizamos solo el precio a Mercado Libre y actualizamos el stock local en base de datos.
+        data = {
+            "price": float(price)
+        }
+    else:
+        data = {
+            "price": float(price),
+            "available_quantity": int(quantity)
+        }
     
     try:
         response = api_request("PUT", path, json_data=data)
         if response.status_code == 200:
             database.update_product_stock_price(ml_id, quantity, price)
+            if is_full:
+                return True, "Precio sincronizado en Mercado Libre (Stock gestionado por Mercado Full en depósito MeLi)"
             return True, "Sincronizado con Mercado Libre"
         else:
             err_data = format_meli_error_payload(response.status_code, response.text)
@@ -2353,3 +2387,59 @@ def update_item_attributes(ml_id: str, attributes: list) -> tuple:
         return False, f"Error al actualizar atributos ({code}): {err}"
     except Exception as e:
         return False, f"Excepción al actualizar atributos: {e}"
+
+
+def sync_full_status() -> tuple:
+    """
+    Sincroniza o actualiza rápidamente la información logística (Mercado Full)
+    para todos los artículos de Mercado Libre existentes en el sistema.
+    """
+    if is_demo_mode():
+        products = database.get_all_products(include_hidden=True)
+        updated = 0
+        full_cnt = 0
+        for i, p in enumerate(products):
+            is_f = 1 if (i % 3 == 0) else 0
+            l_type = 'fulfillment' if is_f else 'drop_off'
+            database.update_product_logistic_type(p['ml_id'], l_type, is_f)
+            updated += 1
+            if is_f:
+                full_cnt += 1
+        return True, f"Modo Demo: {updated} productos verificados ({full_cnt} en Mercado Full)"
+
+    products = database.get_all_products(include_hidden=True)
+    ml_items = [p['ml_id'] for p in products if p.get('ml_id', '').startswith('MLA')]
+    if not ml_items:
+        return True, "No se encontraron publicaciones de Mercado Libre para verificar."
+
+    total = len(ml_items)
+    updated_count = 0
+    full_count = 0
+    for i in range(0, total, 20):
+        chunk = ml_items[i:i+20]
+        try:
+            res = api_request("GET", "/items", params={'ids': ",".join(chunk), 'attributes': 'id,shipping,tags'})
+            if res and res.status_code == 200:
+                for item_wrapper in res.json():
+                    item = item_wrapper.get('body', {})
+                    item_id = item.get('id')
+                    if not item_id:
+                        continue
+                    shipping = item.get('shipping') or {}
+                    log_type = shipping.get('logistic_type') or item.get('logistic_type') or ''
+                    item_tags = item.get('tags') or []
+                    shipping_tags = shipping.get('tags') or []
+                    is_full = 1 if (
+                        log_type == 'fulfillment' 
+                        or 'fulfillment' in item_tags 
+                        or 'fulfillment' in shipping_tags
+                    ) else 0
+                    database.update_product_logistic_type(item_id, log_type, is_full)
+                    updated_count += 1
+                    if is_full:
+                        full_count += 1
+        except Exception as e:
+            print(f"[sync_full_status] Error procesando chunk {chunk}: {e}")
+
+    return True, f"Verificación completada: {updated_count} publicaciones revisadas, {full_count} están en Mercado Full."
+
