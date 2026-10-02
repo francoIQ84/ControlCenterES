@@ -47,3 +47,9 @@ check_*.py
 *.env
 .vps_credentials.json
 vps_credentials.json
+scratch/
+run_vps_migration_*.py
+quotes/
+backend/quotes/
+
+

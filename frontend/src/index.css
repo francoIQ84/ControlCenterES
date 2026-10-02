@@ -1570,6 +1570,70 @@ input, select {
     background-color: var(--bg-card-hover) !important;
   }
 
+  /* Desktop Inventory Sticky Header Bar on Scroll */
+  .inventory-sticky-header-anchor {
+    position: sticky;
+    top: 0;
+    z-index: 35;
+    height: 0;
+    overflow: visible;
+  }
+
+  .inventory-sticky-header-wrapper {
+    background: var(--bg-card);
+    border-bottom: 2px solid var(--border-color);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+    overflow-x: hidden;
+    scrollbar-width: none;
+    border-top-left-radius: 8px;
+    border-top-right-radius: 8px;
+    animation: stickyHeaderFadeIn 0.12s ease-out;
+  }
+
+  .inventory-sticky-header-wrapper::-webkit-scrollbar {
+    display: none;
+  }
+
+  body.light-mode .inventory-sticky-header-wrapper {
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.08);
+  }
+
+  .inventory-sticky-header-wrapper .data-table {
+    margin: 0;
+    border-collapse: collapse;
+  }
+
+  .inventory-sticky-header-wrapper .data-table th {
+    background-color: var(--bg-card) !important;
+    padding: 6px 8px;
+    font-size: 0.82rem;
+    white-space: nowrap;
+    border-bottom: none;
+  }
+
+  .inventory-sticky-header-wrapper th.sticky-col-left-1,
+  .inventory-sticky-header-wrapper th.sticky-col-left-2 {
+    background-color: var(--bg-card) !important;
+    z-index: 38 !important;
+  }
+
+  @keyframes stickyHeaderFadeIn {
+    from {
+      opacity: 0;
+      transform: translateY(-2px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @media (max-width: 768px) {
+    .inventory-sticky-header-anchor {
+      display: none !important;
+    }
+  }
+
   /* Desktop Inventory Sticky Scrollbar Bar */
   .inventory-sticky-scrollbar-bar {
     position: sticky;

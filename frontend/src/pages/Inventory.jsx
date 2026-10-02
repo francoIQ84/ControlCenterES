@@ -1494,11 +1494,15 @@ export default function Inventory() {
 
   const tableWrapperRef = useRef(null)
   const bottomScrollbarRef = useRef(null)
+  const stickyHeaderWrapperRef = useRef(null)
+  const realTheadRef = useRef(null)
   const isSyncingScroll = useRef(false)
   const [canScrollLeft, setCanScrollLeft] = useState(false)
   const [canScrollRight, setCanScrollRight] = useState(false)
   const [hasTableOverflow, setHasTableOverflow] = useState(false)
   const [tableScrollWidth, setTableScrollWidth] = useState(0)
+  const [columnWidths, setColumnWidths] = useState([])
+  const [isHeaderStuck, setIsHeaderStuck] = useState(false)
 
   const updateTableScrollState = useCallback(() => {
     const el = tableWrapperRef.current
@@ -1510,6 +1514,12 @@ export default function Inventory() {
     setCanScrollLeft(scrollLeft > 4)
     setCanScrollRight(scrollLeft < maxScroll - 4)
     setTableScrollWidth(scrollWidth)
+
+    if (realTheadRef.current && realTheadRef.current.firstElementChild) {
+      const ths = Array.from(realTheadRef.current.firstElementChild.children)
+      const widths = ths.map(th => th.offsetWidth)
+      setColumnWidths(widths)
+    }
   }, [])
 
   useEffect(() => {
@@ -1523,6 +1533,9 @@ export default function Inventory() {
       isSyncingScroll.current = true
       if (bottomScrollbarRef.current) {
         bottomScrollbarRef.current.scrollLeft = el.scrollLeft
+      }
+      if (stickyHeaderWrapperRef.current) {
+        stickyHeaderWrapperRef.current.scrollLeft = el.scrollLeft
       }
       requestAnimationFrame(() => {
         isSyncingScroll.current = false
@@ -1541,13 +1554,78 @@ export default function Inventory() {
       el.removeEventListener('scroll', onScroll)
       ro.disconnect()
     }
-  }, [updateTableScrollState, desktopZoom, viewMode, isReadingMode, sortedProducts?.length])
+  }, [updateTableScrollState, desktopZoom, viewMode, isReadingMode, sortedProducts?.length, loading])
+
+  // Detect when the real table header has scrolled above the content area viewport
+  const checkHeaderSticky = useCallback(() => {
+    const thead = realTheadRef.current
+    const tableWrapper = tableWrapperRef.current
+    if (!thead || !tableWrapper) {
+      setIsHeaderStuck(false)
+      return
+    }
+
+    const theadRect = thead.getBoundingClientRect()
+    const tableRect = tableWrapper.getBoundingClientRect()
+    const scrollContainer = tableWrapper.closest('.content-area') || null
+    const containerTop = scrollContainer ? scrollContainer.getBoundingClientRect().top : 60
+
+    // Sticking condition: real thead top reached containerTop and table bottom has not scrolled past
+    const isStuck = theadRect.top <= containerTop && tableRect.bottom > containerTop + 50
+    setIsHeaderStuck(isStuck)
+  }, [])
+
+  useEffect(() => {
+    const tableWrapper = tableWrapperRef.current
+    const scrollContainer = tableWrapper ? (tableWrapper.closest('.content-area') || window) : window
+
+    const onContainerScroll = () => {
+      checkHeaderSticky()
+    }
+
+    checkHeaderSticky()
+    scrollContainer.addEventListener('scroll', onContainerScroll, { passive: true })
+    window.addEventListener('scroll', onContainerScroll, { passive: true })
+    window.addEventListener('resize', onContainerScroll, { passive: true })
+
+    return () => {
+      scrollContainer.removeEventListener('scroll', onContainerScroll)
+      window.removeEventListener('scroll', onContainerScroll)
+      window.removeEventListener('resize', onContainerScroll)
+    }
+  }, [checkHeaderSticky, sortedProducts?.length, viewMode, isReadingMode, loading])
+
+  // Sync scrollLeft immediately when header becomes stuck
+  useEffect(() => {
+    if (isHeaderStuck && stickyHeaderWrapperRef.current && tableWrapperRef.current) {
+      stickyHeaderWrapperRef.current.scrollLeft = tableWrapperRef.current.scrollLeft
+    }
+  }, [isHeaderStuck])
 
   const handleBottomScroll = (e) => {
     if (isSyncingScroll.current) return
     isSyncingScroll.current = true
+    const sLeft = e.currentTarget.scrollLeft
     if (tableWrapperRef.current) {
-      tableWrapperRef.current.scrollLeft = e.currentTarget.scrollLeft
+      tableWrapperRef.current.scrollLeft = sLeft
+    }
+    if (stickyHeaderWrapperRef.current) {
+      stickyHeaderWrapperRef.current.scrollLeft = sLeft
+    }
+    requestAnimationFrame(() => {
+      isSyncingScroll.current = false
+    })
+  }
+
+  const handleStickyHeaderScroll = (e) => {
+    if (isSyncingScroll.current) return
+    isSyncingScroll.current = true
+    const sLeft = e.currentTarget.scrollLeft
+    if (tableWrapperRef.current) {
+      tableWrapperRef.current.scrollLeft = sLeft
+    }
+    if (bottomScrollbarRef.current) {
+      bottomScrollbarRef.current.scrollLeft = sLeft
     }
     requestAnimationFrame(() => {
       isSyncingScroll.current = false
@@ -1564,6 +1642,164 @@ export default function Inventory() {
       e.preventDefault()
       tableWrapperRef.current.scrollLeft += e.deltaY || e.deltaX
     }
+  }
+
+  const renderThead = (isSticky = false) => {
+    const widths = isSticky ? columnWidths : null
+
+    if (isReadingMode) {
+      return (
+        <thead ref={!isSticky ? realTheadRef : null}>
+          <tr>
+            <th style={{ width: widths?.[0] ? `${widths[0]}px` : 70, minWidth: widths?.[0] ? `${widths[0]}px` : 70, maxWidth: widths?.[0] ? `${widths[0]}px` : undefined, textAlign: 'center', boxSizing: 'border-box' }}>
+              FOTO
+            </th>
+            <th 
+              onClick={() => requestSort('title')} 
+              style={{ cursor: 'pointer', userSelect: 'none', width: widths?.[1] ? `${widths[1]}px` : undefined, minWidth: widths?.[1] ? `${widths[1]}px` : 260, maxWidth: widths?.[1] ? `${widths[1]}px` : undefined, boxSizing: 'border-box' }}
+            >
+              PRODUCTO / CÓDIGO {getSortIcon('title')}
+            </th>
+            <th 
+              onClick={() => requestSort('stock')} 
+              style={{ cursor: 'pointer', userSelect: 'none', width: widths?.[2] ? `${widths[2]}px` : 170, minWidth: widths?.[2] ? `${widths[2]}px` : 170, maxWidth: widths?.[2] ? `${widths[2]}px` : undefined, textAlign: 'center', boxSizing: 'border-box' }}
+            >
+              STOCK DISPONIBLE {getSortIcon('stock')}
+            </th>
+            <th style={{ width: widths?.[3] ? `${widths[3]}px` : 170, minWidth: widths?.[3] ? `${widths[3]}px` : 170, maxWidth: widths?.[3] ? `${widths[3]}px` : undefined, textAlign: 'center', boxSizing: 'border-box' }}>
+              💵 PRECIO EFECTIVO
+            </th>
+            <th style={{ width: widths?.[4] ? `${widths[4]}px` : 160, minWidth: widths?.[4] ? `${widths[4]}px` : 160, maxWidth: widths?.[4] ? `${widths[4]}px` : undefined, textAlign: 'center', boxSizing: 'border-box' }}>
+              💳 LISTA / TARJETA
+            </th>
+            {isChannelEnabled('meli') && (
+              <th style={{ width: widths?.[5] ? `${widths[5]}px` : 130, minWidth: widths?.[5] ? `${widths[5]}px` : 130, maxWidth: widths?.[5] ? `${widths[5]}px` : undefined, textAlign: 'center', boxSizing: 'border-box' }}>
+                🛍️ MERCADO LIBRE
+              </th>
+            )}
+            <th style={{ 
+              width: widths?.[isChannelEnabled('meli') ? 6 : 5] ? `${widths[isChannelEnabled('meli') ? 6 : 5]}px` : 110, 
+              minWidth: widths?.[isChannelEnabled('meli') ? 6 : 5] ? `${widths[isChannelEnabled('meli') ? 6 : 5]}px` : 110, 
+              maxWidth: widths?.[isChannelEnabled('meli') ? 6 : 5] ? `${widths[isChannelEnabled('meli') ? 6 : 5]}px` : undefined, 
+              textAlign: 'center', 
+              boxSizing: 'border-box' 
+            }}>
+              ESTADO
+            </th>
+          </tr>
+        </thead>
+      )
+    }
+
+    if (viewMode === 'compact') {
+      return (
+        <thead ref={!isSticky ? realTheadRef : null}>
+          <tr>
+            <th className="sticky-col-left-1" style={{ width: widths?.[0] ? `${widths[0]}px` : 35, minWidth: widths?.[0] ? `${widths[0]}px` : 35, maxWidth: widths?.[0] ? `${widths[0]}px` : undefined, textAlign: 'center', boxSizing: 'border-box' }}>
+              <input 
+                type="checkbox" 
+                checked={isAllVisibleSelected}
+                ref={el => { if (el) el.indeterminate = isSomeVisibleSelected }}
+                onChange={handleToggleSelectAll}
+                style={{ cursor: 'pointer' }}
+                title="Seleccionar / Deseleccionar todos los visibles"
+              />
+            </th>
+            <th className="sticky-col-left-2" style={{ width: widths?.[1] ? `${widths[1]}px` : 45, minWidth: widths?.[1] ? `${widths[1]}px` : 45, maxWidth: widths?.[1] ? `${widths[1]}px` : undefined, boxSizing: 'border-box' }}>
+              IMG
+            </th>
+            <th 
+              onClick={() => requestSort('title')} 
+              style={{ cursor: 'pointer', userSelect: 'none', width: widths?.[2] ? `${widths[2]}px` : undefined, minWidth: widths?.[2] ? `${widths[2]}px` : 220, maxWidth: widths?.[2] ? `${widths[2]}px` : undefined, boxSizing: 'border-box' }}
+            >
+              Detalle{getSortIcon('title')}
+            </th>
+            <th 
+              onClick={() => requestSort('status')} 
+              style={{ cursor: 'pointer', userSelect: 'none', width: widths?.[3] ? `${widths[3]}px` : 95, minWidth: widths?.[3] ? `${widths[3]}px` : 95, maxWidth: widths?.[3] ? `${widths[3]}px` : undefined, boxSizing: 'border-box' }} 
+              title="Ordenar por Estado de Mercado Libre"
+            >
+              Estado ML{getSortIcon('status')}
+            </th>
+            <th 
+              onClick={() => requestSort('quality')} 
+              style={{ cursor: 'pointer', userSelect: 'none', width: widths?.[4] ? `${widths[4]}px` : 85, minWidth: widths?.[4] ? `${widths[4]}px` : 85, maxWidth: widths?.[4] ? `${widths[4]}px` : undefined, textAlign: 'center', boxSizing: 'border-box' }} 
+              title="Objetivos de calidad pendientes. Ordenar dos veces para ver las peores primero."
+            >
+              Calidad{getSortIcon('quality')}
+            </th>
+            <th 
+              onClick={() => requestSort('stock')} 
+              style={{ cursor: 'pointer', userSelect: 'none', width: widths?.[5] ? `${widths[5]}px` : 80, minWidth: widths?.[5] ? `${widths[5]}px` : 80, maxWidth: widths?.[5] ? `${widths[5]}px` : undefined, textAlign: 'center', boxSizing: 'border-box' }} 
+              title="Ordenar por Stock"
+            >
+              Stock{getSortIcon('stock')}
+            </th>
+            <th style={{ width: widths?.[6] ? `${widths[6]}px` : 105, minWidth: widths?.[6] ? `${widths[6]}px` : 105, maxWidth: widths?.[6] ? `${widths[6]}px` : undefined, textAlign: 'center', boxSizing: 'border-box' }}>
+              P. ML
+            </th>
+            <th style={{ width: widths?.[7] ? `${widths[7]}px` : 105, minWidth: widths?.[7] ? `${widths[7]}px` : 105, maxWidth: widths?.[7] ? `${widths[7]}px` : undefined, textAlign: 'center', boxSizing: 'border-box' }}>
+              P. Web
+            </th>
+            <th style={{ width: widths?.[8] ? `${widths[8]}px` : 105, minWidth: widths?.[8] ? `${widths[8]}px` : 105, maxWidth: widths?.[8] ? `${widths[8]}px` : undefined, textAlign: 'center', boxSizing: 'border-box' }}>
+              C. Base
+            </th>
+            <th style={{ width: widths?.[9] ? `${widths[9]}px` : 100, minWidth: widths?.[9] ? `${widths[9]}px` : 100, maxWidth: widths?.[9] ? `${widths[9]}px` : undefined, textAlign: 'center', boxSizing: 'border-box' }}>
+              C. ML ⓘ
+            </th>
+            <th style={{ width: widths?.[10] ? `${widths[10]}px` : 130, minWidth: widths?.[10] ? `${widths[10]}px` : 130, maxWidth: widths?.[10] ? `${widths[10]}px` : undefined, textAlign: 'center', boxSizing: 'border-box' }} title="Precio y descuento para cobro en efectivo en el local físico (No visible en la web)">
+              💵 P. Efectivo
+            </th>
+            <th 
+              onClick={() => requestSort('is_web_active')} 
+              style={{ cursor: 'pointer', userSelect: 'none', width: widths?.[11] ? `${widths[11]}px` : 90, minWidth: widths?.[11] ? `${widths[11]}px` : 90, maxWidth: widths?.[11] ? `${widths[11]}px` : undefined, textAlign: 'center', boxSizing: 'border-box' }} 
+              title="Ordenar por Estado de Tienda Web (Activo/Desactivo)"
+            >
+              Estado Web{getSortIcon('is_web_active')}
+            </th>
+            <th style={{ width: widths?.[12] ? `${widths[12]}px` : 105, minWidth: widths?.[12] ? `${widths[12]}px` : 105, maxWidth: widths?.[12] ? `${widths[12]}px` : undefined, textAlign: 'center', boxSizing: 'border-box' }}>
+              Acciones
+            </th>
+          </tr>
+        </thead>
+      )
+    }
+
+    // Detailed mode
+    return (
+      <thead ref={!isSticky ? realTheadRef : null}>
+        <tr>
+          <th className="sticky-col-left-1" style={{ width: widths?.[0] ? `${widths[0]}px` : 35, minWidth: widths?.[0] ? `${widths[0]}px` : 35, maxWidth: widths?.[0] ? `${widths[0]}px` : undefined, textAlign: 'center', boxSizing: 'border-box' }}>
+            <input 
+              type="checkbox" 
+              checked={isAllVisibleSelected}
+              ref={el => { if (el) el.indeterminate = isSomeVisibleSelected }}
+              onChange={handleToggleSelectAll}
+              style={{ cursor: 'pointer' }}
+              title="Seleccionar / Deseleccionar todos los visibles"
+            />
+          </th>
+          <th className="sticky-col-left-2" style={{ width: widths?.[1] ? `${widths[1]}px` : undefined, minWidth: widths?.[1] ? `${widths[1]}px` : undefined, maxWidth: widths?.[1] ? `${widths[1]}px` : undefined, boxSizing: 'border-box' }}>
+            IMG
+          </th>
+          <th onClick={() => requestSort('title')} style={{ cursor: 'pointer', userSelect: 'none', width: widths?.[2] ? `${widths[2]}px` : undefined, minWidth: widths?.[2] ? `${widths[2]}px` : undefined, maxWidth: widths?.[2] ? `${widths[2]}px` : undefined, boxSizing: 'border-box' }}>
+            Detalle{getSortIcon('title')}
+          </th>
+          <th onClick={() => requestSort('status')} style={{ cursor: 'pointer', userSelect: 'none', width: widths?.[3] ? `${widths[3]}px` : undefined, minWidth: widths?.[3] ? `${widths[3]}px` : undefined, maxWidth: widths?.[3] ? `${widths[3]}px` : undefined, boxSizing: 'border-box' }}>
+            Estado ML{getSortIcon('status')}
+          </th>
+          <th onClick={() => requestSort('stock')} style={{ cursor: 'pointer', userSelect: 'none', width: widths?.[4] ? `${widths[4]}px` : undefined, minWidth: widths?.[4] ? `${widths[4]}px` : undefined, maxWidth: widths?.[4] ? `${widths[4]}px` : undefined, boxSizing: 'border-box' }}>
+            Stock & Precios{getSortIcon('stock')}
+          </th>
+          <th onClick={() => requestSort('is_web_active')} style={{ cursor: 'pointer', userSelect: 'none', width: widths?.[5] ? `${widths[5]}px` : undefined, minWidth: widths?.[5] ? `${widths[5]}px` : undefined, maxWidth: widths?.[5] ? `${widths[5]}px` : undefined, boxSizing: 'border-box' }}>
+            Estado Web / Tienda{getSortIcon('is_web_active')}
+          </th>
+          <th style={{ width: widths?.[6] ? `${widths[6]}px` : undefined, minWidth: widths?.[6] ? `${widths[6]}px` : undefined, maxWidth: widths?.[6] ? `${widths[6]}px` : undefined, boxSizing: 'border-box' }}>
+            Acción
+          </th>
+        </tr>
+      </thead>
+    )
   }
 
   return (
@@ -3240,6 +3476,29 @@ export default function Inventory() {
       )}
 
       <div className="card table-card">
+        {/* Floating Sticky Table Header (Active when scrolled past top) */}
+        {isHeaderStuck && !loading && sortedProducts.length > 0 && (
+          <div className="inventory-sticky-header-anchor">
+            <div 
+              className="inventory-sticky-header-wrapper"
+              ref={stickyHeaderWrapperRef}
+              onWheel={handleTableWheel}
+              onScroll={handleStickyHeaderScroll}
+              style={{ zoom: isMobile ? 1 : desktopZoom }}
+            >
+              <table 
+                className={`data-table ${isReadingMode ? 'reading-mode-table' : ''}`}
+                style={{ 
+                  width: tableScrollWidth ? `${tableScrollWidth}px` : '100%',
+                  tableLayout: 'fixed'
+                }}
+              >
+                {renderThead(true)}
+              </table>
+            </div>
+          </div>
+        )}
+
         {loading ? <p>Cargando...</p> : (
           isReadingMode ? (
             <div 
@@ -3249,31 +3508,7 @@ export default function Inventory() {
               style={{ zoom: isMobile ? 1 : desktopZoom }}
             >
               <table className="data-table reading-mode-table">
-                <thead>
-                  <tr>
-                    <th style={{width: 70, textAlign: 'center'}}>FOTO</th>
-                    <th onClick={() => requestSort('title')} style={{cursor: 'pointer', userSelect: 'none', minWidth: 260}}>
-                      PRODUCTO / CÓDIGO {getSortIcon('title')}
-                    </th>
-                    <th onClick={() => requestSort('stock')} style={{cursor: 'pointer', userSelect: 'none', width: 170, textAlign: 'center'}}>
-                      STOCK DISPONIBLE {getSortIcon('stock')}
-                    </th>
-                    <th style={{width: 170, textAlign: 'center'}}>
-                      💵 PRECIO EFECTIVO
-                    </th>
-                    <th style={{width: 160, textAlign: 'center'}}>
-                      💳 LISTA / TARJETA
-                    </th>
-                    {isChannelEnabled('meli') && (
-                      <th style={{width: 130, textAlign: 'center'}}>
-                        🛍️ MERCADO LIBRE
-                      </th>
-                    )}
-                    <th style={{width: 110, textAlign: 'center'}}>
-                      ESTADO
-                    </th>
-                  </tr>
-                </thead>
+                {renderThead(false)}
                 <tbody>
                   {sortedProducts.length === 0 ? (
                     <tr>
@@ -3286,7 +3521,7 @@ export default function Inventory() {
                         </div>
                         {query && (
                           <button 
-                            type="button"
+                            type="button" 
                             className="btn" 
                             onClick={() => setQuery('')}
                             style={{marginTop: 15, backgroundColor: 'var(--accent-blue)', color: '#fff', padding: '8px 16px', borderRadius: 8}}
@@ -3318,53 +3553,7 @@ export default function Inventory() {
             >
               {canScrollRight && <div className="table-scroll-hint-right" />}
               <table className="data-table">
-                <thead>
-                  {viewMode === 'compact' ? (
-                    <tr>
-                      <th className="sticky-col-left-1" style={{width: 35, textAlign: 'center'}}>
-                        <input 
-                          type="checkbox" 
-                          checked={isAllVisibleSelected}
-                          ref={el => { if (el) el.indeterminate = isSomeVisibleSelected }}
-                          onChange={handleToggleSelectAll}
-                          style={{cursor: 'pointer'}}
-                          title="Seleccionar / Deseleccionar todos los visibles"
-                        />
-                      </th>
-                      <th className="sticky-col-left-2" style={{width: 45}}>IMG</th>
-                      <th onClick={() => requestSort('title')} style={{cursor: 'pointer', userSelect: 'none', minWidth: 220}}>Detalle{getSortIcon('title')}</th>
-                      <th onClick={() => requestSort('status')} style={{cursor: 'pointer', userSelect: 'none', width: 95}} title="Ordenar por Estado de Mercado Libre">Estado ML{getSortIcon('status')}</th>
-                      <th onClick={() => requestSort('quality')} style={{cursor: 'pointer', userSelect: 'none', width: 85, textAlign: 'center'}} title="Objetivos de calidad pendientes. Ordenar dos veces para ver las peores primero.">Calidad{getSortIcon('quality')}</th>
-                      <th onClick={() => requestSort('stock')} style={{cursor: 'pointer', userSelect: 'none', width: 80, textAlign: 'center'}} title="Ordenar por Stock">Stock{getSortIcon('stock')}</th>
-                      <th style={{width: 105, textAlign: 'center'}}>P. ML</th>
-                      <th style={{width: 105, textAlign: 'center'}}>P. Web</th>
-                      <th style={{width: 105, textAlign: 'center'}}>C. Base</th>
-                      <th style={{width: 100, textAlign: 'center'}}>C. ML ⓘ</th>
-                      <th style={{width: 130, textAlign: 'center'}} title="Precio y descuento para cobro en efectivo en el local físico (No visible en la web)">💵 P. Efectivo</th>
-                      <th onClick={() => requestSort('is_web_active')} style={{cursor: 'pointer', userSelect: 'none', width: 90, textAlign: 'center'}} title="Ordenar por Estado de Tienda Web (Activo/Desactivo)">Estado Web{getSortIcon('is_web_active')}</th>
-                      <th style={{width: 105, textAlign: 'center'}}>Acciones</th>
-                    </tr>
-                  ) : (
-                    <tr>
-                      <th className="sticky-col-left-1" style={{width: 35, textAlign: 'center'}}>
-                        <input 
-                          type="checkbox" 
-                          checked={isAllVisibleSelected}
-                          ref={el => { if (el) el.indeterminate = isSomeVisibleSelected }}
-                          onChange={handleToggleSelectAll}
-                          style={{cursor: 'pointer'}}
-                          title="Seleccionar / Deseleccionar todos los visibles"
-                        />
-                      </th>
-                      <th className="sticky-col-left-2">IMG</th>
-                      <th onClick={() => requestSort('title')} style={{cursor: 'pointer', userSelect: 'none'}}>Detalle{getSortIcon('title')}</th>
-                      <th onClick={() => requestSort('status')} style={{cursor: 'pointer', userSelect: 'none'}}>Estado ML{getSortIcon('status')}</th>
-                      <th onClick={() => requestSort('stock')} style={{cursor: 'pointer', userSelect: 'none'}}>Stock & Precios{getSortIcon('stock')}</th>
-                      <th onClick={() => requestSort('is_web_active')} style={{cursor: 'pointer', userSelect: 'none'}}>Estado Web / Tienda{getSortIcon('is_web_active')}</th>
-                      <th>Acción</th>
-                    </tr>
-                  )}
-                </thead>
+                {renderThead(false)}
                 <tbody>
                   {sortedProducts.map(p => (
                     <ProductRow 
