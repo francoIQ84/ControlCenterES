@@ -436,7 +436,7 @@ def export_catalog_to_tn(
 
     for idx, p in enumerate(products, start=1):
         ml_id = p["ml_id"]
-        title = p["title"]
+        title = (p.get("title_web") or "").strip() or p["title"]
 
         if progress_callback:
             progress_callback(
@@ -564,6 +564,21 @@ def update_tn_price(tn_product_id: str, tn_variant_id: str, new_price: float) ->
     ok, res = api_request("PUT", f"products/{tn_product_id}/variants/{tn_variant_id}", json_data=payload)
     if ok:
         return True, f"Precio de variante #{tn_variant_id} actualizado a ${new_price:.2f}"
+    return False, str(res)
+
+
+def update_tn_name(tn_product_id: str, new_name: str) -> Tuple[bool, str]:
+    """Actualiza el nombre del producto en Tiendanube."""
+    if is_demo_mode():
+        return True, "Nombre actualizado en modo DEMO"
+
+    if not tn_product_id or not new_name:
+        return False, "Faltan identificadores de Tiendanube o nuevo nombre"
+
+    payload = {"name": {"es": str(new_name).strip()}}
+    ok, res = api_request("PUT", f"products/{tn_product_id}", json_data=payload)
+    if ok:
+        return True, f"Nombre de producto #{tn_product_id} actualizado a '{new_name}'"
     return False, str(res)
 
 

@@ -215,6 +215,7 @@ def init_db():
             cursor.execute('ALTER TABLE products_cache ADD COLUMN IF NOT EXISTS updated_by_user TEXT;')
             cursor.execute('ALTER TABLE products_cache ADD COLUMN IF NOT EXISTS logistic_type TEXT;')
             cursor.execute('ALTER TABLE products_cache ADD COLUMN IF NOT EXISTS is_full INTEGER DEFAULT 0;')
+            cursor.execute("ALTER TABLE products_cache ADD COLUMN IF NOT EXISTS title_web TEXT DEFAULT '';")
 
             # Orders cache table
             cursor.execute('''
@@ -855,8 +856,8 @@ def create_product(product_data):
         with conn.cursor() as cursor:
             cursor.execute('''
                 INSERT INTO products_cache 
-                (ml_id, title, price, available_quantity, cost_price, cost_meli, permalink, thumbnail, status, last_sync, price_web, images, description, description_meli, use_meli_description, is_web_active, visits_meli, visits_web, category_id, sync_meli, min_stock, featured_order, cash_discount_pct, last_modified, created_by_user, updated_by_user, logistic_type, is_full)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                (ml_id, title, price, available_quantity, cost_price, cost_meli, permalink, thumbnail, status, last_sync, price_web, images, description, description_meli, use_meli_description, is_web_active, visits_meli, visits_web, category_id, sync_meli, min_stock, featured_order, cash_discount_pct, last_modified, created_by_user, updated_by_user, logistic_type, is_full, title_web)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             ''', (
                 product_data['ml_id'],
                 product_data['title'],
@@ -885,7 +886,8 @@ def create_product(product_data):
                 creator,
                 updater,
                 product_data.get('logistic_type', ''),
-                product_data.get('is_full', 0)
+                product_data.get('is_full', 0),
+                product_data.get('title_web', '')
             ))
 
 def update_product_cost(ml_id, cost_price, cost_meli, updated_by_user=None):
@@ -924,7 +926,7 @@ def update_product_stock_price(ml_id, quantity, price, updated_by_user=None):
             else:
                 cursor.execute("UPDATE products_cache SET available_quantity = %s, price = %s, prev_stock = %s, prev_price = %s, last_modified = %s WHERE ml_id = %s", (quantity, price, p_stock, p_price, now, ml_id))
 
-def update_product_web_details(ml_id, price_web, images, description, is_web_active, category_id=None, sync_meli=1, min_stock=0, featured_order=0, use_meli_description=1, description_meli=None, cash_discount_pct=None, updated_by_user=None):
+def update_product_web_details(ml_id, price_web, images, description, is_web_active, category_id=None, sync_meli=1, min_stock=0, featured_order=0, use_meli_description=1, description_meli=None, cash_discount_pct=None, updated_by_user=None, title_web=None):
     now = datetime.now().isoformat()
     with get_connection() as conn:
         with conn.cursor() as cursor:
@@ -937,15 +939,15 @@ def update_product_web_details(ml_id, price_web, images, description, is_web_act
             if description_meli is not None:
                 cursor.execute('''
                     UPDATE products_cache 
-                    SET price_web = %s, images = %s, description = %s, is_web_active = %s, category_id = %s, sync_meli = %s, min_stock = %s, featured_order = %s, use_meli_description = %s, description_meli = %s, prev_price_web = %s, cash_discount_pct = COALESCE(%s, cash_discount_pct, 0.0), last_modified = %s, updated_by_user = COALESCE(%s, updated_by_user)
+                    SET price_web = %s, images = %s, description = %s, is_web_active = %s, category_id = %s, sync_meli = %s, min_stock = %s, featured_order = %s, use_meli_description = %s, description_meli = %s, prev_price_web = %s, cash_discount_pct = COALESCE(%s, cash_discount_pct, 0.0), last_modified = %s, updated_by_user = COALESCE(%s, updated_by_user), title_web = COALESCE(%s, title_web, '')
                     WHERE ml_id = %s
-                ''', (price_web, images, description, is_web_active, category_id, sync_meli, min_stock, featured_order, use_meli_description, description_meli, p_web, cash_discount_pct, now, updated_by_user, ml_id))
+                ''', (price_web, images, description, is_web_active, category_id, sync_meli, min_stock, featured_order, use_meli_description, description_meli, p_web, cash_discount_pct, now, updated_by_user, title_web, ml_id))
             else:
                 cursor.execute('''
                     UPDATE products_cache 
-                    SET price_web = %s, images = %s, description = %s, is_web_active = %s, category_id = %s, sync_meli = %s, min_stock = %s, featured_order = %s, use_meli_description = %s, prev_price_web = %s, cash_discount_pct = COALESCE(%s, cash_discount_pct, 0.0), last_modified = %s, updated_by_user = COALESCE(%s, updated_by_user)
+                    SET price_web = %s, images = %s, description = %s, is_web_active = %s, category_id = %s, sync_meli = %s, min_stock = %s, featured_order = %s, use_meli_description = %s, prev_price_web = %s, cash_discount_pct = COALESCE(%s, cash_discount_pct, 0.0), last_modified = %s, updated_by_user = COALESCE(%s, updated_by_user), title_web = COALESCE(%s, title_web, '')
                     WHERE ml_id = %s
-                ''', (price_web, images, description, is_web_active, category_id, sync_meli, min_stock, featured_order, use_meli_description, p_web, cash_discount_pct, now, updated_by_user, ml_id))
+                ''', (price_web, images, description, is_web_active, category_id, sync_meli, min_stock, featured_order, use_meli_description, p_web, cash_discount_pct, now, updated_by_user, title_web, ml_id))
 
 def set_product_updated_by(ml_id: str, updated_by_user: str):
     now = datetime.now().isoformat()
@@ -1097,6 +1099,7 @@ def get_all_products(query=None, status_filter=None, is_web_active=None, categor
                            p.status, p.last_sync, p.price_web, p.is_web_active, 
                            p.visits_meli, p.visits_web, p.category_id, p.sync_meli, p.min_stock, p.featured_order, p.last_modified,
                            COALESCE(p.is_hidden, 0) as is_hidden,
+                           COALESCE(p.title_web, '') as title_web,
                            p.tn_id, p.tn_variant_id, COALESCE(p.sync_tn, 1) as sync_tn,
                            COALESCE(p.cash_discount_pct, 0.0) as cash_discount_pct,
                            COALESCE(p.price_tn, 0.0) as price_tn,
@@ -1113,6 +1116,7 @@ def get_all_products(query=None, status_filter=None, is_web_active=None, categor
                            p.status, p.last_sync, p.price_web, p.images, p.description, p.is_web_active, 
                            p.visits_meli, p.visits_web, p.category_id, p.sync_meli, p.min_stock, p.featured_order, p.last_modified,
                            p.prev_stock, p.prev_price, p.prev_cost_price, p.prev_cost_meli, p.prev_price_web, COALESCE(p.is_hidden, 0) as is_hidden,
+                           COALESCE(p.title_web, '') as title_web,
                            COALESCE(p.manufacturing_time, 0) as manufacturing_time, p.description_meli, COALESCE(p.use_meli_description, 1) as use_meli_description,
                            p.tn_id, p.tn_variant_id, COALESCE(p.sync_tn, 1) as sync_tn, p.last_sync_tn,
                            COALESCE(p.cash_discount_pct, 0.0) as cash_discount_pct,
@@ -1149,9 +1153,9 @@ def get_all_products(query=None, status_filter=None, is_web_active=None, categor
             if query and str(query).strip():
                 words = [w.strip() for w in str(query).split() if w.strip()]
                 for w in words:
-                    sql += " AND (p.title ILIKE %s OR p.ml_id ILIKE %s OR COALESCE(c.name, '') ILIKE %s)"
+                    sql += " AND (p.title ILIKE %s OR COALESCE(p.title_web, '') ILIKE %s OR p.ml_id ILIKE %s OR COALESCE(c.name, '') ILIKE %s)"
                     w_param = f"%{w}%"
-                    params.extend([w_param, w_param, w_param])
+                    params.extend([w_param, w_param, w_param, w_param])
                 
             if status_filter:
                 sql += " AND p.status = %s"
@@ -1179,6 +1183,7 @@ def get_product_by_ml_id(ml_id: str):
                        p.status, p.last_sync, p.price_web, p.images, p.description, p.is_web_active, 
                        p.visits_meli, p.visits_web, p.category_id, p.sync_meli, p.min_stock, p.featured_order, p.last_modified,
                        p.prev_stock, p.prev_price, p.prev_cost_price, p.prev_cost_meli, p.prev_price_web, COALESCE(p.is_hidden, 0) as is_hidden,
+                       COALESCE(p.title_web, '') as title_web,
                        COALESCE(p.manufacturing_time, 0) as manufacturing_time, p.description_meli, COALESCE(p.use_meli_description, 1) as use_meli_description,
                        p.tn_id, p.tn_variant_id, COALESCE(p.sync_tn, 1) as sync_tn, p.last_sync_tn,
                        COALESCE(p.cash_discount_pct, 0.0) as cash_discount_pct,

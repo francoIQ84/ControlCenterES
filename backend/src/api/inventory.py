@@ -27,6 +27,7 @@ class UpdateProductRequest(BaseModel):
     cash_discount_pct: Optional[float] = 0.0
     is_full: Optional[int] = 0
     logistic_type: Optional[str] = ""
+    title_web: Optional[str] = None
 
 class CreateProductRequest(BaseModel):
     title: str
@@ -48,6 +49,7 @@ class CreateProductRequest(BaseModel):
     cash_discount_pct: Optional[float] = 0.0
     is_full: Optional[int] = 0
     logistic_type: Optional[str] = ""
+    title_web: Optional[str] = ""
 
 @router.get("/")
 def get_products(query: str = None, status: str = None, show_hidden: bool = False, is_hidden: Optional[int] = None, out_of_stock_30d: bool = False, out_of_stock_days: Optional[int] = None, summary: bool = False):
@@ -130,7 +132,8 @@ def create_product(payload: CreateProductRequest, current_user: dict = Depends(g
         "created_by_user": operator,
         "updated_by_user": operator,
         "logistic_type": payload.logistic_type or "",
-        "is_full": payload.is_full or 0
+        "is_full": payload.is_full or 0,
+        "title_web": payload.title_web or ""
     }
 
     try:
@@ -159,6 +162,7 @@ class BulkUpdateItem(BaseModel):
     cash_discount_pct: Optional[float] = 0.0
     is_full: Optional[int] = 0
     logistic_type: Optional[str] = ""
+    title_web: Optional[str] = None
 
 class BulkUpdateRequest(BaseModel):
     items: list[BulkUpdateItem]
@@ -250,7 +254,8 @@ def bulk_update_products(payload: BulkUpdateRequest, current_user: dict = Depend
             item.use_meli_description,
             item.description_meli,
             item.cash_discount_pct,
-            updated_by_user=operator
+            updated_by_user=operator,
+            title_web=item.title_web
         )
 
         # Sync to Tiendanube if linked and sync_tn is enabled
@@ -262,6 +267,10 @@ def bulk_update_products(payload: BulkUpdateRequest, current_user: dict = Depend
                     tn_price = item.price_web if item.price_web > 0 else item.price
                     tn_api.update_tn_stock(prod_obj["tn_id"], prod_obj["tn_variant_id"], item.qty)
                     tn_api.update_tn_price(prod_obj["tn_id"], prod_obj["tn_variant_id"], tn_price)
+                    if item.title_web is not None:
+                        eff_title = item.title_web.strip() or prod_obj.get("title", "")
+                        if eff_title:
+                            tn_api.update_tn_name(prod_obj["tn_id"], eff_title)
         except Exception as tn_err:
             print(f"[Tiendanube Sync on Bulk Edit Error] {tn_err}")
 
@@ -452,7 +461,8 @@ def update_product(ml_id: str, payload: UpdateProductRequest, current_user: dict
         payload.use_meli_description,
         payload.description_meli,
         payload.cash_discount_pct,
-        updated_by_user=operator
+        updated_by_user=operator,
+        title_web=payload.title_web
     )
     
     # Sync to Tiendanube if linked and sync_tn is enabled
@@ -464,6 +474,10 @@ def update_product(ml_id: str, payload: UpdateProductRequest, current_user: dict
                 tn_price = payload.price_web if payload.price_web > 0 else payload.price
                 tn_api.update_tn_stock(prod_obj["tn_id"], prod_obj["tn_variant_id"], payload.qty)
                 tn_api.update_tn_price(prod_obj["tn_id"], prod_obj["tn_variant_id"], tn_price)
+                if payload.title_web is not None:
+                    eff_title = payload.title_web.strip() or prod_obj.get("title", "")
+                    if eff_title:
+                        tn_api.update_tn_name(prod_obj["tn_id"], eff_title)
     except Exception as tn_err:
         print(f"[Tiendanube Sync on Edit Product Error] {tn_err}")
 

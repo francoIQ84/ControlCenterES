@@ -243,6 +243,7 @@ export default function Inventory() {
 
   const initialNewProduct = {
     title: "",
+    title_web: "",
     qty: 0,
     price: 0,
     cost: 0,
@@ -308,6 +309,7 @@ export default function Inventory() {
         const costChanged = Math.abs(parseN(d.cost) - parseN(orig.cost_price)) > 0.01
         const costMeliChanged = Math.abs(parseN(d.cost_meli) - parseN(orig.cost_meli)) > 0.01
         const priceWebChanged = Math.abs(parseN(d.price_web) - parseN(orig.price_web)) > 0.01
+        const titleWebChanged = (d.title_web || "").trim() !== (orig.title_web || "").trim()
         const cashDiscountChanged = Math.abs(parseN(d.cash_discount_pct) - parseN(orig.cash_discount_pct)) > 0.01
         const minStockChanged = parseN(d.min_stock, true) !== parseN(orig.min_stock, true)
         const featuredOrderChanged = parseN(d.featured_order, true) !== parseN(orig.featured_order, true)
@@ -339,6 +341,7 @@ export default function Inventory() {
           costChanged ||
           costMeliChanged ||
           priceWebChanged ||
+          titleWebChanged ||
           cashDiscountChanged ||
           minStockChanged ||
           featuredOrderChanged ||
@@ -905,7 +908,7 @@ export default function Inventory() {
     }
   }
 
-  const handleUpdate = async (ml_id, qty, price, cost, cost_meli, price_web, images, description, is_web_active, category_id, sync_meli, min_stock, featured_order = 0, use_meli_description = 1, description_meli = "", cash_discount_pct = 0) => {
+  const handleUpdate = async (ml_id, qty, price, cost, cost_meli, price_web, images, description, is_web_active, category_id, sync_meli, min_stock, featured_order = 0, use_meli_description = 1, description_meli = "", cash_discount_pct = 0, title_web = "") => {
     try {
       setLoading(true)
       const res = await fetch(`/api/inventory/${ml_id}`, {
@@ -926,7 +929,8 @@ export default function Inventory() {
           category_id: category_id ? parseInt(category_id) : null,
           sync_meli: sync_meli ? 1 : 0,
           min_stock: parseInt(min_stock) || 0,
-          featured_order: parseInt(featured_order) || 0
+          featured_order: parseInt(featured_order) || 0,
+          title_web: title_web !== undefined ? title_web : ""
         })
       })
       if (res.ok) {
@@ -956,7 +960,8 @@ export default function Inventory() {
           category_id: category_id ? parseInt(category_id) : null,
           sync_meli: sync_meli ? 1 : 0,
           min_stock: parseInt(min_stock) || 0,
-          featured_order: parseInt(featured_order) || 0
+          featured_order: parseInt(featured_order) || 0,
+          title_web: title_web || ""
         }
 
         setProducts(prev => prev.map(item => item.ml_id === ml_id ? { ...item, ...patchData } : item))
@@ -1119,7 +1124,9 @@ export default function Inventory() {
       if (query && query.trim()) {
         const catObj = categories.find(c => String(c.id) === String(catId))
         const catName = catObj ? catObj.name : (p.category_name || '')
-        const matched = matchesQuery([p.title, p.ml_id, p.sku, catName], query)
+        const draftTitleWeb = drafts[p.ml_id]?.title_web
+        const titleWebVal = draftTitleWeb !== undefined ? draftTitleWeb : (p.title_web || '')
+        const matched = matchesQuery([p.title, titleWebVal, p.ml_id, p.sku, catName], query)
         if (!matched) return false
       }
 
@@ -3096,6 +3103,18 @@ export default function Inventory() {
                 <input type="text" required value={newProduct.title} onChange={e => setNewProduct({...newProduct, title: e.target.value})} style={{width: '100%', fontSize: '0.9rem', padding: '7px 9px', boxSizing: 'border-box'}}/>
               </label>
 
+              {/* Título Alternativo Web / Tiendanube */}
+              <label style={{fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'flex', flexDirection: 'column', gap: 3}}>
+                <span>🌐 TÍTULO ALTERNATIVO WEB / TIENDANUBE (OPCIONAL)</span>
+                <input 
+                  type="text" 
+                  value={newProduct.title_web || ""} 
+                  onChange={e => setNewProduct({...newProduct, title_web: e.target.value})} 
+                  placeholder="Dejar vacío para usar el título principal..."
+                  style={{width: '100%', fontSize: '0.85rem', padding: '6px 9px', boxSizing: 'border-box'}}
+                />
+              </label>
+
               {/* Fila 1: Stock + Costo Base */}
               <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8}}>
                 <label style={{fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'flex', flexDirection: 'column', gap: 3}}>
@@ -4808,6 +4827,7 @@ function ProductRow({ p, onSave, onOpenGallery, onDraftChange, categories, categ
   const [minStock, setMinStock] = useState(p.min_stock || 0)
   
   const [priceWeb, setPriceWeb] = useState(p.price_web || 0)
+  const [titleWeb, setTitleWeb] = useState(p.title_web || "")
   const [cashDiscountPct, setCashDiscountPct] = useState(p.cash_discount_pct !== undefined ? p.cash_discount_pct : 0)
   const [isWebActive, setIsWebActive] = useState(p.is_web_active === 1)
   const [categoryId, setCategoryId] = useState(p.category_id || "")
@@ -4903,6 +4923,7 @@ function ProductRow({ p, onSave, onOpenGallery, onDraftChange, categories, categ
       cost: parseNum(cost),
       cost_meli: parseNum(costMeli),
       price_web: parseNum(priceWeb),
+      title_web: titleWeb || "",
       cash_discount_pct: parseNum(cashDiscountPct),
       images: getCombinedImages(),
       description: description || "",
@@ -4914,7 +4935,7 @@ function ProductRow({ p, onSave, onOpenGallery, onDraftChange, categories, categ
       min_stock: parseNum(minStock, true),
       featured_order: parseNum(featuredOrder, true)
     })
-  }, [qty, price, cost, costMeli, priceWeb, cashDiscountPct, isWebActive, description, useMeliDescription, descMeli, useMeliImage, customMainUrl, additionalUrls, categoryId, syncMeli, minStock, featuredOrder])
+  }, [qty, price, cost, costMeli, priceWeb, titleWeb, cashDiscountPct, isWebActive, description, useMeliDescription, descMeli, useMeliImage, customMainUrl, additionalUrls, categoryId, syncMeli, minStock, featuredOrder])
 
   // Sincronizar inputs si el producto cambia desde la BD/servidor y no está siendo editado actualmente
   useEffect(() => {
@@ -4925,6 +4946,7 @@ function ProductRow({ p, onSave, onOpenGallery, onDraftChange, categories, categ
       setCostMeli(p.cost_meli || 0)
       setMinStock(p.min_stock || 0)
       setPriceWeb(p.price_web || 0)
+      setTitleWeb(p.title_web || "")
       setCashDiscountPct(p.cash_discount_pct !== undefined ? p.cash_discount_pct : 0)
       setIsWebActive(p.is_web_active === 1)
       setCategoryId(p.category_id || "")
@@ -4993,6 +5015,25 @@ function ProductRow({ p, onSave, onOpenGallery, onDraftChange, categories, categ
                   border: '1px solid rgba(16, 185, 129, 0.4)'
                 }}>
                   ✏️ Modificado
+                </span>
+              )}
+              {((titleWeb || "").trim() || (p.title_web || "").trim()) && (
+                <span 
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 3,
+                    padding: '1px 6px',
+                    fontSize: '0.70rem',
+                    fontWeight: 700,
+                    borderRadius: 4,
+                    backgroundColor: 'rgba(59, 130, 246, 0.15)',
+                    color: '#3b82f6',
+                    border: '1px solid rgba(59, 130, 246, 0.35)'
+                  }}
+                  title={`Título en Tienda Web & Tiendanube: ${titleWeb || p.title_web}`}
+                >
+                  🌐 Web: {((titleWeb || p.title_web).length > 28 ? (titleWeb || p.title_web).slice(0, 28) + '…' : (titleWeb || p.title_web))}
                 </span>
               )}
               {p.category_name ? (
@@ -5425,7 +5466,7 @@ function ProductRow({ p, onSave, onOpenGallery, onDraftChange, categories, categ
           </td>
           <td data-label="Acciones" className="cell-actions" style={{padding: '5px 8px'}}>
             <div style={{display: 'flex', gap: 6, alignItems: 'center'}}>
-              <button className="btn-icon" onClick={() => onSave(p.ml_id, qty, price, cost, costMeli, priceWeb, getCombinedImages(), description, isWebActive, categoryId, syncMeli, minStock, featuredOrder, useMeliDescription ? 1 : 0, descMeli, cashDiscountPct)} title="Guardar Todo" style={{padding: 4}}>
+              <button className="btn-icon" onClick={() => onSave(p.ml_id, qty, price, cost, costMeli, priceWeb, getCombinedImages(), description, isWebActive, categoryId, syncMeli, minStock, featuredOrder, useMeliDescription ? 1 : 0, descMeli, cashDiscountPct, titleWeb)} title="Guardar Todo" style={{padding: 4}}>
                 <Save size={14} className="text-blue-500" />
               </button>
               <button type="button" className="btn-icon" onClick={() => onOpenQrModal(p)} title="Ver / Imprimir QR" style={{padding: 4, color: 'var(--accent-blue)'}}>
@@ -5443,6 +5484,67 @@ function ProductRow({ p, onSave, onOpenGallery, onDraftChange, categories, categ
         {showWebDetails && (
           <tr className="web-details-row" style={{backgroundColor: 'var(--bg-dark)'}}>
             <td colSpan="12" style={{padding: 15}}>
+              {/* Título Alternativo para Tienda Web & Tiendanube */}
+              <div style={{
+                width: '100%', 
+                marginBottom: 14, 
+                padding: '10px 14px', 
+                backgroundColor: 'rgba(59, 130, 246, 0.08)', 
+                border: '1px solid rgba(59, 130, 246, 0.28)', 
+                borderRadius: 8,
+                boxSizing: 'border-box'
+              }}>
+                <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 5, flexWrap: 'wrap', gap: 6}}>
+                  <label style={{fontSize: '0.80rem', fontWeight: 700, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 6}}>
+                    <span>🌐 Título para Tienda Web & Tiendanube</span>
+                    <span style={{fontSize: '0.72rem', fontWeight: 'normal', color: 'var(--text-secondary)'}}>
+                      (No modifica Mercado Libre. Si se deja vacío, usa el de ML)
+                    </span>
+                  </label>
+                  {titleWeb && titleWeb.trim() !== "" && (
+                    <button 
+                      type="button" 
+                      onClick={() => setTitleWeb("")}
+                      style={{
+                        fontSize: '0.70rem', 
+                        background: 'none', 
+                        border: 'none', 
+                        color: '#ef4444', 
+                        cursor: 'pointer', 
+                        fontWeight: 600,
+                        textDecoration: 'underline',
+                        padding: 0
+                      }}
+                      title="Restablecer para usar el título de Mercado Libre"
+                    >
+                      ✕ Usar título de Mercado Libre
+                    </button>
+                  )}
+                </div>
+                <input 
+                  type="text" 
+                  value={titleWeb} 
+                  onChange={e => setTitleWeb(e.target.value)} 
+                  placeholder={`Por defecto en ML: ${p.title}`}
+                  style={{
+                    width: '100%', 
+                    padding: '6px 10px', 
+                    fontSize: '0.82rem', 
+                    backgroundColor: 'var(--bg-card)', 
+                    color: 'var(--text-primary)', 
+                    border: '1px solid var(--border-color)', 
+                    borderRadius: 5,
+                    boxSizing: 'border-box',
+                    outline: 'none'
+                  }}
+                />
+                {titleWeb && titleWeb.trim() !== "" && (
+                  <div style={{fontSize: '0.70rem', color: '#3b82f6', marginTop: 4}}>
+                    ✓ Este producto se mostrará con este nombre en tu Tienda Web y Tiendanube. Mercado Libre conserva su título sin cambios.
+                  </div>
+                )}
+              </div>
+
               <div style={{display: 'flex', gap: 20, flexWrap: 'wrap'}}>
                 {/* Columna 1: Imagen Principal */}
                 <div style={{flex: 1, minWidth: 200, display: 'flex', flexDirection: 'column', gap: 8}}>
@@ -5607,6 +5709,25 @@ function ProductRow({ p, onSave, onOpenGallery, onDraftChange, categories, categ
                 border: '1px solid rgba(16, 185, 129, 0.4)'
               }}>
                 ✏️ Modificado
+              </span>
+            )}
+            {((titleWeb || "").trim() || (p.title_web || "").trim()) && (
+              <span 
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 3,
+                  padding: '1px 6px',
+                  fontSize: '0.70rem',
+                  fontWeight: 700,
+                  borderRadius: 4,
+                  backgroundColor: 'rgba(59, 130, 246, 0.15)',
+                  color: '#3b82f6',
+                  border: '1px solid rgba(59, 130, 246, 0.35)'
+                }}
+                title={`Título en Tienda Web & Tiendanube: ${titleWeb || p.title_web}`}
+              >
+                🌐 Web: {((titleWeb || p.title_web).length > 28 ? (titleWeb || p.title_web).slice(0, 28) + '…' : (titleWeb || p.title_web))}
               </span>
             )}
             {p.is_hidden === 1 && (
@@ -5937,7 +6058,7 @@ function ProductRow({ p, onSave, onOpenGallery, onDraftChange, categories, categ
         </td>
         <td data-label="Acción">
           <div style={{display: 'flex', gap: 6, alignItems: 'center'}}>
-            <button className="btn-icon" onClick={() => onSave(p.ml_id, qty, price, cost, costMeli, priceWeb, getCombinedImages(), description, isWebActive, categoryId, syncMeli, minStock, featuredOrder, useMeliDescription ? 1 : 0, descMeli, cashDiscountPct)} title="Guardar Todo">
+            <button className="btn-icon" onClick={() => onSave(p.ml_id, qty, price, cost, costMeli, priceWeb, getCombinedImages(), description, isWebActive, categoryId, syncMeli, minStock, featuredOrder, useMeliDescription ? 1 : 0, descMeli, cashDiscountPct, titleWeb)} title="Guardar Todo">
               <Save size={18} className="text-blue-500" />
             </button>
             <button type="button" className="btn-icon" onClick={() => onOpenQrModal(p)} title="Ver / Imprimir QR" style={{color: 'var(--accent-blue)'}}>
@@ -5952,6 +6073,67 @@ function ProductRow({ p, onSave, onOpenGallery, onDraftChange, categories, categ
       {showWebDetails && (
         <tr className="web-details-row" style={{backgroundColor: 'var(--bg-dark)'}}>
           <td colSpan="7" style={{padding: 20}}>
+            {/* Título Alternativo para Tienda Web & Tiendanube */}
+            <div style={{
+              width: '100%', 
+              marginBottom: 16, 
+              padding: '12px 16px', 
+              backgroundColor: 'rgba(59, 130, 246, 0.08)', 
+              border: '1px solid rgba(59, 130, 246, 0.28)', 
+              borderRadius: 8,
+              boxSizing: 'border-box'
+            }}>
+              <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6, flexWrap: 'wrap', gap: 6}}>
+                <label style={{fontSize: '0.84rem', fontWeight: 700, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 6}}>
+                  <span>🌐 Título para Tienda Web & Tiendanube</span>
+                  <span style={{fontSize: '0.74rem', fontWeight: 'normal', color: 'var(--text-secondary)'}}>
+                    (No modifica Mercado Libre. Si se deja vacío, usa el título original de ML)
+                  </span>
+                </label>
+                {titleWeb && titleWeb.trim() !== "" && (
+                  <button 
+                    type="button" 
+                    onClick={() => setTitleWeb("")}
+                    style={{
+                      fontSize: '0.72rem', 
+                      background: 'none', 
+                      border: 'none', 
+                      color: '#ef4444', 
+                      cursor: 'pointer', 
+                      fontWeight: 600,
+                      textDecoration: 'underline',
+                      padding: 0
+                    }}
+                    title="Restablecer para usar el título de Mercado Libre"
+                  >
+                    ✕ Usar título de Mercado Libre
+                  </button>
+                )}
+              </div>
+              <input 
+                type="text" 
+                value={titleWeb} 
+                onChange={e => setTitleWeb(e.target.value)} 
+                placeholder={`Por defecto en ML: ${p.title}`}
+                style={{
+                  width: '100%', 
+                  padding: '7px 10px', 
+                  fontSize: '0.85rem', 
+                  backgroundColor: 'var(--bg-card)', 
+                  color: 'var(--text-primary)', 
+                  border: '1px solid var(--border-color)', 
+                  borderRadius: 6,
+                  boxSizing: 'border-box',
+                  outline: 'none'
+                }}
+              />
+              {titleWeb && titleWeb.trim() !== "" && (
+                <div style={{fontSize: '0.72rem', color: '#3b82f6', marginTop: 4}}>
+                  ✓ Este producto se mostrará con este nombre en tu Tienda Web y en Tiendanube. Mercado Libre mantiene su título original sin cambios.
+                </div>
+              )}
+            </div>
+
             <div style={{display: 'flex', gap: 20, flexWrap: 'wrap'}}>
               {/* Columna 1: Imagen Principal y Previsualización */}
               <div style={{flex: 1, minWidth: 220, display: 'flex', flexDirection: 'column', gap: 10}}>
