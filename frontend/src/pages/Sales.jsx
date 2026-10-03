@@ -82,102 +82,6 @@ export default function Sales() {
     }
   }, [searchParams, queryParam])
 
-  // Desktop Zoom & Horizontal Scroll States (Identical to Inventory for smaller notebook screens)
-  const [desktopZoom, setDesktopZoom] = useState(() => {
-    const saved = localStorage.getItem('sales_desktop_zoom')
-    return saved ? parseFloat(saved) : 0.88
-  })
-  const [isMobile, setIsMobile] = useState(() => typeof window !== 'undefined' ? window.innerWidth <= 768 : false)
-
-  useEffect(() => {
-    const handleResize = () => {
-      setIsMobile(window.innerWidth <= 768)
-    }
-    window.addEventListener('resize', handleResize)
-    return () => window.removeEventListener('resize', handleResize)
-  }, [])
-
-  const handleSetZoom = (newZoom) => {
-    const clamped = Math.max(0.70, Math.min(1.25, Math.round(newZoom * 100) / 100))
-    setDesktopZoom(clamped)
-    localStorage.setItem('sales_desktop_zoom', String(clamped))
-  }
-
-  const tableWrapperRef = useRef(null)
-  const bottomScrollbarRef = useRef(null)
-  const isSyncingScroll = useRef(false)
-  const [canScrollLeft, setCanScrollLeft] = useState(false)
-  const [canScrollRight, setCanScrollRight] = useState(false)
-  const [hasTableOverflow, setHasTableOverflow] = useState(false)
-  const [tableScrollWidth, setTableScrollWidth] = useState(0)
-
-  const updateTableScrollState = useCallback(() => {
-    const el = tableWrapperRef.current
-    if (!el) return
-    const { scrollLeft, scrollWidth, clientWidth } = el
-    const maxScroll = scrollWidth - clientWidth
-    const overflow = maxScroll > 4
-    setHasTableOverflow(overflow)
-    setCanScrollLeft(scrollLeft > 4)
-    setCanScrollRight(scrollLeft < maxScroll - 4)
-    setTableScrollWidth(scrollWidth)
-  }, [])
-
-  useEffect(() => {
-    const el = tableWrapperRef.current
-    if (!el) return
-    updateTableScrollState()
-
-    const onScroll = () => {
-      updateTableScrollState()
-      if (isSyncingScroll.current) return
-      isSyncingScroll.current = true
-      if (bottomScrollbarRef.current) {
-        bottomScrollbarRef.current.scrollLeft = el.scrollLeft
-      }
-      requestAnimationFrame(() => {
-        isSyncingScroll.current = false
-      })
-    }
-
-    el.addEventListener('scroll', onScroll, { passive: true })
-
-    const ro = new ResizeObserver(() => {
-      updateTableScrollState()
-    })
-    ro.observe(el)
-    if (el.firstElementChild) ro.observe(el.firstElementChild)
-
-    return () => {
-      el.removeEventListener('scroll', onScroll)
-      ro.disconnect()
-    }
-  }, [updateTableScrollState, desktopZoom, sortedOrders?.length, loading])
-
-  const handleBottomScroll = () => {
-    const bottom = bottomScrollbarRef.current
-    const table = tableWrapperRef.current
-    if (!bottom || !table) return
-    if (isSyncingScroll.current) return
-    isSyncingScroll.current = true
-    table.scrollLeft = bottom.scrollLeft
-    requestAnimationFrame(() => {
-      isSyncingScroll.current = false
-    })
-  }
-
-  const scrollTableBy = (delta) => {
-    if (!tableWrapperRef.current) return
-    tableWrapperRef.current.scrollBy({ left: delta, behavior: 'smooth' })
-  }
-
-  const handleTableWheel = (e) => {
-    if (e.shiftKey && tableWrapperRef.current) {
-      e.preventDefault()
-      tableWrapperRef.current.scrollLeft += e.deltaY || e.deltaX
-    }
-  }
-
   // Modal State
   const [showModal, setShowModal] = useState(false)
   const cachedInv = getCachedData(CacheKeys.INVENTORY_SUMMARY) || getCachedData(CacheKeys.INVENTORY)
@@ -1306,6 +1210,102 @@ export default function Sales() {
     }
     return sortableItems
   }, [filteredOrders, sortConfig])
+
+  // Desktop Zoom & Horizontal Scroll States (Identical to Inventory for smaller notebook screens)
+  const [desktopZoom, setDesktopZoom] = useState(() => {
+    const saved = localStorage.getItem('sales_desktop_zoom')
+    return saved ? parseFloat(saved) : 0.88
+  })
+  const [isMobile, setIsMobile] = useState(() => typeof window !== 'undefined' ? window.innerWidth <= 768 : false)
+
+  useEffect(() => {
+    const handleResize = () => {
+      setIsMobile(window.innerWidth <= 768)
+    }
+    window.addEventListener('resize', handleResize)
+    return () => window.removeEventListener('resize', handleResize)
+  }, [])
+
+  const handleSetZoom = (newZoom) => {
+    const clamped = Math.max(0.70, Math.min(1.25, Math.round(newZoom * 100) / 100))
+    setDesktopZoom(clamped)
+    localStorage.setItem('sales_desktop_zoom', String(clamped))
+  }
+
+  const tableWrapperRef = useRef(null)
+  const bottomScrollbarRef = useRef(null)
+  const isSyncingScroll = useRef(false)
+  const [canScrollLeft, setCanScrollLeft] = useState(false)
+  const [canScrollRight, setCanScrollRight] = useState(false)
+  const [hasTableOverflow, setHasTableOverflow] = useState(false)
+  const [tableScrollWidth, setTableScrollWidth] = useState(0)
+
+  const updateTableScrollState = useCallback(() => {
+    const el = tableWrapperRef.current
+    if (!el) return
+    const { scrollLeft, scrollWidth, clientWidth } = el
+    const maxScroll = scrollWidth - clientWidth
+    const overflow = maxScroll > 4
+    setHasTableOverflow(overflow)
+    setCanScrollLeft(scrollLeft > 4)
+    setCanScrollRight(scrollLeft < maxScroll - 4)
+    setTableScrollWidth(scrollWidth)
+  }, [])
+
+  useEffect(() => {
+    const el = tableWrapperRef.current
+    if (!el) return
+    updateTableScrollState()
+
+    const onScroll = () => {
+      updateTableScrollState()
+      if (isSyncingScroll.current) return
+      isSyncingScroll.current = true
+      if (bottomScrollbarRef.current) {
+        bottomScrollbarRef.current.scrollLeft = el.scrollLeft
+      }
+      requestAnimationFrame(() => {
+        isSyncingScroll.current = false
+      })
+    }
+
+    el.addEventListener('scroll', onScroll, { passive: true })
+
+    const ro = new ResizeObserver(() => {
+      updateTableScrollState()
+    })
+    ro.observe(el)
+    if (el.firstElementChild) ro.observe(el.firstElementChild)
+
+    return () => {
+      el.removeEventListener('scroll', onScroll)
+      ro.disconnect()
+    }
+  }, [updateTableScrollState, desktopZoom, sortedOrders?.length, loading])
+
+  const handleBottomScroll = () => {
+    const bottom = bottomScrollbarRef.current
+    const table = tableWrapperRef.current
+    if (!bottom || !table) return
+    if (isSyncingScroll.current) return
+    isSyncingScroll.current = true
+    table.scrollLeft = bottom.scrollLeft
+    requestAnimationFrame(() => {
+      isSyncingScroll.current = false
+    })
+  }
+
+  const scrollTableBy = (delta) => {
+    if (!tableWrapperRef.current) return
+    tableWrapperRef.current.scrollBy({ left: delta, behavior: 'smooth' })
+  }
+
+  const handleTableWheel = (e) => {
+    if (e.shiftKey && tableWrapperRef.current) {
+      e.preventDefault()
+      tableWrapperRef.current.scrollLeft += e.deltaY || e.deltaX
+    }
+  }
 
   // Helper renderers
   const renderPlatformBadge = (platform) => {
