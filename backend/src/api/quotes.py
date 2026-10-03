@@ -51,6 +51,8 @@ class QuoteUpdateRequest(BaseModel):
 
 
 class QuoteConvertRequest(BaseModel):
+    mode: Optional[str] = "cash"  # 'cash' or 'link_transfer'
+    existing_order_id: Optional[int] = None
     payment_method: Optional[str] = "Efectivo"
     shipping_status: Optional[str] = "delivered"
     auto_invoice: Optional[bool] = False
@@ -217,6 +219,56 @@ def update_existing_quote(quote_id: int, req: QuoteUpdateRequest, current_user: 
     return {"success": True, "quote": updated}
 
 
+@router.post("/{quote_id}/clone", dependencies=[Depends(require_permission("quotes"))])
+def clone_single_quote(quote_id: int, current_user: dict = Depends(get_current_user)):
+    existing = database.get_quote_by_id(quote_id)
+    if not existing:
+        raise HTTPException(status_code=404, detail="Presupuesto no encontrado")
+
+    operator = current_user.get('full_name') or current_user.get('username') or 'Admin'
+    quote_number = database.get_next_quote_number()
+
+    items = existing.get("items") or []
+    if isinstance(items, str):
+        import json
+        try:
+            items = json.loads(items)
+        except Exception:
+            items = []
+
+    cloned_items = []
+    for idx, item in enumerate(items):
+        item_copy = dict(item)
+        item_copy["id"] = f"cloned-{quote_id}-{idx}"
+        cloned_items.append(item_copy)
+
+    created = database.create_quote(
+        quote_number=quote_number,
+        customer_name=existing.get("customer_name") or "",
+        customer_doc=existing.get("customer_doc") or "",
+        customer_email=existing.get("customer_email") or "",
+        customer_phone=existing.get("customer_phone") or "",
+        customer_address=existing.get("customer_address") or "",
+        price_source=existing.get("price_source") or "web",
+        items=cloned_items,
+        total_amount=float(existing.get("total_amount") or 0.0),
+        valid_days=int(existing.get("valid_days") or 7),
+        notes=existing.get("notes") or "",
+        created_by_user=operator
+    )
+
+    try:
+        generate_quote_pdf(created)
+    except Exception as pdf_err:
+        print(f"[Quote Clone PDF Error] {pdf_err}")
+
+    return {
+        "success": True,
+        "quote": created,
+        "message": f"Presupuesto clonado con éxito con número {quote_number}"
+    }
+
+
 @router.delete("/{quote_id}", dependencies=[Depends(require_permission("quotes"))])
 def delete_single_quote(quote_id: int):
     existing = database.get_quote_by_id(quote_id)
@@ -250,8 +302,114 @@ def download_quote_pdf(quote_id: int, download: Optional[int] = Query(0)):
         raise HTTPException(status_code=500, detail=f"Error al generar PDF: {str(e)}")
 
 
+@router.get("/{quote_id}/candidate-transfers", dependencies=[Depends(require_permission("quotes"))])
+def get_quote_candidate_transfers(quote_id: int):
+    import json
+    quote = database.get_quote_by_id(quote_id)
+    if not quote:
+        raise HTTPException(status_code=404, detail="Presupuesto no encontrado")
+    
+    quote_amount = float(quote.get("total_amount") or 0.0)
+    customer_name = (quote.get("customer_name") or "").strip()
+    
+    with database.get_connection() as conn:
+        with conn.cursor() as cursor:
+            # Look for recent orders from Mercado Pago, bank transfer, or unlinked sales
+            cursor.execute("""
+                SELECT o.order_id, o.date_created, o.buyer_name, o.buyer_nickname, 
+                       o.total_amount, o.source_platform, o.payment_method, 
+                       o.items_json, o.inventory_linked, o.status, o.payment_status
+                FROM orders_cache o
+                WHERE o.order_id NOT IN (
+                    SELECT order_id FROM quotes WHERE order_id IS NOT NULL AND status = 'approved' AND id != %s
+                )
+                AND (
+                    o.source_platform LIKE 'MERCADOPAGO%%'
+                    OR o.payment_method ILIKE '%%transferencia%%'
+                    OR o.payment_method ILIKE '%%mercado%%'
+                    OR o.items_json ILIKE '%%transferencia%%'
+                    OR o.source_platform = 'LOCAL'
+                )
+                ORDER BY 
+                    CASE WHEN ABS(o.total_amount - %s) < 0.05 THEN 0 ELSE 1 END,
+                    o.date_created DESC
+                LIMIT 30
+            """, (quote_id, quote_amount))
+            rows = cursor.fetchall()
+            
+            candidates = []
+            for r in rows:
+                amt = float(r.get("total_amount") or 0.0)
+                is_exact = abs(amt - quote_amount) < 0.05
+                is_close = abs(amt - quote_amount) <= (quote_amount * 0.05)
+                
+                b_name = (r.get("buyer_name") or "").lower()
+                name_match = False
+                if customer_name and len(customer_name) > 3:
+                    for part in customer_name.lower().split():
+                        if len(part) >= 3 and part in b_name:
+                            name_match = True
+                            break
+
+                items_summary = ""
+                try:
+                    its = json.loads(r.get("items_json") or "[]")
+                    if its:
+                        items_summary = ", ".join([f"{it.get('title', 'Item')} x{it.get('quantity', 1)}" for it in its[:2]])
+                        if len(its) > 2:
+                            items_summary += f" (+{len(its)-2} más)"
+                except Exception:
+                    pass
+
+                candidates.append({
+                    "order_id": r["order_id"],
+                    "date_created": r.get("date_created"),
+                    "buyer_name": r.get("buyer_name") or "Sin nombre",
+                    "total_amount": amt,
+                    "source_platform": r.get("source_platform") or "",
+                    "payment_method": r.get("payment_method") or "",
+                    "is_exact_match": is_exact,
+                    "is_close_match": is_close,
+                    "name_match": name_match,
+                    "items_summary": items_summary,
+                    "inventory_linked": bool(r.get("inventory_linked", 1))
+                })
+                
+            return {
+                "quote_id": quote_id,
+                "quote_amount": quote_amount,
+                "candidates": candidates
+            }
+
+
+@router.get("/lookup-transfer/{order_id}", dependencies=[Depends(require_permission("quotes"))])
+def lookup_transfer_for_quote(order_id: int):
+    order = database.get_order_by_id(order_id)
+    if not order:
+        raise HTTPException(status_code=404, detail=f"No se encontró ninguna venta o transferencia con N° #{order_id}")
+    
+    with database.get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute("SELECT id, quote_number FROM quotes WHERE order_id = %s AND status = 'approved'", (order_id,))
+            linked = cursor.fetchone()
+            if linked:
+                return {
+                    "found": True,
+                    "order": order,
+                    "already_linked": True,
+                    "linked_quote_number": linked['quote_number']
+                }
+
+    return {
+        "found": True,
+        "order": order,
+        "already_linked": False
+    }
+
+
 @router.post("/{quote_id}/convert-to-order", dependencies=[Depends(require_permission("quotes"))])
 def convert_quote_to_sale_order(quote_id: int, req: QuoteConvertRequest, current_user: dict = Depends(get_current_user)):
+    import json
     quote = database.get_quote_by_id(quote_id)
     if not quote:
         raise HTTPException(status_code=404, detail="Presupuesto no encontrado")
@@ -264,9 +422,20 @@ def convert_quote_to_sale_order(quote_id: int, req: QuoteConvertRequest, current
     if not items:
         raise HTTPException(status_code=400, detail="El presupuesto no tiene productos para facturar")
 
-    # Generate new order ID
-    order_id = int(time.time() * 1000) + random.randint(1, 999)
-    date_created = datetime.datetime.now().isoformat()
+    is_linking = (req.mode == "link_transfer" or req.existing_order_id is not None)
+    existing_order = None
+    if is_linking:
+        if not req.existing_order_id:
+            raise HTTPException(status_code=400, detail="Debes indicar la transferencia u orden de Ventas a asociar")
+        existing_order = database.get_order_by_id(req.existing_order_id)
+        if not existing_order:
+            raise HTTPException(status_code=404, detail=f"No se encontró la orden #{req.existing_order_id} en Ventas")
+        with database.get_connection() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute("SELECT id, quote_number FROM quotes WHERE order_id = %s AND status = 'approved' AND id != %s", (req.existing_order_id, quote_id))
+                already_linked = cursor.fetchone()
+                if already_linked:
+                    raise HTTPException(status_code=400, detail=f"La orden #{req.existing_order_id} ya está asociada al Presupuesto #{already_linked['quote_number']}")
 
     items_list = []
     total_cost = 0.0
@@ -314,26 +483,57 @@ def convert_quote_to_sale_order(quote_id: int, req: QuoteConvertRequest, current
         except Exception as stock_err:
             print(f"[Stock Deduction on Quote Convert Error] {stock_err}")
 
-    # Create manual order in database
     buyer_clean_name = quote.get("customer_name") or "Cliente Presupuesto"
     buyer_nickname = buyer_clean_name.lower().replace(" ", "_")[:30]
 
-    database.create_manual_order(
-        order_id=order_id,
-        date_created=date_created,
-        buyer_nickname=buyer_nickname,
-        buyer_name=buyer_clean_name,
-        total_amount=float(quote.get("total_amount") or 0.0),
-        status="paid",
-        shipping_status=req.shipping_status or "delivered",
-        items=items_list,
-        source_platform="PRESUPUESTO",
-        payment_method=req.payment_method or "Efectivo",
-        payment_status="approved",
-        cost_amount=total_cost,
-        inventory_linked=1 if any_linked else 0,
-        created_by_user=operator
-    )
+    if is_linking and existing_order:
+        order_id = req.existing_order_id
+        # Update existing order with quote's items and details
+        with database.get_connection() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute("""
+                    UPDATE orders_cache
+                    SET buyer_name = %s,
+                        buyer_nickname = %s,
+                        items_json = %s,
+                        cost_amount = %s,
+                        inventory_linked = %s,
+                        shipping_status = %s,
+                        status = 'paid',
+                        payment_status = 'approved'
+                    WHERE order_id = %s
+                """, (
+                    buyer_clean_name,
+                    buyer_nickname,
+                    json.dumps(items_list),
+                    total_cost,
+                    1 if any_linked else 0,
+                    req.shipping_status or existing_order.get("shipping_status") or "delivered",
+                    order_id
+                ))
+        success_msg = f"¡Presupuesto #{quote.get('quote_number')} cobrado y asociado exitosamente a la transferencia #{order_id}!"
+    else:
+        # Generate new order ID
+        order_id = int(time.time() * 1000) + random.randint(1, 999)
+        date_created = datetime.datetime.now().isoformat()
+
+        database.create_manual_order(
+            order_id=order_id,
+            date_created=date_created,
+            buyer_nickname=buyer_nickname,
+            buyer_name=buyer_clean_name,
+            total_amount=float(quote.get("total_amount") or 0.0),
+            status="paid",
+            shipping_status=req.shipping_status or "delivered",
+            items=items_list,
+            source_platform="PRESUPUESTO",
+            payment_method=req.payment_method or "Efectivo",
+            payment_status="approved",
+            cost_amount=total_cost,
+            inventory_linked=1 if any_linked else 0,
+            created_by_user=operator
+        )
+        success_msg = f"¡Presupuesto #{quote.get('quote_number')} cobrado y registrado como nueva venta #{order_id} con éxito!"
 
     # Mark quote as completed with order_id and completed_at
     completed_quote = database.mark_quote_completed(quote_id, order_id=order_id, completed_at=datetime.datetime.now())
@@ -361,5 +561,5 @@ def convert_quote_to_sale_order(quote_id: int, req: QuoteConvertRequest, current
         "order_id": order_id,
         "quote": completed_quote,
         "invoice_created": invoice_created,
-        "message": f"¡Presupuesto #{quote.get('quote_number')} convertido a venta #{order_id} con éxito!"
+        "message": success_msg
     }

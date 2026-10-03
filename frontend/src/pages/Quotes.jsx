@@ -5,7 +5,7 @@ import {
   AlertTriangle, XCircle, MessageCircle, User, Trash2, 
   Edit3, DollarSign, Package, ExternalLink, Calendar, 
   TrendingUp, RefreshCw, ChevronRight, X, ArrowRight, Check,
-  Building, MapPin
+  Building, MapPin, Link2, Sparkles, Copy
 } from 'lucide-react'
 import { getCachedData, setCachedData, invalidateCache, CacheKeys } from '../utils/cache'
 import { matchesQuery, matchesPhoneOrDoc } from '../utils/searchUtils'
@@ -53,8 +53,16 @@ export default function Quotes() {
   // Modal states
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [editingQuote, setEditingQuote] = useState(null)
+  const [cloningFromQuote, setCloningFromQuote] = useState(null)
   const [convertingQuote, setConvertingQuote] = useState(null)
   const [submitting, setSubmitting] = useState(false)
+  const [convertMode, setConvertMode] = useState('cash') // 'cash' or 'link_transfer'
+  const [candidateTransfers, setCandidateTransfers] = useState([])
+  const [loadingCandidates, setLoadingCandidates] = useState(false)
+  const [selectedTransferId, setSelectedTransferId] = useState('')
+  const [manualTransferId, setManualTransferId] = useState('')
+  const [manualLookupResult, setManualLookupResult] = useState(null)
+  const [manualLookupLoading, setManualLookupLoading] = useState(false)
   
   // Search autocomplete in modal
   const [activeSearchIdx, setActiveSearchIdx] = useState(null)
@@ -408,9 +416,10 @@ export default function Quotes() {
       if (res.ok) {
         const resData = await res.json()
         const savedQuote = resData.quote
-        alert(editingQuote ? '¡Presupuesto actualizado con éxito!' : `¡Presupuesto #${savedQuote.quote_number} creado con éxito!`)
+        alert(editingQuote ? '¡Presupuesto actualizado con éxito!' : (cloningFromQuote ? `¡Presupuesto clonado con éxito (#${savedQuote.quote_number})!` : `¡Presupuesto #${savedQuote.quote_number} creado con éxito!`))
         setShowCreateModal(false)
         setEditingQuote(null)
+        setCloningFromQuote(null)
         setFormData(initialQuoteForm)
         invalidateCache('quotes')
         await fetchQuotes(true)
@@ -435,28 +444,112 @@ export default function Quotes() {
     }
   }
 
-  // Convert quote to confirmed sale order
+  // Open Cobrar Modal & fetch candidate transfers
+  const handleOpenCobrarModal = async (q) => {
+    setConvertingQuote(q)
+    setConvertMode('cash')
+    setSelectedTransferId('')
+    setManualTransferId('')
+    setManualLookupResult(null)
+    setCandidateTransfers([])
+    setLoadingCandidates(true)
+    setConvertForm({
+      payment_method: 'Efectivo',
+      shipping_status: 'delivered',
+      auto_invoice: false,
+      invoice_type: 'B'
+    })
+
+    try {
+      const res = await fetch(`/api/quotes/${q.id}/candidate-transfers`)
+      if (res.ok) {
+        const data = await res.json()
+        const cands = data.candidates || []
+        setCandidateTransfers(cands)
+        // If an exact match is found, auto-select it and switch to link_transfer mode
+        const exactMatch = cands.find(c => c.is_exact_match)
+        if (exactMatch) {
+          setSelectedTransferId(String(exactMatch.order_id))
+          setConvertMode('link_transfer')
+        } else if (cands.length > 0 && (cands[0].name_match || cands[0].is_close_match)) {
+          setSelectedTransferId(String(cands[0].order_id))
+          setConvertMode('link_transfer')
+        }
+      }
+    } catch (err) {
+      console.error('Error fetching candidate transfers:', err)
+    } finally {
+      setLoadingCandidates(false)
+    }
+  }
+
+  // Lookup manual order/transfer ID
+  const handleLookupManualTransfer = async () => {
+    const val = String(manualTransferId).trim()
+    if (!val) return
+    setManualLookupLoading(true)
+    setManualLookupResult(null)
+    try {
+      const res = await fetch(`/api/quotes/lookup-transfer/${encodeURIComponent(val)}`)
+      if (res.ok) {
+        const data = await res.json()
+        setManualLookupResult(data)
+        if (data.found && !data.already_linked) {
+          setSelectedTransferId(val)
+        }
+      } else {
+        const err = await res.json().catch(() => ({}))
+        setManualLookupResult({ error: err.detail || 'No se encontró la orden' })
+      }
+    } catch (err) {
+      setManualLookupResult({ error: 'Error de conexión: ' + err.message })
+    } finally {
+      setManualLookupLoading(false)
+    }
+  }
+
+  // Convert quote to confirmed sale order (cash or linking existing transfer)
   const handleConfirmConvert = async () => {
     if (!convertingQuote) return
+
+    const isLinkMode = (convertMode === 'link_transfer')
+    let finalTransferId = null
+    if (isLinkMode) {
+      finalTransferId = selectedTransferId || manualTransferId
+      if (!finalTransferId) {
+        alert('Por favor selecciona una transferencia de la lista o ingresa el N° de orden / ID de cobro de Mercado Pago.')
+        return
+      }
+    }
+
     setSubmitting(true)
 
     try {
+      const payload = {
+        mode: isLinkMode ? 'link_transfer' : 'cash',
+        existing_order_id: isLinkMode ? parseInt(finalTransferId) : null,
+        payment_method: isLinkMode ? 'Transferencia (Mercado Pago)' : convertForm.payment_method,
+        shipping_status: convertForm.shipping_status,
+        auto_invoice: convertForm.auto_invoice,
+        invoice_type: convertForm.invoice_type
+      }
+
       const res = await fetch(`/api/quotes/${convertingQuote.id}/convert-to-order`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(convertForm)
+        body: JSON.stringify(payload)
       })
 
       if (res.ok) {
         const data = await res.json()
-        alert(`🎉 ${data.message || 'Presupuesto convertido a venta con éxito.'}`)
+        alert(`🎉 ${data.message || 'Presupuesto cobrado con éxito.'}`)
         setConvertingQuote(null)
         invalidateCache('quotes')
         invalidateCache('sales')
         await fetchQuotes(true)
       } else {
         const err = await res.json().catch(() => ({}))
-        alert('Error al confirmar venta: ' + (err.detail || 'Error desconocido'))
+        alert('Error al confirmar cobro: ' + (err.detail || 'Error desconocido'))
       }
     } catch (err) {
       alert('Error de conexión: ' + err.message)
@@ -500,6 +593,7 @@ export default function Quotes() {
 
   // Open Edit Modal
   const handleOpenEdit = (q) => {
+    setCloningFromQuote(null)
     setEditingQuote(q)
     setFormData({
       customer_name: q.customer_name || '',
@@ -511,6 +605,26 @@ export default function Quotes() {
       valid_days: q.valid_days || 7,
       notes: q.notes || '',
       items: q.items && q.items.length > 0 ? q.items : [{ id: `manual-${Date.now()}`, title: '', quantity: 1, price: 0, sku: '' }]
+    })
+    setShowCreateModal(true)
+  }
+
+  // Open Clone Modal
+  const handleOpenClone = (q) => {
+    setEditingQuote(null)
+    setCloningFromQuote(q)
+    setFormData({
+      customer_name: q.customer_name || '',
+      customer_doc: q.customer_doc || '',
+      customer_email: q.customer_email || '',
+      customer_phone: q.customer_phone || '',
+      customer_address: q.customer_address || '',
+      price_source: q.price_source || 'web',
+      valid_days: q.valid_days || 7,
+      notes: q.notes || '',
+      items: q.items && q.items.length > 0
+        ? q.items.map((it, idx) => ({ ...it, id: `cloned-${Date.now()}-${idx}` }))
+        : [{ id: `manual-${Date.now()}`, title: '', quantity: 1, price: 0, sku: '' }]
     })
     setShowCreateModal(true)
   }
@@ -590,6 +704,7 @@ export default function Quotes() {
                 return
               }
               setEditingQuote(null)
+              setCloningFromQuote(null)
               setFormData(initialQuoteForm)
               setShowCreateModal(true)
             }}
@@ -637,7 +752,7 @@ export default function Quotes() {
 
       {/* KPI Cards */}
       <div style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 14, marginBottom: 20}}>
-        {/* Vigentes */}
+        {/* Vigentes / Pendientes */}
         <div style={{
           backgroundColor: 'var(--bg-card)', 
           border: '1px solid var(--border-color)', 
@@ -646,7 +761,7 @@ export default function Quotes() {
           boxShadow: '0 1px 3px rgba(0,0,0,0.05)'
         }}>
           <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
-            <span style={{fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: 600}}>⏳ VIGENTES / ACTIVOS</span>
+            <span style={{fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: 600}}>⏳ PENDIENTES DE COBRO</span>
             <span style={{backgroundColor: 'rgba(59, 130, 246, 0.12)', color: 'var(--accent-blue)', padding: '2px 8px', borderRadius: 12, fontSize: '0.75rem', fontWeight: 700}}>
               {metrics.pendingCount}
             </span>
@@ -655,11 +770,11 @@ export default function Quotes() {
             ${metrics.pendingAmount.toLocaleString('es-AR')}
           </div>
           <div style={{fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: 4}}>
-            Cotizaciones dentro del plazo de validez
+            Cotizaciones vigentes pendientes de cobrar
           </div>
         </div>
 
-        {/* Concretados / Abonados */}
+        {/* Concretados / Cobrados */}
         <div style={{
           backgroundColor: 'var(--bg-card)', 
           border: '1px solid var(--border-color)', 
@@ -668,7 +783,7 @@ export default function Quotes() {
           boxShadow: '0 1px 3px rgba(0,0,0,0.05)'
         }}>
           <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
-            <span style={{fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: 600}}>✅ ABONADOS (VENTAS)</span>
+            <span style={{fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: 600}}>✅ COBRADOS (VENTAS)</span>
             <span style={{backgroundColor: 'rgba(16, 185, 129, 0.12)', color: 'var(--accent-emerald)', padding: '2px 8px', borderRadius: 12, fontSize: '0.75rem', fontWeight: 700}}>
               {metrics.approvedCount}
             </span>
@@ -677,7 +792,7 @@ export default function Quotes() {
             ${metrics.approvedAmount.toLocaleString('es-AR')}
           </div>
           <div style={{fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: 4}}>
-            Presupuestos confirmados a venta
+            Presupuestos cobrados y convertidos a venta
           </div>
         </div>
 
@@ -690,7 +805,7 @@ export default function Quotes() {
           boxShadow: '0 1px 3px rgba(0,0,0,0.05)'
         }}>
           <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
-            <span style={{fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: 600}}>⚠️ VENCIDOS</span>
+            <span style={{fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: 600}}>⚠️ VENCIDOS (NO COBRADOS)</span>
             <span style={{backgroundColor: 'rgba(239, 68, 68, 0.12)', color: 'var(--accent-red)', padding: '2px 8px', borderRadius: 12, fontSize: '0.75rem', fontWeight: 700}}>
               {metrics.expiredCount}
             </span>
@@ -721,7 +836,7 @@ export default function Quotes() {
             {metrics.conversionRate}%
           </div>
           <div style={{fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: 4}}>
-            Tasa de conversión a venta real
+            Tasa de presupuestos cobrados
           </div>
         </div>
       </div>
@@ -767,8 +882,8 @@ export default function Quotes() {
         <div style={{display: 'flex', gap: 6, flexWrap: 'wrap'}}>
           {[
             { id: 'all', label: 'Todos' },
-            { id: 'pending', label: '⏳ Vigentes' },
-            { id: 'approved', label: '✅ Abonados' },
+            { id: 'pending', label: '⏳ Pendientes de cobro' },
+            { id: 'approved', label: '✅ Cobrados' },
             { id: 'expired', label: '⚠️ Vencidos' }
           ].map(tab => (
             <button
@@ -903,43 +1018,46 @@ export default function Quotes() {
                           <span style={{
                             display: 'inline-flex', 
                             alignItems: 'center', 
-                            gap: 4, 
-                            padding: '3px 9px', 
+                            gap: 5, 
+                            padding: '4px 10px', 
                             borderRadius: 12, 
                             fontSize: '0.75rem', 
                             fontWeight: 700, 
                             backgroundColor: 'rgba(16, 185, 129, 0.12)', 
-                            color: 'var(--accent-emerald)'
+                            color: 'var(--accent-emerald)',
+                            border: '1px solid rgba(16, 185, 129, 0.25)'
                           }}>
-                            <CheckCircle2 size={13} /> Abonado
+                            <CheckCircle2 size={13} /> Cobrado
                           </span>
                         ) : isExpired ? (
                           <span style={{
                             display: 'inline-flex', 
                             alignItems: 'center', 
-                            gap: 4, 
-                            padding: '3px 9px', 
+                            gap: 5, 
+                            padding: '4px 10px', 
                             borderRadius: 12, 
                             fontSize: '0.75rem', 
                             fontWeight: 700, 
                             backgroundColor: 'rgba(239, 68, 68, 0.12)', 
-                            color: 'var(--accent-red)'
+                            color: 'var(--accent-red)',
+                            border: '1px solid rgba(239, 68, 68, 0.25)'
                           }}>
-                            <AlertTriangle size={13} /> Vencido
+                            <AlertTriangle size={13} /> Vencido (No cobrado)
                           </span>
                         ) : (
                           <span style={{
                             display: 'inline-flex', 
                             alignItems: 'center', 
-                            gap: 4, 
-                            padding: '3px 9px', 
+                            gap: 5, 
+                            padding: '4px 10px', 
                             borderRadius: 12, 
                             fontSize: '0.75rem', 
                             fontWeight: 700, 
                             backgroundColor: 'rgba(59, 130, 246, 0.12)', 
-                            color: 'var(--accent-blue)'
+                            color: 'var(--accent-blue)',
+                            border: '1px solid rgba(59, 130, 246, 0.25)'
                           }}>
-                            <Clock size={13} /> Vigente
+                            <Clock size={13} /> Pendiente de cobro
                           </span>
                         )}
                       </td>
@@ -950,9 +1068,15 @@ export default function Quotes() {
                           <div>
                             <div style={{fontWeight: 600}}>{formatDateDisplay(q.completed_at)}</div>
                             {q.order_id && (
-                              <div style={{fontSize: '0.7rem', color: 'var(--text-secondary)'}}>
-                                Orden #{q.order_id}
-                              </div>
+                              <a
+                                href={`/sales?search=${q.order_id}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                title="Ver orden en el módulo de Ventas"
+                                style={{fontSize: '0.72rem', color: 'var(--accent-blue)', textDecoration: 'underline', display: 'inline-flex', alignItems: 'center', gap: 3, marginTop: 2}}
+                              >
+                                Orden #{q.order_id} <ExternalLink size={10} />
+                              </a>
                             )}
                           </div>
                         ) : (
@@ -962,37 +1086,51 @@ export default function Quotes() {
 
                       {/* Acciones */}
                       <td style={{padding: '12px 14px', textAlign: 'right'}}>
-                        <div style={{display: 'flex', justifyContent: 'flex-end', gap: 6}}>
+                        <div style={{display: 'flex', justifyContent: 'flex-end', gap: 6, alignItems: 'center'}}>
                           
-                          {/* Confirm Sale / Abonado */}
-                          {!isApproved && (
+                          {/* Confirm Sale / Cobrar */}
+                          {!isApproved ? (
                             <button
-                              onClick={() => {
-                                setConvertingQuote(q)
-                                setConvertForm({
-                                  payment_method: 'Efectivo',
-                                  shipping_status: 'delivered',
-                                  auto_invoice: false,
-                                  invoice_type: 'B'
-                                })
+                              onClick={() => handleOpenCobrarModal(q)}
+                              title="Registrar cobro: Efectivo o asociar a transferencia de Ventas"
+                              style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 5,
+                                padding: '5px 11px',
+                                borderRadius: 6,
+                                border: '1px solid rgba(16, 185, 129, 0.4)',
+                                backgroundColor: 'rgba(16, 185, 129, 0.15)',
+                                color: 'var(--accent-emerald)',
+                                cursor: 'pointer',
+                                fontSize: '0.78rem',
+                                fontWeight: 700
                               }}
-                              title="Confirmar venta y marcar como abonado (descuenta stock)"
+                            >
+                              <DollarSign size={13} /> Cobrar
+                            </button>
+                          ) : (
+                            <a
+                              href={`/sales?search=${q.order_id || q.quote_number}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              title={`Presupuesto cobrado. Ver venta #${q.order_id || ''}`}
                               style={{
                                 display: 'inline-flex',
                                 alignItems: 'center',
                                 gap: 4,
-                                padding: '4px 9px',
+                                padding: '4px 8px',
                                 borderRadius: 6,
-                                border: '1px solid rgba(16, 185, 129, 0.3)',
-                                backgroundColor: 'rgba(16, 185, 129, 0.12)',
+                                border: '1px solid rgba(16, 185, 129, 0.25)',
+                                backgroundColor: 'rgba(16, 185, 129, 0.08)',
                                 color: 'var(--accent-emerald)',
-                                cursor: 'pointer',
-                                fontSize: '0.75rem',
+                                textDecoration: 'none',
+                                fontSize: '0.72rem',
                                 fontWeight: 600
                               }}
                             >
-                              <Check size={13} /> Cobrado
-                            </button>
+                              <CheckCircle2 size={12} /> Cobrado
+                            </a>
                           )}
 
                           {/* PDF Download */}
@@ -1068,6 +1206,26 @@ export default function Quotes() {
                             </button>
                           )}
 
+                          {/* Clone */}
+                          <button
+                            onClick={() => handleOpenClone(q)}
+                            title={`Clonar presupuesto #${q.quote_number}`}
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              width: 28,
+                              height: 28,
+                              borderRadius: 6,
+                              border: '1px solid var(--border-color)',
+                              backgroundColor: 'var(--bg-hover)',
+                              color: 'var(--accent-blue, #2563eb)',
+                              cursor: 'pointer'
+                            }}
+                          >
+                            <Copy size={13} />
+                          </button>
+
                           {/* Delete */}
                           <button
                             onClick={() => handleDeleteQuote(q.id, q.quote_number)}
@@ -1139,14 +1297,22 @@ export default function Quotes() {
               <div>
                 <h3 style={{margin: 0, fontSize: '1.2rem', display: 'flex', alignItems: 'center', gap: 8}}>
                   <FileText size={20} color="var(--accent-blue)" /> 
-                  {editingQuote ? `Editar Presupuesto #${editingQuote.quote_number}` : 'Armar Nuevo Presupuesto'}
+                  {editingQuote 
+                    ? `Editar Presupuesto #${editingQuote.quote_number}` 
+                    : cloningFromQuote 
+                      ? `Clonar Presupuesto #${cloningFromQuote.quote_number} (Nueva Cotización)` 
+                      : 'Armar Nuevo Presupuesto'}
                 </h3>
                 <span style={{fontSize: '0.78rem', color: 'var(--text-secondary)'}}>
                   El stock no se reservará ni descontará hasta que el cliente abone y se confirme la venta.
                 </span>
               </div>
               <button 
-                onClick={() => setShowCreateModal(false)}
+                onClick={() => {
+                  setShowCreateModal(false)
+                  setEditingQuote(null)
+                  setCloningFromQuote(null)
+                }}
                 style={{border: 'none', background: 'none', cursor: 'pointer', color: 'var(--text-secondary)', padding: 4}}
               >
                 <X size={20} />
@@ -1156,6 +1322,29 @@ export default function Quotes() {
             {/* Modal Body */}
             <div style={{flex: 1, overflowY: 'auto', padding: '18px 20px', display: 'flex', flexDirection: 'column', gap: 16}}>
               
+              {/* Banner de Clonación */}
+              {cloningFromQuote && (
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 10,
+                  backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                  border: '1px solid rgba(59, 130, 246, 0.3)',
+                  borderRadius: 8,
+                  padding: '10px 14px',
+                  fontSize: '0.85rem',
+                  color: 'var(--text-primary)'
+                }}>
+                  <Copy size={16} color="var(--accent-blue)" style={{flexShrink: 0}} />
+                  <div>
+                    <strong>Clonando a partir del Presupuesto #{cloningFromQuote.quote_number}:</strong>
+                    <span style={{ marginLeft: 6, color: 'var(--text-secondary)' }}>
+                      Se generará una nueva cotización independiente con número correlativo y vigencia actual. Podés modificar los productos o datos antes de guardar.
+                    </span>
+                  </div>
+                </div>
+              )}
+
               {/* Membrete Emisor Bar */}
               <div style={{
                 display: 'flex',
@@ -1556,7 +1745,11 @@ export default function Quotes() {
               <button 
                 type="button"
                 className="btn"
-                onClick={() => setShowCreateModal(false)}
+                onClick={() => {
+                  setShowCreateModal(false)
+                  setEditingQuote(null)
+                  setCloningFromQuote(null)
+                }}
                 style={{backgroundColor: 'transparent', border: '1px solid var(--border-color)', color: 'var(--text-secondary)'}}
               >
                 Cancelar
@@ -1570,7 +1763,7 @@ export default function Quotes() {
                   onClick={() => handleSaveQuote(false)}
                   style={{backgroundColor: 'var(--bg-card)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', fontWeight: 600}}
                 >
-                  {submitting ? 'Guardando...' : 'Guardar Presupuesto'}
+                  {submitting ? 'Guardando...' : (cloningFromQuote ? 'Crear Presupuesto Clonado' : 'Guardar Presupuesto')}
                 </button>
 
                 <button 
@@ -1580,7 +1773,7 @@ export default function Quotes() {
                   onClick={() => handleSaveQuote(true)}
                   style={{display: 'flex', alignItems: 'center', gap: 6, fontWeight: 600}}
                 >
-                  <Download size={16} /> Guardar y Abrir PDF
+                  <Download size={16} /> {cloningFromQuote ? 'Crear y Abrir PDF' : 'Guardar y Abrir PDF'}
                 </button>
               </div>
             </div>
@@ -1590,7 +1783,7 @@ export default function Quotes() {
       )}
 
       {/* ========================================================================= */}
-      {/* MODAL: Confirmar Venta / Marcar Abonado */}
+      {/* MODAL: Registrar Cobro de Presupuesto (Efectivo o Asociar Transferencia)   */}
       {/* ========================================================================= */}
       {convertingQuote && (
         <div style={{
@@ -1599,8 +1792,8 @@ export default function Quotes() {
           left: 0,
           right: 0,
           bottom: 0,
-          backgroundColor: 'rgba(0, 0, 0, 0.6)',
-          backdropFilter: 'blur(4px)',
+          backgroundColor: 'rgba(0, 0, 0, 0.65)',
+          backdropFilter: 'blur(5px)',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
@@ -1612,86 +1805,374 @@ export default function Quotes() {
             borderRadius: 14,
             border: '1px solid var(--border-color)',
             width: '100%',
-            maxWidth: 480,
-            padding: 22,
-            boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.3)'
+            maxWidth: 580,
+            maxHeight: '92vh',
+            display: 'flex',
+            flexDirection: 'column',
+            boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.35)',
+            overflow: 'hidden'
           }}>
-            <h3 style={{margin: '0 0 8px', fontSize: '1.15rem', display: 'flex', alignItems: 'center', gap: 8}}>
-              <CheckCircle2 size={22} color="var(--accent-emerald)" /> Confirmar Venta de Presupuesto
-            </h3>
-            
-            <p style={{margin: '0 0 16px', fontSize: '0.84rem', color: 'var(--text-secondary)'}}>
-              El cliente <b>{convertingQuote.customer_name}</b> abonó la cotización <b>#{convertingQuote.quote_number}</b> por un total de <b>${Number(convertingQuote.total_amount).toLocaleString('es-AR')}</b>.
-              <br /><br />
-              Al confirmar, se registrará la venta en la sección de Ventas, se descontará el stock del inventario y se guardará la fecha de finalización.
-            </p>
-
-            <div style={{display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 18}}>
+            {/* Modal Header */}
+            <div style={{
+              padding: '16px 20px',
+              borderBottom: '1px solid var(--border-color)',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              backgroundColor: 'var(--bg-hover)'
+            }}>
               <div>
-                <label style={{display: 'block', fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 4}}>
-                  Medio de Pago Utilizado
-                </label>
-                <select 
-                  value={convertForm.payment_method}
-                  onChange={e => setConvertForm({ ...convertForm, payment_method: e.target.value })}
-                  style={{width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-hover)', color: 'var(--text-primary)', fontWeight: 600}}
-                >
-                  <option value="Efectivo">💵 Efectivo</option>
-                  <option value="Transferencia (Mercado Pago)">📱 Transferencia (Mercado Pago)</option>
-                  <option value="Transferencia (CBU o Alias)">🏦 Transferencia (CBU o Alias Bancario)</option>
-                  <option value="Mercado Pago (Point)">💳 Mercado Pago (Point)</option>
-                  <option value="Tarjeta de Débito">💳 Tarjeta de Débito</option>
-                  <option value="Tarjeta de Crédito">💳 Tarjeta de Crédito</option>
-                </select>
+                <h3 style={{margin: 0, fontSize: '1.15rem', display: 'flex', alignItems: 'center', gap: 8, color: 'var(--text-primary)'}}>
+                  <DollarSign size={22} color="var(--accent-emerald)" /> Registrar Cobro de Presupuesto #{convertingQuote.quote_number}
+                </h3>
+                <span style={{fontSize: '0.78rem', color: 'var(--text-secondary)'}}>
+                  Cliente: <b>{convertingQuote.customer_name}</b> · Total: <b style={{color: 'var(--accent-emerald)'}}>${Number(convertingQuote.total_amount).toLocaleString('es-AR')}</b>
+                </span>
               </div>
-
-              <div>
-                <label style={{display: 'block', fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 4}}>
-                  Estado de Entrega de la Mercadería
-                </label>
-                <select 
-                  value={convertForm.shipping_status}
-                  onChange={e => setConvertForm({ ...convertForm, shipping_status: e.target.value })}
-                  style={{width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-hover)', color: 'var(--text-primary)'}}
-                >
-                  <option value="delivered">✅ Entregado en mano / Enviado</option>
-                  <option value="pending">⏳ Pendiente de Retiro o Entrega</option>
-                </select>
-              </div>
-
-              {/* AFIP Auto Invoice */}
-              <div style={{marginTop: 4, display: 'flex', alignItems: 'center', gap: 8}}>
-                <input 
-                  type="checkbox"
-                  id="auto_inv_cb"
-                  checked={convertForm.auto_invoice}
-                  onChange={e => setConvertForm({ ...convertForm, auto_invoice: e.target.checked })}
-                  style={{width: 16, height: 16, cursor: 'pointer'}}
-                />
-                <label htmlFor="auto_inv_cb" style={{fontSize: '0.82rem', color: 'var(--text-primary)', cursor: 'pointer'}}>
-                  Emitir Factura Electrónica AFIP inmediatamente
-                </label>
-              </div>
-
-              {convertForm.auto_invoice && (
-                <div>
-                  <label style={{display: 'block', fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 4}}>
-                    Tipo de Comprobante
-                  </label>
-                  <select 
-                    value={convertForm.invoice_type}
-                    onChange={e => setConvertForm({ ...convertForm, invoice_type: e.target.value })}
-                    style={{width: '100%', padding: '6px 8px', borderRadius: 6, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-hover)', color: 'var(--text-primary)'}}
-                  >
-                    <option value="B">Factura B (Consumidor Final)</option>
-                    <option value="A">Factura A (Responsable Inscripto)</option>
-                    <option value="C">Factura C</option>
-                  </select>
-                </div>
-              )}
+              <button
+                onClick={() => setConvertingQuote(null)}
+                style={{border: 'none', background: 'none', cursor: 'pointer', color: 'var(--text-secondary)', padding: 4}}
+              >
+                <X size={20} />
+              </button>
             </div>
 
-            <div style={{display: 'flex', justifyContent: 'flex-end', gap: 10}}>
+            {/* Modal Body */}
+            <div style={{flex: 1, overflowY: 'auto', padding: '18px 20px', display: 'flex', flexDirection: 'column', gap: 14}}>
+              
+              {/* Method Selection Tabs */}
+              <div>
+                <label style={{display: 'block', fontSize: '0.78rem', fontWeight: 700, marginBottom: 8, color: 'var(--text-secondary)'}}>
+                  ¿CÓMO ABONÓ EL CLIENTE ESTA COTIZACIÓN?
+                </label>
+                <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10}}>
+                  
+                  {/* Option 1: Asociar a Transferencia (Mercado Pago / Banco) */}
+                  <div
+                    onClick={() => setConvertMode('link_transfer')}
+                    style={{
+                      padding: '12px 14px',
+                      borderRadius: 10,
+                      border: '2px solid',
+                      borderColor: convertMode === 'link_transfer' ? 'var(--accent-blue)' : 'var(--border-color)',
+                      backgroundColor: convertMode === 'link_transfer' ? 'rgba(59, 130, 246, 0.08)' : 'var(--bg-hover)',
+                      cursor: 'pointer',
+                      transition: 'all 0.15s'
+                    }}
+                  >
+                    <div style={{display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4}}>
+                      <Link2 size={18} color={convertMode === 'link_transfer' ? 'var(--accent-blue)' : 'var(--text-secondary)'} />
+                      <span style={{fontWeight: 700, fontSize: '0.84rem', color: convertMode === 'link_transfer' ? 'var(--accent-blue)' : 'var(--text-primary)'}}>
+                        Asociar a Transferencia
+                      </span>
+                    </div>
+                    <div style={{fontSize: '0.74rem', color: 'var(--text-secondary)', lineHeight: 1.3}}>
+                      Ya entró a Ventas por Mercado Pago o banco. Evita duplicar la venta.
+                    </div>
+                  </div>
+
+                  {/* Option 2: Efectivo / Nuevo Cobro Directo */}
+                  <div
+                    onClick={() => setConvertMode('cash')}
+                    style={{
+                      padding: '12px 14px',
+                      borderRadius: 10,
+                      border: '2px solid',
+                      borderColor: convertMode === 'cash' ? 'var(--accent-emerald)' : 'var(--border-color)',
+                      backgroundColor: convertMode === 'cash' ? 'rgba(16, 185, 129, 0.08)' : 'var(--bg-hover)',
+                      cursor: 'pointer',
+                      transition: 'all 0.15s'
+                    }}
+                  >
+                    <div style={{display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4}}>
+                      <DollarSign size={18} color={convertMode === 'cash' ? 'var(--accent-emerald)' : 'var(--text-secondary)'} />
+                      <span style={{fontWeight: 700, fontSize: '0.84rem', color: convertMode === 'cash' ? 'var(--accent-emerald)' : 'var(--text-primary)'}}>
+                        Efectivo / Nuevo Cobro
+                      </span>
+                    </div>
+                    <div style={{fontSize: '0.74rem', color: 'var(--text-secondary)', lineHeight: 1.3}}>
+                      Cobro en mano en mostrador o tarjeta posnet. Genera un nuevo registro en Ventas.
+                    </div>
+                  </div>
+
+                </div>
+              </div>
+
+              {/* Mode 1 Content: Transfer Linking */}
+              {convertMode === 'link_transfer' && (
+                <div style={{display: 'flex', flexDirection: 'column', gap: 12}}>
+                  
+                  {loadingCandidates ? (
+                    <div style={{padding: 20, textAlign: 'center', color: 'var(--text-secondary)', fontSize: '0.85rem'}}>
+                      <RefreshCw size={18} className="animate-spin" style={{margin: '0 auto 6px'}} />
+                      Buscando transferencias en Ventas coincidentes con ${Number(convertingQuote.total_amount).toLocaleString('es-AR')}...
+                    </div>
+                  ) : (
+                    <>
+                      {/* Exact Match Alert Banner if found */}
+                      {candidateTransfers.some(c => c.is_exact_match) && (
+                        <div style={{
+                          backgroundColor: 'rgba(16, 185, 129, 0.12)',
+                          border: '1px solid rgba(16, 185, 129, 0.35)',
+                          borderRadius: 8,
+                          padding: '10px 14px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 10
+                        }}>
+                          <Sparkles size={20} color="var(--accent-emerald)" />
+                          <div style={{fontSize: '0.82rem', color: 'var(--text-primary)'}}>
+                            <b>¡Coincidencia automática detectada!</b> Se encontró una transferencia por el importe exacto de <b>${Number(convertingQuote.total_amount).toLocaleString('es-AR')}</b>.
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Candidate transfers list */}
+                      <div>
+                        <label style={{display: 'block', fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 6}}>
+                          Seleccioná la transferencia ingresada en Ventas:
+                        </label>
+                        
+                        {candidateTransfers.length > 0 ? (
+                          <div style={{
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: 6,
+                            maxHeight: 180,
+                            overflowY: 'auto',
+                            border: '1px solid var(--border-color)',
+                            borderRadius: 8,
+                            padding: 6,
+                            backgroundColor: 'var(--bg-hover)'
+                          }}>
+                            {candidateTransfers.map(c => {
+                              const isSelected = String(selectedTransferId) === String(c.order_id)
+                              return (
+                                <div
+                                  key={c.order_id}
+                                  onClick={() => setSelectedTransferId(String(c.order_id))}
+                                  style={{
+                                    padding: '8px 12px',
+                                    borderRadius: 6,
+                                    border: '1px solid',
+                                    borderColor: isSelected ? 'var(--accent-blue)' : 'transparent',
+                                    backgroundColor: isSelected ? 'rgba(59, 130, 246, 0.15)' : 'var(--bg-card)',
+                                    cursor: 'pointer',
+                                    display: 'flex',
+                                    justifyContent: 'space-between',
+                                    alignItems: 'center',
+                                    fontSize: '0.8rem',
+                                    transition: 'all 0.12s'
+                                  }}
+                                >
+                                  <div>
+                                    <div style={{display: 'flex', alignItems: 'center', gap: 6}}>
+                                      <span style={{fontWeight: 700, color: 'var(--text-primary)'}}>Orden #{c.order_id}</span>
+                                      {c.is_exact_match && (
+                                        <span style={{fontSize: '0.68rem', backgroundColor: 'rgba(16, 185, 129, 0.2)', color: 'var(--accent-emerald)', padding: '1px 6px', borderRadius: 4, fontWeight: 700}}>
+                                          ⭐ Monto Exacto
+                                        </span>
+                                      )}
+                                      {c.name_match && (
+                                        <span style={{fontSize: '0.68rem', backgroundColor: 'rgba(59, 130, 246, 0.2)', color: 'var(--accent-blue)', padding: '1px 6px', borderRadius: 4, fontWeight: 600}}>
+                                          Cliente Coincide
+                                        </span>
+                                      )}
+                                    </div>
+                                    <div style={{color: 'var(--text-secondary)', fontSize: '0.72rem', marginTop: 2}}>
+                                      {c.buyer_name} · {formatDateDisplay(c.date_created)} {c.payment_method ? `· ${c.payment_method}` : ''}
+                                    </div>
+                                  </div>
+
+                                  <div style={{textAlign: 'right'}}>
+                                    <div style={{fontWeight: 700, color: c.is_exact_match ? 'var(--accent-emerald)' : 'var(--text-primary)'}}>
+                                      ${Number(c.total_amount).toLocaleString('es-AR')}
+                                    </div>
+                                    {isSelected && (
+                                      <span style={{fontSize: '0.7rem', color: 'var(--accent-blue)', fontWeight: 700}}>
+                                        ✓ Seleccionada
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                              )
+                            })}
+                          </div>
+                        ) : (
+                          <div style={{padding: 12, backgroundColor: 'var(--bg-hover)', borderRadius: 8, fontSize: '0.8rem', color: 'var(--text-secondary)', textAlign: 'center'}}>
+                            No se encontraron transferencias recientes en Ventas. Podés ingresar el N° de orden manualmente a continuación.
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Manual Lookup of Order ID */}
+                      <div style={{backgroundColor: 'var(--bg-hover)', padding: '10px 12px', borderRadius: 8, border: '1px solid var(--border-color)'}}>
+                        <label style={{display: 'block', fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 4}}>
+                          O ingresá manualmente el N° de Orden / ID de pago de Mercado Pago:
+                        </label>
+                        <div style={{display: 'flex', gap: 8}}>
+                          <input
+                            type="text"
+                            placeholder="ej: 179737320580 o ID de orden"
+                            value={manualTransferId}
+                            onChange={e => setManualTransferId(e.target.value)}
+                            onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleLookupManualTransfer(); } }}
+                            style={{
+                              flex: 1,
+                              padding: '6px 10px',
+                              borderRadius: 6,
+                              border: '1px solid var(--border-color)',
+                              backgroundColor: 'var(--bg-card)',
+                              color: 'var(--text-primary)',
+                              fontSize: '0.82rem',
+                              fontFamily: 'monospace'
+                            }}
+                          />
+                          <button
+                            type="button"
+                            onClick={handleLookupManualTransfer}
+                            disabled={manualLookupLoading || !manualTransferId.trim()}
+                            className="btn"
+                            style={{padding: '6px 12px', fontSize: '0.78rem', fontWeight: 600, backgroundColor: 'var(--accent-blue)', color: '#fff'}}
+                          >
+                            {manualLookupLoading ? 'Buscando...' : 'Buscar'}
+                          </button>
+                        </div>
+
+                        {manualLookupResult && (
+                          <div style={{marginTop: 8, fontSize: '0.76rem'}}>
+                            {manualLookupResult.error ? (
+                              <div style={{color: 'var(--accent-red)'}}>❌ {manualLookupResult.error}</div>
+                            ) : manualLookupResult.already_linked ? (
+                              <div style={{color: 'var(--accent-red)'}}>
+                                ⚠️ Esta orden ya está asociada al Presupuesto #{manualLookupResult.linked_quote_number}.
+                              </div>
+                            ) : (
+                              <div style={{color: 'var(--accent-emerald)', fontWeight: 600}}>
+                                ✓ Orden #{manualLookupResult.order?.order_id} encontrada (${Number(manualLookupResult.order?.total_amount).toLocaleString('es-AR')} - {manualLookupResult.order?.buyer?.name || 'Sin nombre'}). Seleccionada para asociar.
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Explanation Callout */}
+                      <div style={{
+                        backgroundColor: 'rgba(59, 130, 246, 0.07)',
+                        border: '1px solid rgba(59, 130, 246, 0.25)',
+                        borderRadius: 8,
+                        padding: '10px 12px',
+                        fontSize: '0.78rem',
+                        color: 'var(--text-secondary)',
+                        lineHeight: 1.4
+                      }}>
+                        💡 <b>Protección contra duplicados:</b> Al asociar, la transferencia de <b>Ventas</b> se actualizará con los productos específicos de este presupuesto y se descontará el stock de inventario. <b>No se duplicará la venta ni la facturación</b> en tus estadísticas.
+                      </div>
+                    </>
+                  )}
+
+                </div>
+              )}
+
+              {/* Mode 2 Content: Cash or Direct Payment */}
+              {convertMode === 'cash' && (
+                <div style={{display: 'flex', flexDirection: 'column', gap: 12}}>
+                  <div>
+                    <label style={{display: 'block', fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 4}}>
+                      Medio de Pago Utilizado
+                    </label>
+                    <select 
+                      value={convertForm.payment_method}
+                      onChange={e => setConvertForm({ ...convertForm, payment_method: e.target.value })}
+                      style={{width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-hover)', color: 'var(--text-primary)', fontWeight: 600}}
+                    >
+                      <option value="Efectivo">💵 Efectivo (Billetes / Caja)</option>
+                      <option value="Tarjeta de Débito">💳 Tarjeta de Débito (Posnet local)</option>
+                      <option value="Tarjeta de Crédito">💳 Tarjeta de Crédito (Posnet local)</option>
+                      <option value="Transferencia (CBU o Alias)">🏦 Transferencia Directa Nueva (CBU no sincronizado)</option>
+                      <option value="Mercado Pago (Point)">📱 Mercado Pago (Point físico)</option>
+                    </select>
+                  </div>
+
+                  <div style={{
+                    backgroundColor: 'rgba(16, 185, 129, 0.07)',
+                    border: '1px solid rgba(16, 185, 129, 0.25)',
+                    borderRadius: 8,
+                    padding: '10px 12px',
+                    fontSize: '0.78rem',
+                    color: 'var(--text-secondary)',
+                    lineHeight: 1.4
+                  }}>
+                    📦 <b>Registro de nueva venta:</b> Se creará un nuevo registro comercial en el módulo de <b>Ventas</b> por <b>${Number(convertingQuote.total_amount).toLocaleString('es-AR')}</b> a nombre de <b>{convertingQuote.customer_name}</b> y se descontará el stock correspondiente del inventario.
+                  </div>
+                </div>
+              )}
+
+              {/* Common Options: Shipping & AFIP Invoice */}
+              <div style={{
+                borderTop: '1px solid var(--border-color)',
+                paddingTop: 12,
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 10
+              }}>
+                <div>
+                  <label style={{display: 'block', fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 4}}>
+                    Estado de Entrega de los Productos
+                  </label>
+                  <select 
+                    value={convertForm.shipping_status}
+                    onChange={e => setConvertForm({ ...convertForm, shipping_status: e.target.value })}
+                    style={{width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-hover)', color: 'var(--text-primary)'}}
+                  >
+                    <option value="delivered">✅ Entregado en mano / Enviado</option>
+                    <option value="pending">⏳ Pendiente de Retiro o Entrega</option>
+                  </select>
+                </div>
+
+                {/* AFIP Auto Invoice */}
+                <div style={{display: 'flex', alignItems: 'center', gap: 8, marginTop: 4}}>
+                  <input 
+                    type="checkbox"
+                    id="auto_inv_cb"
+                    checked={convertForm.auto_invoice}
+                    onChange={e => setConvertForm({ ...convertForm, auto_invoice: e.target.checked })}
+                    style={{width: 16, height: 16, cursor: 'pointer'}}
+                  />
+                  <label htmlFor="auto_inv_cb" style={{fontSize: '0.82rem', color: 'var(--text-primary)', cursor: 'pointer'}}>
+                    Emitir Factura Electrónica AFIP inmediatamente
+                  </label>
+                </div>
+
+                {convertForm.auto_invoice && (
+                  <div>
+                    <label style={{display: 'block', fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 4}}>
+                      Tipo de Comprobante AFIP
+                    </label>
+                    <select 
+                      value={convertForm.invoice_type}
+                      onChange={e => setConvertForm({ ...convertForm, invoice_type: e.target.value })}
+                      style={{width: '100%', padding: '6px 8px', borderRadius: 6, border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-hover)', color: 'var(--text-primary)'}}
+                    >
+                      <option value="B">Factura B (Consumidor Final)</option>
+                      <option value="A">Factura A (Responsable Inscripto)</option>
+                      <option value="C">Factura C</option>
+                    </select>
+                  </div>
+                )}
+              </div>
+
+            </div>
+
+            {/* Modal Footer */}
+            <div style={{
+              padding: '14px 20px',
+              borderTop: '1px solid var(--border-color)',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              backgroundColor: 'var(--bg-hover)'
+            }}>
               <button 
                 type="button"
                 className="btn"
@@ -1703,19 +2184,27 @@ export default function Quotes() {
 
               <button 
                 type="button"
-                disabled={submitting}
+                disabled={submitting || (convertMode === 'link_transfer' && !selectedTransferId && !manualTransferId)}
                 className="btn"
                 onClick={handleConfirmConvert}
                 style={{
-                  backgroundColor: 'var(--accent-emerald)', 
+                  backgroundColor: convertMode === 'link_transfer' ? 'var(--accent-blue)' : 'var(--accent-emerald)', 
                   color: '#ffffff', 
-                  fontWeight: 600, 
+                  fontWeight: 700, 
                   display: 'flex', 
                   alignItems: 'center', 
-                  gap: 6
+                  gap: 6,
+                  padding: '9px 18px',
+                  borderRadius: 8
                 }}
               >
-                <Check size={16} /> {submitting ? 'Procesando...' : 'Confirmar Venta y Descontar Stock'}
+                <Check size={16} /> 
+                {submitting 
+                  ? 'Procesando...' 
+                  : convertMode === 'link_transfer'
+                    ? `Asociar a Transferencia ${selectedTransferId ? `#${selectedTransferId}` : ''} y Marcar Cobrado`
+                    : 'Registrar Cobro en Efectivo y Descontar Stock'
+                }
               </button>
             </div>
 
