@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react'
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { useSearchParams, useParams } from 'react-router-dom'
 import { ShoppingBag, Globe, Store, Check, Clock, Plus, Trash2, ShoppingCart, DollarSign, Link, MessageSquare, Send, ExternalLink, FileText, UserCheck, User, Search, X, Filter, CheckSquare, Square, Layers, CheckCircle2, AlertCircle, Loader2, RefreshCw, Package, Calendar, Edit2, Eye, CreditCard, Copy } from 'lucide-react'
 import { useTenant } from '../TenantContext'
@@ -81,6 +81,102 @@ export default function Sales() {
       setSearchQuery(urlParam)
     }
   }, [searchParams, queryParam])
+
+  // Desktop Zoom & Horizontal Scroll States (Identical to Inventory for smaller notebook screens)
+  const [desktopZoom, setDesktopZoom] = useState(() => {
+    const saved = localStorage.getItem('sales_desktop_zoom')
+    return saved ? parseFloat(saved) : 0.88
+  })
+  const [isMobile, setIsMobile] = useState(() => typeof window !== 'undefined' ? window.innerWidth <= 768 : false)
+
+  useEffect(() => {
+    const handleResize = () => {
+      setIsMobile(window.innerWidth <= 768)
+    }
+    window.addEventListener('resize', handleResize)
+    return () => window.removeEventListener('resize', handleResize)
+  }, [])
+
+  const handleSetZoom = (newZoom) => {
+    const clamped = Math.max(0.70, Math.min(1.25, Math.round(newZoom * 100) / 100))
+    setDesktopZoom(clamped)
+    localStorage.setItem('sales_desktop_zoom', String(clamped))
+  }
+
+  const tableWrapperRef = useRef(null)
+  const bottomScrollbarRef = useRef(null)
+  const isSyncingScroll = useRef(false)
+  const [canScrollLeft, setCanScrollLeft] = useState(false)
+  const [canScrollRight, setCanScrollRight] = useState(false)
+  const [hasTableOverflow, setHasTableOverflow] = useState(false)
+  const [tableScrollWidth, setTableScrollWidth] = useState(0)
+
+  const updateTableScrollState = useCallback(() => {
+    const el = tableWrapperRef.current
+    if (!el) return
+    const { scrollLeft, scrollWidth, clientWidth } = el
+    const maxScroll = scrollWidth - clientWidth
+    const overflow = maxScroll > 4
+    setHasTableOverflow(overflow)
+    setCanScrollLeft(scrollLeft > 4)
+    setCanScrollRight(scrollLeft < maxScroll - 4)
+    setTableScrollWidth(scrollWidth)
+  }, [])
+
+  useEffect(() => {
+    const el = tableWrapperRef.current
+    if (!el) return
+    updateTableScrollState()
+
+    const onScroll = () => {
+      updateTableScrollState()
+      if (isSyncingScroll.current) return
+      isSyncingScroll.current = true
+      if (bottomScrollbarRef.current) {
+        bottomScrollbarRef.current.scrollLeft = el.scrollLeft
+      }
+      requestAnimationFrame(() => {
+        isSyncingScroll.current = false
+      })
+    }
+
+    el.addEventListener('scroll', onScroll, { passive: true })
+
+    const ro = new ResizeObserver(() => {
+      updateTableScrollState()
+    })
+    ro.observe(el)
+    if (el.firstElementChild) ro.observe(el.firstElementChild)
+
+    return () => {
+      el.removeEventListener('scroll', onScroll)
+      ro.disconnect()
+    }
+  }, [updateTableScrollState, desktopZoom, sortedOrders?.length, loading])
+
+  const handleBottomScroll = () => {
+    const bottom = bottomScrollbarRef.current
+    const table = tableWrapperRef.current
+    if (!bottom || !table) return
+    if (isSyncingScroll.current) return
+    isSyncingScroll.current = true
+    table.scrollLeft = bottom.scrollLeft
+    requestAnimationFrame(() => {
+      isSyncingScroll.current = false
+    })
+  }
+
+  const scrollTableBy = (delta) => {
+    if (!tableWrapperRef.current) return
+    tableWrapperRef.current.scrollBy({ left: delta, behavior: 'smooth' })
+  }
+
+  const handleTableWheel = (e) => {
+    if (e.shiftKey && tableWrapperRef.current) {
+      e.preventDefault()
+      tableWrapperRef.current.scrollLeft += e.deltaY || e.deltaX
+    }
+  }
 
   // Modal State
   const [showModal, setShowModal] = useState(false)
@@ -1420,7 +1516,7 @@ export default function Sales() {
   }
 
   return (
-    <div>
+    <div className="sales-page-container">
       <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, flexWrap: 'wrap', gap: 12}}>
         <div>
           <h1 className="page-title" style={{margin: 0}}>Historial de Ventas</h1>
@@ -1494,14 +1590,37 @@ export default function Sales() {
             )}
           </div>
 
-          {/* Filter Dropdowns & Reset */}
-          {!isSimpleView && (
-            <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <Filter size={15} style={{ color: 'var(--text-secondary)' }} />
+          {/* Right Controls: Filters, Desktop Zoom Controller & Scroll Nav */}
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+            {!isSimpleView && (
+              <>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <Filter size={15} style={{ color: 'var(--text-secondary)' }} />
+                  <select
+                    value={platformFilter}
+                    onChange={e => setPlatformFilter(e.target.value)}
+                    className="search-input"
+                    style={{
+                      marginBottom: 0,
+                      padding: '6px 12px',
+                      fontSize: '0.83rem',
+                      borderRadius: 8,
+                      height: 40,
+                      cursor: 'pointer'
+                    }}
+                  >
+                    <option value="ALL">🌐 Todos los canales</option>
+                    {isChannelEnabled('local') && <option value="LOCAL">🏪 Local Comercial</option>}
+                    {isChannelEnabled('meli') && <option value="MERCADOLIBRE">🛍️ Mercado Libre</option>}
+                    {isChannelEnabled('tiendanube') && <option value="TIENDANUBE">🛍️ Tiendanube</option>}
+                    {isChannelEnabled('web') && <option value="WEB">🌍 Tienda Web</option>}
+                    {isChannelEnabled('meli') && <option value="MERCADOPAGO">💳 Mercado Pago</option>}
+                  </select>
+                </div>
+
                 <select
-                  value={platformFilter}
-                  onChange={e => setPlatformFilter(e.target.value)}
+                  value={shippingFilter}
+                  onChange={e => setShippingFilter(e.target.value)}
                   className="search-input"
                   style={{
                     marginBottom: 0,
@@ -1512,61 +1631,199 @@ export default function Sales() {
                     cursor: 'pointer'
                   }}
                 >
-                  <option value="ALL">🌐 Todos los canales</option>
-                  {isChannelEnabled('local') && <option value="LOCAL">🏪 Local Comercial</option>}
-                  {isChannelEnabled('meli') && <option value="MERCADOLIBRE">🛍️ Mercado Libre</option>}
-                  {isChannelEnabled('tiendanube') && <option value="TIENDANUBE">🛍️ Tiendanube</option>}
-                  {isChannelEnabled('web') && <option value="WEB">🌍 Tienda Web</option>}
-                  {isChannelEnabled('meli') && <option value="MERCADOPAGO">💳 Mercado Pago</option>}
+                  <option value="ALL">📦 Todas las entregas</option>
+                  <option value="pending">⏳ Pendiente</option>
+                  <option value="ready_for_pickup">📍 En punto de retiro</option>
+                  <option value="in_transit">🚚 En camino</option>
+                  <option value="ready_to_ship">📦 Listo p/ enviar</option>
+                  <option value="delivered">✅ Entregado</option>
                 </select>
-              </div>
 
-              <select
-                value={shippingFilter}
-                onChange={e => setShippingFilter(e.target.value)}
-                className="search-input"
+                {(searchQuery || platformFilter !== 'ALL' || shippingFilter !== 'ALL') && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSearchQuery('')
+                      setPlatformFilter('ALL')
+                      setShippingFilter('ALL')
+                    }}
+                    className="btn"
+                    style={{
+                      height: 40,
+                      fontSize: '0.8rem',
+                      padding: '0 12px',
+                      backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                      color: '#ef4444',
+                      border: '1px solid rgba(239, 68, 68, 0.3)',
+                      borderRadius: 8
+                    }}
+                  >
+                    Limpiar filtros
+                  </button>
+                )}
+              </>
+            )}
+
+            {/* Desktop Zoom Controller */}
+            <div className="sales-desktop-zoom-controls" style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 4,
+              padding: '3px 8px',
+              borderRadius: 8,
+              backgroundColor: 'var(--bg-dark)',
+              border: '1px solid var(--border-color)',
+              height: 40,
+              boxSizing: 'border-box'
+            }}>
+              <span style={{ fontSize: '0.74rem', color: 'var(--text-secondary)', fontWeight: 600 }}>
+                🔍 Zoom:
+              </span>
+              <button
+                type="button"
+                onClick={() => handleSetZoom(desktopZoom - 0.05)}
+                disabled={desktopZoom <= 0.70}
                 style={{
-                  marginBottom: 0,
-                  padding: '6px 12px',
-                  fontSize: '0.83rem',
-                  borderRadius: 8,
-                  height: 40,
+                  width: 24,
+                  height: 24,
+                  padding: 0,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  borderRadius: 4,
+                  border: '1px solid var(--border-color)',
+                  backgroundColor: 'var(--bg-card)',
+                  color: 'var(--text-primary)',
+                  cursor: desktopZoom <= 0.70 ? 'not-allowed' : 'pointer',
+                  opacity: desktopZoom <= 0.70 ? 0.35 : 1,
+                  fontWeight: 'bold',
+                  fontSize: '0.85rem'
+                }}
+                title="Alejar / Reducir zoom (Zoom Out)"
+              >
+                -
+              </button>
+              <select
+                value={Math.round(desktopZoom * 100)}
+                onChange={e => handleSetZoom(Number(e.target.value) / 100)}
+                style={{
+                  fontSize: '0.78rem',
+                  fontWeight: 700,
+                  padding: '2px 4px',
+                  borderRadius: 4,
+                  border: 'none',
+                  backgroundColor: 'transparent',
+                  color: 'var(--accent-blue)',
                   cursor: 'pointer'
                 }}
+                title="Seleccionar escala ajustada a tu pantalla"
               >
-                <option value="ALL">📦 Todas las entregas</option>
-                <option value="pending">⏳ Pendiente</option>
-                <option value="ready_for_pickup">📍 En punto de retiro</option>
-                <option value="in_transit">🚚 En camino</option>
-                <option value="ready_to_ship">📦 Listo p/ enviar</option>
-                <option value="delivered">✅ Entregado</option>
+                <option value="120">120% (Muy Grande)</option>
+                <option value="110">110% (Grande)</option>
+                <option value="100">100% (Normal)</option>
+                <option value="95">95% (Cómodo)</option>
+                <option value="92">92% (Equilibrado)</option>
+                <option value="88">88% (Ajustado ⭐)</option>
+                <option value="82">82% (Compacto)</option>
+                <option value="75">75% (Mínimo)</option>
               </select>
-
-              {(searchQuery || platformFilter !== 'ALL' || shippingFilter !== 'ALL') && (
+              <button
+                type="button"
+                onClick={() => handleSetZoom(desktopZoom + 0.05)}
+                disabled={desktopZoom >= 1.25}
+                style={{
+                  width: 24,
+                  height: 24,
+                  padding: 0,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  borderRadius: 4,
+                  border: '1px solid var(--border-color)',
+                  backgroundColor: 'var(--bg-card)',
+                  color: 'var(--text-primary)',
+                  cursor: desktopZoom >= 1.25 ? 'not-allowed' : 'pointer',
+                  opacity: desktopZoom >= 1.25 ? 0.35 : 1,
+                  fontWeight: 'bold',
+                  fontSize: '0.85rem'
+                }}
+                title="Acercar / Aumentar zoom (Zoom In)"
+              >
+                +
+              </button>
+              {Math.round(desktopZoom * 100) !== 88 && (
                 <button
                   type="button"
-                  onClick={() => {
-                    setSearchQuery('')
-                    setPlatformFilter('ALL')
-                    setShippingFilter('ALL')
-                  }}
-                  className="btn"
+                  onClick={() => handleSetZoom(0.88)}
                   style={{
-                    height: 40,
-                    fontSize: '0.8rem',
-                    padding: '0 12px',
-                    backgroundColor: 'rgba(239, 68, 68, 0.1)',
-                    color: '#ef4444',
-                    border: '1px solid rgba(239, 68, 68, 0.3)',
-                    borderRadius: 8
+                    fontSize: '0.68rem',
+                    padding: '2px 6px',
+                    borderRadius: 4,
+                    border: '1px solid var(--border-color)',
+                    backgroundColor: 'var(--bg-hover)',
+                    color: 'var(--text-secondary)',
+                    cursor: 'pointer',
+                    marginLeft: 2
                   }}
+                  title="Restablecer al zoom óptimo (88%)"
                 >
-                  Limpiar filtros
+                  88%
                 </button>
               )}
             </div>
-          )}
+
+            {/* Desktop Horizontal Scroll Navigator (when table overflows) */}
+            {hasTableOverflow && (
+              <div className="sales-desktop-scroll-nav" style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 4
+              }}>
+                <button
+                  type="button"
+                  onClick={() => scrollTableBy(-320)}
+                  disabled={!canScrollLeft}
+                  className="btn"
+                  style={{
+                    padding: '0 10px',
+                    height: 40,
+                    boxSizing: 'border-box',
+                    fontSize: '0.78rem',
+                    backgroundColor: 'var(--bg-card)',
+                    border: '1px solid var(--border-color)',
+                    color: canScrollLeft ? 'var(--text-primary)' : 'var(--text-secondary)',
+                    opacity: canScrollLeft ? 1 : 0.4,
+                    cursor: canScrollLeft ? 'pointer' : 'default'
+                  }}
+                  title="Desplazar tabla a la izquierda"
+                >
+                  ◀ Izq
+                </button>
+                <button
+                  type="button"
+                  onClick={() => scrollTableBy(320)}
+                  disabled={!canScrollRight}
+                  className="btn"
+                  style={{
+                    padding: '0 10px',
+                    height: 40,
+                    boxSizing: 'border-box',
+                    fontSize: '0.78rem',
+                    backgroundColor: canScrollRight ? 'rgba(59, 130, 246, 0.15)' : 'var(--bg-card)',
+                    border: canScrollRight ? '1px solid var(--accent-blue)' : '1px solid var(--border-color)',
+                    color: canScrollRight ? 'var(--accent-blue)' : 'var(--text-secondary)',
+                    opacity: canScrollRight ? 1 : 0.4,
+                    cursor: canScrollRight ? 'pointer' : 'default',
+                    fontWeight: canScrollRight ? 700 : 'normal'
+                  }}
+                  title="Desplazar tabla a la derecha (ver columnas ocultas)"
+                >
+                  Der ▶
+                </button>
+              </div>
+            )}
           </div>
+        </div>
 
         {/* Results counter badge & Quick selector */}
         {(() => {
@@ -1728,7 +1985,18 @@ export default function Sales() {
             )}
           </div>
         ) : (
-          <div style={{overflowX: 'auto', width: '100%'}}>
+          <div 
+            className={`data-table-wrapper ${canScrollRight ? 'has-overflow-right' : ''}`}
+            ref={tableWrapperRef}
+            onWheel={handleTableWheel}
+            style={{
+              overflowX: 'auto',
+              width: '100%',
+              position: 'relative',
+              zoom: isMobile ? 1 : desktopZoom
+            }}
+          >
+            {canScrollRight && <div className="table-scroll-hint-right" />}
             <table className="mobile-cards data-table">
             <thead>
               <tr>
@@ -2384,6 +2652,56 @@ export default function Sales() {
               )})}
             </tbody>
           </table>
+          </div>
+        )}
+
+        {/* Sticky Horizontal Scrollbar Bar */}
+        {hasTableOverflow && (
+          <div className="inventory-sticky-scrollbar-bar">
+            <div className="sticky-scroll-controls-left">
+              <button 
+                type="button"
+                className="sticky-scroll-btn"
+                onClick={() => scrollTableBy(-320)}
+                disabled={!canScrollLeft}
+                title="Desplazar tabla a la izquierda"
+              >
+                ◀
+              </button>
+              <span className="sticky-scroll-label">
+                Desplazar tabla
+              </span>
+            </div>
+
+            <div 
+              className="sticky-scroll-track"
+              ref={bottomScrollbarRef}
+              onScroll={handleBottomScroll}
+              title="Arrastra para deslizar horizontalmente las columnas de la tabla"
+            >
+              <div style={{ width: tableScrollWidth, height: 1 }} />
+            </div>
+
+            <div className="sticky-scroll-controls-right">
+              <button 
+                type="button"
+                className="sticky-scroll-btn"
+                onClick={() => scrollTableBy(320)}
+                disabled={!canScrollRight}
+                title="Desplazar tabla a la derecha"
+              >
+                ▶
+              </button>
+              {canScrollRight && (
+                <span 
+                  className="sticky-scroll-more-badge" 
+                  onClick={() => scrollTableBy(320)}
+                  title="Haz clic para ver las columnas ocultas a la derecha"
+                >
+                  Más columnas ▶
+                </span>
+              )}
+            </div>
           </div>
         )}
       </div>

@@ -56,6 +56,35 @@ export default function Quotes() {
   const [cloningFromQuote, setCloningFromQuote] = useState(null)
   const [convertingQuote, setConvertingQuote] = useState(null)
   const [submitting, setSubmitting] = useState(false)
+
+  // Mobile detection for responsive modal
+  const [isMobile, setIsMobile] = useState(() => typeof window !== 'undefined' ? window.innerWidth <= 768 : false)
+
+  useEffect(() => {
+    const handleResize = () => setIsMobile(window.innerWidth <= 768)
+    window.addEventListener('resize', handleResize)
+    return () => window.removeEventListener('resize', handleResize)
+  }, [])
+
+  // Auto-close autocomplete on outside click or Escape
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (!e.target.closest('.quote-item-search-cell')) {
+        setActiveSearchIdx(null)
+      }
+    }
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        setActiveSearchIdx(null)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    document.addEventListener('keydown', handleKeyDown)
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside)
+      document.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [])
   const [convertMode, setConvertMode] = useState('cash') // 'cash' or 'link_transfer'
   const [candidateTransfers, setCandidateTransfers] = useState([])
   const [loadingCandidates, setLoadingCandidates] = useState(false)
@@ -226,6 +255,12 @@ export default function Quotes() {
     fetchCommercialConfig()
   }, [])
 
+  useEffect(() => {
+    if (showCreateModal && (!inventory || inventory.length === 0)) {
+      fetchInventory()
+    }
+  }, [showCreateModal, inventory?.length])
+
   // KPI Calculations
   const metrics = useMemo(() => {
     const total = quotes.length
@@ -360,10 +395,12 @@ export default function Quotes() {
   }
 
   const handleAddItem = () => {
+    const nextIdx = formData.items.length
     setFormData(prev => ({
       ...prev,
       items: [...prev.items, { id: `manual-${Date.now()}`, title: '', quantity: 1, price: 0, sku: '' }]
     }))
+    setActiveSearchIdx(nextIdx)
   }
 
   const handleRemoveItem = (index) => {
@@ -1272,15 +1309,15 @@ export default function Quotes() {
           alignItems: 'center',
           justifyContent: 'center',
           zIndex: 9999,
-          padding: 16
+          padding: isMobile ? 8 : 16
         }}>
           <div style={{
             backgroundColor: 'var(--bg-card)',
-            borderRadius: 14,
+            borderRadius: isMobile ? 10 : 14,
             border: '1px solid var(--border-color)',
             width: '100%',
-            maxWidth: 820,
-            maxHeight: '92vh',
+            maxWidth: isMobile ? '100%' : 'min(1150px, 96vw)',
+            maxHeight: isMobile ? '96vh' : '94vh',
             display: 'flex',
             flexDirection: 'column',
             boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.3)',
@@ -1288,14 +1325,14 @@ export default function Quotes() {
           }}>
             {/* Modal Header */}
             <div style={{
-              padding: '16px 20px', 
+              padding: isMobile ? '12px 16px' : '16px 20px', 
               borderBottom: '1px solid var(--border-color)', 
               display: 'flex', 
               justifyContent: 'space-between', 
               alignItems: 'center'
             }}>
               <div>
-                <h3 style={{margin: 0, fontSize: '1.2rem', display: 'flex', alignItems: 'center', gap: 8}}>
+                <h3 style={{margin: 0, fontSize: isMobile ? '1.05rem' : '1.2rem', display: 'flex', alignItems: 'center', gap: 8}}>
                   <FileText size={20} color="var(--accent-blue)" /> 
                   {editingQuote 
                     ? `Editar Presupuesto #${editingQuote.quote_number}` 
@@ -1320,7 +1357,14 @@ export default function Quotes() {
             </div>
 
             {/* Modal Body */}
-            <div style={{flex: 1, overflowY: 'auto', padding: '18px 20px', display: 'flex', flexDirection: 'column', gap: 16}}>
+            <div style={{
+              flex: 1, 
+              overflowY: 'auto', 
+              padding: isMobile ? '12px 12px 100px 12px' : '18px 22px 120px 22px', 
+              display: 'flex', 
+              flexDirection: 'column', 
+              gap: 16
+            }}>
               
               {/* Banner de Clonación */}
               {cloningFromQuote && (
@@ -1387,7 +1431,7 @@ export default function Quotes() {
               {/* Row 1: Lista de Precios & Validez */}
               <div style={{
                 display: 'grid', 
-                gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', 
+                gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fit, minmax(240px, 1fr))', 
                 gap: 12,
                 backgroundColor: 'var(--bg-hover)',
                 padding: '12px 14px',
@@ -1449,7 +1493,7 @@ export default function Quotes() {
                 <h4 style={{margin: '0 0 10px', fontSize: '0.9rem', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 6}}>
                   <User size={16} color="var(--accent-blue)" /> Datos del Cliente / Destinatario
                 </h4>
-                <div style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 10}}>
+                <div style={{display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fit, minmax(200px, 1fr))', gap: 10}}>
                   <div>
                     <label style={{display: 'block', fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: 2}}>
                       Nombre / Razón Social *
@@ -1506,9 +1550,9 @@ export default function Quotes() {
 
               {/* Row 3: Items / Productos Table */}
               <div>
-                <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8}}>
+                <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10}}>
                   <h4 style={{margin: 0, fontSize: '0.9rem', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 6}}>
-                    <Package size={16} color="var(--accent-blue)" /> Productos y Cantidades
+                    <Package size={16} color="var(--accent-blue)" /> Productos y Cantidades ({formData.items.length})
                   </h4>
                   <button 
                     type="button"
@@ -1516,13 +1560,13 @@ export default function Quotes() {
                     style={{
                       display: 'inline-flex',
                       alignItems: 'center',
-                      gap: 4,
-                      fontSize: '0.78rem',
-                      padding: '4px 10px',
+                      gap: 6,
+                      fontSize: '0.8rem',
+                      padding: '6px 12px',
                       borderRadius: 6,
                       backgroundColor: 'rgba(59, 130, 246, 0.12)',
                       color: 'var(--accent-blue)',
-                      border: 'none',
+                      border: '1px solid rgba(59, 130, 246, 0.3)',
                       cursor: 'pointer',
                       fontWeight: 600
                     }}
@@ -1531,15 +1575,20 @@ export default function Quotes() {
                   </button>
                 </div>
 
-                <div style={{border: '1px solid var(--border-color)', borderRadius: 8, overflow: 'hidden'}}>
-                  <table style={{width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem'}}>
+                <div style={{
+                  border: '1px solid var(--border-color)', 
+                  borderRadius: 8, 
+                  overflow: isMobile ? 'auto' : 'visible', 
+                  position: 'relative'
+                }}>
+                  <table style={{width: '100%', minWidth: isMobile ? 620 : '100%', borderCollapse: 'collapse', fontSize: '0.84rem'}}>
                     <thead>
                       <tr style={{backgroundColor: 'var(--bg-hover)', borderBottom: '1px solid var(--border-color)', color: 'var(--text-secondary)'}}>
-                        <th style={{padding: '8px 10px', textAlign: 'left'}}>Producto / Artículo</th>
-                        <th style={{padding: '8px 10px', width: 80, textAlign: 'center'}}>Cant.</th>
-                        <th style={{padding: '8px 10px', width: 120, textAlign: 'right'}}>Precio Unit. ($)</th>
-                        <th style={{padding: '8px 10px', width: 120, textAlign: 'right'}}>Subtotal</th>
-                        <th style={{padding: '8px 10px', width: 40}}></th>
+                        <th style={{padding: '10px 12px', textAlign: 'left'}}>Producto / Artículo (Buscar en Catálogo o Personalizado)</th>
+                        <th style={{padding: '10px 12px', width: 85, textAlign: 'center'}}>Cant.</th>
+                        <th style={{padding: '10px 12px', width: 140, textAlign: 'right'}}>Precio Unit. ($)</th>
+                        <th style={{padding: '10px 12px', width: 140, textAlign: 'right'}}>Subtotal</th>
+                        <th style={{padding: '10px 12px', width: 44, textAlign: 'center'}}></th>
                       </tr>
                     </thead>
                     <tbody>
@@ -1548,88 +1597,134 @@ export default function Quotes() {
                         const filteredProds = inventory.filter(p => {
                           if (!item.title) return true
                           return matchesQuery([p.title, p.ml_id, p.sku], item.title)
-                        }).slice(0, 15)
+                        }).slice(0, 20)
 
                         return (
-                          <tr key={idx} style={{borderBottom: '1px solid var(--border-color)'}}>
+                          <tr key={item.id || idx} style={{borderBottom: '1px solid var(--border-color)'}}>
                             {/* Product title with Autocomplete search */}
-                            <td style={{padding: '8px 10px', position: 'relative'}}>
-                              <input 
-                                type="text"
-                                placeholder="Escribí para buscar en inventario..."
-                                value={item.title}
-                                onChange={e => {
-                                  handleItemChange(idx, 'title', e.target.value)
-                                  setActiveSearchIdx(idx)
-                                }}
-                                onFocus={() => setActiveSearchIdx(idx)}
-                                style={{
-                                  width: '100%', 
-                                  padding: '6px 8px', 
-                                  borderRadius: 6, 
-                                  border: '1px solid var(--border-color)', 
-                                  backgroundColor: 'var(--bg-card)', 
-                                  color: 'var(--text-primary)',
-                                  fontSize: '0.82rem'
-                                }}
-                              />
+                            <td className="quote-item-search-cell" style={{padding: '8px 10px', position: 'relative'}}>
+                              <div style={{position: 'relative', width: '100%'}}>
+                                <input 
+                                  type="text"
+                                  placeholder="Escribí para buscar en inventario..."
+                                  value={item.title}
+                                  onChange={e => {
+                                    handleItemChange(idx, 'title', e.target.value)
+                                    setActiveSearchIdx(idx)
+                                  }}
+                                  onFocus={() => setActiveSearchIdx(idx)}
+                                  style={{
+                                    width: '100%', 
+                                    padding: '8px 10px', 
+                                    borderRadius: 6, 
+                                    border: activeSearchIdx === idx ? '1px solid var(--accent-blue)' : '1px solid var(--border-color)', 
+                                    backgroundColor: 'var(--bg-card)', 
+                                    color: 'var(--text-primary)',
+                                    fontSize: '0.84rem'
+                                  }}
+                                />
 
-                              {/* Autocomplete Dropdown */}
-                              {activeSearchIdx === idx && item.title && (
-                                <div style={{
-                                  position: 'absolute',
-                                  top: '100%',
-                                  left: 10,
-                                  right: 10,
-                                  zIndex: 1000,
-                                  backgroundColor: 'var(--bg-card)',
-                                  border: '1px solid var(--border-color)',
-                                  borderRadius: 8,
-                                  boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.2)',
-                                  maxHeight: 220,
-                                  overflowY: 'auto'
-                                }}>
-                                  {filteredProds.length > 0 ? (
-                                    filteredProds.map(p => {
-                                      const pPrice = getProductPriceBySource(p, formData.price_source)
-                                      return (
-                                        <div
-                                          key={p.ml_id}
-                                          onMouseDown={() => handleSelectProduct(idx, p.ml_id)}
+                                {/* Autocomplete Dropdown */}
+                                {activeSearchIdx === idx && (item.title?.trim()?.length > 0) && (
+                                  <div style={{
+                                    position: 'absolute',
+                                    top: 'calc(100% + 4px)',
+                                    left: 0,
+                                    width: 'max(100%, 540px)',
+                                    maxWidth: 'calc(100vw - 40px)',
+                                    zIndex: 99999,
+                                    backgroundColor: 'var(--bg-card)',
+                                    border: '1px solid var(--accent-blue)',
+                                    borderRadius: 8,
+                                    boxShadow: '0 12px 30px rgba(0, 0, 0, 0.45)',
+                                    maxHeight: 300,
+                                    overflowY: 'auto'
+                                  }}>
+                                    <div style={{
+                                      padding: '6px 12px',
+                                      backgroundColor: 'var(--bg-hover)',
+                                      borderBottom: '1px solid var(--border-color)',
+                                      display: 'flex',
+                                      justifyContent: 'space-between',
+                                      alignItems: 'center',
+                                      fontSize: '0.72rem',
+                                      color: 'var(--text-secondary)'
+                                    }}>
+                                      <span>📦 Resultados encontrados en inventario ({filteredProds.length})</span>
+                                      <span style={{fontSize: '0.68rem', color: 'var(--accent-blue)', fontWeight: 600}}>
+                                        Hacé clic para cargar
+                                      </span>
+                                    </div>
+
+                                    {filteredProds.length > 0 ? (
+                                      filteredProds.map(p => {
+                                        const pPrice = getProductPriceBySource(p, formData.price_source)
+                                        return (
+                                          <div
+                                            key={p.ml_id}
+                                            onMouseDown={() => handleSelectProduct(idx, p.ml_id)}
+                                            style={{
+                                              padding: '9px 12px',
+                                              cursor: 'pointer',
+                                              borderBottom: '1px solid var(--border-color)',
+                                              display: 'flex',
+                                              justifyContent: 'space-between',
+                                              alignItems: 'center',
+                                              gap: 12,
+                                              fontSize: '0.82rem'
+                                            }}
+                                            onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--bg-hover)'}
+                                            onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}
+                                          >
+                                            <div style={{flex: 1, minWidth: 0}}>
+                                              <div style={{fontWeight: 600, color: 'var(--text-primary)', whiteSpace: 'normal', lineHeight: 1.3}}>
+                                                {p.title}
+                                              </div>
+                                              <div style={{color: 'var(--text-secondary)', fontSize: '0.72rem', marginTop: 2, display: 'flex', gap: 8, alignItems: 'center'}}>
+                                                <span style={{fontFamily: 'monospace'}}>{p.sku || p.ml_id}</span>
+                                                <span>•</span>
+                                                <span style={{color: (p.available_quantity ?? 0) > 0 ? '#10b981' : '#ef4444', fontWeight: 600}}>
+                                                  Stock: {p.available_quantity ?? 0}
+                                                </span>
+                                              </div>
+                                            </div>
+                                            <div style={{textAlign: 'right', flexShrink: 0}}>
+                                              <div style={{fontWeight: 700, color: 'var(--accent-emerald)', fontSize: '0.92rem'}}>
+                                                ${pPrice.toLocaleString('es-AR')}
+                                              </div>
+                                              <div style={{fontSize: '0.68rem', color: 'var(--text-secondary)'}}>
+                                                {formData.price_source === 'cash_discount' ? 'Precio Efectivo' : 'Precio Lista'}
+                                              </div>
+                                            </div>
+                                          </div>
+                                        )
+                                      })
+                                    ) : (
+                                      <div 
+                                        style={{padding: '12px 14px', fontSize: '0.8rem', color: 'var(--text-primary)', textAlign: 'center', backgroundColor: 'rgba(59, 130, 246, 0.05)'}}
+                                      >
+                                        <div style={{color: 'var(--text-secondary)', marginBottom: 4}}>
+                                          No se encontraron productos coincidentes en el inventario.
+                                        </div>
+                                        <button
+                                          type="button"
+                                          onMouseDown={() => setActiveSearchIdx(null)}
                                           style={{
-                                            padding: '8px 10px',
+                                            border: 'none',
+                                            background: 'none',
+                                            color: 'var(--accent-blue)',
+                                            fontWeight: 700,
                                             cursor: 'pointer',
-                                            borderBottom: '1px solid var(--border-color)',
-                                            display: 'flex',
-                                            justifyContent: 'space-between',
-                                            alignItems: 'center',
-                                            fontSize: '0.78rem'
+                                            fontSize: '0.8rem'
                                           }}
                                         >
-                                          <div style={{flex: 1, minWidth: 0}}>
-                                            <div style={{fontWeight: 600, color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis'}}>
-                                              {p.title}
-                                            </div>
-                                            <div style={{color: 'var(--text-secondary)', fontSize: '0.7rem'}}>
-                                              {p.ml_id} • Stock: {p.available_quantity ?? 0}
-                                            </div>
-                                          </div>
-                                          <div style={{fontWeight: 700, color: 'var(--accent-emerald)', marginLeft: 8}}>
-                                            ${pPrice.toLocaleString('es-AR')}
-                                          </div>
-                                        </div>
-                                      )
-                                    })
-                                  ) : (
-                                    <div 
-                                      style={{padding: 8, fontSize: '0.78rem', color: 'var(--accent-blue)', cursor: 'pointer', textAlign: 'center'}}
-                                      onMouseDown={() => setActiveSearchIdx(null)}
-                                    >
-                                      ✓ Usar como ítem personalizado: "{item.title}"
-                                    </div>
-                                  )}
-                                </div>
-                              )}
+                                          ✓ Usar "{item.title}" como producto personalizado
+                                        </button>
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
                             </td>
 
                             {/* Quantity */}
@@ -1642,12 +1737,12 @@ export default function Quotes() {
                                 style={{
                                   width: '100%', 
                                   textAlign: 'center', 
-                                  padding: '6px 4px', 
+                                  padding: '7px 4px', 
                                   borderRadius: 6, 
                                   border: '1px solid var(--border-color)', 
                                   backgroundColor: 'var(--bg-card)', 
                                   color: 'var(--text-primary)',
-                                  fontSize: '0.82rem'
+                                  fontSize: '0.84rem'
                                 }}
                               />
                             </td>
@@ -1663,12 +1758,12 @@ export default function Quotes() {
                                 style={{
                                   width: '100%', 
                                   textAlign: 'right', 
-                                  padding: '6px 8px', 
+                                  padding: '7px 8px', 
                                   borderRadius: 6, 
                                   border: '1px solid var(--border-color)', 
                                   backgroundColor: 'var(--bg-card)', 
                                   color: 'var(--text-primary)',
-                                  fontSize: '0.82rem',
+                                  fontSize: '0.84rem',
                                   fontWeight: 600
                                 }}
                               />
@@ -1685,9 +1780,19 @@ export default function Quotes() {
                                 <button
                                   type="button"
                                   onClick={() => handleRemoveItem(idx)}
-                                  style={{border: 'none', background: 'none', cursor: 'pointer', color: 'var(--accent-red)'}}
+                                  title="Eliminar producto"
+                                  style={{
+                                    border: 'none', 
+                                    background: 'none', 
+                                    cursor: 'pointer', 
+                                    color: 'var(--accent-red)',
+                                    padding: 4,
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center'
+                                  }}
                                 >
-                                  <Trash2 size={14} />
+                                  <Trash2 size={15} />
                                 </button>
                               )}
                             </td>

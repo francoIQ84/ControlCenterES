@@ -743,6 +743,8 @@ input, select {
   .inventory-desktop-header,
   .inventory-sticky-scrollbar-bar,
   .inventory-desktop-zoom-controls,
+  .sales-desktop-zoom-controls,
+  .sales-desktop-scroll-nav,
   .table-scroll-hint-right {
     display: none !important;
   }
@@ -1761,6 +1763,21 @@ input, select {
   .inventory-page-container .data-table th,
   .inventory-page-container .data-table td {
     padding: 6px 8px;
+  }
+
+  /* Compact Desktop Sales Density Optimization (matching inventory) */
+  .sales-page-container {
+    width: 100%;
+  }
+
+  .sales-page-container .data-table th,
+  .sales-page-container .data-table td {
+    padding: 8px 10px;
+  }
+
+  .sales-desktop-zoom-controls,
+  .sales-desktop-scroll-nav {
+    display: inline-flex;
   }
 }
 

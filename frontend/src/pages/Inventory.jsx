@@ -94,6 +94,19 @@ export default function Inventory() {
   const [stockFilter, setStockFilter] = useState('ALL') // 'ALL' | 'IN_STOCK' | 'OUT_OF_STOCK' | 'CRITICAL'
   const [fullFilter, setFullFilter] = useState('ALL') // 'ALL' | 'FULL' | 'NO_FULL'
   const [isSyncingFull, setIsSyncingFull] = useState(false)
+  const prevFilterStateRef = useRef({ hiddenFilter, outOfStockDays })
+
+  const handleHiddenFilterChange = (val) => {
+    if (val === hiddenFilter) return
+    setLoading(true)
+    setHiddenFilter(val)
+  }
+
+  const handleOutOfStockDaysChange = (val) => {
+    if (val === outOfStockDays) return
+    setLoading(true)
+    setOutOfStockDays(val)
+  }
 
   const toggleReadingMode = () => {
     setIsReadingMode(prev => {
@@ -559,8 +572,6 @@ export default function Inventory() {
         if (!qToFetch && hiddenFilter === 'visible' && !outOfStockDays) {
           allProductsRef.current = fetched
           setCachedData(CacheKeys.INVENTORY, fetched)
-        } else if (!qToFetch && fetched.length > allProductsRef.current.length) {
-          allProductsRef.current = fetched
         } else if (qToFetch && allProductsRef.current && fetched.length > 0) {
           // Si estamos filtrando/buscando, actualizar los productos coincidentes en allProductsRef
           // para que la memoria global y la caché nunca queden desactualizadas
@@ -593,6 +604,10 @@ export default function Inventory() {
       })
       if (res.ok) {
         invalidateCache('inventory')
+        setProducts(prev => prev.map(item => item.ml_id === ml_id ? { ...item, is_hidden: newStatus } : item))
+        if (allProductsRef.current) {
+          allProductsRef.current = allProductsRef.current.map(item => item.ml_id === ml_id ? { ...item, is_hidden: newStatus } : item)
+        }
         fetchProducts(true)
       } else {
         alert("Error al cambiar la visibilidad del producto")
@@ -755,8 +770,12 @@ export default function Inventory() {
     if (searchTimeoutRef.current) {
       clearTimeout(searchTimeoutRef.current)
     }
-    // Debounce server query by 250ms when typing, or immediately when query is cleared
-    const delay = query ? 250 : 0
+    const filterChanged = prevFilterStateRef.current.hiddenFilter !== hiddenFilter ||
+      prevFilterStateRef.current.outOfStockDays !== outOfStockDays
+    prevFilterStateRef.current = { hiddenFilter, outOfStockDays }
+
+    // Debounce server query by 250ms when typing, or immediately when query is cleared or filter changed
+    const delay = (query && !filterChanged) ? 250 : 0
     searchTimeoutRef.current = setTimeout(() => {
       fetchProducts(false, query)
     }, delay)
@@ -1082,9 +1101,15 @@ export default function Inventory() {
   }, [products, drafts])
 
   const sortedProducts = React.useMemo(() => {
-    const source = (allProductsRef.current && allProductsRef.current.length > products.length)
-      ? allProductsRef.current
-      : products
+    // Solo usamos allProductsRef como respaldo de búsqueda rápida en modo visible estándar
+    const shouldUseAllRef = query && 
+      query.trim() &&
+      !outOfStockDays && 
+      hiddenFilter === 'visible' && 
+      allProductsRef.current && 
+      allProductsRef.current.length > products.length
+
+    const source = shouldUseAllRef ? allProductsRef.current : products
 
     let sortableItems = source.filter(p => {
       const draftCat = drafts[p.ml_id]?.category_id
@@ -1098,14 +1123,19 @@ export default function Inventory() {
         if (!matched) return false
       }
 
-      // 2. Category Filter
+      // 2. Filtro de visibilidad: Visibles / Todos / Solo Ocultos
+      const isHidden = p.is_hidden === 1 || p.is_hidden === true || p.is_hidden === '1'
+      if (hiddenFilter === 'visible' && isHidden) return false
+      if (hiddenFilter === 'hidden' && !isHidden) return false
+
+      // 3. Category Filter
       if (categoryFilter === 'UNCATEGORIZED') {
         if (catId && catId !== 0 && String(catId) !== '0' && String(catId) !== '') return false
       } else if (categoryFilter !== 'ALL') {
         if (String(catId) !== String(categoryFilter)) return false
       }
 
-      // 3. Stock Level Filter
+      // 4. Stock Level Filter
       const draftQty = drafts[p.ml_id]?.qty
       const qty = draftQty !== undefined ? draftQty : (p.available_quantity || 0)
       const minStock = p.min_stock || 0
@@ -1114,7 +1144,7 @@ export default function Inventory() {
       if (stockFilter === 'OUT_OF_STOCK' && qty > 0) return false
       if (stockFilter === 'CRITICAL' && qty > minStock) return false
 
-      // 4. Mercado Full Filter
+      // 5. Mercado Full Filter
       if (fullFilter === 'FULL' && (!p.is_full || p.is_full === 0)) return false
       if (fullFilter === 'NO_FULL' && p.is_full === 1) return false
 
@@ -1156,7 +1186,7 @@ export default function Inventory() {
       })
     }
     return sortableItems
-  }, [products, drafts, categoryFilter, stockFilter, fullFilter, sortConfig, listingHealth, query, categories])
+  }, [products, drafts, categoryFilter, stockFilter, fullFilter, sortConfig, listingHealth, query, categories, hiddenFilter])
 
   const fullCount = React.useMemo(() => {
     return products.filter(p => p.is_full === 1).length
@@ -2289,7 +2319,7 @@ export default function Inventory() {
                         fontSize: '0.8rem',
                         cursor: 'pointer'
                       }}
-                      onClick={() => setHiddenFilter('visible')}
+                      onClick={() => handleHiddenFilterChange('visible')}
                     >
                       Visibles
                     </button>
@@ -2306,7 +2336,7 @@ export default function Inventory() {
                         fontSize: '0.8rem',
                         cursor: 'pointer'
                       }}
-                      onClick={() => setHiddenFilter('all')}
+                      onClick={() => handleHiddenFilterChange('all')}
                     >
                       Todos
                     </button>
@@ -2321,7 +2351,7 @@ export default function Inventory() {
                         fontSize: '0.8rem',
                         cursor: 'pointer'
                       }}
-                      onClick={() => setHiddenFilter('hidden')}
+                      onClick={() => handleHiddenFilterChange('hidden')}
                     >
                       Solo Ocultos
                     </button>
@@ -2333,7 +2363,7 @@ export default function Inventory() {
                   <div className="sheet-section-title">Filtro Sin Stock (Movimiento Reciente)</div>
                   <select
                     value={outOfStockDays || ''}
-                    onChange={e => setOutOfStockDays(e.target.value ? Number(e.target.value) : null)}
+                    onChange={e => handleOutOfStockDaysChange(e.target.value ? Number(e.target.value) : null)}
                     style={{
                       width: '100%',
                       height: 38,
@@ -2644,7 +2674,7 @@ export default function Inventory() {
                   cursor: 'pointer',
                   boxShadow: 'none'
                 }}
-                onClick={() => setHiddenFilter('visible')}
+                onClick={() => handleHiddenFilterChange('visible')}
                 title="Mostrar solo productos visibles"
               >
                 Visibles
@@ -2664,7 +2694,7 @@ export default function Inventory() {
                   cursor: 'pointer',
                   boxShadow: 'none'
                 }}
-                onClick={() => setHiddenFilter('all')}
+                onClick={() => handleHiddenFilterChange('all')}
                 title="Mostrar todos los productos (visibles u ocultos)"
               >
                 Todos
@@ -2682,7 +2712,7 @@ export default function Inventory() {
                   cursor: 'pointer',
                   boxShadow: 'none'
                 }}
-                onClick={() => setHiddenFilter('hidden')}
+                onClick={() => handleHiddenFilterChange('hidden')}
                 title="Mostrar solo productos ocultos"
               >
                 Solo Ocultos
@@ -2693,7 +2723,7 @@ export default function Inventory() {
             <select
               className="btn"
               value={outOfStockDays || ''}
-              onChange={e => setOutOfStockDays(e.target.value ? Number(e.target.value) : null)}
+              onChange={e => handleOutOfStockDaysChange(e.target.value ? Number(e.target.value) : null)}
               style={{
                 padding: '6px 10px',
                 fontSize: '0.8rem',
@@ -5577,6 +5607,22 @@ function ProductRow({ p, onSave, onOpenGallery, onDraftChange, categories, categ
                 border: '1px solid rgba(16, 185, 129, 0.4)'
               }}>
                 ✏️ Modificado
+              </span>
+            )}
+            {p.is_hidden === 1 && (
+              <span style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 3,
+                padding: '1px 6px',
+                fontSize: '0.70rem',
+                fontWeight: 600,
+                borderRadius: 4,
+                backgroundColor: 'rgba(239, 68, 68, 0.15)',
+                color: '#ef4444',
+                border: '1px solid rgba(239, 68, 68, 0.3)'
+              }}>
+                👁️ Oculto
               </span>
             )}
             {parseNum(featuredOrder, true) > 0 && (
